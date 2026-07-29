@@ -39,7 +39,8 @@ data class ArticleItemUi(
     val title: String?,
     val description: String,
     val difficultyLabel: String,
-    val categoryLabel: String
+    val categoryLabel: String,
+    val isReadCompleted: Boolean = false
 )
 
 @HiltViewModel
@@ -140,7 +141,8 @@ class HomeViewModel @Inject constructor(
                             title = article.title,
                             description = article.contentCategory,
                             difficultyLabel = userDifficulty,
-                            categoryLabel = article.contentCategory.replace("_", " ")
+                            categoryLabel = article.contentCategory.replace("_", " "),
+                            isReadCompleted = article.readCompletedAt != null
                         )
                     }.let { items ->
                         listOf(

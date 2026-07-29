@@ -11,12 +11,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,7 +29,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ak.contexta.ui.components.EmptyState
 import com.ak.contexta.ui.components.LoadingIndicator
@@ -52,51 +57,60 @@ fun VocabularyScreen(
             .background(Background)
     ) {
         // Header
-        VocabularyHeader(totalCount = state.totalCount)
+        VocabularyHeader(
+            totalCount = state.totalCount,
+            isSummary = state.isSummary
+        )
 
-        if (state.isLoading) {
-            LoadingIndicator()
-        } else if (state.totalCount == 0) {
-            EmptyState(
+        when {
+            state.isLoading -> LoadingIndicator()
+            state.isSummary -> VocabularySummary(
+                reviewedCount = state.reviewedCount,
+                newlyKnownCount = state.newlyKnownCount,
+                onRestart = { viewModel.restart() }
+            )
+            state.totalCount == 0 -> EmptyState(
                 icon = "📝",
                 message = "生词表为空",
                 subMessage = "阅读时点击单词可加入生词表"
             )
-        } else {
-            // Progress bar
-            VocabularyProgress(
-                current = state.currentIndex + 1,
-                total = state.totalCount
-            )
+            else -> {
+                val word = state.currentWord
+                if (word != null) {
+                    // Progress bar
+                    VocabularyProgress(
+                        current = state.currentIndex + 1,
+                        total = state.totalCount
+                    )
 
-            // Word card
-            val word = state.currentWord
-            if (word != null) {
-                VocabularyCard(
-                    word = word.word,
-                    phonetic = word.phonetic,
-                    translation = word.translation,
-                    definitions = word.definitions,
-                    exampleEn = word.exampleEn,
-                    exampleZh = word.exampleZh,
-                    reviewStreak = word.reviewStreak,
-                    masteryThreshold = word.masteryThreshold
-                )
+                    // Word card
+                    VocabularyCard(
+                        word = word.word,
+                        phonetic = word.phonetic,
+                        translation = word.translation,
+                        definitions = word.definitions,
+                        exampleEn = word.exampleEn,
+                        exampleZh = word.exampleZh,
+                        reviewStreak = word.reviewStreak,
+                        masteryThreshold = word.masteryThreshold,
+                        onPlayWord = { viewModel.playWord() }
+                    )
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    // Action buttons
+                    VocabularyActions(
+                        onCorrect = { viewModel.markCorrect() },
+                        onIncorrect = { viewModel.markIncorrect() }
+                    )
+                }
             }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Action buttons
-            VocabularyActions(
-                onCorrect = { viewModel.markCorrect() },
-                onIncorrect = { viewModel.markIncorrect() }
-            )
         }
     }
 }
 
 @Composable
-private fun VocabularyHeader(totalCount: Int) {
+private fun VocabularyHeader(totalCount: Int, isSummary: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -105,14 +119,90 @@ private fun VocabularyHeader(totalCount: Int) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "生词复习",
+            text = if (!isSummary) "生词复习" else "复习总结",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.weight(1f)
         )
+        if (!isSummary) {
+            Text(
+                text = "$totalCount 个词",
+                style = MaterialTheme.typography.labelMedium,
+                color = Muted
+            )
+        }
+    }
+}
+
+@Composable
+private fun VocabularySummary(
+    reviewedCount: Int,
+    newlyKnownCount: Int,
+    onRestart: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
         Text(
-            text = "$totalCount 个词",
-            style = MaterialTheme.typography.labelMedium,
+            text = "🎉",
+            fontSize = 56.sp
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "复习完成！",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                SummaryStat(value = reviewedCount.toString(), label = "复习单词")
+                Spacer(modifier = Modifier.height(16.dp))
+                SummaryStat(value = newlyKnownCount.toString(), label = "新标记认识")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        Button(
+            onClick = onRestart,
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Accent,
+                contentColor = AccentOn
+            )
+        ) {
+            Text("再来一轮")
+        }
+    }
+}
+
+@Composable
+private fun SummaryStat(value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+            color = Accent
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
             color = Muted
         )
     }
@@ -159,7 +249,8 @@ private fun VocabularyCard(
     exampleEn: String?,
     exampleZh: String?,
     reviewStreak: Int,
-    masteryThreshold: Int
+    masteryThreshold: Int,
+    onPlayWord: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -193,7 +284,7 @@ private fun VocabularyCard(
             text = "🔊",
             style = MaterialTheme.typography.titleMedium,
             color = Accent,
-            modifier = Modifier.clickable { /* TTS placeholder */ }
+            modifier = Modifier.clickable { onPlayWord() }
         )
 
         // Translation

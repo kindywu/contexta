@@ -194,7 +194,8 @@ private fun DayGroup(
                             title = article.title,
                             description = article.description,
                             difficultyLabel = article.difficultyLabel,
-                            categoryLabel = article.categoryLabel
+                            categoryLabel = article.categoryLabel,
+                            isReadCompleted = article.isReadCompleted
                         ),
                         onClick = { onArticleClick(article.id) }
                     )

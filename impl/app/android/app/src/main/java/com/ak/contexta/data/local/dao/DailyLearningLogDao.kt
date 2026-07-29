@@ -22,9 +22,16 @@ interface DailyLearningLogDao {
     """)
     suspend fun addActivity(date: String, articlesDelta: Int, secondsDelta: Int)
 
-    @Query("SELECT COUNT(*) FROM daily_learning_log WHERE seconds_spent > 0 OR articles_read > 0")
+    @Query("""
+        UPDATE daily_learning_log
+        SET words_added = words_added + 1
+        WHERE log_date = :date
+    """)
+    suspend fun addWordActivity(date: String)
+
+    @Query("SELECT COUNT(*) FROM daily_learning_log WHERE seconds_spent > 0 OR articles_read > 0 OR words_added > 0")
     suspend fun countActiveDays(): Int
 
-    @Query("SELECT DISTINCT log_date FROM daily_learning_log WHERE seconds_spent > 0 OR articles_read > 0 ORDER BY log_date DESC")
+    @Query("SELECT DISTINCT log_date FROM daily_learning_log WHERE seconds_spent > 0 OR articles_read > 0 OR words_added > 0 ORDER BY log_date DESC")
     suspend fun getActiveDates(): List<String>
 }

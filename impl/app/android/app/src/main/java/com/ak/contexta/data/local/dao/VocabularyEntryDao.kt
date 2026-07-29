@@ -66,6 +66,9 @@ interface VocabularyEntryDao {
     """)
     suspend fun softDelete(id: Long, reason: String, now: Long)
 
+    @Query("SELECT * FROM vocabulary_entry WHERE id = :id AND deleted_at IS NULL")
+    suspend fun getById(id: Long): VocabularyEntryEntity?
+
     @Query("SELECT COUNT(DISTINCT word_id) FROM vocabulary_entry WHERE deleted_at IS NULL")
     suspend fun countDistinctWords(): Int
 }

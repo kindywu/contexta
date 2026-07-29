@@ -198,6 +198,11 @@ class ArticleRepository @Inject constructor(
         articleDao.markReadCompleted(articleId, System.currentTimeMillis())
     }
 
+    /** Force marking read completed regardless of accumulated time. */
+    suspend fun forceMarkReadCompleted(articleId: Long) {
+        articleDao.forceMarkReadCompleted(articleId, System.currentTimeMillis())
+    }
+
     /** Reset orphan GENERATING articles during app startup reconciliation */
     suspend fun reconcileOrphanArticles() {
         // Find GENERATING articles and reset based on batch status

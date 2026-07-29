@@ -12,10 +12,13 @@ import com.ak.contexta.domain.generation.parseWordLlmResponse
 import com.ak.contexta.domain.model.ArticleParagraph
 import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.repository.SettingsRepository
+import com.ak.contexta.domain.repository.StatsRepository
 import com.ak.contexta.domain.repository.VocabularyRepository
 import com.ak.contexta.domain.repository.WordRepository
 import com.ak.contexta.domain.tts.TtsManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,7 +37,8 @@ data class ReadingUiState(
     val isWordSheetVisible: Boolean = false,
     val snackbarMessage: String? = null,
     val openTtsSettings: Boolean = false,
-    val ttsSpeed: Float = 1.0f
+    val ttsSpeed: Float = 1.0f,
+    val isReadCompleted: Boolean = false
 )
 
 enum class TranslationMode(val label: String) {
@@ -62,6 +66,7 @@ class ReadingViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val wordRepository: WordRepository,
     private val vocabularyRepository: VocabularyRepository,
+    private val statsRepository: StatsRepository,
     private val llmCaller: LlmCaller,
 private val ttsManager: TtsManager
 ) : ViewModel() {
@@ -70,9 +75,11 @@ private val ttsManager: TtsManager
     val state: StateFlow<ReadingUiState> = _state.asStateFlow()
 
     private var articleId: Long = -1
+    private var readTimerJob: Job? = null
 
     fun loadArticle(articleId: Long) {
         this.articleId = articleId
+        readTimerJob?.cancel()
         viewModelScope.launch {
             val article = articleRepository.getArticle(articleId)
 
@@ -88,13 +95,21 @@ private val ttsManager: TtsManager
                 } ?: TranslationMode.FULL
 
             if (article != null) {
+                val alreadyRead = article.readCompletedAt != null
                 _state.value = _state.value.copy(
                     title = article.title ?: "Untitled",
                     paragraphs = article.paragraphs,
                     translationMode = savedMode,
                     revealedParagraphs = emptySet(),
-                    isLoading = false
+                    isLoading = false,
+                    isReadCompleted = alreadyRead
                 )
+                // Record reading activity for stats
+                statsRepository.recordReadingActivity()
+                // Start timer to track reading duration
+                if (!alreadyRead) {
+                    startReadTimer()
+                }
             } else {
                 _state.value = _state.value.copy(
                     isLoading = false,
@@ -102,6 +117,39 @@ private val ttsManager: TtsManager
                 )
             }
         }
+    }
+
+    private fun startReadTimer() {
+        readTimerJob?.cancel()
+        readTimerJob = viewModelScope.launch {
+            while (true) {
+                delay(15_000L) // tick every 15 seconds
+                val currentId = articleId
+                if (currentId < 0) break
+                articleRepository.addReadSeconds(currentId, 15)
+                articleRepository.tryMarkReadCompleted(currentId)
+                // Refresh read status
+                val article = articleRepository.getArticle(currentId)
+                if (article?.readCompletedAt != null) {
+                    _state.value = _state.value.copy(isReadCompleted = true)
+                    break
+                }
+            }
+        }
+    }
+
+    /** Manually mark the article as read (bypasses 120s threshold). */
+    fun markAsRead() {
+        viewModelScope.launch {
+            articleRepository.forceMarkReadCompleted(articleId)
+            _state.value = _state.value.copy(isReadCompleted = true)
+            readTimerJob?.cancel()
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        readTimerJob?.cancel()
     }
 
     fun cycleTranslationMode() {
@@ -273,6 +321,7 @@ private val ttsManager: TtsManager
         val wordId = _state.value.wordSheetData?.wordId ?: return
         viewModelScope.launch {
             vocabularyRepository.addWord(wordId)
+            statsRepository.recordWordAdded()
             val data = _state.value.wordSheetData?.copy(isInVocabulary = true)
             _state.value = _state.value.copy(wordSheetData = data)
         }

@@ -104,7 +104,9 @@ fun ReadingScreen(
                 translationMode = state.translationMode,
                 ttsSpeed = state.ttsSpeed,
                 onToggleTtsSpeed = { viewModel.toggleTtsSpeed() },
-                onPlayFullArticle = { viewModel.playFullArticle() }
+                onPlayFullArticle = { viewModel.playFullArticle() },
+                isReadCompleted = state.isReadCompleted,
+                onMarkAsRead = { viewModel.markAsRead() }
             )
 
             // Translation mode indicator bar
@@ -173,7 +175,9 @@ private fun ReadingAppBar(
     translationMode: TranslationMode,
     ttsSpeed: Float,
     onToggleTtsSpeed: () -> Unit,
-    onPlayFullArticle: () -> Unit
+    onPlayFullArticle: () -> Unit,
+    isReadCompleted: Boolean,
+    onMarkAsRead: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -198,6 +202,24 @@ private fun ReadingAppBar(
             modifier = Modifier.weight(1f)
         )
         Spacer(modifier = Modifier.width(8.dp))
+        // Read status
+        if (isReadCompleted) {
+            Text(
+                text = "✓ 已读",
+                style = MaterialTheme.typography.labelSmall,
+                color = Muted
+            )
+        } else {
+            Text(
+                text = "✓ 标记已读",
+                style = MaterialTheme.typography.labelSmall,
+                color = Accent,
+                modifier = Modifier
+                    .clickable { onMarkAsRead() }
+                    .padding(horizontal = 4.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(4.dp))
         // Play full article
         Text(
             text = "🔊",
@@ -220,7 +242,7 @@ private fun ReadingAppBar(
                 text = if (ttsSpeed < 1.0f) "0.5x" else "1x",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = if (ttsSpeed < 1.0f) AccentOn else Meta
+                color = if (ttsSpeed < 1.0f) Meta else AccentOn
             )
         }
     }

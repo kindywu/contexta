@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -23,7 +24,8 @@ data class ArticleCardData(
     val title: String?,
     val description: String,
     val difficultyLabel: String,
-    val categoryLabel: String
+    val categoryLabel: String,
+    val isReadCompleted: Boolean = false
 )
 
 @Composable
@@ -59,7 +61,8 @@ fun ArticleCard(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = article.difficultyLabel,
@@ -71,6 +74,14 @@ fun ArticleCard(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (article.isReadCompleted) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        text = "✓ 已读",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                }
             }
         }
     }

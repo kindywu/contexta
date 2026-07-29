@@ -27,11 +27,22 @@ class StatsRepository @Inject constructor(
 
     /**
      * Record reading activity for today.
-     * Should be called in the same transaction/flow as article read tracking.
      */
     suspend fun recordReadingActivity(secondsSpent: Int = 0) {
         val today = ContextaTypeConverters.currentDateString()
-        dailyLearningLogDao.addActivity(today, 1, secondsSpent)
+        // Ensure row exists before updating
+        val existing = dailyLearningLogDao.getByDate(today)
+        if (existing == null) {
+            dailyLearningLogDao.upsert(
+                com.ak.contexta.data.local.entity.DailyLearningLogEntity(
+                    logDate = today,
+                    articlesRead = 1,
+                    secondsSpent = secondsSpent
+                )
+            )
+        } else {
+            dailyLearningLogDao.addActivity(today, 1, secondsSpent)
+        }
         recalculateStats(today)
     }
 
@@ -40,11 +51,17 @@ class StatsRepository @Inject constructor(
      */
     suspend fun recordWordAdded() {
         val today = ContextaTypeConverters.currentDateString()
-        dailyLearningLogDao.addActivity(today, 0, 0) // ensure day exists; words_added uses upsert
-        // Use upsert for words_added since the DAO method has a fixed delta
+        // Ensure row exists
         val existing = dailyLearningLogDao.getByDate(today)
-        if (existing != null) {
-            // We track words_added per-day; this isn't quite right - simplified for now
+        if (existing == null) {
+            dailyLearningLogDao.upsert(
+                com.ak.contexta.data.local.entity.DailyLearningLogEntity(
+                    logDate = today,
+                    wordsAdded = 1
+                )
+            )
+        } else {
+            dailyLearningLogDao.addWordActivity(today)
         }
         recalculateStats(today)
     }
@@ -61,8 +78,10 @@ class StatsRepository @Inject constructor(
         val newLongestStreak = maxOf(existing?.longestStreak ?: 0, currentStreak)
         val totalWords = vocabularyRepository.countDistinctWords()
 
-        // Simplified counting for articles read
-        val totalArticlesRead = (existing?.totalArticlesRead ?: 0) + 1
+        // Sum articles_read and words_added from the daily log
+        val totalArticlesRead = activeDates.sumOf { date ->
+            dailyLearningLogDao.getByDate(date)?.articlesRead ?: 0
+        }
 
         learningStatsSummaryDao.upsert(
             LearningStatsSummaryEntity(

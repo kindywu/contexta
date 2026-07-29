@@ -40,6 +40,24 @@ class VocabularyRepository @Inject constructor(
     suspend fun getActiveCount(): Int =
         vocabularyEntryDao.getActive().size
 
+    /** One-shot: get all active vocab words mapped to domain models */
+    suspend fun getActiveWords(): List<VocabWord> {
+        return vocabularyEntryDao.getActive().mapNotNull { entry ->
+            wordRepository.getWordDetail(entry.wordId)?.let { detail ->
+                VocabWord(
+                    entryId = entry.id,
+                    wordId = entry.wordId,
+                    instanceNumber = entry.instanceNumber,
+                    status = VocabStatus.from(entry.status),
+                    correctReviewStreak = entry.correctReviewStreak,
+                    spellingDisplay = detail.spellingDisplay,
+                    phoneticIpa = detail.phoneticIpa,
+                    allSenses = detail.allSenses
+                )
+            }
+        }
+    }
+
     /** Add word to vocabulary (creates new instance) */
     suspend fun addWord(wordId: Long): Boolean {
         // Check if already active
@@ -56,14 +74,18 @@ class VocabularyRepository @Inject constructor(
         return true
     }
 
-    /** Mark word as "known" — increment streak, auto-master if threshold reached */
+    /** Mark word as "known" — increment streak, auto-master if streak reaches threshold */
     suspend fun markCorrect(entryId: Long, masteryThreshold: Int = 1) {
         if (masteryThreshold <= 1) {
             val now = System.currentTimeMillis()
             vocabularyEntryDao.markMastered(entryId, now)
         } else {
             vocabularyEntryDao.markCorrectReview(entryId, "LEARNING")
-            // The threshold-based check can be done at query time or by tracking streak
+            // Check if streak now meets threshold
+            val entry = vocabularyEntryDao.getById(entryId)
+            if (entry != null && entry.correctReviewStreak >= masteryThreshold) {
+                vocabularyEntryDao.markMastered(entryId, System.currentTimeMillis())
+            }
         }
     }
 

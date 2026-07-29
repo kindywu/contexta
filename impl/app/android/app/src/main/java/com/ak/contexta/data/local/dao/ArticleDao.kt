@@ -86,4 +86,9 @@ interface ArticleDao {
         UPDATE article SET read_completed_at = :now WHERE id = :articleId AND accumulated_read_seconds >= 120 AND read_completed_at IS NULL
     """)
     suspend fun markReadCompleted(articleId: Long, now: Long)
+
+    @Query("""
+        UPDATE article SET read_completed_at = :now WHERE id = :articleId AND read_completed_at IS NULL
+    """)
+    suspend fun forceMarkReadCompleted(articleId: Long, now: Long)
 }
