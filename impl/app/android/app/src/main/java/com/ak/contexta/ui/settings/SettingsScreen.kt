@@ -16,13 +16,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +55,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    var showLevelPicker by remember { mutableStateOf(false) }
+    var showTranslationModePicker by remember { mutableStateOf(false) }
 
     if (state.isLoading) {
         LoadingIndicator()
@@ -91,7 +99,7 @@ fun SettingsScreen(
                 label = "英文水平",
                 description = levelDescription(state.level),
                 value = levelLabel(state.level),
-                onClick = { /* TODO: level picker dialog */ }
+                onClick = { showLevelPicker = true }
             )
 
             // Daily count stepper
@@ -110,7 +118,7 @@ fun SettingsScreen(
                 label = "译文默认模式",
                 description = "文章阅读时译文显示方式",
                 value = translationModeLabel(state.translationMode),
-                onClick = { /* TODO: mode picker dialog */ }
+                onClick = { showTranslationModePicker = true }
             )
 
             // Mastery threshold stepper
@@ -206,6 +214,93 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
+
+    // Level picker dialog
+    if (showLevelPicker) {
+        SettingsPickerDialog(
+            title = "选择英文水平",
+            options = listOf(
+                "LOW" to "初级",
+                "MEDIUM" to "中级",
+                "HIGH" to "高级"
+            ),
+            selectedValue = state.level,
+            onSelect = { level ->
+                viewModel.updateLevel(level)
+                showLevelPicker = false
+            },
+            onDismiss = { showLevelPicker = false }
+        )
+    }
+
+    // Translation mode picker dialog
+    if (showTranslationModePicker) {
+        SettingsPickerDialog(
+            title = "选择译文默认模式",
+            options = listOf(
+                "FULL" to "完全显示",
+                "BLURRED" to "模糊",
+                "HIDDEN" to "隐藏"
+            ),
+            selectedValue = state.translationMode,
+            onSelect = { mode ->
+                viewModel.updateTranslationMode(mode)
+                showTranslationModePicker = false
+            },
+            onDismiss = { showTranslationModePicker = false }
+        )
+    }
+}
+
+@Composable
+private fun SettingsPickerDialog(
+    title: String,
+    options: List<Pair<String, String>>,
+    selectedValue: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Column {
+                options.forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(value) }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = value == selectedValue,
+                            onClick = { onSelect(value) },
+                            colors = RadioButtonDefaults.colors(
+                                selectedColor = Accent,
+                                unselectedColor = Meta
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = Foreground
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        containerColor = Surface,
+        titleContentColor = Foreground
+    )
 }
 
 @Composable
@@ -390,8 +485,8 @@ private fun levelDescription(level: String): String = when (level) {
 }
 
 private fun translationModeLabel(mode: String): String = when (mode) {
-    "full" -> "完全显示"
-    "blurred" -> "模糊"
-    "hidden" -> "隐藏"
+    "FULL" -> "完全显示"
+    "BLURRED" -> "模糊"
+    "HIDDEN" -> "隐藏"
     else -> mode
 }

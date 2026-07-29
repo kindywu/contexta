@@ -14,24 +14,37 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ak.contexta.ui.components.EmptyState
@@ -52,20 +65,46 @@ fun ReadingScreen(
     onBack: () -> Unit,
     viewModel: ReadingViewModel = hiltViewModel()
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+
     LaunchedEffect(articleId) {
         viewModel.loadArticle(articleId)
     }
 
     val state by viewModel.state.collectAsState()
 
+    val context = LocalContext.current
+
+    // Show snackbar when snackbarMessage changes
+    LaunchedEffect(state.snackbarMessage) {
+        state.snackbarMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearSnackbar()
+        }
+    }
+
+    // Open TTS settings when requested
+    LaunchedEffect(state.openTtsSettings) {
+        if (state.openTtsSettings) {
+            context.startActivity(viewModel.openTtsSettingsIntent())
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
         Column(modifier = Modifier.fillMaxSize().background(Background)) {
             // App bar
             ReadingAppBar(
                 title = state.title ?: "文章",
                 onBack = onBack,
                 onTranslationModeToggle = { viewModel.cycleTranslationMode() },
-                translationMode = state.translationMode
+                translationMode = state.translationMode,
+                ttsSpeed = state.ttsSpeed,
+                onToggleTtsSpeed = { viewModel.toggleTtsSpeed() },
+                onPlayFullArticle = { viewModel.playFullArticle() }
             )
 
             // Translation mode indicator bar
@@ -95,12 +134,14 @@ fun ReadingScreen(
                                 englishText = paragraph.englishText,
                                 chineseTranslation = paragraph.chineseTranslation,
                                 translationMode = state.translationMode,
+                                isRevealed = index in state.revealedParagraphs,
                                 onWordClick = { word -> viewModel.showWordSheet(word) },
                                 onTranslationClick = {
                                     if (state.translationMode == TranslationMode.BLURRED) {
                                         viewModel.revealTranslation(index)
                                     }
-                                }
+                                },
+                                onPlay = { viewModel.playText(paragraph.englishText) }
                             )
                         }
                         Spacer(modifier = Modifier.height(24.dp))
@@ -116,7 +157,10 @@ fun ReadingScreen(
         WordBottomSheetOverlay(
             visible = state.isWordSheetVisible,
             data = state.wordSheetData,
-            onDismiss = { viewModel.hideWordSheet() }
+            onDismiss = { viewModel.hideWordSheet() },
+            onAddToVocabulary = { viewModel.addToVocabulary() },
+            onRemoveFromVocabulary = { viewModel.removeFromVocabulary() },
+            onPlayWord = { viewModel.playWordPronunciation() }
         )
     }
 }
@@ -126,7 +170,10 @@ private fun ReadingAppBar(
     title: String,
     onBack: () -> Unit,
     onTranslationModeToggle: () -> Unit,
-    translationMode: TranslationMode
+    translationMode: TranslationMode,
+    ttsSpeed: Float,
+    onToggleTtsSpeed: () -> Unit,
+    onPlayFullArticle: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -151,11 +198,31 @@ private fun ReadingAppBar(
             modifier = Modifier.weight(1f)
         )
         Spacer(modifier = Modifier.width(8.dp))
+        // Play full article
         Text(
             text = "🔊",
             style = MaterialTheme.typography.titleMedium,
-            color = Accent
+            color = Accent,
+            modifier = Modifier
+                .clickable { onPlayFullArticle() }
+                .padding(horizontal = 4.dp)
         )
+        Spacer(modifier = Modifier.width(4.dp))
+        // Speed toggle
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (ttsSpeed < 1.0f) SurfaceWarm else Accent)
+                .clickable { onToggleTtsSpeed() }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = if (ttsSpeed < 1.0f) "0.5x" else "1x",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (ttsSpeed < 1.0f) AccentOn else Meta
+            )
+        }
     }
 }
 
@@ -206,17 +273,57 @@ private fun ReadingParagraph(
     englishText: String,
     chineseTranslation: String,
     translationMode: TranslationMode,
+    isRevealed: Boolean = false,
     onWordClick: (String) -> Unit,
-    onTranslationClick: () -> Unit
+    onTranslationClick: () -> Unit,
+    onPlay: () -> Unit
 ) {
     Column(modifier = Modifier.padding(bottom = 20.dp)) {
-        // English text with clickable words
-        Text(
-            text = englishText,
-            style = MaterialTheme.typography.bodyLarge,
-            color = Foreground,
-            modifier = Modifier.padding(bottom = 4.dp)
-        )
+        // English text row with play icon
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top
+        ) {
+            // English text with clickable words
+            val annotatedString = buildAnnotatedString {
+                val words = englishText.split(Regex("(?<=\\s)|(?=\\s)"))
+                words.forEach { token ->
+                    val isWord = token.matches(Regex("[A-Za-z'-]+"))
+                    if (isWord) {
+                        val link = LinkAnnotation.Clickable(
+                            tag = "word",
+                            styles = TextLinkStyles(style = SpanStyle(color = Foreground))
+                        ) {
+                            onWordClick(token.lowercase())
+                        }
+                        withLink(link) {
+                            withStyle(SpanStyle(color = Foreground)) {
+                                append(token)
+                            }
+                        }
+                    } else {
+                        append(token)
+                    }
+                }
+            }
+            BasicText(
+                text = annotatedString,
+                style = MaterialTheme.typography.bodyLarge.copy(color = Foreground),
+                modifier = Modifier.weight(1f).padding(end = 8.dp)
+            )
+
+            // Play icon
+            Text(
+                text = "🔊",
+                style = MaterialTheme.typography.titleMedium,
+                color = Accent,
+                modifier = Modifier
+                    .clickable { onPlay() }
+                    .padding(top = 2.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
 
         // Chinese translation
         val translationModifier = Modifier.padding(bottom = 4.dp)
@@ -230,27 +337,28 @@ private fun ReadingParagraph(
                 )
             }
             TranslationMode.BLURRED -> {
-                Text(
-                    text = chineseTranslation,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Muted,
-                    modifier = translationModifier.then(
-                        Modifier.blur(radius = 4.dp)
-                    ).clickable { onTranslationClick() }
-                )
+                if (isRevealed) {
+                    Text(
+                        text = chineseTranslation,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Muted,
+                        modifier = translationModifier.clickable { onTranslationClick() }
+                    )
+                } else {
+                    Text(
+                        text = chineseTranslation,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Muted,
+                        modifier = translationModifier.then(
+                            Modifier.blur(radius = 4.dp)
+                        ).clickable { onTranslationClick() }
+                    )
+                }
             }
             TranslationMode.HIDDEN -> {
                 // Hidden: don't show
             }
         }
-
-        // Play button
-        Text(
-            text = "🔊 朗读本段",
-            style = MaterialTheme.typography.labelMedium,
-            color = Accent,
-            modifier = Modifier.clickable { /* TTS placeholder */ }
-        )
     }
 }
 
@@ -283,7 +391,10 @@ private fun ReadingFooter(onBack: () -> Unit) {
 private fun WordBottomSheetOverlay(
     visible: Boolean,
     data: WordSheetData?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAddToVocabulary: () -> Unit,
+    onRemoveFromVocabulary: () -> Unit,
+    onPlayWord: () -> Unit
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -325,7 +436,7 @@ private fun WordBottomSheetOverlay(
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Bold
                             )
-                            if (data.phonetic != null) {
+                            if (data.phonetic != null && !data.isLoading) {
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = data.phonetic,
@@ -334,12 +445,38 @@ private fun WordBottomSheetOverlay(
                                 )
                             }
                             Spacer(modifier = Modifier.weight(1f))
-                            Text(
-                                text = "🔊",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Accent,
-                                modifier = Modifier.clickable { /* TTS */ }
-                            )
+                            if (!data.isLoading) {
+                                Text(
+                                    text = "🔊",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = Accent,
+                                    modifier = Modifier.clickable { onPlayWord() }
+                                )
+                            }
+                        }
+
+                        // Loading state
+                        if (data.isLoading) {
+                            Spacer(modifier = Modifier.height(20.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Accent
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "正在查询…",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = Muted
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(20.dp))
+                            return@Column
                         }
 
                         // Translation
@@ -396,7 +533,7 @@ private fun WordBottomSheetOverlay(
                         ) {
                             if (data.isInVocabulary) {
                                 Button(
-                                    onClick = onDismiss,
+                                    onClick = onRemoveFromVocabulary,
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp),
                                     colors = ButtonDefaults.buttonColors(
@@ -408,7 +545,7 @@ private fun WordBottomSheetOverlay(
                                 }
                             } else {
                                 Button(
-                                    onClick = onDismiss,
+                                    onClick = onAddToVocabulary,
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp),
                                     colors = ButtonDefaults.buttonColors(

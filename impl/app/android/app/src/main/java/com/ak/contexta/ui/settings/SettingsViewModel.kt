@@ -15,7 +15,7 @@ import javax.inject.Inject
 data class SettingsUiState(
     val level: String = "MEDIUM",
     val dailyCount: Int = 3,
-    val translationMode: String = "full",
+    val translationMode: String = "FULL",
     val masteryThreshold: Int = 1,
     val autoPlayAudio: Boolean = false,
     val canModifyDailyCount: Boolean = true,
