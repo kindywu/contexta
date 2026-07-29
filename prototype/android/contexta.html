@@ -1,0 +1,2113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contexta · 语境</title>
+<style>
+/* ─── Claude (Anthropic) Design System Tokens ─── */
+:root {
+  --bg: #f5f4ed;
+  --surface: #faf9f5;
+  --surface-warm: #e8e6dc;
+  --fg: #141413;
+  --fg-2: #3d3d3a;
+  --muted: #5e5d59;
+  --meta: #87867f;
+  --border: #f0eee6;
+  --border-soft: #e8e6dc;
+  --accent: #c96442;
+  --accent-on: #faf9f5;
+  --accent-hover: #b85a3a;
+  --accent-active: #a84f32;
+  --success: #17a34a;
+  --warn: #eab308;
+  --danger: #b53333;
+  --font-display: "Anthropic Serif", Georgia, "Times New Roman", serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
+  --text-xs: 10px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 20px;
+  --text-3xl: 24px;
+  --text-4xl: 28px;
+  --leading-body: 1.6;
+  --leading-tight: 1.2;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+  --elev-raised: rgba(0,0,0,0.08) 0px 4px 16px;
+  --elev-ring: 0 0 0 1px var(--border);
+  --motion-fast: 180ms;
+  --motion-base: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  background: #2a2a28;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Phone Frame (Xiaomi 15) ─── */
+.phone-frame {
+  position: relative;
+  width: 393px;
+  height: 852px;
+  background: var(--surface);
+  border-radius: 54px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 30px 80px rgba(0,0,0,0.5);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Status Bar (HyperOS style) */
+.status-bar {
+  position: relative;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg);
+  flex-shrink: 0;
+  z-index: 100;
+}
+.status-bar .time { font-weight: 600; font-size: 14px; }
+.status-bar .icons { display: flex; align-items: center; gap: 5px; }
+.status-bar .icons svg { width: 16px; height: 16px; fill: currentColor; }
+
+/* Punch hole */
+.punch-hole {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 16px;
+  background: #1a1a18;
+  border-radius: 50%;
+  z-index: 101;
+}
+
+/* Gesture nav bar */
+.gesture-bar {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+  background: var(--surface);
+}
+.gesture-bar .indicator {
+  width: 134px;
+  height: 5px;
+  background: #d1cfc5;
+  border-radius: 3px;
+}
+
+/* ─── App Content ─── */
+.app-content {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Screen base */
+.screen {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg);
+  transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
+  opacity: 0;
+  transform: translateX(24px);
+  pointer-events: none;
+}
+.screen.active {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+  z-index: 2;
+}
+.screen.slide-left {
+  transform: translateX(-24px);
+  opacity: 0;
+}
+
+/* ─── App Bar ─── */
+.app-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 8px;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.app-bar .back-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+  color: var(--fg);
+  font-size: 20px;
+}
+.app-bar .back-btn:hover { background: var(--surface-warm); }
+.app-bar .title { font-size: var(--text-xl); font-weight: 600; }
+.app-bar .right-action { font-size: var(--text-sm); color: var(--accent); background: none; border: none; cursor: pointer; padding: 4px 8px; }
+
+/* ─── Bottom Nav ─── */
+.bottom-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  height: 56px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  padding-bottom: 0;
+}
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 4px 12px;
+  color: var(--meta);
+  font-size: 10px;
+  transition: color var(--motion-fast);
+}
+.nav-item svg {
+  width: 22px;
+  height: 22px;
+  fill: currentColor;
+}
+.nav-item.active { color: var(--accent); }
+.nav-item:active { opacity: 0.7; }
+
+/* ─── Shared Components ─── */
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  box-shadow: var(--elev-raised);
+  margin-bottom: 12px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  border: none;
+  font-size: var(--text-base);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--motion-fast), transform var(--motion-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--accent); color: var(--accent-on); }
+.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:active { background: var(--accent-active); }
+.btn-secondary { background: var(--surface-warm); color: var(--fg); }
+.btn-ghost { background: transparent; color: var(--muted); padding: 8px; }
+.btn-block { width: 100%; justify-content: center; }
+
+/* Tags / Chips */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  background: var(--surface-warm);
+  color: var(--fg-2);
+  border: 1px solid transparent;
+}
+.chip-active { background: var(--accent); color: var(--accent-on); border-color: var(--accent); }
+
+/* Input */
+.input-group { margin-bottom: 16px; }
+.input-group label { display: block; font-size: var(--text-sm); font-weight: 500; color: var(--fg-2); margin-bottom: 6px; }
+.input-group select, .input-group input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  font-size: var(--text-base);
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-body);
+  outline: none;
+}
+.input-group select:focus, .input-group input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(201,100,66,0.15);
+}
+
+/* ─── ONBOARDING SCREEN ─── */
+#screen-onboarding {
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  padding: 0 24px;
+}
+#screen-onboarding .step-content { flex: 1; display: flex; flex-direction: column; justify-content: center; padding-bottom: 20px; }
+#screen-onboarding .logo-area { text-align: center; margin-bottom: 32px; }
+#screen-onboarding .logo-area h1 {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 500;
+  color: var(--fg);
+  letter-spacing: -0.5px;
+}
+#screen-onboarding .logo-area p { color: var(--muted); font-size: var(--text-lg); margin-top: 4px; }
+#screen-onboarding .step-title { font-size: var(--text-3xl); font-weight: 600; margin-bottom: 24px; }
+#screen-onboarding .option-grid { display: flex; flex-direction: column; gap: 10px; }
+#screen-onboarding .option-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  border: 2px solid var(--border);
+  cursor: pointer;
+  transition: border-color var(--motion-fast), background var(--motion-fast);
+}
+#screen-onboarding .option-item:hover { border-color: var(--border-soft); }
+#screen-onboarding .option-item.selected { border-color: var(--accent); background: rgba(201,100,66,0.05); }
+#screen-onboarding .option-item .indicator {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border-soft);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--motion-fast);
+}
+#screen-onboarding .option-item.selected .indicator { border-color: var(--accent); }
+#screen-onboarding .option-item.selected .indicator::after {
+  content: '';
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+#screen-onboarding .option-item .label { font-weight: 500; }
+#screen-onboarding .option-item .desc { font-size: var(--text-sm); color: var(--muted); margin-top: 2px; }
+#screen-onboarding .progress-dots { display: flex; justify-content: center; gap: 8px; margin: 24px 0; }
+#screen-onboarding .progress-dots .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--border); transition: all var(--motion-fast);
+}
+#screen-onboarding .progress-dots .dot.active { background: var(--accent); width: 24px; border-radius: 4px; }
+#screen-onboarding .progress-dots .dot.done { background: var(--accent); opacity: 0.4; }
+#screen-onboarding .step-nav { display: flex; gap: 12px; margin-top: 16px; }
+#screen-onboarding .step-nav .btn { flex: 1; }
+.onboarding-step { display: none; }
+.onboarding-step.active { display: block; }
+
+/* ─── HOME SCREEN ─── */
+.home-header {
+  padding: 16px 16px 8px;
+  background: var(--bg);
+}
+.home-header .greeting { font-size: var(--text-2xl); font-weight: 700; }
+.home-header .sub { color: var(--muted); font-size: var(--text-sm); margin-top: 2px; }
+.home-header .streak-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(201,100,66,0.1);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin-top: 8px;
+}
+.day-group { margin-bottom: 4px; }
+.day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 8px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-2);
+  cursor: pointer;
+}
+.day-header .arrow { transition: transform var(--motion-fast); }
+.day-header .arrow.open { transform: rotate(180deg); }
+.day-group .article-items { padding: 0 16px; }
+.article-card {
+  padding: 14px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  cursor: pointer;
+  box-shadow: var(--elev-ring);
+  transition: box-shadow var(--motion-fast);
+}
+.article-card:hover { box-shadow: var(--elev-raised); }
+.article-card:active { opacity: 0.8; }
+.article-card .title { font-weight: 600; font-size: var(--text-base); margin-bottom: 4px; }
+.article-card .desc { font-size: var(--text-sm); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.article-card .meta { font-size: 11px; color: var(--meta); margin-top: 6px; display: flex; gap: 12px; }
+.article-card .difficulty {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--surface-warm);
+  color: var(--muted);
+}
+.article-card.generating { opacity: 0.6; }
+.article-card.generating .title::after { content: ' 生成中…'; color: var(--meta); font-weight: 400; font-size: var(--text-sm); }
+
+/* ─── READING SCREEN ─── */
+.reading-content { padding: 0 16px 24px; }
+.translation-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.translation-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--fg-2);
+}
+.translation-mode-btn:active { background: var(--surface-warm); }
+.reading-body { padding-top: 4px; }
+.reading-paragraph {
+  margin-bottom: 20px;
+  line-height: var(--leading-body);
+  color: var(--fg);
+  font-size: var(--text-base);
+}
+.reading-paragraph .en { margin-bottom: 4px; }
+.reading-paragraph .word {
+  cursor: pointer;
+  padding: 1px 0;
+  border-bottom: 1px dashed transparent;
+  transition: border-color var(--motion-fast), background var(--motion-fast);
+  border-radius: 2px;
+}
+.reading-paragraph .word:active { background: rgba(201,100,66,0.08); }
+.reading-paragraph .zh {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  transition: filter var(--motion-base);
+  line-height: 1.5;
+}
+.reading-paragraph .zh.blurred {
+  filter: blur(5px);
+  user-select: none;
+  cursor: pointer;
+}
+.reading-paragraph .zh.blurred.revealed {
+  filter: none;
+}
+.reading-paragraph .zh.hidden { display: none; }
+.reading-paragraph .play-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-sm);
+  color: var(--accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  margin-top: 4px;
+}
+.reading-paragraph .play-btn:active { opacity: 0.7; }
+.reading-footer {
+  display: flex;
+  justify-content: space-between;
+  padding: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* ─── WORD BOTTOM SHEET ─── */
+.bottom-sheet-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-base);
+}
+.bottom-sheet-overlay.open { opacity: 1; pointer-events: auto; }
+.bottom-sheet {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 20px 20px 28px;
+  transform: translateY(100%);
+  transition: transform var(--motion-base) var(--ease-standard);
+  z-index: 51;
+  max-height: 60%;
+  overflow-y: auto;
+}
+.bottom-sheet.open { transform: translateY(0); }
+.bottom-sheet .handle {
+  width: 36px;
+  height: 4px;
+  background: var(--border-soft);
+  border-radius: 2px;
+  margin: 0 auto 16px;
+}
+.bottom-sheet .word-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.bottom-sheet .word-header .word { font-size: 24px; font-weight: 700; }
+.bottom-sheet .word-header .phonetic { color: var(--meta); font-size: var(--text-base); font-family: var(--font-mono); }
+.bottom-sheet .word-header .play-sound { background: none; border: none; cursor: pointer; color: var(--accent); font-size: 18px; }
+.bottom-sheet .translation { font-size: var(--text-lg); color: var(--fg-2); margin: 8px 0 16px; }
+.bottom-sheet .word-detail { font-size: var(--text-sm); color: var(--muted); line-height: 1.6; }
+.bottom-sheet .word-detail .example { margin-top: 8px; padding: 10px; background: var(--bg); border-radius: var(--radius-sm); }
+.bottom-sheet .word-detail .example .en { color: var(--fg); }
+.bottom-sheet .word-detail .example .zh { color: var(--muted); margin-top: 4px; }
+.bottom-sheet .vocab-actions { display: flex; gap: 10px; margin-top: 16px; }
+
+/* ─── VOCABULARY REVIEW SCREEN ─── */
+.vocab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+}
+.vocab-header .count { color: var(--meta); font-size: var(--text-sm); }
+.vocab-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.vocab-progress .bar {
+  flex: 1;
+  height: 4px;
+  background: var(--border-soft);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.vocab-progress .bar .fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width var(--motion-base);
+}
+.vocab-card {
+  margin: 8px 16px;
+  padding: 28px 20px;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  text-align: center;
+  box-shadow: var(--elev-raised);
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.vocab-card .word { font-size: 32px; font-weight: 700; margin-bottom: 4px; }
+.vocab-card .phonetic { color: var(--meta); font-size: var(--text-lg); font-family: var(--font-mono); margin-bottom: 12px; }
+.vocab-card .play { font-size: 24px; color: var(--accent); cursor: pointer; background: none; border: none; margin-bottom: 20px; }
+.vocab-card .detail-area { width: 100%; text-align: left; }
+.vocab-card .detail-area .def { font-size: var(--text-lg); color: var(--fg-2); font-weight: 500; margin-bottom: 12px; }
+.vocab-card .detail-area .example { font-size: var(--text-sm); color: var(--muted); line-height: 1.6; padding: 10px; background: var(--bg); border-radius: var(--radius-sm); }
+.vocab-card .detail-area .example .zh { margin-top: 4px; }
+.vocab-card .empty-state { color: var(--meta); font-size: var(--text-base); }
+.vocab-actions-bottom {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+}
+.vocab-actions-bottom .btn { flex: 1; }
+
+/* ─── REFERENCE SCREEN ─── */
+.ref-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.ref-tab {
+  flex: 1;
+  padding: 12px;
+  text-align: center;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--meta);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all var(--motion-fast);
+}
+.ref-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.ref-content { display: none; padding: 12px 16px 24px; }
+.ref-content.active { display: block; }
+.ref-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  box-shadow: var(--elev-ring);
+}
+.ref-item .char { font-size: var(--text-2xl); font-weight: 700; min-width: 36px; text-align: center; font-family: var(--font-display); }
+.ref-item .phone { font-family: var(--font-mono); color: var(--meta); min-width: 50px; font-size: var(--text-sm); }
+.ref-item .example { font-size: var(--text-sm); color: var(--fg-2); flex: 1; }
+.ref-item .example .cn { color: var(--meta); font-size: var(--text-xs); }
+.ref-item .play-sound { color: var(--accent); background: none; border: none; cursor: pointer; font-size: 16px; }
+.grammar-item {
+  padding: 14px;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  box-shadow: var(--elev-ring);
+}
+.grammar-item .name { font-weight: 600; font-size: var(--text-base); color: var(--accent); margin-bottom: 4px; }
+.grammar-item .explain { font-size: var(--text-sm); color: var(--muted); margin-bottom: 6px; }
+.grammar-item .ex { font-size: var(--text-sm); color: var(--fg); padding: 4px 8px; background: var(--bg); border-radius: 4px; margin-top: 4px; }
+
+/* ─── SETTINGS SCREEN ─── */
+.settings-content {
+  padding: 4px 16px 32px;
+}
+.settings-section-title {
+  padding: 20px 0 8px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--meta);
+}
+.settings-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-item:last-of-type {
+  border-bottom: none;
+}
+.si-left {
+  flex: 1;
+  min-width: 0;
+}
+.si-label {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--fg);
+}
+.si-desc {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  margin-top: 2px;
+}
+.si-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--meta);
+  font-size: var(--text-sm);
+  flex-shrink: 0;
+}
+.si-arrow {
+  font-size: 18px;
+  color: var(--border-soft);
+}
+.si-stepper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.si-step-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--motion-fast);
+}
+.si-step-btn:active {
+  background: var(--surface-warm);
+}
+.si-step-val {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  min-width: 24px;
+  text-align: center;
+  font-family: var(--font-display);
+}
+.si-meta {
+  font-size: var(--text-sm);
+  color: var(--meta);
+}
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--border-soft);
+  border-radius: 24px;
+  transition: background var(--motion-fast);
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  left: 2px;
+  bottom: 2px;
+  background: white;
+  border-radius: 50%;
+  transition: transform var(--motion-fast);
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--accent);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+}
+.settings-picker-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-base);
+}
+.settings-picker-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.settings-picker {
+  width: 100%;
+  background: var(--surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 20px 16px 32px;
+  transform: translateY(100%);
+  transition: transform var(--motion-base) var(--ease-standard);
+}
+.settings-picker-overlay.open .settings-picker {
+  transform: translateY(0);
+}
+.settings-picker-title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.settings-picker-option {
+  padding: 14px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  cursor: pointer;
+  text-align: center;
+  transition: background var(--motion-fast);
+}
+.settings-picker-option:hover {
+  background: var(--bg);
+}
+.settings-picker-option.selected {
+  background: rgba(201,100,66,0.08);
+  color: var(--accent);
+  font-weight: 500;
+}
+.settings-picker-option .spo-label {
+  font-weight: 500;
+}
+.settings-picker-option .spo-desc {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ─── STATS SCREEN ─── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 12px 16px;
+}
+.stat-card {
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  text-align: center;
+  box-shadow: var(--elev-raised);
+}
+.stat-card .number { font-size: var(--text-4xl); font-weight: 700; color: var(--accent); font-family: var(--font-display); }
+.stat-card .label { font-size: var(--text-sm); color: var(--muted); margin-top: 4px; }
+.stat-card.streak { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; text-align: left; }
+.stat-card.streak .number { font-size: var(--text-3xl); }
+.stat-card.streak .label { margin-top: 0; }
+.stat-section-title { padding: 20px 16px 8px; font-size: var(--text-sm); font-weight: 600; color: var(--fg-2); }
+
+.toggle.on .knob { transform: translateX(20px); }
+
+/* ─── Empty state ─── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--meta);
+}
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.5; }
+.empty-state .text { font-size: var(--text-base); }
+.empty-state .sub { font-size: var(--text-sm); margin-top: 4px; }
+
+/* ─── Scrollbar ─── */
+.screen::-webkit-scrollbar { width: 3px; }
+.screen::-webkit-scrollbar-track { background: transparent; }
+.screen::-webkit-scrollbar-thumb { background: var(--border-soft); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="phone-frame" data-od-id="phone-frame">
+  <!-- Status Bar -->
+  <div class="status-bar" data-od-id="status-bar">
+    <span class="time" id="statusTime">9:41</span>
+    <div class="punch-hole"></div>
+    <div class="icons">
+      <svg viewBox="0 0 24 24"><path d="M1 9l2 2c4.97-4.97 13.03-4.97 18 0l2-2C16.93 2.93 7.08 2.93 1 9zm8 8l3 3 3-3c-1.65-1.66-4.34-1.66-6 0zm-4-4l2 2c2.76-2.76 7.24-2.76 10 0l2-2C15.14 9.14 8.87 9.14 5 13z"/></svg>
+      <svg viewBox="0 0 24 24"><path d="M15.67 4H14V2h-4v2H8.33C7.6 4 7 4.6 7 5.33v15.33C7 21.4 7.6 22 8.33 22h7.33c.74 0 1.34-.6 1.34-1.33V5.33C17 4.6 16.4 4 15.67 4z"/></svg>
+    </div>
+  </div>
+
+  <!-- App Content -->
+  <div class="app-content">
+
+    <!-- ─── ONBOARDING ─── -->
+    <div id="screen-onboarding" class="screen active" data-od-id="screen-onboarding">
+      <div style="padding-top: 40px;" class="step-content">
+        <div class="logo-area">
+          <h1>Contexta</h1>
+          <p>语境 · 沉浸式英语阅读</p>
+        </div>
+
+        <div class="onboarding-step active" data-step="1">
+          <div class="step-title">选择你的英文水平</div>
+          <div class="option-grid">
+            <div class="option-item" data-value="LOW" onclick="selectOnboarding(this)">
+              <div class="indicator"></div>
+              <div>
+                <div class="label">初级 · LOW</div>
+                <div class="desc">小学、初中水平，从基础开始</div>
+              </div>
+            </div>
+            <div class="option-item" data-value="MEDIUM" onclick="selectOnboarding(this)">
+              <div class="indicator"></div>
+              <div>
+                <div class="label">中级 · MEDIUM</div>
+                <div class="desc">高中、大学四六级水平</div>
+              </div>
+            </div>
+            <div class="option-item" data-value="HIGH" onclick="selectOnboarding(this)">
+              <div class="indicator"></div>
+              <div>
+                <div class="label">高级 · HIGH</div>
+                <div class="desc">专八、托福、雅思水平</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="onboarding-step" data-step="2">
+          <div class="step-title">每日文章数量</div>
+          <p style="color:var(--muted); margin-bottom:20px; font-size:var(--text-sm);">每天为你生成几篇文章？</p>
+          <div class="option-grid">
+            <div class="option-item" data-value="1" onclick="selectOnboarding(this)"><div class="indicator"></div><div><div class="label">1 篇</div><div class="desc">轻松起步</div></div></div>
+            <div class="option-item" data-value="3" onclick="selectOnboarding(this)"><div class="indicator"></div><div><div class="label">3 篇</div><div class="desc">适中节奏</div></div></div>
+            <div class="option-item" data-value="5" onclick="selectOnboarding(this)"><div class="indicator"></div><div><div class="label">5 篇</div><div class="desc">充分练习</div></div></div>
+          </div>
+        </div>
+
+        <div class="onboarding-step" data-step="3">
+          <div class="step-title">准备好了！</div>
+          <p style="color:var(--muted); margin-bottom:24px; font-size:var(--text-sm);">系统将根据你的设置，每天推送匹配水平的英文文章。首次生成需要一些时间，请稍候。</p>
+          <div style="background:var(--surface); border-radius:var(--radius-md); padding:20px; text-align:center; box-shadow:var(--elev-raised);">
+            <div style="font-size:48px; margin-bottom:8px;">📖</div>
+            <div style="font-weight:600;">你的专属阅读之旅即将开始</div>
+            <div style="font-size:var(--text-sm); color:var(--meta); margin-top:4px;">每天坚持阅读，不知不觉提升英语</div>
+          </div>
+        </div>
+
+        <div class="progress-dots">
+          <span class="dot active" data-dot="1"></span>
+          <span class="dot" data-dot="2"></span>
+          <span class="dot" data-dot="3"></span>
+        </div>
+
+        <div class="step-nav">
+          <button class="btn btn-ghost" id="onboardingBack" onclick="prevOnboardingStep()" style="display:none;">上一步</button>
+          <button class="btn btn-primary btn-block" id="onboardingNext" onclick="nextOnboardingStep()">下一步</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── HOME ─── -->
+    <div id="screen-home" class="screen" data-od-id="screen-home">
+      <div class="home-header">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <div>
+            <div class="greeting">今天</div>
+            <div class="sub" id="todayDate">2026年7月29日 星期三</div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span class="streak-badge">🔥 连续 5 天</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding: 8px 16px 12px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <span class="chip chip-active">全部</span>
+          <span class="chip">初级</span>
+          <span class="chip">中级</span>
+          <span class="chip">高级</span>
+        </div>
+      </div>
+
+      <div id="articleList"></div>
+    </div>
+
+    <!-- ─── READING ─── -->
+    <div id="screen-reading" class="screen" data-od-id="screen-reading">
+      <div class="app-bar">
+        <button class="back-btn" onclick="navigateTo('screen-home')">←</button>
+        <span class="title" id="readingTitle">文章标题</span>
+        <span class="right-action">🔊</span>
+      </div>
+      <div class="translation-bar">
+        <span style="color:var(--meta);">译文</span>
+        <div class="translation-mode-btn" id="translationModeBtn" onclick="cycleTranslationMode()">
+          <span id="translationModeLabel">完全显示</span>
+          <span>▾</span>
+        </div>
+      </div>
+      <div class="reading-body" id="readingBody" style="padding: 4px 16px 24px;"></div>
+      <div class="reading-footer">
+        <button class="btn btn-ghost" onclick="navigateTo('screen-home')">← 返回列表</button>
+        <span style="color:var(--meta); font-size:var(--text-sm);" id="readingNav">1 / 3</span>
+        <button class="btn btn-ghost" id="nextArticleBtn" onclick="showNextArticle()">下一篇 →</button>
+      </div>
+    </div>
+
+    <!-- ─── VOCABULARY ─── -->
+    <div id="screen-vocabulary" class="screen" data-od-id="screen-vocabulary">
+      <div class="vocab-header">
+        <button class="back-btn" onclick="navigateTo('screen-home')">←</button>
+        <span class="title">生词复习</span>
+        <span class="count" id="vocabCount">0 个词</span>
+      </div>
+      <div class="vocab-progress">
+        <span style="font-size:var(--text-sm); color:var(--muted);" id="vocabProgressLabel">0 / 0</span>
+        <div class="bar"><div class="fill" id="vocabProgressFill" style="width:0%"></div></div>
+      </div>
+      <div class="vocab-card" id="vocabCard">
+        <div class="empty-state">
+          <div class="icon">📝</div>
+          <div class="text">生词表为空</div>
+          <div class="sub">阅读时点击单词可加入生词表</div>
+        </div>
+      </div>
+      <div class="vocab-actions-bottom" id="vocabActions" style="display:none;">
+        <button class="btn btn-secondary" onclick="markVocab(false)">✗ 不认识</button>
+        <button class="btn btn-primary" onclick="markVocab(true)">✓ 认识了</button>
+      </div>
+    </div>
+
+    <!-- ─── REFERENCE ─── -->
+    <div id="screen-reference" class="screen" data-od-id="screen-reference">
+      <div class="app-bar">
+        <button class="back-btn" onclick="navigateTo('screen-home')">←</button>
+        <span class="title">基础参考</span>
+        <span></span>
+      </div>
+      <div class="ref-tabs">
+        <button class="ref-tab active" onclick="switchRefTab(this, 'alphabet')">字母表</button>
+        <button class="ref-tab" onclick="switchRefTab(this, 'phonics')">音标</button>
+        <button class="ref-tab" onclick="switchRefTab(this, 'grammar')">语法</button>
+      </div>
+      <div class="ref-content active" id="ref-alphabet"></div>
+      <div class="ref-content" id="ref-phonics"></div>
+      <div class="ref-content" id="ref-grammar"></div>
+    </div>
+
+    <!-- ─── SETTINGS ─── -->
+    <div id="screen-settings" class="screen" data-od-id="screen-settings">
+      <div class="app-bar">
+        <button class="back-btn" onclick="navigateTo('screen-home')">←</button>
+        <span class="title">设置</span>
+        <span></span>
+      </div>
+      <div class="settings-content">
+
+        <div class="settings-section-title">学习设置</div>
+
+        <div class="settings-item" onclick="showSettingPicker('level')">
+          <div class="si-left">
+            <div class="si-label">英文水平</div>
+            <div class="si-desc" id="s-level-desc">中级 · MEDIUM</div>
+          </div>
+          <div class="si-right">
+            <span id="s-level-val">MEDIUM</span>
+            <span class="si-arrow">›</span>
+          </div>
+        </div>
+
+        <div class="settings-item">
+          <div class="si-left">
+            <div class="si-label">每日文章数量</div>
+            <div class="si-desc">每天最多修改1次，每月最多3次</div>
+          </div>
+          <div class="si-stepper">
+            <button class="si-step-btn" onclick="event.stopPropagation(); adjustSetting('dailyCount', -1)">−</button>
+            <span class="si-step-val" id="s-daily">3</span>
+            <button class="si-step-btn" onclick="event.stopPropagation(); adjustSetting('dailyCount', 1)">+</button>
+          </div>
+        </div>
+
+        <div class="settings-item" onclick="showSettingPicker('translationMode')">
+          <div class="si-left">
+            <div class="si-label">译文默认模式</div>
+            <div class="si-desc">文章阅读时译文显示方式</div>
+          </div>
+          <div class="si-right">
+            <span id="s-translation">完全显示</span>
+            <span class="si-arrow">›</span>
+          </div>
+        </div>
+
+        <div class="settings-item">
+          <div class="si-left">
+            <div class="si-label">单词掌握阈值</div>
+            <div class="si-desc">标记"认识" N 次后自动移除</div>
+          </div>
+          <div class="si-stepper">
+            <button class="si-step-btn" onclick="event.stopPropagation(); adjustSetting('masteryThreshold', -1)">−</button>
+            <span class="si-step-val" id="s-mastery">1</span>
+            <button class="si-step-btn" onclick="event.stopPropagation(); adjustSetting('masteryThreshold', 1)">+</button>
+          </div>
+        </div>
+
+        <div class="settings-item">
+          <div class="si-left">
+            <div class="si-label">自动朗读</div>
+            <div class="si-desc">进入文章后自动播放朗读</div>
+          </div>
+          <label class="toggle-switch" onclick="event.stopPropagation();">
+            <input type="checkbox" id="s-tts-toggle" onchange="toggleAutoTTS()">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="settings-section-title">学习统计</div>
+        <div class="stats-grid" id="settingsStatsGrid"></div>
+
+        <div class="settings-section-title">关于</div>
+        <div class="settings-item" style="cursor:default;">
+          <div class="si-label">版本</div>
+          <div class="si-meta">Contexta 1.0.0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Picker Overlay -->
+    <div class="settings-picker-overlay" id="settingsPickerOverlay">
+      <div class="settings-picker" onclick="event.stopPropagation();">
+        <div class="settings-picker-title" id="settingsPickerTitle">请选择</div>
+        <div id="settingsPickerOptions"></div>
+      </div>
+    </div>
+
+
+    <!-- ─── WORD BOTTOM SHEET ─── -->
+    <div class="bottom-sheet-overlay" id="wordSheetOverlay" onclick="closeWordSheet()"></div>
+    <div class="bottom-sheet" id="wordSheet">
+      <div class="handle"></div>
+      <div id="wordSheetContent"></div>
+    </div>
+  </div>
+
+  <!-- Bottom Nav -->
+  <div class="bottom-nav" id="bottomNav" data-od-id="bottom-nav">
+    <button class="nav-item active" data-screen="screen-home" onclick="navigateTo('screen-home')">
+      <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+      <span>首页</span>
+    </button>
+    <button class="nav-item" data-screen="screen-vocabulary" onclick="navigateTo('screen-vocabulary')">
+      <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/></svg>
+      <span>生词</span>
+    </button>
+    <button class="nav-item" data-screen="screen-reference" onclick="navigateTo('screen-reference')">
+      <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+      <span>参考</span>
+    </button>
+    <button class="nav-item" data-screen="screen-settings" onclick="navigateTo('screen-settings')">
+      <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+      <span>设置</span>
+    </button>
+  </div>
+
+  <!-- Gesture Bar -->
+  <div class="gesture-bar"><div class="indicator"></div></div>
+</div>
+
+<script>
+/* ─── Mock Data ─── */
+
+const LEVEL_CONFIG = {
+  LOW: {
+    label: '初级',
+    categories: ['日常对话', '生活场景', '简单故事'],
+    examples: ['DAILY_CONVERSATION', 'SCENE_DESCRIPTION', 'SIMPLE_STORY']
+  },
+  MEDIUM: {
+    label: '中级',
+    categories: ['新闻资讯', '说明文', '议论文', '生活随笔'],
+    examples: ['NEWS', 'EXPOSITORY', 'ARGUMENTATIVE', 'PERSONAL_ESSAY']
+  },
+  HIGH: {
+    label: '高级',
+    categories: ['科研论文', '辩论稿', '法律文书', '艺术评论', '古典小说'],
+    examples: ['ACADEMIC_EXCERPT', 'DEBATE_SPEECH', 'LEGAL_DOCUMENT', 'ART_CRITICISM', 'CLASSIC_NOVEL_EXCERPT']
+  }
+};
+
+const MOCK_ARTICLES = [
+  // 2026-07-29 (周三) — 所有文章均为 MEDIUM，同一天难度一致
+  {
+    id: 'a1',
+    title: 'The Quiet Power of Small Habits',
+    desc: '微小习惯日积月累带来人生改变',
+    level: 'MEDIUM',
+    category: 'PERSONAL_ESSAY',
+    date: '2026-07-29',
+    paragraphs: [
+      { en: 'Every morning, Mia made her bed before doing anything else. It seemed like a small, unimportant act that took less than two minutes. But this tiny habit became the cornerstone of her entire day.', zh: '每天早上，Mia 在做任何其他事情之前都会先把床铺好。这看起来是一个微不足道的小举动，耗时不到两分钟。但这个微小的习惯却成了她一整天的基础。' },
+      { en: 'Research shows that small habits have a compounding effect over time. Just like compound interest grows money exponentially, daily micro-habits accumulate into significant life changes.', zh: '研究表明，小习惯会随着时间的推移产生复利效应。就像复利能让金钱指数级增长一样，日常微习惯的积累会带来重大的生活改变。' },
+      { en: 'The key is consistency, not intensity. A person who reads for ten minutes every day will read more books in a year than someone who reads for two hours once a month.', zh: '关键在于持续性，而非强度。每天读十分钟书的人，一年下来读的书会比每月集中读两小时的人更多。' },
+      { en: 'Start small. Choose one habit that feels almost too easy. Make your bed. Drink a glass of water. Write one sentence. The compound effect of these small choices will transform your life.', zh: '从小处开始。选择一个感觉几乎太简单的习惯。铺好床、喝一杯水、写一句话。这些小选择的复利效应会改变你的人生。' }
+    ]
+  },
+  {
+    id: 'a2',
+    title: 'How to Improve Focus in a Distracted World',
+    desc: '对抗碎片化信息，重建专注力习惯',
+    level: 'MEDIUM',
+    category: 'EXPOSITORY',
+    date: '2026-07-29',
+    paragraphs: [
+      { en: 'The average person checks their phone 96 times a day. Each check fragments our attention, making it harder to return to deep work. Our brains are not designed for constant multitasking.', zh: '普通人每天查看手机 96 次。每一次查看都会分散注意力，让我们更难回归深度工作。我们的大脑并非为持续多任务处理而设计的。' },
+      { en: 'Deep focus works like a muscle. The more you exercise it, the stronger it becomes. Start with twenty-five-minute blocks of uninterrupted work, followed by a five-minute break.', zh: '深度专注力像肌肉一样需要锻炼。你越是训练它，它就变得越强。从 25 分钟不间断工作开始，然后休息 5 分钟。' },
+      { en: 'Create an environment that supports focus. Put your phone in another room. Close unnecessary tabs. Use noise-canceling headphones if needed. Your environment shapes your behavior more than willpower ever will.', zh: '营造有助于专注的环境。将手机放在另一个房间。关闭不必要的标签页。必要时使用降噪耳机。环境对行为的影响远超意志力。' },
+      { en: 'Remember: every time you resist the urge to check your phone, you strengthen your focus muscle. Every time you give in, you weaken it. The choice is yours, moment by moment.', zh: '记住：每一次抵抗查看手机的冲动，你都在增强专注力；每一次屈服，你都在削弱它。选择权在你手中，每时每刻。' }
+    ]
+  },
+  // 2026-07-28 (周二) — 所有文章为 HIGH，与周三不同
+  {
+    id: 'a3',
+    title: 'Notes For Technical Writing',
+    desc: '编写通俗易懂技术文档的小技巧',
+    level: 'HIGH',
+    category: 'EXPOSITORY',
+    date: '2026-07-28',
+    paragraphs: [
+      { en: 'Good technical writing disappears. The reader should focus on the content, not the prose. Clarity is more important than cleverness.', zh: '好的技术写作是隐形的。读者应该关注内容本身，而非文笔。清晰比聪明更重要。' },
+      { en: 'Use simple words. "Use" is better than "utilize". "Start" is better than "initiate". Short sentences are easier to scan and understand. One idea per paragraph.', zh: '使用简单的词汇。"Use" 比 "Utilize" 好。"Start" 比 "Initiate" 好。短句更容易扫读和理解。一个段落一个想法。' },
+      { en: 'Structure your document with clear headings. Readers rarely read from start to finish — they scan for the information they need. Good headings make scanning effortless.', zh: '用清晰的标题组织文档。读者很少从头读到尾——他们扫读所需的信息。好的标题让扫读毫不费力。' },
+      { en: 'Always include concrete examples. An abstract concept explained with a real-world example is worth a thousand words of theoretical description. Show, don\'t just tell.', zh: '始终包含具体示例。用真实世界的例子来解释抽象概念，胜过千言万语的理论描述。展示，而不仅仅是讲述。' }
+    ]
+  },
+  {
+    id: 'a4',
+    title: 'A Sunny Day at the Park',
+    desc: '一个阳光明媚的公园日',
+    level: 'HIGH',
+    category: 'ARGUMENTATIVE',
+    date: '2026-07-28',
+    paragraphs: [
+      { en: 'In an age of constant digital stimulation, the simple act of spending time in nature has become a radical choice. Yet research consistently shows that time outdoors improves cognitive function and emotional well-being.', zh: '在数字刺激泛滥的时代，花时间待在户外已成为一种激进的选择。然而研究一致表明，户外时光能改善认知功能和情绪健康。' },
+      { en: 'A Stanford study found that walking in nature reduces rumination — the repetitive negative thoughts that often accompany anxiety and depression. The effect was significant even after a single 90-minute walk.', zh: '斯坦福的一项研究发现，在自然中散步可以减少反刍思维——那种常伴随焦虑和抑郁的重复性负面思考。即使只散步 90 分钟，效果也很显著。' },
+      { en: 'The Japanese practice of "forest bathing" (shinrin-yoku) has been part of preventive health care since the 1980s. Studies show it lowers cortisol levels, reduces blood pressure, and improves immune function.', zh: '日本的"森林浴"自 1980 年代以来一直是预防保健的一部分。研究表明它能降低皮质醇水平、减少血压并改善免疫功能。' },
+      { en: 'Perhaps the most compelling argument for nature is its ability to restore directed attention. After hours of screen time, natural environments allow our brains to recover, making us more productive and creative when we return to work.', zh: '也许自然最令人信服的好处是它能恢复定向注意力。经过数小时的屏幕时间后，自然环境让大脑得到恢复，使我们在回到工作时更高效、更有创造力。' }
+    ]
+  },
+  // 2026-07-27 (周一) — 所有文章为 LOW，与以上两天都不同
+  {
+    id: 'a5',
+    title: 'My Favorite Food',
+    desc: '我最喜欢的食物',
+    level: 'LOW',
+    category: 'DAILY_CONVERSATION',
+    date: '2026-07-27',
+    paragraphs: [
+      { en: 'I like rice. My mother cooks rice every day. It is warm and good.', zh: '我喜欢米饭。妈妈每天都煮米饭。米饭又热又好吃。' },
+      { en: 'I also like apples. An apple a day keeps the doctor away. I eat one apple after lunch.', zh: '我也喜欢苹果。一天一苹果，医生远离我。我午饭后吃一个苹果。' },
+      { en: 'My favorite food is noodles. I eat noodles on my birthday. They are long and lucky.', zh: '我最喜欢的食物是面条。我在生日那天吃面条。面条又长又幸运。' },
+      { en: 'What is your favorite food? Do you like rice, apples, or noodles too?', zh: '你最喜欢的食物是什么？你也喜欢米饭、苹果或面条吗？' }
+    ]
+  },
+  {
+    id: 'a6',
+    title: 'Tom and His Dog',
+    desc: '汤姆和他的狗',
+    level: 'LOW',
+    category: 'SIMPLE_STORY',
+    date: '2026-07-27',
+    paragraphs: [
+      { en: 'Tom has a dog. The dog is brown and small. Tom loves his dog very much.', zh: 'Tom 有一只狗。狗是棕色的，很小。Tom 非常爱他的狗。' },
+      { en: 'Every morning, Tom takes his dog for a walk. They go to the park near his house. The dog runs and plays.', zh: '每天早上，Tom 带他的狗去散步。他们去他家附近的公园。狗跑啊，玩啊。' },
+      { en: 'Tom throws a ball. The dog catches it. Tom is happy. The dog is happy too.', zh: 'Tom 扔出一个球。狗接住了它。Tom 很开心。狗也很开心。' },
+      { en: '"Good boy!" Tom says. The dog wags its tail. They are best friends.', zh: '"好孩子！"Tom 说。狗摇了摇尾巴。他们是最好的朋友。' }
+    ]
+  }
+];
+
+const VOCABULARY_DATA = [
+  { word: 'habit', phonetic: '/ˈhæbɪt/', translation: 'n. 习惯', definitions: ['a settled or regular tendency or practice'], examples: ['She has a habit of reading before bed.', '他习惯睡前阅读。'] },
+  { word: 'compound', phonetic: '/ˈkɒmpaʊnd/', translation: 'v. 使复合，加重', definitions: ['make up (a composite whole)'], examples: ['Small savings compound over time.', '小额储蓄会随时间复利增长。'] },
+  { word: 'fragment', phonetic: '/ˈfræɡmənt/', translation: 'v. 分裂，碎片化', definitions: ['break or cause to break into fragments'], examples: ['Constant notifications fragment our attention.', '不断的通知碎片化了我们的注意力。'] },
+  { word: 'consistency', phonetic: '/kənˈsɪstənsi/', translation: 'n. 一致性，连贯', definitions: ['the quality of achieving a level of performance that does not vary'], examples: ['Consistency is more important than intensity.', '持续性比强度更重要。'] },
+  { word: 'accumulate', phonetic: '/əˈkjuːmjəleɪt/', translation: 'v. 积累，累积', definitions: ['gather together or acquire an increasing number or quantity of'], examples: ['Knowledge accumulates through daily reading.', '知识通过日常阅读积累。'] },
+  { word: 'cornerstone', phonetic: '/ˈkɔːnəstəʊn/', translation: 'n. 基石，基础', definitions: ['an important quality or feature on which a particular thing depends'], examples: ['Trust is the cornerstone of any relationship.', '信任是任何关系的基石。'] }
+];
+
+const REFERENCE_DATA = {
+  alphabet: [
+    { char: 'A a', phone: '/eɪ/', example: 'Apple', cn: '苹果' },
+    { char: 'B b', phone: '/biː/', example: 'Ball', cn: '球' },
+    { char: 'C c', phone: '/siː/', example: 'Cat', cn: '猫' },
+    { char: 'D d', phone: '/diː/', example: 'Dog', cn: '狗' },
+    { char: 'E e', phone: '/iː/', example: 'Egg', cn: '鸡蛋' },
+    { char: 'F f', phone: '/ef/', example: 'Fish', cn: '鱼' },
+    { char: 'G g', phone: '/dʒiː/', example: 'Girl', cn: '女孩' },
+    { char: 'H h', phone: '/eɪtʃ/', example: 'Hat', cn: '帽子' },
+    { char: 'I i', phone: '/aɪ/', example: 'Ice', cn: '冰' },
+    { char: 'J j', phone: '/dʒeɪ/', example: 'Juice', cn: '果汁' },
+    { char: 'K k', phone: '/keɪ/', example: 'Key', cn: '钥匙' },
+    { char: 'L l', phone: '/el/', example: 'Lion', cn: '狮子' },
+    { char: 'M m', phone: '/em/', example: 'Moon', cn: '月亮' },
+    { char: 'N n', phone: '/en/', example: 'Nest', cn: '巢' },
+    { char: 'O o', phone: '/əʊ/', example: 'Orange', cn: '橙子' },
+    { char: 'P p', phone: '/piː/', example: 'Pen', cn: '钢笔' },
+    { char: 'Q q', phone: '/kjuː/', example: 'Queen', cn: '女王' },
+    { char: 'R r', phone: '/ɑːr/', example: 'Rain', cn: '雨' },
+    { char: 'S s', phone: '/es/', example: 'Sun', cn: '太阳' },
+    { char: 'T t', phone: '/tiː/', example: 'Tree', cn: '树' },
+    { char: 'U u', phone: '/juː/', example: 'Umbrella', cn: '雨伞' },
+    { char: 'V v', phone: '/viː/', example: 'Violin', cn: '小提琴' },
+    { char: 'W w', phone: '/ˈdʌbljuː/', example: 'Water', cn: '水' },
+    { char: 'X x', phone: '/eks/', example: 'X-ray', cn: 'X光' },
+    { char: 'Y y', phone: '/waɪ/', example: 'Yellow', cn: '黄色' },
+    { char: 'Z z', phone: '/zed/', example: 'Zebra', cn: '斑马' }
+  ],
+  phonics: {
+    vowels: [
+      { phone: '/iː/', example: 'see', full: '/siː/' },
+      { phone: '/ɪ/', example: 'sit', full: '/sɪt/' },
+      { phone: '/e/', example: 'bed', full: '/bed/' },
+      { phone: '/æ/', example: 'cat', full: '/kæt/' },
+      { phone: '/ɑː/', example: 'car', full: '/kɑːr/' },
+      { phone: '/ɒ/', example: 'hot', full: '/hɒt/' },
+      { phone: '/ɔː/', example: 'door', full: '/dɔːr/' },
+      { phone: '/ʊ/', example: 'book', full: '/bʊk/' },
+      { phone: '/uː/', example: 'moon', full: '/muːn/' },
+      { phone: '/ʌ/', example: 'cup', full: '/kʌp/' },
+      { phone: '/ɜː/', example: 'bird', full: '/bɜːd/' },
+      { phone: '/ə/', example: 'about', full: '/əˈbaʊt/' },
+      { phone: '/eɪ/', example: 'cake', full: '/keɪk/' },
+      { phone: '/aɪ/', example: 'time', full: '/taɪm/' },
+      { phone: '/ɔɪ/', example: 'boy', full: '/bɔɪ/' },
+      { phone: '/aʊ/', example: 'house', full: '/haʊs/' },
+      { phone: '/əʊ/', example: 'home', full: '/həʊm/' },
+      { phone: '/ɪə/', example: 'ear', full: '/ɪər/' },
+      { phone: '/eə/', example: 'hair', full: '/heər/' },
+      { phone: '/ʊə/', example: 'tour', full: '/tʊər/' }
+    ],
+    consonants: [
+      { phone: '/p/', example: 'pen', full: '/pen/' },
+      { phone: '/b/', example: 'book', full: '/bʊk/' },
+      { phone: '/t/', example: 'top', full: '/tɒp/' },
+      { phone: '/d/', example: 'dog', full: '/dɒɡ/' },
+      { phone: '/k/', example: 'cat', full: '/kæt/' },
+      { phone: '/ɡ/', example: 'go', full: '/ɡəʊ/' },
+      { phone: '/f/', example: 'fish', full: '/fɪʃ/' },
+      { phone: '/v/', example: 'van', full: '/væn/' },
+      { phone: '/θ/', example: 'think', full: '/θɪŋk/' },
+      { phone: '/ð/', example: 'this', full: '/ðɪs/' },
+      { phone: '/s/', example: 'sun', full: '/sʌn/' },
+      { phone: '/z/', example: 'zoo', full: '/zuː/' },
+      { phone: '/ʃ/', example: 'ship', full: '/ʃɪp/' },
+      { phone: '/ʒ/', example: 'vision', full: '/ˈvɪʒən/' },
+      { phone: '/h/', example: 'hat', full: '/hæt/' },
+      { phone: '/m/', example: 'man', full: '/mæn/' },
+      { phone: '/n/', example: 'nose', full: '/nəʊz/' },
+      { phone: '/ŋ/', example: 'sing', full: '/sɪŋ/' },
+      { phone: '/l/', example: 'leg', full: '/leɡ/' },
+      { phone: '/r/', example: 'red', full: '/red/' },
+      { phone: '/j/', example: 'yes', full: '/jes/' },
+      { phone: '/w/', example: 'wet', full: '/wet/' },
+      { phone: '/tʃ/', example: 'chips', full: '/tʃɪps/' },
+      { phone: '/dʒ/', example: 'jump', full: '/dʒʌmp/' },
+      { phone: '/tr/', example: 'tree', full: '/triː/' },
+      { phone: '/dr/', example: 'dress', full: '/dres/' },
+      { phone: '/ts/', example: 'cats', full: '/kæts/' },
+      { phone: '/dz/', example: 'beds', full: '/bedz/' }
+    ]
+  },
+  grammar: [
+    {
+      name: '名词复数 (Plural Nouns)',
+      en: 'book → books, box → boxes, baby → babies',
+      zh: '一般情况下加 -s；以 s/x/ch/sh 结尾加 -es；辅音+y 变 y 为 i 加 -es。',
+      examples: [
+        { en: 'I have two books.', zh: '我有两本书。' },
+        { en: 'She packed three boxes.', zh: '她打包了三个箱子。' }
+      ]
+    },
+    {
+      name: '一般过去式 (Past Tense)',
+      en: 'walk → walked, go → went',
+      zh: '规则动词加 -ed；不规则动词需单独记忆。常用于描述已发生的事。',
+      examples: [
+        { en: 'He walked to school yesterday.', zh: '他昨天走路去学校。' },
+        { en: 'She went to the park last Sunday.', zh: '她上周日去了公园。' }
+      ]
+    },
+    {
+      name: '现在进行时 (Present Continuous)',
+      en: 'is/am/are + doing',
+      zh: '表示此刻正在进行的动作或现阶段持续的状态。',
+      examples: [
+        { en: 'She is reading a book right now.', zh: '她正在看书。' },
+        { en: 'They are learning English this year.', zh: '他们今年在学习英语。' }
+      ]
+    },
+    {
+      name: '过去进行时 (Past Continuous)',
+      en: 'was/were + doing',
+      zh: '表示过去某一时刻正在进行的动作。',
+      examples: [
+        { en: 'I was watching TV when she called.', zh: '她打电话时我正在看电视。' },
+        { en: 'They were playing football at 3pm.', zh: '下午三点他们正在踢足球。' }
+      ]
+    },
+    {
+      name: '一般将来时 (Future Tense)',
+      en: 'will + do / be going to',
+      zh: 'will 表示主观意愿或临时决定；be going to 表示已有计划或客观迹象。',
+      examples: [
+        { en: 'I will call you tomorrow.', zh: '我明天会给你打电话。' },
+        { en: 'It is going to rain soon.', zh: '快要下雨了。' }
+      ]
+    },
+    {
+      name: '现在完成时 (Present Perfect)',
+      en: 'have/has + done',
+      zh: '表示过去发生的动作对现在有影响，或持续到现在的经历。',
+      examples: [
+        { en: 'I have finished my homework.', zh: '我做完作业了。' },
+        { en: 'She has lived here for five years.', zh: '她在这里住了五年。' }
+      ]
+    },
+    {
+      name: '比较级与最高级 (Comparative & Superlative)',
+      en: 'big → bigger → biggest',
+      zh: '单音节词加 -er/-est；多音节词加 more/most。用于比较事物之间的程度。',
+      examples: [
+        { en: 'This book is bigger than that one.', zh: '这本书比那本大。' },
+        { en: 'She is the tallest in her class.', zh: '她是班里最高的。' }
+      ]
+    },
+    {
+      name: '冠词 (Articles)',
+      en: 'a / an / the',
+      zh: 'a/an 用于泛指（不定冠词）；the 用于特指（定冠词）。a 用于辅音音素前，an 用于元音音素前。',
+      examples: [
+        { en: 'I saw a cat. The cat was black.', zh: '我看见一只猫。那只猫是黑色的。' },
+        { en: 'She is an engineer.', zh: '她是一名工程师。' }
+      ]
+    },
+    {
+      name: '基础介词 (Prepositions)',
+      en: 'in / on / at',
+      zh: 'in 表示在较大空间/时间内；on 表示在表面/某一天；at 表示在具体点/时刻。',
+      examples: [
+        { en: 'The book is on the table.', zh: '书在桌子上。' },
+        { en: 'I will meet you at 3pm in the park.', zh: '我下午三点在公园见你。' }
+      ]
+    },
+    {
+      name: '基础情态动词 (Modal Verbs)',
+      en: 'can / must / should',
+      zh: 'can 表示能力或许可；must 表示必须；should 表示建议。情态动词后接动词原形。',
+      examples: [
+        { en: 'I can swim.', zh: '我会游泳。' },
+        { en: 'You must wear a seatbelt.', zh: '你必须系安全带。' },
+        { en: 'You should drink more water.', zh: '你应该多喝水。' }
+      ]
+    }
+  ]
+};
+
+/* ─── App State ─── */
+const App = {
+  level: 'MEDIUM',
+  dailyCount: 3,
+  onboardingComplete: false,
+  translationMode: 'full', // full | blurred | hidden
+  masteryThreshold: 1,
+  autoTTS: false,
+  dailyCountMod: null,
+  vocab: JSON.parse(localStorage.getItem('contexta_vocab') || '[]'),
+  vocabMastery: JSON.parse(localStorage.getItem('contexta_mastery') || '{}'),
+  vocabIndex: 0,
+  currentArticleIndex: 0,
+  dailyArticles: [],
+  revealedParagraphs: new Set(),
+
+  save() {
+    localStorage.setItem('contexta_vocab', JSON.stringify(this.vocab));
+    localStorage.setItem('contexta_mastery', JSON.stringify(this.vocabMastery));
+    localStorage.setItem('contexta_onboarding', JSON.stringify(this.onboardingComplete));
+    this.saveSettings();
+  },
+
+  saveSettings() {
+    localStorage.setItem('contexta_settings', JSON.stringify({
+      level: this.level,
+      dailyCount: this.dailyCount,
+      translationMode: this.translationMode,
+      masteryThreshold: this.masteryThreshold,
+      autoTTS: this.autoTTS,
+      dailyCountMod: this.dailyCountMod
+    }));
+  },
+
+  load() {
+    const ob = localStorage.getItem('contexta_onboarding');
+    if (ob === 'true') this.onboardingComplete = true;
+
+    const s = JSON.parse(localStorage.getItem('contexta_settings') || 'null');
+    if (s) {
+      if (s.level) this.level = s.level;
+      if (s.dailyCount) this.dailyCount = s.dailyCount;
+      if (s.translationMode) this.translationMode = s.translationMode;
+      if (s.masteryThreshold) this.masteryThreshold = s.masteryThreshold;
+      if (s.autoTTS !== undefined) this.autoTTS = s.autoTTS;
+      if (s.dailyCountMod) this.dailyCountMod = s.dailyCountMod;
+    }
+  }
+};
+
+/* ─── Onboarding ─── */
+let onboardingStep = 1;
+let onboardingData = { level: null, dailyCount: null };
+
+function selectOnboarding(el) {
+  el.parentElement.querySelectorAll('.option-item').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function nextOnboardingStep() {
+  const stepEl = document.querySelector(`.onboarding-step[data-step="${onboardingStep}"]`);
+  
+  // Step 3 is the final confirmation - no selection needed
+  if (onboardingStep === 3) {
+    App.level = onboardingData.level;
+    App.dailyCount = onboardingData.dailyCount;
+    App.onboardingComplete = true;
+    App.save();
+    initApp();
+    return;
+  }
+  
+  const selected = stepEl.querySelector('.option-item.selected');
+  if (!selected) return;
+
+  if (onboardingStep === 1) onboardingData.level = selected.dataset.value;
+  else if (onboardingStep === 2) onboardingData.dailyCount = parseInt(selected.dataset.value);
+
+  document.querySelector(`.onboarding-step[data-step="${onboardingStep}"]`).classList.remove('active');
+  onboardingStep++;
+  document.querySelector(`.onboarding-step[data-step="${onboardingStep}"]`).classList.add('active');
+  document.querySelectorAll('.progress-dots .dot').forEach(d => {
+    const n = parseInt(d.dataset.dot);
+    d.classList.toggle('active', n === onboardingStep);
+    d.classList.toggle('done', n < onboardingStep);
+  });
+  document.getElementById('onboardingBack').style.display = onboardingStep > 1 ? 'block' : 'none';
+  const btn = document.getElementById('onboardingNext');
+  btn.textContent = onboardingStep === 3 ? '开始学习' : '下一步';
+}
+
+function prevOnboardingStep() {
+  if (onboardingStep <= 1) return;
+  document.querySelector(`.onboarding-step[data-step="${onboardingStep}"]`).classList.remove('active');
+  onboardingStep--;
+  document.querySelector(`.onboarding-step[data-step="${onboardingStep}"]`).classList.add('active');
+  document.querySelectorAll('.progress-dots .dot').forEach(d => {
+    const n = parseInt(d.dataset.dot);
+    d.classList.toggle('active', n === onboardingStep);
+    d.classList.toggle('done', n < onboardingStep);
+  });
+  document.getElementById('onboardingBack').style.display = onboardingStep > 1 ? 'block' : 'none';
+  const btn = document.getElementById('onboardingNext');
+  btn.textContent = onboardingStep === 3 ? '开始学习' : '下一步';
+}
+
+/* ─── Navigation ─── */
+let currentScreen = 'screen-onboarding';
+function navigateTo(screenId) {
+  if (screenId === currentScreen) return;
+  const oldEl = document.getElementById(currentScreen);
+  const newEl = document.getElementById(screenId);
+
+  if (oldEl) {
+    oldEl.classList.remove('active');
+    oldEl.classList.add('slide-left');
+  }
+  newEl.classList.remove('slide-left');
+  newEl.classList.add('active');
+
+  currentScreen = screenId;
+
+  // Update bottom nav
+  document.querySelectorAll('.nav-item').forEach(n => {
+    n.classList.toggle('active', n.dataset.screen === screenId);
+  });
+
+  // Hide bottom nav on reading screen
+  const nav = document.getElementById('bottomNav');
+  nav.style.display = (screenId === 'screen-reading') ? 'none' : 'flex';
+
+  // Refresh screen content
+  if (screenId === 'screen-home') renderHome();
+  if (screenId === 'screen-vocabulary') renderVocab();
+  if (screenId === 'screen-settings') renderSettings();
+  if (screenId === 'screen-reference') renderReference();
+}
+
+function initApp() {
+  document.getElementById('bottomNav').style.display = 'flex';
+  App.load();
+  renderHome();
+  navigateTo('screen-home');
+}
+
+/* ─── Home ─── */
+function renderHome() {
+  const today = new Date();
+  const dateStr = `${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日 星期${['日', '一', '二', '三', '四', '五', '六'][today.getDay()]}`;
+  document.getElementById('todayDate').textContent = dateStr;
+
+  // Filter by level (consistent within a day)
+  const filteredArticles = MOCK_ARTICLES.filter(a => a.level === App.level);
+  // Group articles by date
+  const groups = {};
+  filteredArticles.forEach(a => {
+    if (!groups[a.date]) groups[a.date] = [];
+    groups[a.date].push(a);
+  });
+
+  const list = document.getElementById('articleList');
+  list.innerHTML = '';
+
+  Object.keys(groups).sort((a,b) => b.localeCompare(a)).forEach(date => {
+    const dayNames = { '2026-07-29': '星期三', '2026-07-28': '星期二', '2026-07-27': '星期一', '2026-07-26': '星期日' };
+    const d = new Date(date);
+    const label = `${date.replace(/-/g, '.')} ${dayNames[date] || ''}`;
+
+    const group = document.createElement('div');
+    group.className = 'day-group';
+    group.innerHTML = `
+      <div class="day-header" onclick="this.querySelector('.arrow').classList.toggle('open'); this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none';">
+        <span>${label}</span>
+        <span class="arrow open">▾</span>
+      </div>
+      <div class="article-items">
+        ${groups[date].map(a => `
+          <div class="article-card" onclick="openArticle('${a.id}')" data-od-id="article-card-${a.id}">
+            <div class="title">${a.title}</div>
+            <div class="desc">${a.desc}</div>
+            <div class="meta">
+              <span class="difficulty">${LEVEL_CONFIG[a.level]?.label || a.level}</span>
+              <span>${a.category}</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    list.appendChild(group);
+  });
+}
+
+/* ─── Reading ─── */
+function openArticle(articleId) {
+  const idx = MOCK_ARTICLES.findIndex(a => a.id === articleId);
+  if (idx === -1) return;
+  App.currentArticleIndex = idx;
+  renderArticle(idx);
+  navigateTo('screen-reading');
+  // Auto TTS if enabled
+  if (App.autoTTS) {
+    setTimeout(() => {
+      const btn = document.querySelector('.reading-paragraph .play-btn');
+      if (btn) btn.click();
+    }, 400);
+  }
+}
+
+function renderArticle(idx) {
+  const article = MOCK_ARTICLES[idx];
+  document.getElementById('readingTitle').textContent = article.title;
+  document.getElementById('readingNav').textContent = `${idx + 1} / ${MOCK_ARTICLES.length}`;
+
+  const body = document.getElementById('readingBody');
+  const mode = App.translationMode;
+  body.innerHTML = article.paragraphs.map((p, i) => `
+    <div class="reading-paragraph" data-od-id="reading-paragraph-${i}">
+      <div class="en">${highlightWords(p.en)}</div>
+      <div class="zh ${mode === 'blurred' ? 'blurred' : ''} ${mode === 'hidden' ? 'hidden' : ''}"
+           onclick="${mode === 'blurred' ? `revealTranslation(this, ${i})` : ''}">
+        ${p.zh}
+      </div>
+      <button class="play-btn" onclick="playTTS(this)">🔊 朗读本段</button>
+    </div>
+  `).join('');
+}
+
+function highlightWords(text) {
+  // Simple word tokenizer - wrap each word in a clickable span
+  return text.replace(/\b(\w+)\b/g, (match) => {
+    const clean = match.replace(/[^a-zA-Z'-]/g, '');
+    if (!clean) return match;
+    return `<span class="word" onclick="showWordSheet('${clean}')">${match}</span>`;
+  });
+}
+
+function showNextArticle() {
+  const next = (App.currentArticleIndex + 1) % MOCK_ARTICLES.length;
+  App.currentArticleIndex = next;
+  renderArticle(next);
+}
+
+function cycleTranslationMode() {
+  const modes = ['full', 'blurred', 'hidden'];
+  const labels = { full: '完全显示', blurred: '模糊', hidden: '隐藏' };
+  const currentIdx = modes.indexOf(App.translationMode);
+  App.translationMode = modes[(currentIdx + 1) % 3];
+
+  document.getElementById('translationModeLabel').textContent = labels[App.translationMode];
+  // Re-render current article to apply mode
+  renderArticle(App.currentArticleIndex);
+}
+
+function revealTranslation(el, idx) {
+  if (!App.revealedParagraphs) App.revealedParagraphs = new Set();
+  if (App.revealedParagraphs.has(idx)) return;
+  App.revealedParagraphs.add(idx);
+  el.classList.add('revealed');
+  setTimeout(() => {
+    el.classList.remove('revealed');
+    App.revealedParagraphs.delete(idx);
+  }, 10000);
+}
+
+/* ─── Word Sheet ─── */
+let currentWordData = null;
+
+function showWordSheet(word) {
+  const lower = word.toLowerCase().replace(/[^a-zA-Z'-]/g, '');
+  if (!lower) return;
+
+  // Find word in vocabulary data or create temporary entry
+  const vocabEntry = VOCABULARY_DATA.find(v => v.word === lower);
+  const inVocab = App.vocab.includes(lower);
+  const isMastered = App.vocabMastery[lower];
+
+  const content = document.getElementById('wordSheetContent');
+  if (vocabEntry) {
+    currentWordData = lower;
+    content.innerHTML = `
+      <div class="word-header">
+        <span class="word">${vocabEntry.word}</span>
+        <span class="phonetic">${vocabEntry.phonetic}</span>
+        <button class="play-sound" onclick="playTTS(this)">🔊</button>
+      </div>
+      <div class="translation">${vocabEntry.translation}</div>
+      <div class="word-detail">
+        <p>${vocabEntry.definitions.join('; ')}</p>
+        <div class="example">
+          <div class="en">${vocabEntry.examples[0]}</div>
+          <div class="zh">${vocabEntry.examples[1]}</div>
+        </div>
+      </div>
+      <div class="vocab-actions">
+        ${inVocab
+          ? `<button class="btn btn-secondary btn-block" onclick="removeFromVocab('${lower}')">🗑️ 从生词表移除</button>`
+          : `<button class="btn btn-primary btn-block" onclick="addToVocab('${lower}')">+ 加入生词表</button>`
+        }
+      </div>
+    `;
+  } else {
+    currentWordData = lower;
+    content.innerHTML = `
+      <div class="word-header">
+        <span class="word">${lower}</span>
+        <button class="play-sound" onclick="playTTS(this)">🔊</button>
+      </div>
+      <div class="translation">（数据未收录）</div>
+      <div class="word-detail">
+        <p style="color:var(--meta);">该词尚未在本地词库中，后续版本将通过 DeepSeek 实时查询。</p>
+      </div>
+      <div class="vocab-actions">
+        ${inVocab
+          ? `<button class="btn btn-secondary btn-block" onclick="removeFromVocab('${lower}')">🗑️ 从生词表移除</button>`
+          : `<button class="btn btn-primary btn-block" onclick="addToVocab('${lower}')">+ 加入生词表</button>`
+        }
+      </div>
+    `;
+  }
+
+  document.getElementById('wordSheetOverlay').classList.add('open');
+  document.getElementById('wordSheet').classList.add('open');
+}
+
+function closeWordSheet() {
+  document.getElementById('wordSheetOverlay').classList.remove('open');
+  document.getElementById('wordSheet').classList.remove('open');
+}
+
+function addToVocab(word) {
+  if (!App.vocab.includes(word)) {
+    App.vocab.push(word);
+    // Set mastery count to 0
+    if (!App.vocabMastery[word]) App.vocabMastery[word] = 0;
+    App.save();
+  }
+  showWordSheet(word); // Refresh sheet
+}
+
+function removeFromVocab(word) {
+  App.vocab = App.vocab.filter(w => w !== word);
+  // Don't delete mastery record, but mark as removed
+  App.vocabMastery[word] = 'removed';
+  App.save();
+  showWordSheet(word); // Refresh sheet
+}
+
+/* ─── Vocabulary Review ─── */
+function renderVocab() {
+  const activeVocab = App.vocab.filter(w => App.vocabMastery[w] !== 'removed' && App.vocabMastery[w] !== 'mastered');
+  const total = activeVocab.length;
+  document.getElementById('vocabCount').textContent = `${total} 个词`;
+  document.getElementById('vocabActions').style.display = total > 0 ? 'flex' : 'none';
+
+  if (total === 0) {
+    document.getElementById('vocabCard').innerHTML = `
+      <div class="empty-state">
+        <div class="icon">📝</div>
+        <div class="text">生词表为空</div>
+        <div class="sub">阅读时点击单词可加入生词表</div>
+      </div>
+    `;
+    return;
+  }
+
+  App.vocabIndex = Math.min(App.vocabIndex, total - 1);
+  const word = activeVocab[App.vocabIndex];
+  const vocabEntry = VOCABULARY_DATA.find(v => v.word === word);
+  const progress = ((App.vocabIndex) / total * 100);
+
+  document.getElementById('vocabProgressLabel').textContent = `${App.vocabIndex + 1} / ${total}`;
+  document.getElementById('vocabProgressFill').style.width = `${progress}%`;
+
+  if (vocabEntry) {
+    const masteryCount = typeof App.vocabMastery[word] === 'number' ? App.vocabMastery[word] : 0;
+    document.getElementById('vocabCard').innerHTML = `
+      <div class="word">${vocabEntry.word}</div>
+      <div class="phonetic">${vocabEntry.phonetic}</div>
+      <button class="play" onclick="playTTS(this)">🔊</button>
+      <div class="detail-area">
+        <div class="def">${vocabEntry.translation}</div>
+        <div class="example">
+          <div>${vocabEntry.definitions.join('; ')}</div>
+          <div style="margin-top:8px; padding:8px; background:var(--bg); border-radius:6px;">
+            <div>${vocabEntry.examples[0]}</div>
+            <div class="zh" style="color:var(--muted); margin-top:4px;">${vocabEntry.examples[1]}</div>
+          </div>
+        </div>
+        <div style="margin-top:8px; font-size:var(--text-sm); color:var(--meta);">已认识 ${masteryCount}/1 次</div>
+      </div>
+    `;
+  } else {
+    document.getElementById('vocabCard').innerHTML = `
+      <div class="word">${word}</div>
+      <div class="empty-state" style="padding:20px;">
+        <div class="sub">暂无详细词条</div>
+      </div>
+    `;
+  }
+}
+
+function markVocab(familiar) {
+  const activeVocab = App.vocab.filter(w => App.vocabMastery[w] !== 'removed' && App.vocabMastery[w] !== 'mastered');
+  if (App.vocabIndex >= activeVocab.length) return;
+
+  const word = activeVocab[App.vocabIndex];
+  if (familiar) {
+    const current = (typeof App.vocabMastery[word] === 'number' ? App.vocabMastery[word] : 0) + 1;
+    App.vocabMastery[word] = current;
+    if (current >= 1) {
+      App.vocabMastery[word] = 'mastered';
+    }
+  } else {
+    App.vocabMastery[word] = Math.max(0, (typeof App.vocabMastery[word] === 'number' ? App.vocabMastery[word] : 0));
+  }
+  App.save();
+  App.vocabIndex++;
+  renderVocab();
+}
+
+/* ─── Reference ─── */
+function renderReference() {
+  // Alphabet
+  const alphaEl = document.getElementById('ref-alphabet');
+  alphaEl.innerHTML = REFERENCE_DATA.alphabet.map(item => `
+    <div class="ref-item" data-od-id="ref-char-${item.char.replace(/\s/g, '-').toLowerCase()}">
+      <span class="char">${item.char}</span>
+      <span class="phone">${item.phone}</span>
+      <span class="example">${item.example} <span class="cn">${item.cn}</span></span>
+      <button class="play-sound" onclick="playTTS(this)">🔊</button>
+    </div>
+  `).join('');
+
+  // Phonics
+  const phEl = document.getElementById('ref-phonics');
+  phEl.innerHTML = `
+    <h3 style="font-size:var(--text-lg); font-weight:600; margin-bottom:8px;">元音 (20个)</h3>
+    ${REFERENCE_DATA.phonics.vowels.map(item => `
+      <div class="ref-item">
+        <span class="phone" style="min-width:50px;">${item.phone}</span>
+        <span class="example">${item.example} <span style="color:var(--meta); font-family:var(--font-mono);">${item.full}</span></span>
+        <button class="play-sound" onclick="playTTS(this)">🔊</button>
+      </div>
+    `).join('')}
+    <h3 style="font-size:var(--text-lg); font-weight:600; margin:16px 0 8px;">辅音 (28个)</h3>
+    ${REFERENCE_DATA.phonics.consonants.map(item => `
+      <div class="ref-item">
+        <span class="phone" style="min-width:50px;">${item.phone}</span>
+        <span class="example">${item.example} <span style="color:var(--meta); font-family:var(--font-mono);">${item.full}</span></span>
+        <button class="play-sound" onclick="playTTS(this)">🔊</button>
+      </div>
+    `).join('')}
+  `;
+
+  // Grammar
+  const grEl = document.getElementById('ref-grammar');
+  grEl.innerHTML = REFERENCE_DATA.grammar.map(g => `
+    <div class="grammar-item" data-od-id="grammar-${g.name.replace(/\s+/g, '-').toLowerCase()}">
+      <div class="name">${g.name}</div>
+      <div class="explain">${g.en}</div>
+      <div style="font-size:var(--text-sm); color:var(--fg-2);">${g.zh}</div>
+      ${g.examples.map(ex => `
+        <div class="ex">
+          <div>${ex.en}</div>
+          <div style="color:var(--muted);">${ex.zh}</div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function switchRefTab(el, tab) {
+  document.querySelectorAll('.ref-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.ref-content').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(`ref-${tab}`).classList.add('active');
+}
+
+/* ─── Settings ─── */
+const SETTINGS_PICKER_OPTIONS = {
+  level: {
+    title: '选择英文水平',
+    options: [
+      { value: 'LOW', label: '初级 · LOW', desc: '小学、初中水平，从基础开始' },
+      { value: 'MEDIUM', label: '中级 · MEDIUM', desc: '高中、大学四六级水平' },
+      { value: 'HIGH', label: '高级 · HIGH', desc: '专八、托福、雅思水平' }
+    ]
+  },
+  translationMode: {
+    title: '选择译文默认模式',
+    options: [
+      { value: 'full', label: '完全显示', desc: '展示完整中文翻译' },
+      { value: 'blurred', label: '模糊', desc: '点击译文后清晰显示10秒' },
+      { value: 'hidden', label: '隐藏', desc: '不展示任何中文翻译' }
+    ]
+  }
+};
+
+const TRANSLATION_LABELS = { full: '完全显示', blurred: '模糊', hidden: '隐藏' };
+const LEVEL_LABELS = { LOW: '初级 · LOW', MEDIUM: '中级 · MEDIUM', HIGH: '高级 · HIGH' };
+
+let currentSettingsPicker = null;
+
+function renderSettings() {
+  // Update setting value displays
+  document.getElementById('s-level-val').textContent = App.level;
+  document.getElementById('s-level-desc').textContent = LEVEL_LABELS[App.level] || App.level;
+  document.getElementById('s-daily').textContent = App.dailyCount;
+  document.getElementById('s-translation').textContent = TRANSLATION_LABELS[App.translationMode] || App.translationMode;
+  document.getElementById('s-mastery').textContent = App.masteryThreshold;
+  document.getElementById('s-tts-toggle').checked = App.autoTTS;
+
+  // Disable daily count stepper if limit reached today
+  const stepBtns = document.querySelectorAll('#screen-settings .si-step-btn');
+  if (!canModifyDailyCount()) {
+    stepBtns.forEach(b => b.style.opacity = '0.4');
+  } else {
+    stepBtns.forEach(b => b.style.opacity = '1');
+  }
+
+  // Render stats
+  renderSettingsStats();
+}
+
+function renderSettingsStats() {
+  const masteredWords = Object.entries(App.vocabMastery).filter(([k, v]) => v === 'mastered').length;
+  const totalUnique = new Set(App.vocab.filter(w => App.vocabMastery[w] !== 'removed')).size;
+
+  const stats = [
+    { number: MOCK_ARTICLES.filter(a => a.level === App.level).length, label: '累计阅读文章', cls: '' },
+    { number: totalUnique, label: '累计添加生词', cls: '' },
+    { number: masteredWords, label: '已掌握单词', cls: '' },
+    { number: '5', label: '累计学习天数', cls: '' },
+    { number: '5', label: '当前连续学习', cls: 'streak', sub: '🔥 连续 5 天，继续加油！' }
+  ];
+
+  const grid = document.getElementById('settingsStatsGrid');
+  grid.innerHTML = stats.map(s => `
+    <div class="stat-card ${s.cls}">
+      <div class="number">${s.number}</div>
+      <div class="label">${s.label}</div>
+      ${s.sub ? `<div style="font-size:var(--text-sm);color:var(--accent);margin-top:4px;">${s.sub}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function showSettingPicker(key) {
+  currentSettingsPicker = key;
+  const config = SETTINGS_PICKER_OPTIONS[key];
+  if (!config) return;
+
+  document.getElementById('settingsPickerTitle').textContent = config.title;
+  const optsEl = document.getElementById('settingsPickerOptions');
+  optsEl.innerHTML = config.options.map(o => {
+    const isSelected = (key === 'level' && o.value === App.level) ||
+                       (key === 'translationMode' && o.value === App.translationMode);
+    return '<div class="settings-picker-option' + (isSelected ? ' selected' : '') + '" onclick="selectSettingOption(\'' + key + '\', \'' + o.value + '\')">' +
+      '<div class="spo-label">' + o.label + '</div>' +
+      (o.desc ? '<div class="spo-desc">' + o.desc + '</div>' : '') +
+      '</div>';
+  }).join('');
+
+  const overlay = document.getElementById('settingsPickerOverlay');
+  overlay.style.display = 'flex';
+  setTimeout(() => overlay.classList.add('open'), 10);
+}
+
+function selectSettingOption(key, value) {
+  App[key] = value;
+  if (key === 'translationMode') {
+    // Also update the reading screen's mode if currently reading
+    if (currentScreen === 'screen-reading') {
+      App.translationMode = value;
+      document.getElementById('translationModeLabel').textContent = TRANSLATION_LABELS[value];
+      renderArticle(App.currentArticleIndex);
+    }
+  }
+  App.saveSettings();
+  closeSettingPicker();
+  renderSettings();
+  // Re-render home if level changed (articles filtered by level)
+  if (key === 'level' && currentScreen === 'screen-home') renderHome();
+}
+
+function closeSettingPicker() {
+  const overlay = document.getElementById('settingsPickerOverlay');
+  overlay.classList.remove('open');
+  setTimeout(() => { overlay.style.display = 'none'; }, 200);
+}
+
+function adjustSetting(key, delta) {
+  if (key === 'dailyCount') {
+    if (delta < 0 && App.dailyCount <= 1) return;
+    if (delta > 0 && App.dailyCount >= 5) return;
+    if (!canModifyDailyCount()) return;
+    App.dailyCount += delta;
+    recordDailyCountMod();
+    App.saveSettings();
+    renderSettings();
+    return;
+  }
+  if (key === 'masteryThreshold') {
+    const newVal = (App.masteryThreshold || 1) + delta;
+    if (newVal < 1 || newVal > 5) return;
+    App.masteryThreshold = newVal;
+    App.saveSettings();
+    renderSettings();
+  }
+}
+
+function canModifyDailyCount() {
+  const mod = App.dailyCountMod;
+  if (!mod || !mod.lastDate) return true;
+  const today = new Date().toDateString();
+  if (mod.lastDate === today) return false;
+  const thisMonth = new Date().getMonth();
+  const modsThisMonth = (mod.monthlyDates || []).filter(d => {
+    try { return new Date(d).getMonth() === thisMonth; }
+    catch(e) { return false; }
+  }).length;
+  return modsThisMonth < 3;
+}
+
+function recordDailyCountMod() {
+  const today = new Date().toISOString().split('T')[0];
+  const mod = App.dailyCountMod || { lastDate: null, monthlyDates: [] };
+  mod.lastDate = new Date().toDateString();
+  if (!mod.monthlyDates) mod.monthlyDates = [];
+  mod.monthlyDates.push(today);
+  App.dailyCountMod = mod;
+  App.saveSettings();
+}
+
+function toggleAutoTTS() {
+  App.autoTTS = document.getElementById('s-tts-toggle').checked;
+  App.saveSettings();
+}
+
+/* ─── TTS Polyfill ─── *//* ─── TTS Polyfill ─── */
+function playTTS(el) {
+  // Use Web Speech API for TTS
+  if ('speechSynthesis' in window) {
+    const text = el?.closest?.('.reading-paragraph')?.querySelector?.('.en')?.textContent
+      || el?.closest?.('.ref-item')?.querySelector?.('.example')?.textContent
+      || el?.closest?.('.vocab-card')?.querySelector?.('.word')?.textContent
+      || el?.closest?.('.word-header')?.querySelector?.('.word')?.textContent
+      || 'Hello';
+    if (text) {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.rate = 0.9;
+      utter.lang = 'en-US';
+      speechSynthesis.cancel();
+      speechSynthesis.speak(utter);
+    }
+  }
+}
+
+/* ─── Init ─── */
+// Update status bar time
+function updateTime() {
+  const now = new Date();
+  document.getElementById('statusTime').textContent = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+}
+updateTime();
+setInterval(updateTime, 30000);
+
+// Check onboarding
+App.load();
+if (App.onboardingComplete) {
+  navigateTo('screen-home');
+  renderHome();
+  document.getElementById('bottomNav').style.display = 'flex';
+}
+</script>
+</body>
+</html>
