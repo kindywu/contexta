@@ -35,6 +35,7 @@ import com.ak.contexta.ui.components.LoadingIndicator
 import com.ak.contexta.ui.components.StatCard
 import com.ak.contexta.ui.components.StatCardData
 import com.ak.contexta.ui.theme.Accent
+import com.ak.contexta.ui.theme.AccentOn
 import com.ak.contexta.ui.theme.Background
 import com.ak.contexta.ui.theme.Foreground
 import com.ak.contexta.ui.theme.ForegroundSecondary
@@ -115,7 +116,7 @@ fun SettingsScreen(
             // Mastery threshold stepper
             SettingsStepperItem(
                 label = "单词掌握阈值",
-                description = "标记"认识" N 次后自动移除",
+                description = "标记认识 N 次后自动移除",
                 value = state.masteryThreshold,
                 canDecrement = state.masteryThreshold > 1,
                 canIncrement = state.masteryThreshold < 5,

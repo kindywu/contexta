@@ -37,15 +37,11 @@ import com.ak.contexta.ui.theme.Accent
 import com.ak.contexta.ui.theme.Background
 import com.ak.contexta.ui.theme.Foreground
 import com.ak.contexta.ui.theme.Muted
-import com.ak.contexta.ui.theme.Surface
 import com.ak.contexta.ui.theme.SurfaceWarm
 
 @Composable
 fun HomeScreen(
     onArticleClick: (Long) -> Unit,
-    onNavigateToVocabulary: () -> Unit,
-    onNavigateToReference: () -> Unit,
-    onNavigateToSettings: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
@@ -69,16 +65,16 @@ fun HomeScreen(
             )
         }
 
-        // Filter chips
-        item {
-            FilterChips(
-                selectedFilter = state.selectedFilter,
-                onFilterSelected = { viewModel.setFilter(it) }
-            )
-        }
-
         // Article groups
-        if (state.articleGroups.isEmpty()) {
+        if (state.isGenerating) {
+            item {
+                EmptyState(
+                    icon = "⚙️",
+                    message = "文章生成中",
+                    subMessage = state.generationMessage.ifEmpty { "首次生成需要一些时间，请稍候…" }
+                )
+            }
+        } else if (state.articleGroups.isEmpty()) {
             item {
                 EmptyState(
                     icon = "📖",
@@ -100,7 +96,7 @@ fun HomeScreen(
 
         // Bottom spacer for nav bar
         item {
-            Spacer(modifier = Modifier.height(80.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
@@ -157,38 +153,7 @@ private fun StreakBadge(streak: Int) {
     }
 }
 
-@Composable
-private fun FilterChips(
-    selectedFilter: String,
-    onFilterSelected: (String) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        listOf("全部", "初级", "中级", "高级").forEach { label ->
-            val isSelected = label == selectedFilter
-            val bg = if (isSelected) Accent else SurfaceWarm
-            val textColor = if (isSelected) AccentOn else Foreground
 
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(bg)
-                    .clickable { onFilterSelected(label) }
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = textColor
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun DayGroup(

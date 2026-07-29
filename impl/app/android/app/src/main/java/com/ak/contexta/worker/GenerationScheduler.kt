@@ -2,9 +2,7 @@ package com.ak.contexta.worker
 
 import android.content.Context
 import androidx.work.BackoffPolicy
-import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -33,11 +31,6 @@ class GenerationScheduler @Inject constructor(
     fun scheduleBatchGeneration(batchId: Long, appVersionCode: Int = 0): Boolean {
         val workRequest = OneTimeWorkRequestBuilder<ArticleGenerationWorker>()
             .setInputData(ArticleGenerationWorker.buildInputData(batchId, appVersionCode))
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-            )
             .setBackoffCriteria(
                 BackoffPolicy.EXPONENTIAL,
                 30,

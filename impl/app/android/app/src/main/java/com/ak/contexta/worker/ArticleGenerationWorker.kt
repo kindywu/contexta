@@ -188,31 +188,32 @@ class ArticleGenerationWorker @AssistedInject constructor(
         }
     }
 
-    /**
-     * Parse LLM response in XML format:
-     * <title>...</title>
-     * <paragraph>...</paragraph>
-     * <translation>...</translation>
-     */
-    private fun parseLlmResponse(content: String): Pair<String, List<ArticleParagraph>> {
-        val title = Regex("<title>([\\s\\S]*?)</title>").find(content)
-            ?.groupValues?.get(1)?.trim() ?: "Untitled"
+}
 
-        val paragraphRegex = Regex("<paragraph>([\\s\\S]*?)</paragraph>")
-        val translationRegex = Regex("<translation>([\\s\\S]*?)</translation>")
+/**
+ * Parse LLM response in XML format:
+ * <title>...</title>
+ * <paragraph>...</paragraph>
+ * <translation>...</translation>
+ */
+internal fun parseLlmResponse(content: String): Pair<String, List<ArticleParagraph>> {
+    val title = Regex("<title>([\\s\\S]*?)</title>").find(content)
+        ?.groupValues?.get(1)?.trim() ?: "Untitled"
 
-        val paragraphs = paragraphRegex.findAll(content).map { it.groupValues[1].trim() }.toList()
-        val translations = translationRegex.findAll(content).map { it.groupValues[1].trim() }.toList()
+    val paragraphRegex = Regex("<paragraph>([\\s\\S]*?)</paragraph>")
+    val translationRegex = Regex("<translation>([\\s\\S]*?)</translation>")
 
-        val result = paragraphs.mapIndexed { index, englishText ->
-            val translation = translations.getOrElse(index) { "" }
-            ArticleParagraph(
-                orderIndex = index + 1,
-                englishText = englishText,
-                chineseTranslation = translation
-            )
-        }
+    val paragraphs = paragraphRegex.findAll(content).map { it.groupValues[1].trim() }.toList()
+    val translations = translationRegex.findAll(content).map { it.groupValues[1].trim() }.toList()
 
-        return Pair(title, result)
+    val result = paragraphs.mapIndexed { index, englishText ->
+        val translation = translations.getOrElse(index) { "" }
+        ArticleParagraph(
+            orderIndex = index + 1,
+            englishText = englishText,
+            chineseTranslation = translation
+        )
     }
+
+    return Pair(title, result)
 }

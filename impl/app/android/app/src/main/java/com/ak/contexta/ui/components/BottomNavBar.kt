@@ -19,14 +19,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
+import com.ak.contexta.navigation.Screen
 import com.ak.contexta.ui.theme.Accent
 import com.ak.contexta.ui.theme.Meta
 
-enum class BottomNavTab(val label: String) {
-    Home("首页"),
-    Vocabulary("生词"),
-    Reference("参考"),
-    Settings("设置")
+enum class BottomNavTab(val route: String, val label: String) {
+    Home(Screen.Home.route, "首页"),
+    Vocabulary(Screen.Vocabulary.route, "生词"),
+    Reference(Screen.Reference.route, "参考"),
+    Settings(Screen.Settings.route, "设置")
 }
 
 @Composable

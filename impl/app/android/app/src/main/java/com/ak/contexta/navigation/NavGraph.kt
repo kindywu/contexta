@@ -39,15 +39,6 @@ fun ContextaNavGraph(
             HomeScreen(
                 onArticleClick = { articleId ->
                     navController.navigate(Screen.Reading.createRoute(articleId))
-                },
-                onNavigateToVocabulary = {
-                    navController.navigate(Screen.Vocabulary.route)
-                },
-                onNavigateToReference = {
-                    navController.navigate(Screen.Reference.route)
-                },
-                onNavigateToSettings = {
-                    navController.navigate(Screen.Settings.route)
                 }
             )
         }

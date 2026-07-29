@@ -2,7 +2,7 @@ package com.ak.contexta.ui.reading
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +37,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ak.contexta.ui.components.EmptyState
 import com.ak.contexta.ui.components.LoadingIndicator
 import com.ak.contexta.ui.theme.Accent
+import com.ak.contexta.ui.theme.AccentOn
 import com.ak.contexta.ui.theme.Background
 import com.ak.contexta.ui.theme.Foreground
 import com.ak.contexta.ui.theme.ForegroundSecondary
@@ -287,7 +288,7 @@ private fun WordBottomSheetOverlay(
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(),
-        exit = fadeIn()
+        exit = fadeOut()
     ) {
         if (visible && data != null) {
             Box(

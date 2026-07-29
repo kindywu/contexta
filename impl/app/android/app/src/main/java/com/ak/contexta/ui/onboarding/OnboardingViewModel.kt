@@ -24,6 +24,9 @@ class OnboardingViewModel @Inject constructor(
     private val _state = MutableStateFlow(OnboardingState())
     val state: StateFlow<OnboardingState> = _state.asStateFlow()
 
+    /** Returns true if user has already completed onboarding */
+    suspend fun isAlreadyOnboarded(): Boolean = settingsRepository.isOnboarded()
+
     fun selectLevel(level: String) {
         _state.value = _state.value.copy(selectedLevel = level)
     }

@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -7,7 +10,7 @@ plugins {
 }
 
 val localProperties = rootProject.file("local.properties").takeIf { it.exists() }
-    ?.let { file -> java.util.Properties().also { it.load(java.io.FileInputStream(file)) } }
+    ?.let { file -> Properties().also { it.load(FileInputStream(file)) } }
 
 val deepSeekApiKey: String = localProperties?.getProperty("deepseek.apiKey") ?: ""
 val deepSeekModel: String = localProperties?.getProperty("deepseek.model") ?: "deepseek-v4-flash"
@@ -28,7 +31,9 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.ak.contexta.testing.ContextaTestRunner"
+        testInstrumentationRunnerArguments["androidx.test.core.app.Application"] =
+            "com.ak.contexta.TestContextaApplication_Application"
 
         buildConfigField("String", "DEEPSEEK_API_KEY", "\"${deepSeekApiKey}\"")
         buildConfigField("String", "DEEPSEEK_MODEL", "\"${deepSeekModel}\"")
@@ -96,8 +101,12 @@ dependencies {
 
     // Testing
     testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.coroutines.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.hilt.android.testing)
+    kspAndroidTest(libs.hilt.compiler)
 }
