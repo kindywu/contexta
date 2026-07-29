@@ -93,6 +93,10 @@ class ArticleRepository @Inject constructor(
         articleDao.insertAll(articles)
     }
 
+    /** Get articles in a batch (suspend, for workers) */
+    suspend fun getArticles(batchId: Long): List<Article> =
+        articleDao.getByBatch(batchId).map { it.toModel() }
+
     /** Try to claim the batch for generation (CAS) */
     suspend fun claimBatch(batchId: Long): Boolean {
         val now = System.currentTimeMillis()

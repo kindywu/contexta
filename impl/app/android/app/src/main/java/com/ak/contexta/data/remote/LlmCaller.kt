@@ -17,7 +17,9 @@ import javax.inject.Singleton
  * - Structural errors (DB, serialization): throw PipelineBlockingException
  */
 @Singleton
-class LlmCaller @Inject constructor() {
+class LlmCaller @Inject constructor(
+    private val deepSeekApi: DeepSeekApi
+) {
 
     companion object {
         private const val MAX_RETRIES = 3
@@ -52,7 +54,7 @@ class LlmCaller @Inject constructor() {
                     )
                 )
 
-                val response = DeepSeekClient.api.chatCompletion(request)
+                val response = deepSeekApi.chatCompletion(request)
                 val content = response.choices.firstOrNull()?.message?.content
                     ?: throw IllegalStateException("Empty response from LLM")
 

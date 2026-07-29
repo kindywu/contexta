@@ -5,14 +5,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.navigation.compose.rememberNavController
+import com.ak.contexta.navigation.ContextaNavGraph
 import com.ak.contexta.ui.theme.ContextaTheme
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -20,9 +22,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             ContextaTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
+                    val navController = rememberNavController()
+                    ContextaNavGraph(
+                        navController = navController,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
             }
@@ -30,18 +33,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
 @Preview(showBackground = true)
 @Composable
-fun GreetingPreview() {
+fun DefaultPreview() {
     ContextaTheme {
-        Greeting("Android")
+        Scaffold(modifier = Modifier.fillMaxSize()) {
+            // Placeholder
+        }
     }
 }
