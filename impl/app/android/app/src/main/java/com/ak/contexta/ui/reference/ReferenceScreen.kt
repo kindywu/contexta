@@ -190,60 +190,126 @@ private fun AlphabetGridCard(
 }
 
 @Composable
-private fun PhonicsContent(onSpeak: (String) -> Unit) {
-    Text(
-        text = "元音 (20个)",
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(vertical = 8.dp)
-    )
-
-    phonicsVowels.forEach { item ->
-        PhonicsItem(item = item, onClick = { onSpeak(item.example) })
-    }
-
-    Spacer(modifier = Modifier.height(8.dp))
-
-    Text(
-        text = "辅音 (28个)",
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(vertical = 8.dp)
-    )
-
-    phonicsConsonants.forEach { item ->
-        PhonicsItem(item = item, onClick = { onSpeak(item.example) })
+private fun SectionHeader(title: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(16.dp)
+                .background(Accent, RoundedCornerShape(2.dp))
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = Accent
+        )
     }
 }
 
 @Composable
-private fun PhonicsItem(item: PhonicsItem, onClick: () -> Unit) {
-    Row(
+private fun PhonicsContent(onSpeak: (String) -> Unit) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp)
+            .padding(bottom = 16.dp)
+    ) {
+        // ── 元音区 ──
+        SectionHeader(title = "元音 (20个)")
+
+        val vowelCardModifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(SurfaceWarm)
+
+        phonicsVowels.chunked(3).forEach { row ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                row.forEach { item ->
+                    PhonicsGridCard(
+                        item = item,
+                        bgModifier = vowelCardModifier,
+                        onClick = { onSpeak(item.example) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                repeat(3 - row.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // ── 辅音区 ──
+        SectionHeader(title = "辅音 (28个)")
+
+        val consonantCardModifier = Modifier
             .clip(RoundedCornerShape(8.dp))
             .background(Surface)
-            .clickable { onClick() }
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+
+        phonicsConsonants.chunked(3).forEach { row ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                row.forEach { item ->
+                    PhonicsGridCard(
+                        item = item,
+                        bgModifier = consonantCardModifier,
+                        onClick = { onSpeak(item.example) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                repeat(3 - row.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhonicsGridCard(
+    item: PhonicsItem,
+    bgModifier: Modifier,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .then(bgModifier)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = item.phone,
-            style = MaterialTheme.typography.bodySmall,
-            color = Meta,
-            modifier = Modifier.width(50.dp)
+            style = MaterialTheme.typography.bodyMedium,
+            color = Foreground
         )
+        Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = item.example,
             style = MaterialTheme.typography.bodySmall,
-            color = Foreground
+            color = ForegroundSecondary
         )
+        Spacer(modifier = Modifier.height(1.dp))
         Text(
             text = item.full,
             style = MaterialTheme.typography.labelSmall,
-            color = Muted,
-            modifier = Modifier.padding(start = 6.dp)
+            color = Muted
         )
     }
 }
