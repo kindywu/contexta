@@ -2,6 +2,8 @@ package com.ak.contexta.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.RoomDatabase
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.ak.contexta.data.local.ContextaDatabase
 import com.ak.contexta.data.local.Migrations
 import com.ak.contexta.data.local.dao.ArticleBatchDao
@@ -17,11 +19,13 @@ import com.ak.contexta.data.local.dao.UserSettingsDao
 import com.ak.contexta.data.local.dao.VocabularyEntryDao
 import com.ak.contexta.data.local.dao.WordDao
 import com.ak.contexta.data.local.dao.WordSenseDao
+import com.ak.contexta.data.local.seed.seedDatabase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import kotlinx.serialization.json.Json
 import javax.inject.Singleton
 
 @Module
@@ -30,12 +34,20 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): ContextaDatabase {
+    fun provideDatabase(
+        @ApplicationContext context: Context,
+        json: Json
+    ): ContextaDatabase {
         return Room.databaseBuilder(
             context,
             ContextaDatabase::class.java,
             "contexta.db"
         )
+            .addCallback(object : RoomDatabase.Callback() {
+                override fun onCreate(db: SupportSQLiteDatabase) {
+                    seedDatabase(context, json, db)
+                }
+            })
             .addMigrations(*Migrations.ALL)
             .fallbackToDestructiveMigration() // only safe during development
             .build()

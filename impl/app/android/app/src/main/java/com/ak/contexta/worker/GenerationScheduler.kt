@@ -1,6 +1,7 @@
 package com.ak.contexta.worker
 
 import android.content.Context
+import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -21,6 +22,7 @@ class GenerationScheduler @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     companion object {
+        private const val TAG = "GenerationScheduler"
         private const val UNIQUE_WORK_PREFIX = "article_generation_batch_"
     }
 
@@ -29,6 +31,8 @@ class GenerationScheduler @Inject constructor(
      * Returns true if the work was newly enqueued, false if already pending/running.
      */
     fun scheduleBatchGeneration(batchId: Long, appVersionCode: Int = 0): Boolean {
+        Log.i(TAG, "Scheduling Worker for batch $batchId")
+
         val workRequest = OneTimeWorkRequestBuilder<ArticleGenerationWorker>()
             .setInputData(ArticleGenerationWorker.buildInputData(batchId, appVersionCode))
             .setBackoffCriteria(
@@ -45,6 +49,7 @@ class GenerationScheduler @Inject constructor(
         val existingWorkPolicy = ExistingWorkPolicy.KEEP
 
         workManager.enqueueUniqueWork(uniqueWorkName, existingWorkPolicy, workRequest)
+        Log.i(TAG, "Worker enqueued for batch $batchId (name=$uniqueWorkName)")
 
         return true
     }

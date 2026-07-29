@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ak.contexta.BuildConfig
 import com.ak.contexta.domain.GenerationManager
+import com.ak.contexta.domain.generation.categoryToDifficulty
 import com.ak.contexta.domain.model.ArticleStatus
 import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.repository.SettingsRepository
@@ -123,16 +124,22 @@ class HomeViewModel @Inject constructor(
             articleRepository.observeArticles(currentBatch.id)
                 .map { articles ->
                     val settings = settingsRepository.getSettings()
+                    val userDifficulty = settings?.difficultyLevel ?: "MEDIUM"
+                    val dailyCount = settings?.dailyArticleCount ?: Int.MAX_VALUE
 
-                    // Only show articles that have been generated
-                    val generatedArticles = articles.filter { it.status != ArticleStatus.PENDING }
+                    // Filter by user's difficulty level and limit by daily count
+                    val shownArticles = articles
+                        .filter { it.status != ArticleStatus.PENDING }
+                        .filter { categoryToDifficulty(it.contentCategory) == userDifficulty }
+                        .sortedBy { it.orderIndex }
+                        .take(dailyCount)
 
-                    generatedArticles.map { article ->
+                    shownArticles.map { article ->
                         ArticleItemUi(
                             id = article.id,
                             title = article.title,
                             description = article.contentCategory,
-                            difficultyLabel = settings?.difficultyLevel ?: "MEDIUM",
+                            difficultyLabel = userDifficulty,
                             categoryLabel = article.contentCategory.replace("_", " ")
                         )
                     }.let { items ->
@@ -150,7 +157,7 @@ class HomeViewModel @Inject constructor(
                         articleGroups = groups,
                         isLoading = false,
                         isGenerating = !hasContent,
-                        generationMessage = if (!hasContent) "正在生成文章…" else ""
+                        generationMessage = if (!hasContent) "当前等级暂无文章" else ""
                     )
                 }
         } else {

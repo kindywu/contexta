@@ -1,5 +1,6 @@
 package com.ak.contexta.domain
 
+import android.util.Log
 import com.ak.contexta.data.local.ContextaTypeConverters
 import com.ak.contexta.data.local.dao.GenerationPipelineStatusDao
 import com.ak.contexta.domain.model.Article
@@ -8,6 +9,7 @@ import com.ak.contexta.domain.model.BatchStatus
 import com.ak.contexta.domain.model.BatchType
 import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.repository.SettingsRepository
+import com.ak.contexta.worker.GenerationScheduler
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 import java.time.ZoneId
@@ -24,9 +26,11 @@ import javax.inject.Singleton
 class GenerationManager @Inject constructor(
     private val articleRepository: ArticleRepository,
     private val settingsRepository: SettingsRepository,
-    private val pipelineStatusDao: GenerationPipelineStatusDao
+    private val pipelineStatusDao: GenerationPipelineStatusDao,
+    private val generationScheduler: GenerationScheduler
 ) {
     companion object {
+        private const val TAG = "GenerationManager"
         private val CONTENT_CATEGORIES = mapOf(
             "LOW" to listOf("DAILY_CONVERSATION", "SCENE_DESCRIPTION", "SIMPLE_STORY"),
             "MEDIUM" to listOf("NEWS", "EXPOSITORY", "ARGUMENTATIVE", "PERSONAL_ESSAY"),
@@ -39,8 +43,11 @@ class GenerationManager @Inject constructor(
      * Returns whether onboarding is needed.
      */
     suspend fun onAppStart(currentVersionCode: Int): StartupResult {
+        Log.i(TAG, "onAppStart: currentVersionCode=$currentVersionCode")
+
         // 1. Check pipeline block
         if (articleRepository.isPipelineBlocked()) {
+            Log.w(TAG, "Pipeline blocked, trying to recover")
             val recovered = articleRepository.recoverIfNewerVersion(currentVersionCode)
             if (!recovered) {
                 return StartupResult.PipelineBlocked
@@ -60,9 +67,12 @@ class GenerationManager @Inject constructor(
         val currentBatch = articleRepository.getCurrentBatch()
         val nextBatch = articleRepository.getNextBatch()
 
+        Log.i(TAG, "currentBatch=${currentBatch?.id}/${currentBatch?.status}, nextBatch=${nextBatch?.id}/${nextBatch?.status}")
+
         val today = ContextaTypeConverters.currentDateString()
 
         if (currentBatch == null && nextBatch == null) {
+            Log.i(TAG, "Fresh start: need initial batch")
             // Fresh start: create CURRENT batch
             return StartupResult.NeedsInitialBatch(
                 difficulty = settings.difficultyLevel,
@@ -71,6 +81,7 @@ class GenerationManager @Inject constructor(
         }
 
         if (currentBatch == null && nextBatch != null) {
+            Log.i(TAG, "No current batch, promoting next")
             // NEXT can be promoted directly (no CURRENT to compare against)
             if (nextBatch.status == BatchStatus.READY || nextBatch.status == BatchStatus.GENERATING) {
                 articleRepository.promoteNextToCurrent(nextBatch.id)
@@ -83,6 +94,7 @@ class GenerationManager @Inject constructor(
             val unlockedOn = currentBatch.unlockedOn ?: ""
             // Check if a natural day has passed since CURRENT was unlocked
             if (isNextDay(unlockedOn, today) && nextBatch.status == BatchStatus.READY) {
+                Log.i(TAG, "Next day, promoting next to current")
                 articleRepository.promoteNextToCurrent(nextBatch.id)
                 triggerNextBatchGeneration(settings.difficultyLevel, settings.dailyArticleCount)
                 return StartupResult.Ready
@@ -91,12 +103,17 @@ class GenerationManager @Inject constructor(
             // If NEXT is still generating and a day has passed, show loading
             if (isNextDay(unlockedOn, today) &&
                 (nextBatch.status == BatchStatus.GENERATING || nextBatch.status == BatchStatus.PENDING)) {
+                Log.i(TAG, "Next day but next batch still generating")
                 return StartupResult.WaitingForGeneration(nextBatch.id)
             }
         }
 
-        // Ensure NEXT batch exists if missing
-        if (nextBatch == null) {
+        // Ensure NEXT batch exists if missing, expired, or invalidated
+        if (nextBatch == null ||
+            nextBatch.status == BatchStatus.EXPIRED ||
+            nextBatch.status == BatchStatus.INVALIDATED
+        ) {
+            Log.i(TAG, "Creating new NEXT batch (current: ${currentBatch?.status})")
             triggerNextBatchGeneration(settings.difficultyLevel, settings.dailyArticleCount)
         }
 
@@ -107,6 +124,7 @@ class GenerationManager @Inject constructor(
      * Start generation for the first (initial) batch after onboarding.
      */
     suspend fun startInitialGeneration(difficulty: String, dailyCount: Int): Long {
+        Log.i(TAG, "startInitialGeneration: difficulty=$difficulty, dailyCount=$dailyCount")
         val batchId = articleRepository.createBatch(
             batchType = BatchType.CURRENT.value,
             difficulty = difficulty,
@@ -127,6 +145,7 @@ class GenerationManager @Inject constructor(
             existingNext.status != BatchStatus.EXPIRED &&
             existingNext.status != BatchStatus.INVALIDATED
         ) {
+            Log.i(TAG, "NEXT batch ${existingNext.id} exists and active (${existingNext.status}), skipping")
             return // already exists and still active
         }
 
@@ -135,9 +154,12 @@ class GenerationManager @Inject constructor(
             difficulty = difficulty,
             dailyCount = dailyCount
         )
+        Log.i(TAG, "Created NEXT batch $batchId, scheduling Worker")
         val categories = pickCategories(difficulty, dailyCount)
         articleRepository.createArticles(batchId, categories)
-        // The caller (GenerationScheduler) will enqueue WorkManager
+        // Schedule WorkManager to generate the articles via LLM
+        generationScheduler.scheduleBatchGeneration(batchId)
+        Log.i(TAG, "Worker scheduled for batch $batchId")
     }
 
     private suspend fun pickCategories(difficulty: String, count: Int): List<String> {
