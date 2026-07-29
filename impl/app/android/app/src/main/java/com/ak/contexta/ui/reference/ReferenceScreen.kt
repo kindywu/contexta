@@ -2,6 +2,8 @@ package com.ak.contexta.ui.reference
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -130,57 +132,59 @@ fun ReferenceScreen(
 
 @Composable
 private fun AlphabetContent(onSpeak: (String) -> Unit) {
-    alphabetData.forEach { item ->
-        ReferenceItem(
-            char = item.char,
-            phone = item.phone,
-            example = item.example,
-            cn = item.cn,
-            onClick = { onSpeak(item.example) }
-        )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 16.dp)
+    ) {
+        alphabetData.chunked(4).forEach { row ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                row.forEach { item ->
+                    AlphabetGridCard(
+                        item = item,
+                        onClick = { onSpeak(item.example) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                // 补齐最后一行空白格，保持对齐
+                repeat(4 - row.size) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun ReferenceItem(
-    char: String,
-    phone: String,
-    example: String,
-    cn: String,
-    onClick: () -> Unit
+private fun AlphabetGridCard(
+    item: AlphabetItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp)
+    Column(
+        modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .background(Surface)
-            .clickable { onClick() }
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = char,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.width(40.dp)
+            text = item.char,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = Foreground
         )
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
-            text = phone,
+            text = item.phone,
             style = MaterialTheme.typography.bodySmall,
-            color = Meta,
-            modifier = Modifier.width(50.dp)
-        )
-        Text(
-            text = example,
-            style = MaterialTheme.typography.bodySmall,
-            color = ForegroundSecondary,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = cn,
-            style = MaterialTheme.typography.labelSmall,
-            color = Muted
+            color = Meta
         )
     }
 }
