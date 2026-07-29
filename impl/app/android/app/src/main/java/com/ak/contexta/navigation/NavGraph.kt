@@ -9,6 +9,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.ak.contexta.ui.home.HomeScreen
 import com.ak.contexta.ui.onboarding.OnboardingScreen
+import com.ak.contexta.ui.reading.ReadingScreen
+import com.ak.contexta.ui.reference.ReferenceScreen
+import com.ak.contexta.ui.settings.SettingsScreen
+import com.ak.contexta.ui.vocabulary.VocabularyScreen
 
 @Composable
 fun ContextaNavGraph(
@@ -53,20 +57,22 @@ fun ContextaNavGraph(
             arguments = listOf(navArgument("articleId") { type = NavType.LongType })
         ) { backStackEntry ->
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: return@composable
-            // TODO: Add ReadingScreen composable
-            // ReadingScreen(articleId = articleId, onBack = { navController.popBackStack() })
+            ReadingScreen(
+                articleId = articleId,
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable(Screen.Vocabulary.route) {
-            // TODO: Add VocabularyScreen composable
+            VocabularyScreen()
         }
 
         composable(Screen.Reference.route) {
-            // TODO: Add ReferenceScreen composable
+            ReferenceScreen()
         }
 
         composable(Screen.Settings.route) {
-            // TODO: Add SettingsScreen composable
+            SettingsScreen()
         }
     }
 }

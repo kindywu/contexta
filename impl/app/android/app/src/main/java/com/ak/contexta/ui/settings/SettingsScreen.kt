@@ -1,0 +1,396 @@
+package com.ak.contexta.ui.settings
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.ak.contexta.ui.components.LoadingIndicator
+import com.ak.contexta.ui.components.StatCard
+import com.ak.contexta.ui.components.StatCardData
+import com.ak.contexta.ui.theme.Accent
+import com.ak.contexta.ui.theme.Background
+import com.ak.contexta.ui.theme.Foreground
+import com.ak.contexta.ui.theme.ForegroundSecondary
+import com.ak.contexta.ui.theme.Meta
+import com.ak.contexta.ui.theme.Muted
+import com.ak.contexta.ui.theme.Surface
+import com.ak.contexta.ui.theme.SurfaceWarm
+
+@Composable
+fun SettingsScreen(
+    viewModel: SettingsViewModel = hiltViewModel()
+) {
+    val state by viewModel.state.collectAsState()
+
+    if (state.isLoading) {
+        LoadingIndicator()
+        return
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Background)
+    ) {
+        // Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Surface)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "设置",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Learning settings section
+            SectionTitle(title = "学习设置")
+
+            // Level picker
+            SettingsPickerItem(
+                label = "英文水平",
+                description = levelDescription(state.level),
+                value = levelLabel(state.level),
+                onClick = { /* TODO: level picker dialog */ }
+            )
+
+            // Daily count stepper
+            SettingsStepperItem(
+                label = "每日文章数量",
+                description = "每天最多修改1次，每月最多3次",
+                value = state.dailyCount,
+                canDecrement = state.dailyCount > 1,
+                canIncrement = state.dailyCount < 10,
+                onDecrement = { viewModel.decrementDailyCount() },
+                onIncrement = { viewModel.incrementDailyCount() }
+            )
+
+            // Translation mode picker
+            SettingsPickerItem(
+                label = "译文默认模式",
+                description = "文章阅读时译文显示方式",
+                value = translationModeLabel(state.translationMode),
+                onClick = { /* TODO: mode picker dialog */ }
+            )
+
+            // Mastery threshold stepper
+            SettingsStepperItem(
+                label = "单词掌握阈值",
+                description = "标记"认识" N 次后自动移除",
+                value = state.masteryThreshold,
+                canDecrement = state.masteryThreshold > 1,
+                canIncrement = state.masteryThreshold < 5,
+                onDecrement = { viewModel.decrementMasteryThreshold() },
+                onIncrement = { viewModel.incrementMasteryThreshold() }
+            )
+
+            // Auto play TTS toggle
+            SettingsToggleItem(
+                label = "自动朗读",
+                description = "进入文章后自动播放朗读",
+                checked = state.autoPlayAudio,
+                onToggle = { viewModel.toggleAutoPlayAudio() }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Stats section
+            SectionTitle(title = "学习统计")
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatCard(
+                    stat = StatCardData(
+                        number = state.stats.totalArticlesRead.toString(),
+                        label = "阅读文章"
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+                StatCard(
+                    stat = StatCardData(
+                        number = state.stats.totalWordsAdded.toString(),
+                        label = "添加单词"
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatCard(
+                    stat = StatCardData(
+                        number = state.stats.totalLearningDays.toString(),
+                        label = "累计学习天数"
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+                StatCard(
+                    stat = StatCardData(
+                        number = state.stats.currentStreak.toString(),
+                        label = "当前连续学习",
+                        sub = "🔥 连续 ${state.stats.currentStreak} 天，继续加油！"
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // About section
+            SectionTitle(title = "关于")
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "版本",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "Contexta 1.0.0",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Meta
+                )
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = Meta,
+        letterSpacing = 0.5.sp,
+        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+private fun SettingsPickerItem(
+    label: String,
+    description: String,
+    value: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = Foreground
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = Muted
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodySmall,
+                color = Meta
+            )
+            Text(
+                text = "›",
+                style = MaterialTheme.typography.titleMedium,
+                color = SurfaceWarm
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsStepperItem(
+    label: String,
+    description: String,
+    value: Int,
+    canDecrement: Boolean,
+    canIncrement: Boolean,
+    onDecrement: () -> Unit,
+    onIncrement: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = Foreground
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = Muted
+            )
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (canDecrement) Surface else SurfaceWarm.copy(alpha = 0.3f))
+                    .clickable(enabled = canDecrement) { onDecrement() }
+                    .padding(0.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "−",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (canDecrement) Foreground else Muted.copy(alpha = 0.3f)
+                )
+            }
+            Text(
+                text = value.toString(),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.width(24.dp),
+                textAlign = TextAlign.Center
+            )
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (canIncrement) Surface else SurfaceWarm.copy(alpha = 0.3f))
+                    .clickable(enabled = canIncrement) { onIncrement() }
+                    .padding(0.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "+",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (canIncrement) Foreground else Muted.copy(alpha = 0.3f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsToggleItem(
+    label: String,
+    description: String,
+    checked: Boolean,
+    onToggle: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = Foreground
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = Muted
+            )
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = { onToggle() },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = AccentOn,
+                checkedTrackColor = Accent,
+                uncheckedThumbColor = Foreground,
+                uncheckedTrackColor = SurfaceWarm
+            )
+        )
+    }
+}
+
+private fun levelLabel(level: String): String = when (level) {
+    "LOW" -> "初级"
+    "MEDIUM" -> "中级"
+    "HIGH" -> "高级"
+    else -> level
+}
+
+private fun levelDescription(level: String): String = when (level) {
+    "LOW" -> "初级 · LOW"
+    "MEDIUM" -> "中级 · MEDIUM"
+    "HIGH" -> "高级 · HIGH"
+    else -> level
+}
+
+private fun translationModeLabel(mode: String): String = when (mode) {
+    "full" -> "完全显示"
+    "blurred" -> "模糊"
+    "hidden" -> "隐藏"
+    else -> mode
+}
