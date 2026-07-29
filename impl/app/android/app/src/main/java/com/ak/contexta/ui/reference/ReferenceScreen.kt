@@ -1,6 +1,7 @@
 package com.ak.contexta.ui.reference
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,9 +23,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.ak.contexta.ui.theme.Accent
 import com.ak.contexta.ui.theme.AccentOn
 import com.ak.contexta.ui.theme.Background
@@ -56,9 +57,12 @@ data class GrammarItem(
 )
 
 @Composable
-fun ReferenceScreen() {
+fun ReferenceScreen(
+    viewModel: ReferenceViewModel = hiltViewModel()
+) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("字母表", "音标", "语法")
+    val onSpeak: (String) -> Unit = { text -> viewModel.speak(text) }
 
     Column(
         modifier = Modifier
@@ -100,6 +104,7 @@ fun ReferenceScreen() {
                         .padding(end = 12.dp)
                         .clip(RoundedCornerShape(8.dp))
                         .background(bg)
+                        .clickable { selectedTab = index }
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
@@ -115,22 +120,23 @@ fun ReferenceScreen() {
                 .padding(horizontal = 16.dp)
         ) {
             when (selectedTab) {
-                0 -> AlphabetContent()
-                1 -> PhonicsContent()
-                2 -> GrammarContent()
+                0 -> AlphabetContent(onSpeak = onSpeak)
+                1 -> PhonicsContent(onSpeak = onSpeak)
+                2 -> GrammarContent(onSpeak = onSpeak)
             }
         }
     }
 }
 
 @Composable
-private fun AlphabetContent() {
+private fun AlphabetContent(onSpeak: (String) -> Unit) {
     alphabetData.forEach { item ->
         ReferenceItem(
             char = item.char,
             phone = item.phone,
             example = item.example,
-            cn = item.cn
+            cn = item.cn,
+            onClick = { onSpeak(item.example) }
         )
     }
 }
@@ -140,7 +146,8 @@ private fun ReferenceItem(
     char: String,
     phone: String,
     example: String,
-    cn: String
+    cn: String,
+    onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -148,6 +155,7 @@ private fun ReferenceItem(
             .padding(vertical = 3.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(Surface)
+            .clickable { onClick() }
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -160,7 +168,6 @@ private fun ReferenceItem(
         Text(
             text = phone,
             style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
             color = Meta,
             modifier = Modifier.width(50.dp)
         )
@@ -179,7 +186,7 @@ private fun ReferenceItem(
 }
 
 @Composable
-private fun PhonicsContent() {
+private fun PhonicsContent(onSpeak: (String) -> Unit) {
     Text(
         text = "元音 (20个)",
         style = MaterialTheme.typography.titleMedium,
@@ -188,7 +195,7 @@ private fun PhonicsContent() {
     )
 
     phonicsVowels.forEach { item ->
-        PhonicsItem(item = item)
+        PhonicsItem(item = item, onClick = { onSpeak(item.example) })
     }
 
     Spacer(modifier = Modifier.height(8.dp))
@@ -201,25 +208,25 @@ private fun PhonicsContent() {
     )
 
     phonicsConsonants.forEach { item ->
-        PhonicsItem(item = item)
+        PhonicsItem(item = item, onClick = { onSpeak(item.example) })
     }
 }
 
 @Composable
-private fun PhonicsItem(item: PhonicsItem) {
+private fun PhonicsItem(item: PhonicsItem, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 3.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(Surface)
+            .clickable { onClick() }
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = item.phone,
             style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
             color = Meta,
             modifier = Modifier.width(50.dp)
         )
@@ -231,7 +238,6 @@ private fun PhonicsItem(item: PhonicsItem) {
         Text(
             text = item.full,
             style = MaterialTheme.typography.labelSmall,
-            fontFamily = FontFamily.Monospace,
             color = Muted,
             modifier = Modifier.padding(start = 6.dp)
         )
@@ -239,7 +245,7 @@ private fun PhonicsItem(item: PhonicsItem) {
 }
 
 @Composable
-private fun GrammarContent() {
+private fun GrammarContent(onSpeak: (String) -> Unit) {
     grammarData.forEach { item ->
         Column(
             modifier = Modifier
@@ -273,6 +279,7 @@ private fun GrammarContent() {
                         .padding(top = 4.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(Background)
+                        .clickable { onSpeak(en) }
                         .padding(8.dp)
                 ) {
                     Text(
