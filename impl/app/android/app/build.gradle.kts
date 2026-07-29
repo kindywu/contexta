@@ -6,6 +6,13 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val localProperties = rootProject.file("local.properties").takeIf { it.exists() }
+    ?.let { file -> java.util.Properties().also { it.load(java.io.FileInputStream(file)) } }
+
+val deepSeekApiKey: String = localProperties?.getProperty("deepseek.apiKey") ?: ""
+val deepSeekModel: String = localProperties?.getProperty("deepseek.model") ?: "deepseek-v4-flash"
+val deepSeekBaseUrl: String = localProperties?.getProperty("deepseek.baseUrl") ?: "https://api.deepseek.com"
+
 android {
     namespace = "com.ak.contexta"
     compileSdk {
@@ -22,6 +29,10 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "DEEPSEEK_API_KEY", "\"${deepSeekApiKey}\"")
+        buildConfigField("String", "DEEPSEEK_MODEL", "\"${deepSeekModel}\"")
+        buildConfigField("String", "DEEPSEEK_BASE_URL", "\"${deepSeekBaseUrl}\"")
     }
 
     buildTypes {
@@ -37,6 +48,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
