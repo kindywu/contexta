@@ -3,6 +3,7 @@ package com.ak.contexta.ui.onboarding
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ak.contexta.domain.repository.SettingsRepository
+import com.ak.contexta.domain.usecase.ActivateSeedBatchUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +19,8 @@ data class OnboardingState(
 
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
-    private val settingsRepository: SettingsRepository
+    private val settingsRepository: SettingsRepository,
+    private val activateSeedBatch: ActivateSeedBatchUseCase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(OnboardingState())
@@ -56,6 +58,7 @@ class OnboardingViewModel @Inject constructor(
 
         viewModelScope.launch {
             settingsRepository.completeOnboarding(level, dailyCount)
+            activateSeedBatch(level, dailyCount) // 激活匹配的种子批次，用户立即看到文章
             onComplete()
         }
     }

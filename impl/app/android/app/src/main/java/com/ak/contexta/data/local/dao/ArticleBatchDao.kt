@@ -31,6 +31,13 @@ interface ArticleBatchDao {
     @Query("SELECT * FROM article_batch WHERE id = :id")
     suspend fun getById(id: Long): ArticleBatchEntity?
 
+    @Query("""
+        SELECT * FROM article_batch
+        WHERE difficulty_level_snapshot = :difficulty AND generated_on = :date
+        ORDER BY id DESC LIMIT 1
+    """)
+    suspend fun getByDifficultyAndDate(difficulty: String, date: String): ArticleBatchEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(batch: ArticleBatchEntity): Long
 

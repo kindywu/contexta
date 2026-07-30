@@ -181,6 +181,51 @@ html, body {
 .app-bar .title { font-size: var(--text-xl); font-weight: 600; }
 .app-bar .right-action { font-size: var(--text-sm); color: var(--accent); background: none; border: none; cursor: pointer; padding: 4px 8px; }
 
+/* Reading app bar extras */
+.reading-app-bar {
+  background: var(--surface);
+}
+.reading-mark-read {
+  font-size: var(--text-sm);
+  color: var(--accent);
+  cursor: pointer;
+  padding: 4px 6px;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+  transition: background var(--motion-fast);
+}
+.reading-mark-read:hover { background: var(--surface-warm); }
+.reading-mark-read.done {
+  color: var(--muted);
+  cursor: default;
+}
+.reading-play-all {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  padding: 4px 6px;
+  color: var(--accent);
+  transition: opacity var(--motion-fast);
+}
+.reading-play-all:active { opacity: 0.7; }
+.reading-speed-btn {
+  background: var(--accent);
+  color: var(--accent-on);
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  transition: background var(--motion-fast);
+}
+.reading-speed-btn.slow {
+  background: var(--surface-warm);
+  color: var(--meta);
+}
+
 /* ─── Bottom Nav ─── */
 .bottom-nav {
   display: flex;
@@ -205,10 +250,9 @@ html, body {
   font-size: 10px;
   transition: color var(--motion-fast);
 }
-.nav-item svg {
-  width: 22px;
-  height: 22px;
-  fill: currentColor;
+.nav-icon {
+  font-size: 20px;
+  line-height: 1;
 }
 .nav-item.active { color: var(--accent); }
 .nav-item:active { opacity: 0.7; }
@@ -373,15 +417,18 @@ html, body {
 .article-card:active { opacity: 0.8; }
 .article-card .title { font-weight: 600; font-size: var(--text-base); margin-bottom: 4px; }
 .article-card .desc { font-size: var(--text-sm); color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.article-card .meta { font-size: 11px; color: var(--meta); margin-top: 6px; display: flex; gap: 12px; }
+.article-card .meta { font-size: 11px; color: var(--meta); margin-top: 6px; display: flex; align-items: center; gap: 8px; }
+.article-card .category-label { color: var(--meta); }
 .article-card .difficulty {
-  display: inline-block;
-  padding: 1px 8px;
-  border-radius: var(--radius-pill);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
-  background: var(--surface-warm);
-  color: var(--muted);
+  color: var(--accent);
+}
+.article-card .read-badge {
+  font-size: 11px;
+  color: var(--meta);
+  opacity: 0.5;
+  margin-left: auto;
 }
 .article-card.generating { opacity: 0.6; }
 .article-card.generating .title::after { content: ' 生成中…'; color: var(--meta); font-weight: 400; font-size: var(--text-sm); }
@@ -441,25 +488,33 @@ html, body {
   filter: none;
 }
 .reading-paragraph .zh.hidden { display: none; }
-.reading-paragraph .play-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--text-sm);
-  color: var(--accent);
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 4px 0;
-  margin-top: 4px;
-}
-.reading-paragraph .play-btn:active { opacity: 0.7; }
 .reading-footer {
   display: flex;
   justify-content: space-between;
-  padding: 16px;
-  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+  background: var(--surface);
 }
+.reading-footer-link {
+  font-size: var(--text-sm);
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 500;
+  padding: 4px 0;
+}
+.reading-footer-link:active { opacity: 0.7; }
+
+/* Reading paragraph play button — inline at end of English text */
+.reading-paragraph .play-btn {
+  display: inline;
+  font-size: 16px;
+  color: var(--accent);
+  cursor: pointer;
+  vertical-align: middle;
+  border: none;
+  background: none;
+  transition: opacity var(--motion-fast);
+}
+.reading-paragraph .play-btn:active { opacity: 0.7; }
 
 /* ─── WORD BOTTOM SHEET ─── */
 .bottom-sheet-overlay {
@@ -560,46 +615,154 @@ html, body {
 }
 .vocab-actions-bottom .btn { flex: 1; }
 
+.vocab-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0;
+}
+.vocab-summary-icon { font-size: 56px; margin-bottom: 16px; }
+.vocab-summary-title {
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  margin-bottom: 24px;
+}
+.vocab-summary-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  width: 100%;
+  margin-bottom: 32px;
+  box-shadow: var(--elev-raised);
+}
+.vocab-summary-stat {
+  text-align: center;
+  margin-bottom: 16px;
+}
+.vocab-summary-stat:last-child { margin-bottom: 0; }
+.vocab-summary-num {
+  font-size: var(--text-4xl);
+  font-weight: 700;
+  color: var(--accent);
+  font-family: var(--font-display);
+}
+.vocab-summary-lbl {
+  font-size: var(--text-base);
+  color: var(--muted);
+  display: block;
+  margin-top: 4px;
+}
+
 /* ─── REFERENCE SCREEN ─── */
 .ref-tabs {
   display: flex;
-  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  padding: 12px 16px;
   background: var(--bg);
-  position: sticky;
-  top: 0;
-  z-index: 10;
 }
 .ref-tab {
-  flex: 1;
-  padding: 12px;
-  text-align: center;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
   font-size: var(--text-sm);
   font-weight: 500;
-  color: var(--meta);
+  color: var(--fg);
   border: none;
-  background: none;
+  background: var(--surface-warm);
   cursor: pointer;
-  border-bottom: 2px solid transparent;
   transition: all var(--motion-fast);
 }
-.ref-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-.ref-content { display: none; padding: 12px 16px 24px; }
+.ref-tab.active {
+  background: var(--accent);
+  color: var(--accent-on);
+}
+.ref-content { display: none; padding: 8px 16px 24px; }
 .ref-content.active { display: block; }
-.ref-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+
+/* Alphabet 4-column grid */
+.alpha-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.alpha-card {
   background: var(--surface);
   border-radius: var(--radius-sm);
-  margin-bottom: 6px;
+  padding: 12px 10px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: var(--elev-ring);
+  transition: background var(--motion-fast);
+}
+.alpha-card:hover { background: var(--surface-warm); }
+.alpha-card:active { opacity: 0.8; }
+.alpha-card .alpha-char {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--fg);
+}
+.alpha-card .alpha-phone {
+  font-size: var(--text-sm);
+  color: var(--meta);
+  margin-top: 4px;
+}
+
+/* Phonics 3-column grid */
+.phonics-section {
+  margin-bottom: 16px;
+}
+.phonics-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+}
+.phonics-section-header .bar {
+  width: 3px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+.phonics-section-header .title {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--accent);
+}
+.phonics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.phonics-card {
+  padding: 10px 8px;
+  text-align: center;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--motion-fast);
+}
+.phonics-card.vowel {
+  background: var(--surface-warm);
+}
+.phonics-card.consonant {
+  background: var(--surface);
   box-shadow: var(--elev-ring);
 }
-.ref-item .char { font-size: var(--text-2xl); font-weight: 700; min-width: 36px; text-align: center; font-family: var(--font-display); }
-.ref-item .phone { font-family: var(--font-mono); color: var(--meta); min-width: 50px; font-size: var(--text-sm); }
-.ref-item .example { font-size: var(--text-sm); color: var(--fg-2); flex: 1; }
-.ref-item .example .cn { color: var(--meta); font-size: var(--text-xs); }
-.ref-item .play-sound { color: var(--accent); background: none; border: none; cursor: pointer; font-size: 16px; }
+.phonics-card:hover { opacity: 0.85; }
+.phonics-card:active { opacity: 0.7; }
+.phonics-card .ph-phone {
+  font-size: var(--text-base);
+  color: var(--fg);
+}
+.phonics-card .ph-example {
+  font-size: var(--text-sm);
+  color: var(--fg-2);
+  margin-top: 2px;
+}
+.phonics-card .ph-full {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  margin-top: 1px;
+}
 .grammar-item {
   padding: 14px;
   background: var(--surface);
@@ -933,10 +1096,12 @@ html, body {
 
     <!-- ─── READING ─── -->
     <div id="screen-reading" class="screen" data-od-id="screen-reading">
-      <div class="app-bar">
+      <div class="app-bar reading-app-bar">
         <button class="back-btn" onclick="navigateTo('screen-home')">←</button>
         <span class="title" id="readingTitle">文章标题</span>
-        <span class="right-action">🔊</span>
+        <span class="reading-mark-read" id="readingMarkRead" onclick="markArticleRead()">✓ 标记已读</span>
+        <button class="reading-play-all" onclick="playFullArticle()">🔊</button>
+        <button class="reading-speed-btn" id="readingSpeedBtn" onclick="toggleReadingSpeed()">1x</button>
       </div>
       <div class="translation-bar">
         <span style="color:var(--meta);">译文</span>
@@ -947,16 +1112,14 @@ html, body {
       </div>
       <div class="reading-body" id="readingBody" style="padding: 4px 16px 24px;"></div>
       <div class="reading-footer">
-        <button class="btn btn-ghost" onclick="navigateTo('screen-home')">← 返回列表</button>
-        <span style="color:var(--meta); font-size:var(--text-sm);" id="readingNav">1 / 3</span>
-        <button class="btn btn-ghost" id="nextArticleBtn" onclick="showNextArticle()">下一篇 →</button>
+        <span class="reading-footer-link" onclick="navigateTo('screen-home')">← 返回列表</span>
+        <span class="reading-footer-link" id="nextArticleBtn" onclick="showNextArticle()">下一篇 →</span>
       </div>
     </div>
 
     <!-- ─── VOCABULARY ─── -->
     <div id="screen-vocabulary" class="screen" data-od-id="screen-vocabulary">
       <div class="vocab-header">
-        <button class="back-btn" onclick="navigateTo('screen-home')">←</button>
         <span class="title">生词复习</span>
         <span class="count" id="vocabCount">0 个词</span>
       </div>
@@ -980,9 +1143,7 @@ html, body {
     <!-- ─── REFERENCE ─── -->
     <div id="screen-reference" class="screen" data-od-id="screen-reference">
       <div class="app-bar">
-        <button class="back-btn" onclick="navigateTo('screen-home')">←</button>
         <span class="title">基础参考</span>
-        <span></span>
       </div>
       <div class="ref-tabs">
         <button class="ref-tab active" onclick="switchRefTab(this, 'alphabet')">字母表</button>
@@ -997,9 +1158,7 @@ html, body {
     <!-- ─── SETTINGS ─── -->
     <div id="screen-settings" class="screen" data-od-id="screen-settings">
       <div class="app-bar">
-        <button class="back-btn" onclick="navigateTo('screen-home')">←</button>
         <span class="title">设置</span>
-        <span></span>
       </div>
       <div class="settings-content">
 
@@ -1093,19 +1252,19 @@ html, body {
   <!-- Bottom Nav -->
   <div class="bottom-nav" id="bottomNav" data-od-id="bottom-nav">
     <button class="nav-item active" data-screen="screen-home" onclick="navigateTo('screen-home')">
-      <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+      <span class="nav-icon">🏠</span>
       <span>首页</span>
     </button>
     <button class="nav-item" data-screen="screen-vocabulary" onclick="navigateTo('screen-vocabulary')">
-      <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/></svg>
+      <span class="nav-icon">📖</span>
       <span>生词</span>
     </button>
     <button class="nav-item" data-screen="screen-reference" onclick="navigateTo('screen-reference')">
-      <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
+      <span class="nav-icon">📚</span>
       <span>参考</span>
     </button>
     <button class="nav-item" data-screen="screen-settings" onclick="navigateTo('screen-settings')">
-      <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+      <span class="nav-icon">⚙️</span>
       <span>设置</span>
     </button>
   </div>
@@ -1420,10 +1579,15 @@ const App = {
   translationMode: 'full', // full | blurred | hidden
   masteryThreshold: 1,
   autoTTS: false,
+  ttsSpeed: 1.0, // 1.0 or 0.5
+  readArticles: JSON.parse(localStorage.getItem('contexta_read') || '[]'),
   dailyCountMod: null,
   vocab: JSON.parse(localStorage.getItem('contexta_vocab') || '[]'),
   vocabMastery: JSON.parse(localStorage.getItem('contexta_mastery') || '{}'),
   vocabIndex: 0,
+  vocabReviewedCount: 0,
+  vocabNewlyKnownCount: 0,
+  vocabSessionComplete: false,
   currentArticleIndex: 0,
   dailyArticles: [],
   revealedParagraphs: new Set(),
@@ -1545,7 +1709,13 @@ function navigateTo(screenId) {
 
   // Refresh screen content
   if (screenId === 'screen-home') renderHome();
-  if (screenId === 'screen-vocabulary') renderVocab();
+  if (screenId === 'screen-vocabulary') {
+    App.vocabIndex = 0;
+    App.vocabReviewedCount = 0;
+    App.vocabNewlyKnownCount = 0;
+    App.vocabSessionComplete = false;
+    renderVocab();
+  }
   if (screenId === 'screen-settings') renderSettings();
   if (screenId === 'screen-reference') renderReference();
 }
@@ -1558,6 +1728,22 @@ function initApp() {
 }
 
 /* ─── Home ─── */
+function dateLabelFor(dateStr) {
+  const today = new Date();
+  const d = new Date(dateStr + 'T00:00:00+08:00');
+  const todayStr = today.toISOString().split('T')[0];
+  const yesterday = new Date(today - 86400000);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+  if (dateStr === todayStr) return '今天';
+  if (dateStr === yesterdayStr) return '昨天';
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+}
+
+function formatCategory(category) {
+  return category.replace(/_/g, ' ');
+}
+
 function renderHome() {
   const today = new Date();
   const dateStr = `${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日 星期${['日', '一', '二', '三', '四', '五', '六'][today.getDay()]}`;
@@ -1576,9 +1762,7 @@ function renderHome() {
   list.innerHTML = '';
 
   Object.keys(groups).sort((a,b) => b.localeCompare(a)).forEach(date => {
-    const dayNames = { '2026-07-29': '星期三', '2026-07-28': '星期二', '2026-07-27': '星期一', '2026-07-26': '星期日' };
-    const d = new Date(date);
-    const label = `${date.replace(/-/g, '.')} ${dayNames[date] || ''}`;
+    const label = dateLabelFor(date);
 
     const group = document.createElement('div');
     group.className = 'day-group';
@@ -1591,10 +1775,11 @@ function renderHome() {
         ${groups[date].map(a => `
           <div class="article-card" onclick="openArticle('${a.id}')" data-od-id="article-card-${a.id}">
             <div class="title">${a.title}</div>
-            <div class="desc">${a.desc}</div>
+            <div class="desc">${formatCategory(a.category)}</div>
             <div class="meta">
               <span class="difficulty">${LEVEL_CONFIG[a.level]?.label || a.level}</span>
-              <span>${a.category}</span>
+              <span class="category-label">${formatCategory(a.category)}</span>
+              ${App.readArticles.includes(a.id) ? '<span class="read-badge">✓ 已读</span>' : ''}
             </div>
           </div>
         `).join('')}
@@ -1623,20 +1808,20 @@ function openArticle(articleId) {
 function renderArticle(idx) {
   const article = MOCK_ARTICLES[idx];
   document.getElementById('readingTitle').textContent = article.title;
-  document.getElementById('readingNav').textContent = `${idx + 1} / ${MOCK_ARTICLES.length}`;
 
   const body = document.getElementById('readingBody');
   const mode = App.translationMode;
   body.innerHTML = article.paragraphs.map((p, i) => `
     <div class="reading-paragraph" data-od-id="reading-paragraph-${i}">
-      <div class="en">${highlightWords(p.en)}</div>
+      <div class="en">${highlightWords(p.en)} <span class="play-btn" onclick="playTTS(this)">🔊</span></div>
       <div class="zh ${mode === 'blurred' ? 'blurred' : ''} ${mode === 'hidden' ? 'hidden' : ''}"
            onclick="${mode === 'blurred' ? `revealTranslation(this, ${i})` : ''}">
         ${p.zh}
       </div>
-      <button class="play-btn" onclick="playTTS(this)">🔊 朗读本段</button>
     </div>
   `).join('');
+
+  updateReadingAppBar();
 }
 
 function highlightWords(text) {
@@ -1652,6 +1837,49 @@ function showNextArticle() {
   const next = (App.currentArticleIndex + 1) % MOCK_ARTICLES.length;
   App.currentArticleIndex = next;
   renderArticle(next);
+}
+
+function markArticleRead() {
+  const articleId = MOCK_ARTICLES[App.currentArticleIndex].id;
+  if (!App.readArticles.includes(articleId)) {
+    App.readArticles.push(articleId);
+    localStorage.setItem('contexta_read', JSON.stringify(App.readArticles));
+  }
+  updateReadingAppBar();
+}
+
+function playFullArticle() {
+  const paragraphs = MOCK_ARTICLES[App.currentArticleIndex].paragraphs;
+  const text = paragraphs.map(p => p.en).join(' ');
+  if ('speechSynthesis' in window) {
+    speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = App.ttsSpeed;
+    utter.lang = 'en-US';
+    speechSynthesis.speak(utter);
+  }
+}
+
+function toggleReadingSpeed() {
+  App.ttsSpeed = App.ttsSpeed < 1.0 ? 1.0 : 0.5;
+  const btn = document.getElementById('readingSpeedBtn');
+  btn.textContent = App.ttsSpeed < 1.0 ? '0.5x' : '1x';
+  btn.classList.toggle('slow', App.ttsSpeed < 1.0);
+}
+
+function updateReadingAppBar() {
+  const articleId = MOCK_ARTICLES[App.currentArticleIndex].id;
+  const isRead = App.readArticles.includes(articleId);
+  const markRead = document.getElementById('readingMarkRead');
+  if (isRead) {
+    markRead.textContent = '✓ 已读';
+    markRead.classList.add('done');
+    markRead.onclick = null;
+  } else {
+    markRead.textContent = '✓ 标记已读';
+    markRead.classList.remove('done');
+    markRead.onclick = markArticleRead;
+  }
 }
 
 function cycleTranslationMode() {
@@ -1764,9 +1992,34 @@ function renderVocab() {
   const activeVocab = App.vocab.filter(w => App.vocabMastery[w] !== 'removed' && App.vocabMastery[w] !== 'mastered');
   const total = activeVocab.length;
   document.getElementById('vocabCount').textContent = `${total} 个词`;
-  document.getElementById('vocabActions').style.display = total > 0 ? 'flex' : 'none';
+
+  // Summary screen
+  if (App.vocabSessionComplete && total > 0) {
+    document.getElementById('vocabActions').style.display = 'none';
+    document.getElementById('vocabProgressLabel').textContent = '';
+    document.getElementById('vocabProgressFill').style.width = '0%';
+    document.getElementById('vocabCard').innerHTML = `
+      <div class="vocab-summary">
+        <div class="vocab-summary-icon">🎉</div>
+        <h2 class="vocab-summary-title">复习完成！</h2>
+        <div class="vocab-summary-card">
+          <div class="vocab-summary-stat">
+            <span class="vocab-summary-num">${App.vocabReviewedCount}</span>
+            <span class="vocab-summary-lbl">复习单词</span>
+          </div>
+          <div class="vocab-summary-stat">
+            <span class="vocab-summary-num">${App.vocabNewlyKnownCount}</span>
+            <span class="vocab-summary-lbl">新标记认识</span>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="restartVocab()">再来一轮</button>
+      </div>
+    `;
+    return;
+  }
 
   if (total === 0) {
+    document.getElementById('vocabActions').style.display = 'none';
     document.getElementById('vocabCard').innerHTML = `
       <div class="empty-state">
         <div class="icon">📝</div>
@@ -1777,6 +2030,7 @@ function renderVocab() {
     return;
   }
 
+  document.getElementById('vocabActions').style.display = 'flex';
   App.vocabIndex = Math.min(App.vocabIndex, total - 1);
   const word = activeVocab[App.vocabIndex];
   const vocabEntry = VOCABULARY_DATA.find(v => v.word === word);
@@ -1800,7 +2054,7 @@ function renderVocab() {
             <div class="zh" style="color:var(--muted); margin-top:4px;">${vocabEntry.examples[1]}</div>
           </div>
         </div>
-        <div style="margin-top:8px; font-size:var(--text-sm); color:var(--meta);">已认识 ${masteryCount}/1 次</div>
+        <div style="margin-top:8px; font-size:var(--text-sm); color:var(--meta);">已认识 ${masteryCount}/${App.masteryThreshold} 次</div>
       </div>
     `;
   } else {
@@ -1821,49 +2075,74 @@ function markVocab(familiar) {
   if (familiar) {
     const current = (typeof App.vocabMastery[word] === 'number' ? App.vocabMastery[word] : 0) + 1;
     App.vocabMastery[word] = current;
-    if (current >= 1) {
+    if (current >= App.masteryThreshold) {
       App.vocabMastery[word] = 'mastered';
     }
-  } else {
-    App.vocabMastery[word] = Math.max(0, (typeof App.vocabMastery[word] === 'number' ? App.vocabMastery[word] : 0));
+    App.vocabNewlyKnownCount++;
   }
+  App.vocabReviewedCount++;
   App.save();
   App.vocabIndex++;
+
+  // Check if we've finished all words
+  if (App.vocabIndex >= activeVocab.length) {
+    App.vocabSessionComplete = true;
+  }
+  renderVocab();
+}
+
+function restartVocab() {
+  App.vocabIndex = 0;
+  App.vocabReviewedCount = 0;
+  App.vocabNewlyKnownCount = 0;
+  App.vocabSessionComplete = false;
   renderVocab();
 }
 
 /* ─── Reference ─── */
 function renderReference() {
-  // Alphabet
+  // Alphabet - 4-column grid
   const alphaEl = document.getElementById('ref-alphabet');
-  alphaEl.innerHTML = REFERENCE_DATA.alphabet.map(item => `
-    <div class="ref-item" data-od-id="ref-char-${item.char.replace(/\s/g, '-').toLowerCase()}">
-      <span class="char">${item.char}</span>
-      <span class="phone">${item.phone}</span>
-      <span class="example">${item.example} <span class="cn">${item.cn}</span></span>
-      <button class="play-sound" onclick="playTTS(this)">🔊</button>
+  alphaEl.innerHTML = `<div class="alpha-grid">${REFERENCE_DATA.alphabet.map(item => `
+    <div class="alpha-card" onclick="playTTS(this)" data-od-id="ref-char-${item.char.replace(/\s/g, '-').toLowerCase()}">
+      <div class="alpha-char">${item.char}</div>
+      <div class="alpha-phone">${item.phone}</div>
     </div>
-  `).join('');
+  `).join('')}</div>`;
 
-  // Phonics
+  // Phonics - 3-column grid with sections
   const phEl = document.getElementById('ref-phonics');
   phEl.innerHTML = `
-    <h3 style="font-size:var(--text-lg); font-weight:600; margin-bottom:8px;">元音 (20个)</h3>
-    ${REFERENCE_DATA.phonics.vowels.map(item => `
-      <div class="ref-item">
-        <span class="phone" style="min-width:50px;">${item.phone}</span>
-        <span class="example">${item.example} <span style="color:var(--meta); font-family:var(--font-mono);">${item.full}</span></span>
-        <button class="play-sound" onclick="playTTS(this)">🔊</button>
+    <div class="phonics-section">
+      <div class="phonics-section-header">
+        <div class="bar"></div>
+        <span class="title">元音 (20个)</span>
       </div>
-    `).join('')}
-    <h3 style="font-size:var(--text-lg); font-weight:600; margin:16px 0 8px;">辅音 (28个)</h3>
-    ${REFERENCE_DATA.phonics.consonants.map(item => `
-      <div class="ref-item">
-        <span class="phone" style="min-width:50px;">${item.phone}</span>
-        <span class="example">${item.example} <span style="color:var(--meta); font-family:var(--font-mono);">${item.full}</span></span>
-        <button class="play-sound" onclick="playTTS(this)">🔊</button>
+      <div class="phonics-grid">
+        ${REFERENCE_DATA.phonics.vowels.map(item => `
+          <div class="phonics-card vowel" onclick="playTTS(this)">
+            <div class="ph-phone">${item.phone}</div>
+            <div class="ph-example">${item.example}</div>
+            <div class="ph-full">${item.full}</div>
+          </div>
+        `).join('')}
       </div>
-    `).join('')}
+    </div>
+    <div class="phonics-section">
+      <div class="phonics-section-header">
+        <div class="bar"></div>
+        <span class="title">辅音 (28个)</span>
+      </div>
+      <div class="phonics-grid">
+        ${REFERENCE_DATA.phonics.consonants.map(item => `
+          <div class="phonics-card consonant" onclick="playTTS(this)">
+            <div class="ph-phone">${item.phone}</div>
+            <div class="ph-example">${item.example}</div>
+            <div class="ph-full">${item.full}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
   `;
 
   // Grammar
@@ -2050,22 +2329,37 @@ function toggleAutoTTS() {
   App.saveSettings();
 }
 
-/* ─── TTS Polyfill ─── *//* ─── TTS Polyfill ─── */
+/* ─── TTS Polyfill ─── */
 function playTTS(el) {
   // Use Web Speech API for TTS
   if ('speechSynthesis' in window) {
-    const text = el?.closest?.('.reading-paragraph')?.querySelector?.('.en')?.textContent
-      || el?.closest?.('.ref-item')?.querySelector?.('.example')?.textContent
-      || el?.closest?.('.vocab-card')?.querySelector?.('.word')?.textContent
-      || el?.closest?.('.word-header')?.querySelector?.('.word')?.textContent
-      || 'Hello';
-    if (text) {
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.rate = 0.9;
-      utter.lang = 'en-US';
-      speechSynthesis.cancel();
-      speechSynthesis.speak(utter);
+    const card = el.closest('.reading-paragraph, .alpha-card, .phonics-card, .vocab-card, .word-header');
+    let text = 'Hello';
+
+    if (card?.classList.contains('reading-paragraph')) {
+      const enDiv = card.querySelector('.en');
+      if (enDiv) {
+        // Exclude the play button text from TTS
+        const clone = enDiv.cloneNode(true);
+        const btn = clone.querySelector('.play-btn');
+        if (btn) btn.remove();
+        text = clone.textContent?.trim() || 'Hello';
+      }
+    } else if (card?.classList.contains('alpha-card')) {
+      text = card.querySelector('.alpha-char')?.textContent?.split(' ')[1] || card.querySelector('.alpha-char')?.textContent || 'Hello';
+    } else if (card?.classList.contains('phonics-card')) {
+      text = card.querySelector('.ph-example')?.textContent || 'Hello';
+    } else if (card?.classList.contains('vocab-card')) {
+      text = card.querySelector('.word')?.textContent || 'Hello';
+    } else if (card?.classList.contains('word-header')) {
+      text = card.querySelector('.word')?.textContent || 'Hello';
     }
+
+    const utter = new SpeechSynthesisUtterance(text.trim());
+    utter.rate = 0.9;
+    utter.lang = 'en-US';
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utter);
   }
 }
 

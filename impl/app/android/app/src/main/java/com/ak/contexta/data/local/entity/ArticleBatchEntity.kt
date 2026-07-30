@@ -2,9 +2,19 @@ package com.ak.contexta.data.local.entity
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "article_batch")
+@Entity(
+    tableName = "article_batch",
+    indices = [
+        Index(value = ["generated_on"]),
+        Index(
+            value = ["difficulty_level_snapshot", "generated_on"],
+            unique = true
+        )
+    ]
+)
 data class ArticleBatchEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
@@ -24,7 +34,7 @@ data class ArticleBatchEntity(
     @ColumnInfo(name = "daily_count_snapshot")
     val dailyCountSnapshot: Int,
     @ColumnInfo(name = "generated_on")
-    val generatedOn: String? = null, // ISO date
+    val generatedOn: String, // ISO date, NOT NULL (schema 强制)
     @ColumnInfo(name = "unlocked_on")
     val unlockedOn: String? = null, // ISO date, set when promoted to CURRENT
     @ColumnInfo(name = "last_updated_at")

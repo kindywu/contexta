@@ -110,6 +110,13 @@ interface ArticleDao {
     """)
     suspend fun resetOrphanGenerating(batchId: Long)
 
+    /** 重置所有卡在 GENERATING 状态的文章回 PENDING（应用启动时调用）。 */
+    @Query("""
+        UPDATE article SET status = 'PENDING', retry_count = 0, generation_started_at = NULL
+        WHERE status = 'GENERATING'
+    """)
+    suspend fun resetAllGenerating()
+
     @Query("""
         SELECT * FROM article WHERE error_code IS NOT NULL ORDER BY last_retry_at DESC
     """)

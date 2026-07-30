@@ -24,8 +24,19 @@ interface ArticleRepository {
     /** Check and recover blocked pipeline if app version is newer */
     suspend fun recoverIfNewerVersion(currentVersionCode: Int): Boolean
 
+    /**
+     * 按难度和生成日期查找批次。
+     * 用于防止同一天对同一难度重复创建批次（规则 1）。
+     */
+    suspend fun getBatchByDifficultyAndDate(difficulty: String, date: String): ArticleBatch?
+
     /** Create a new batch (PENDING) */
-    suspend fun createBatch(batchType: String, difficulty: String, dailyCount: Int): Long
+    suspend fun createBatch(
+        batchType: String,
+        difficulty: String,
+        dailyCount: Int,
+        generatedOn: String? = null
+    ): Long
 
     /** Create article rows (PENDING) for a batch */
     suspend fun createArticles(batchId: Long, categories: List<String>)

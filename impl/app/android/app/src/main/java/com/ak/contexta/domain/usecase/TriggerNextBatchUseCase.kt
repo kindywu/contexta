@@ -46,6 +46,9 @@ class TriggerNextBatchUseCase @Inject constructor(
     /**
      * 确保 NEXT 批次存在且难度匹配。
      *
+     * **规则 1：每个自然天，每种难度等级，最多只有一个批次。**
+     * 创建新批次前会检查今天是否已为该难度生成过批次，如有则复用或跳过。
+     *
      * @param difficulty 用户当前难度等级
      * @param dailyCount 用户当前每日篇数（更新到 snapshot）
      */
@@ -73,11 +76,31 @@ class TriggerNextBatchUseCase @Inject constructor(
             return
         }
 
-        // 3. 没有可复用的，创建新批次并调度 Worker
+        val today = timeProvider.todayDateString()
+
+        // 3. 【规则 1】检查今天是否已为该难度创建过批次。
+        //    避免难度来回切换时在同一天产生多个同难度批次。
+        val existing = articleRepository.getBatchByDifficultyAndDate(difficulty, today)
+        if (existing != null && existing.status != BatchStatus.EXPIRED) {
+            // 已有非过期批次覆盖该难度，无需重复创建
+            return
+        }
+        if (existing != null && existing.status == BatchStatus.EXPIRED) {
+            // EXPIRED 批次可复用（可能是因难度切换被废弃的同日批次）
+            if (articleRepository.isBatchComplete(existing.id)) {
+                articleRepository.reactivateBatch(existing.id, dailyCount)
+                return
+            }
+            // 批次未完成（可能还在 GENERATING），让现有 Worker 继续
+            return
+        }
+
+        // 4. 没有可复用的，创建新批次并调度 Worker
         val batchId = articleRepository.createBatch(
             batchType = BatchType.NEXT.value,
             difficulty = difficulty,
-            dailyCount = dailyCount
+            dailyCount = dailyCount,
+            generatedOn = today
         )
         val categories = pickCategories(difficulty)
         articleRepository.createArticles(batchId, categories)

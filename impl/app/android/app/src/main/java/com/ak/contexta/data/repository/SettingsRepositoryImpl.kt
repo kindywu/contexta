@@ -36,7 +36,6 @@ class SettingsRepositoryImpl @Inject constructor(
 
     override suspend fun updateLevel(level: String) {
         val existing = settingsDao.get() ?: return
-        if (level == existing.difficultyLevel) return
         settingsDao.upsert(existing.copy(difficultyLevel = level))
     }
 

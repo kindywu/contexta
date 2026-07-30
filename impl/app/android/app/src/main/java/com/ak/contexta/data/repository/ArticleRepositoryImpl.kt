@@ -72,13 +72,19 @@ class ArticleRepositoryImpl @Inject constructor(
         return false
     }
 
-    override suspend fun createBatch(batchType: String, difficulty: String, dailyCount: Int): Long {
+    override suspend fun createBatch(
+        batchType: String,
+        difficulty: String,
+        dailyCount: Int,
+        generatedOn: String?
+    ): Long {
+        val date = generatedOn ?: ContextaTypeConverters.currentDateString()
         val entity = ArticleBatchEntity(
             batchType = batchType,
             status = "PENDING",
             difficultyLevelSnapshot = difficulty,
             dailyCountSnapshot = dailyCount,
-            generatedOn = ContextaTypeConverters.currentDateString()
+            generatedOn = date
         )
         return batchDao.insert(entity)
     }
@@ -219,7 +225,10 @@ class ArticleRepositoryImpl @Inject constructor(
     }
 
     override suspend fun reconcileOrphanArticles() {
-        // Find GENERATING articles and reset based on batch status
+        // 重置所有 GENERATING 文章回 PENDING。
+        // Worker 的 claimArticle() 有 CAS 保护（只认 PENDING/TIMEOUT/FAILED），
+        // 即使 batch 仍在处理中，worker 会重新 claim，不会重复生成。
+        articleDao.resetAllGenerating()
     }
 
     override fun observeGenerationErrors(): Flow<List<Article>> =
@@ -230,6 +239,12 @@ class ArticleRepositoryImpl @Inject constructor(
     }
 
     // ─── Mapping helpers ───
+
+    override suspend fun getBatchByDifficultyAndDate(
+        difficulty: String,
+        date: String
+    ): ArticleBatchModel? =
+        batchDao.getByDifficultyAndDate(difficulty, date)?.toModel()
 
     private fun ArticleBatchEntity.toModel() = ArticleBatchModel(
         id = id,

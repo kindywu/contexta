@@ -16,6 +16,7 @@ import com.ak.contexta.domain.usecase.CreateInitialBatchUseCase
 import com.ak.contexta.domain.usecase.GetHomeArticlesUseCase
 import com.ak.contexta.domain.usecase.StartupOrchestrationUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -74,10 +75,12 @@ class HomeViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
+    private var observeArticlesJob: Job? = null
 
     init {
         loadHome()
         observeErrors()
+        observeSettingsForRefresh()
     }
 
     private fun observeErrors() {
@@ -154,6 +157,13 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    private fun observeSettingsForRefresh() {
+        viewModelScope.launch {
+            settingsRepository.observeSettings()
+                .collect { observeArticles() }
+        }
+    }
+
     private fun dateLabelFor(unlockedOn: String?): String {
         if (unlockedOn == null) return ""
         val zoneId = ZoneId.of("Asia/Shanghai")
@@ -167,67 +177,70 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private suspend fun observeArticles() {
-        val currentBatch = articleRepository.getCurrentBatch()
-        val expiredBatches = articleRepository.getExpiredBatches()
+    private fun observeArticles() {
+        observeArticlesJob?.cancel()
+        observeArticlesJob = viewModelScope.launch {
+            val currentBatch = articleRepository.getCurrentBatch()
+            val expiredBatches = articleRepository.getExpiredBatches()
 
-        val allFlows = mutableListOf<Flow<Pair<ArticleBatch, List<Article>>>>()
-        if (currentBatch != null) {
-            allFlows.add(
-                articleRepository.observeArticles(currentBatch.id)
-                    .map { articles -> currentBatch to articles }
-            )
-        }
-        for (batch in expiredBatches) {
-            allFlows.add(
-                articleRepository.observeArticles(batch.id)
-                    .map { articles -> batch to articles }
-            )
-        }
+            val allFlows = mutableListOf<Flow<Pair<ArticleBatch, List<Article>>>>()
+            if (currentBatch != null) {
+                allFlows.add(
+                    articleRepository.observeArticles(currentBatch.id)
+                        .map { articles -> currentBatch to articles }
+                )
+            }
+            for (batch in expiredBatches) {
+                allFlows.add(
+                    articleRepository.observeArticles(batch.id)
+                        .map { articles -> batch to articles }
+                )
+            }
 
-        if (allFlows.isEmpty()) {
-            _state.value = _state.value.copy(isLoading = false)
-            return
-        }
+            if (allFlows.isEmpty()) {
+                _state.value = _state.value.copy(isLoading = false)
+                return@launch
+            }
 
-        combine(allFlows) { results ->
-            val settings = settingsRepository.getSettings()
-            val userDifficulty = settings?.difficultyLevel ?: "MEDIUM"
+            combine(allFlows) { results ->
+                val settings = settingsRepository.getSettings()
+                val userDifficulty = settings?.difficultyLevel ?: "MEDIUM"
 
-            results
-                .map { (batch, articles) ->
-                    // CURRENT 批次用当前用户设置，EXPIRED 批次用历史 snapshot
-                    val displayLimit = if (batch.batchType == BatchType.CURRENT) {
-                        settings?.dailyArticleCount ?: batch.dailyCountSnapshot
-                    } else {
-                        batch.dailyCountSnapshot
-                    }
-                    val shown = getHomeArticles(articles, userDifficulty, displayLimit)
-                    ArticleGroupUi(
-                        dateLabel = dateLabelFor(batch.unlockedOn),
-                        articles = shown.map { article ->
-                            ArticleItemUi(
-                                id = article.id,
-                                title = article.title,
-                                description = article.contentCategory,
-                                difficultyLabel = userDifficulty,
-                                categoryLabel = article.contentCategory.replace("_", " "),
-                                isReadCompleted = article.readCompletedAt != null
-                            )
+                results
+                    .map { (batch, articles) ->
+                        // CURRENT 批次用当前用户设置，EXPIRED 批次用历史 snapshot
+                        val displayLimit = if (batch.batchType == BatchType.CURRENT) {
+                            settings?.dailyArticleCount ?: batch.dailyCountSnapshot
+                        } else {
+                            batch.dailyCountSnapshot
                         }
-                    )
-                }
-                .filter { it.articles.isNotEmpty() }
-                // 只显示有解锁日期的批次（过滤掉从未被解锁的残留批次）
-                .filter { it.dateLabel.isNotEmpty() }
-        }.collect { groups ->
-            val hasContent = groups.any { it.articles.isNotEmpty() }
-            _state.value = _state.value.copy(
-                articleGroups = groups,
-                isLoading = false,
-                isGenerating = !hasContent,
-                generationMessage = if (!hasContent) "当前等级暂无文章" else ""
-            )
+                        val shown = getHomeArticles(articles, userDifficulty, displayLimit)
+                        ArticleGroupUi(
+                            dateLabel = dateLabelFor(batch.unlockedOn),
+                            articles = shown.map { article ->
+                                ArticleItemUi(
+                                    id = article.id,
+                                    title = article.title,
+                                    description = article.contentCategory,
+                                    difficultyLabel = categoryToDifficulty(article.contentCategory),
+                                    categoryLabel = article.contentCategory.replace("_", " "),
+                                    isReadCompleted = article.readCompletedAt != null
+                                )
+                            }
+                        )
+                    }
+                    .filter { it.articles.isNotEmpty() }
+                    // 只显示有解锁日期的批次（过滤掉从未被解锁的残留批次）
+                    .filter { it.dateLabel.isNotEmpty() }
+            }.collect { groups ->
+                val hasContent = groups.any { it.articles.isNotEmpty() }
+                _state.value = _state.value.copy(
+                    articleGroups = groups,
+                    isLoading = false,
+                    isGenerating = !hasContent,
+                    generationMessage = if (!hasContent) "当前等级暂无文章" else ""
+                )
+            }
         }
     }
 }
