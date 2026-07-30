@@ -5,29 +5,9 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.ak.contexta.data.local.entity.ArticleBatchEntity
-import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ArticleBatchDao {
-    @Query("SELECT * FROM article_batch WHERE batch_type = :batchType ORDER BY id DESC LIMIT 1")
-    fun observeByType(batchType: String): Flow<ArticleBatchEntity?>
-
-    @Query("SELECT * FROM article_batch WHERE batch_type = :batchType ORDER BY id DESC LIMIT 1")
-    suspend fun getByType(batchType: String): ArticleBatchEntity?
-
-    /**
-     * 获取指定类型的所有批次（含无解锁记录的，供内部逻辑查询）。
-     * 首页显示时需自行过滤 unlocked_on IS NOT NULL（见 HomeViewModel）。
-     */
-    @Query("SELECT * FROM article_batch WHERE batch_type = :batchType ORDER BY id DESC")
-    fun observeAllByType(batchType: String): Flow<List<ArticleBatchEntity>>
-
-    /**
-     * 同上，仅用于挂起查询。
-     */
-    @Query("SELECT * FROM article_batch WHERE batch_type = :batchType ORDER BY id DESC")
-    suspend fun getAllByType(batchType: String): List<ArticleBatchEntity>
-
     @Query("SELECT * FROM article_batch WHERE id = :id")
     suspend fun getById(id: Long): ArticleBatchEntity?
 
@@ -37,6 +17,46 @@ interface ArticleBatchDao {
         ORDER BY id DESC LIMIT 1
     """)
     suspend fun getByDifficultyAndDate(difficulty: String, date: String): ArticleBatchEntity?
+
+    /**
+     * 查找下一个可用的 READY 批次。
+     * - [afterDate] 为 null 时返回第一个 READY 批次
+     * - 否则返回 [generated_on] >= [afterDate] 且尚未被 [daily_learning] 引用的 READY 批次
+     */
+    @Query("""
+        SELECT * FROM article_batch
+        WHERE status = 'READY'
+          AND difficulty_level_snapshot = :difficulty
+          AND (generated_on >= :afterDate OR :afterDate IS NULL)
+          AND id NOT IN (SELECT ref_batch_id FROM daily_learning)
+        ORDER BY generated_on ASC
+        LIMIT 1
+    """)
+    suspend fun findNextReadyBatch(difficulty: String, afterDate: String?): ArticleBatchEntity?
+
+    /**
+     * 获取指定难度的所有 READY 批次（含可能已被 daily_learning 引用的）。
+     */
+    @Query("""
+        SELECT * FROM article_batch
+        WHERE status = 'READY' AND difficulty_level_snapshot = :difficulty
+        ORDER BY generated_on ASC
+    """)
+    suspend fun getReadyBatches(difficulty: String): List<ArticleBatchEntity>
+
+    /**
+     * 获取指定难度的所有未被 daily_learning 引用的 READY 批次。
+     * @param minGeneratedOn 只返回 generated_on > 此日期的批次（忽略旧 seed 数据和已分配批次同期的数据）
+     */
+    @Query("""
+        SELECT * FROM article_batch
+        WHERE status = 'READY'
+          AND difficulty_level_snapshot = :difficulty
+          AND generated_on > :minGeneratedOn
+          AND id NOT IN (SELECT ref_batch_id FROM daily_learning)
+        ORDER BY generated_on ASC
+    """)
+    suspend fun getUnassignedReadyBatches(difficulty: String, minGeneratedOn: String): List<ArticleBatchEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(batch: ArticleBatchEntity): Long
@@ -55,34 +75,6 @@ interface ArticleBatchDao {
         WHERE id = :batchId
     """)
     suspend fun updateStatus(batchId: Long, newStatus: String, now: Long)
-
-    @Query("""
-        UPDATE article_batch
-        SET status = 'CURRENT', unlocked_on = :today, last_updated_at = :now
-        WHERE id = :batchId
-    """)
-    suspend fun promoteToCurrent(batchId: Long, today: String, now: Long)
-
-    @Query("""
-        UPDATE article_batch
-        SET status = 'EXPIRED', last_updated_at = :now
-        WHERE id = :batchId
-    """)
-    suspend fun expire(batchId: Long, now: Long)
-
-    @Query("""
-        UPDATE article_batch
-        SET batch_type = :batchType, last_updated_at = :now
-        WHERE id = :batchId
-    """)
-    suspend fun updateBatchType(batchId: Long, batchType: String, now: Long)
-
-    @Query("""
-        UPDATE article_batch
-        SET daily_count_snapshot = :dailyCount, last_updated_at = :now
-        WHERE id = :batchId
-    """)
-    suspend fun updateDailyCountSnapshot(batchId: Long, dailyCount: Int, now: Long)
 
     @Query("""
         UPDATE article_batch

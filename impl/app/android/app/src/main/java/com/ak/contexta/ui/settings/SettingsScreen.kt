@@ -95,23 +95,37 @@ fun SettingsScreen(
             SectionTitle(title = "学习设置")
 
             // Level picker
-            SettingsPickerItem(
-                label = "英文水平",
-                description = levelDescription(state.level),
-                value = levelLabel(state.level),
-                onClick = { showLevelPicker = true }
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SettingsPickerItem(
+                    label = "英文水平",
+                    description = levelDescription(state.level),
+                    value = levelLabel(state.level),
+                    onClick = { showLevelPicker = true },
+                    modifier = Modifier.weight(1f)
+                )
+                InfoTipButton(onClick = { viewModel.showLevelInfo() })
+            }
 
             // Daily count stepper
-            SettingsStepperItem(
-                label = "每日文章数量",
-                description = "从CURRENT batch中展示的文章数，最多5篇",
-                value = state.dailyCount,
-                canDecrement = state.dailyCount > 1,
-                canIncrement = state.dailyCount < 5,
-                onDecrement = { viewModel.decrementDailyCount() },
-                onIncrement = { viewModel.incrementDailyCount() }
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SettingsStepperItem(
+                    label = "每日文章数量",
+                    description = "从CURRENT batch中展示的文章数，最多5篇",
+                    value = state.dailyCount,
+                    canDecrement = state.dailyCount > 1,
+                    canIncrement = state.dailyCount < 5,
+                    onDecrement = { viewModel.requestCountChange(state.dailyCount - 1) },
+                    onIncrement = { viewModel.requestCountChange(state.dailyCount + 1) },
+                    modifier = Modifier.weight(1f)
+                )
+                InfoTipButton(onClick = { viewModel.showCountInfo() })
+            }
 
             // Translation mode picker
             SettingsPickerItem(
@@ -226,7 +240,7 @@ fun SettingsScreen(
             ),
             selectedValue = state.level,
             onSelect = { level ->
-                viewModel.updateLevel(level)
+                viewModel.requestLevelChange(level)
                 showLevelPicker = false
             },
             onDismiss = { showLevelPicker = false }
@@ -248,6 +262,51 @@ fun SettingsScreen(
                 showTranslationModePicker = false
             },
             onDismiss = { showTranslationModePicker = false }
+        )
+    }
+
+    // ── ℹ️ Info dialogs ──
+
+    // Level info dialog
+    if (state.showLevelInfoDialog) {
+        SettingsInfoDialog(
+            title = "英文水平",
+            message = "难度和篇数的修改将在第二天自动生效，不会影响今天的学习。",
+            onConfirm = { viewModel.dismissInfoDialog() }
+        )
+    }
+
+    // Count info dialog
+    if (state.showCountInfoDialog) {
+        SettingsInfoDialog(
+            title = "每日文章数量",
+            message = "难度和篇数的修改将在第二天自动生效，不会影响今天的学习。",
+            onConfirm = { viewModel.dismissInfoDialog() }
+        )
+    }
+
+    // ── Confirmation dialogs ──
+
+    // Level change confirmation
+    if (state.showLevelConfirmDialog) {
+        SettingsConfirmDialog(
+            title = "修改英文水平",
+            message = "此设置将在明天生效，今天的学习不受影响。",
+            confirmLabel = "确认修改",
+            onConfirm = { viewModel.confirmLevelChange() },
+            onDismiss = { viewModel.cancelLevelChange() }
+        )
+    }
+
+    // Count change confirmation
+    if (state.showCountConfirmDialog) {
+        val pendingCount = state.pendingCount ?: state.dailyCount
+        SettingsConfirmDialog(
+            title = "修改每日文章数量",
+            message = "当前：${state.dailyCount}篇 → 调整至：${pendingCount}篇\n\n此设置将在明天生效，今天的学习不受影响。",
+            confirmLabel = "确认修改",
+            onConfirm = { viewModel.confirmCountChange() },
+            onDismiss = { viewModel.cancelCountChange() }
         )
     }
 }
@@ -320,11 +379,11 @@ private fun SettingsPickerItem(
     label: String,
     description: String,
     value: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .clickable { onClick() }
             .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -365,11 +424,11 @@ private fun SettingsStepperItem(
     canDecrement: Boolean,
     canIncrement: Boolean,
     onDecrement: () -> Unit,
-    onIncrement: () -> Unit
+    onIncrement: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -489,4 +548,110 @@ private fun translationModeLabel(mode: String): String = when (mode) {
     "BLURRED" -> "模糊"
     "HIDDEN" -> "隐藏"
     else -> mode
+}
+
+// ── Info tip button (ℹ️) ──
+
+@Composable
+private fun InfoTipButton(onClick: () -> Unit) {
+    Text(
+        text = "ℹ",
+        style = MaterialTheme.typography.titleSmall,
+        color = Meta,
+        modifier = Modifier
+            .clickable { onClick() }
+            .padding(8.dp)
+    )
+}
+
+// ── Info dialog (ℹ️ clicked) ──
+
+@Composable
+private fun SettingsInfoDialog(
+    title: String,
+    message: String,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onConfirm,
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Foreground
+            )
+        },
+        confirmButton = {
+            Text(
+                text = "知道了",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = Accent,
+                modifier = Modifier
+                    .clickable { onConfirm() }
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            )
+        },
+        containerColor = Surface,
+        titleContentColor = Foreground
+    )
+}
+
+// ── Confirm dialog (setting change confirmation) ──
+
+@Composable
+private fun SettingsConfirmDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Foreground
+            )
+        },
+        confirmButton = {
+            Text(
+                text = confirmLabel,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = Accent,
+                modifier = Modifier
+                    .clickable { onConfirm() }
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            )
+        },
+        dismissButton = {
+            Text(
+                text = "取消",
+                style = MaterialTheme.typography.labelLarge,
+                color = Muted,
+                modifier = Modifier
+                    .clickable { onDismiss() }
+                    .padding(horizontal = 16.dp, vertical = 10.dp)
+            )
+        },
+        containerColor = Surface,
+        titleContentColor = Foreground
+    )
 }

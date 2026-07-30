@@ -5,8 +5,6 @@ import android.content.Context
 import androidx.room.OnConflictStrategy
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.serialization.json.Json
-import java.time.LocalDate
-import java.time.ZoneId
 
 /**
  * 首次安装时写入种子数据。
@@ -14,7 +12,8 @@ import java.time.ZoneId
  * 创建 3 个历史批次（LOW / MEDIUM / HIGH），日期固定为 2026-03-29，
  * 每个批次 5 篇已完成文章（共 15 篇），作为用户打开 app 时的初始阅读内容。
  *
- * 这些批次均为 EXPIRED（历史批次），不影响后续正常的批次生成流程。
+ * 这些批次均为 READY（已生成完成的批次），等待 [StartupOrchestrationUseCase]
+ * 在用户首次进入时将其分配到当天的 [daily_learning] 表。
  */
 fun seedDatabase(context: Context, json: Json, db: SupportSQLiteDatabase) {
     val jsonText = context.assets.open("seed_articles.json")
@@ -31,12 +30,9 @@ fun seedDatabase(context: Context, json: Json, db: SupportSQLiteDatabase) {
 
         for ((difficulty, articles) in byDifficulty) {
             val batchValues = ContentValues().apply {
-                put("batch_type", "EXPIRED")
-                put("status", "EXPIRED")
+                put("status", "READY")
                 put("difficulty_level_snapshot", difficulty)
-                put("daily_count_snapshot", 5)
                 put("generated_on", seedDate)
-                put("unlocked_on", null as String?)
                 put("last_updated_at", now)
             }
             val batchId = db.insert("article_batch", OnConflictStrategy.NONE, batchValues)

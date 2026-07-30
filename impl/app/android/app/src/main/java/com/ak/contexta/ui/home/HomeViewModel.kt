@@ -6,9 +6,8 @@ import com.ak.contexta.BuildConfig
 import com.ak.contexta.domain.BackgroundWorkScheduler
 import com.ak.contexta.domain.generation.categoryToDifficulty
 import com.ak.contexta.domain.model.Article
-import com.ak.contexta.domain.model.ArticleBatch
 import com.ak.contexta.domain.model.ArticleStatus
-import com.ak.contexta.domain.model.BatchType
+import com.ak.contexta.domain.model.DailyLearningInfo
 import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.repository.SettingsRepository
 import com.ak.contexta.domain.repository.StatsRepository
@@ -22,7 +21,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -137,13 +135,6 @@ class HomeViewModel @Inject constructor(
                 is StartupOrchestrationUseCase.StartupResult.Ready -> {
                     observeArticles()
                 }
-                is StartupOrchestrationUseCase.StartupResult.WaitingForGeneration -> {
-                    _state.value = _state.value.copy(
-                        isGenerating = true,
-                        generationMessage = "上一批文章已展完，正在生成新文章…"
-                    )
-                    observeArticles()
-                }
                 is StartupOrchestrationUseCase.StartupResult.PipelineBlocked -> {
                     _state.value = _state.value.copy(
                         isLoading = false,
@@ -164,10 +155,9 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private fun dateLabelFor(unlockedOn: String?): String {
-        if (unlockedOn == null) return ""
+    private fun dateLabelFor(readDate: String): String {
         val zoneId = ZoneId.of("Asia/Shanghai")
-        val date = LocalDate.parse(unlockedOn)
+        val date = LocalDate.parse(readDate)
         val today = LocalDate.now(zoneId)
         val yesterday = today.minusDays(1)
         return when (date) {
@@ -180,20 +170,37 @@ class HomeViewModel @Inject constructor(
     private fun observeArticles() {
         observeArticlesJob?.cancel()
         observeArticlesJob = viewModelScope.launch {
-            val currentBatch = articleRepository.getCurrentBatch()
-            val expiredBatches = articleRepository.getExpiredBatches()
+            val historyReads = articleRepository.getAllDailyLearningInfos()
 
-            val allFlows = mutableListOf<Flow<Pair<ArticleBatch, List<Article>>>>()
-            if (currentBatch != null) {
-                allFlows.add(
-                    articleRepository.observeArticles(currentBatch.id)
-                        .map { articles -> currentBatch to articles }
-                )
+            if (historyReads.isEmpty()) {
+                _state.value = _state.value.copy(isLoading = false)
+                return@launch
             }
-            for (batch in expiredBatches) {
+
+            val allFlows = mutableListOf<Flow<ArticleGroupUi>>()
+
+            for (readInfo in historyReads) {
+                val batch = readInfo.batch
                 allFlows.add(
                     articleRepository.observeArticles(batch.id)
-                        .map { articles -> batch to articles }
+                        .map { articles ->
+                            val settings = settingsRepository.getSettings()
+                            val userDifficulty = settings?.difficultyLevel ?: "MEDIUM"
+                            val shown = getHomeArticles(articles, userDifficulty, readInfo.dailyCountSnapshot)
+                            ArticleGroupUi(
+                                dateLabel = dateLabelFor(readInfo.learningDate),
+                                articles = shown.map { article ->
+                                    ArticleItemUi(
+                                        id = article.id,
+                                        title = article.title,
+                                        description = article.contentCategory,
+                                        difficultyLabel = categoryToDifficulty(article.contentCategory),
+                                        categoryLabel = article.contentCategory.replace("_", " "),
+                                        isReadCompleted = article.readCompletedAt != null
+                                    )
+                                }
+                            )
+                        }
                 )
             }
 
@@ -202,36 +209,8 @@ class HomeViewModel @Inject constructor(
                 return@launch
             }
 
-            combine(allFlows) { results ->
-                val settings = settingsRepository.getSettings()
-                val userDifficulty = settings?.difficultyLevel ?: "MEDIUM"
-
-                results
-                    .map { (batch, articles) ->
-                        // CURRENT 批次用当前用户设置，EXPIRED 批次用历史 snapshot
-                        val displayLimit = if (batch.batchType == BatchType.CURRENT) {
-                            settings?.dailyArticleCount ?: batch.dailyCountSnapshot
-                        } else {
-                            batch.dailyCountSnapshot
-                        }
-                        val shown = getHomeArticles(articles, userDifficulty, displayLimit)
-                        ArticleGroupUi(
-                            dateLabel = dateLabelFor(batch.unlockedOn),
-                            articles = shown.map { article ->
-                                ArticleItemUi(
-                                    id = article.id,
-                                    title = article.title,
-                                    description = article.contentCategory,
-                                    difficultyLabel = categoryToDifficulty(article.contentCategory),
-                                    categoryLabel = article.contentCategory.replace("_", " "),
-                                    isReadCompleted = article.readCompletedAt != null
-                                )
-                            }
-                        )
-                    }
-                    .filter { it.articles.isNotEmpty() }
-                    // 只显示有解锁日期的批次（过滤掉从未被解锁的残留批次）
-                    .filter { it.dateLabel.isNotEmpty() }
+            combine(allFlows) { groups ->
+                groups.filter { it.articles.isNotEmpty() }
             }.collect { groups ->
                 val hasContent = groups.any { it.articles.isNotEmpty() }
                 _state.value = _state.value.copy(

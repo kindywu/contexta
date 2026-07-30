@@ -4,15 +4,17 @@ import com.ak.contexta.data.local.ContextaTypeConverters
 import com.ak.contexta.data.local.dao.ArticleBatchDao
 import com.ak.contexta.data.local.dao.ArticleDao
 import com.ak.contexta.data.local.dao.ArticleParagraphDao
+import com.ak.contexta.data.local.dao.DailyLearningDao
 import com.ak.contexta.data.local.dao.GenerationPipelineStatusDao
 import com.ak.contexta.data.local.entity.ArticleBatchEntity
 import com.ak.contexta.data.local.entity.ArticleEntity
 import com.ak.contexta.data.local.entity.ArticleParagraphEntity
+import com.ak.contexta.data.local.entity.DailyLearningEntity
 import com.ak.contexta.domain.model.Article
 import com.ak.contexta.domain.model.ArticleParagraph
 import com.ak.contexta.domain.model.ArticleStatus
 import com.ak.contexta.domain.model.BatchStatus
-import com.ak.contexta.domain.model.BatchType
+import com.ak.contexta.domain.model.DailyLearningInfo
 import com.ak.contexta.domain.model.ArticleBatch as ArticleBatchModel
 import com.ak.contexta.domain.repository.ArticleRepository
 import kotlinx.coroutines.flow.Flow
@@ -25,37 +27,54 @@ class ArticleRepositoryImpl @Inject constructor(
     private val batchDao: ArticleBatchDao,
     private val articleDao: ArticleDao,
     private val paragraphDao: ArticleParagraphDao,
-    private val pipelineStatusDao: GenerationPipelineStatusDao
+    private val pipelineStatusDao: GenerationPipelineStatusDao,
+    private val dailyLearningDao: DailyLearningDao
 ) : ArticleRepository {
 
-    override fun observeCurrentBatch(): Flow<ArticleBatchModel?> =
-        batchDao.observeByType(BatchType.CURRENT.value).map { it?.toModel() }
+    override suspend fun findNextReadyBatch(difficulty: String, afterDate: String?): ArticleBatchModel? =
+        batchDao.findNextReadyBatch(difficulty, afterDate)?.toModel()
 
-    override fun observeNextBatch(): Flow<ArticleBatchModel?> =
-        batchDao.observeByType(BatchType.NEXT.value).map { it?.toModel() }
+    override suspend fun getUnassignedReadyBatches(difficulty: String, minGeneratedOn: String?): List<ArticleBatchModel> {
+        val date = minGeneratedOn ?: ContextaTypeConverters.currentDateString()
+        return batchDao.getUnassignedReadyBatches(difficulty, date).map { it.toModel() }
+    }
 
-    override fun observeExpiredBatches(): Flow<List<ArticleBatchModel>> =
-        batchDao.observeAllByType(BatchStatus.EXPIRED.value).map { list -> list.map { it.toModel() } }
+    override suspend fun getAssignedBatchForDate(readDate: String): ArticleBatchModel? {
+        val dailyLearning = dailyLearningDao.getByLearningDate(readDate) ?: return null
+        return batchDao.getById(dailyLearning.refBatchId)?.toModel()
+    }
 
-    override suspend fun getCurrentBatch(): ArticleBatchModel? =
-        batchDao.getByType(BatchType.CURRENT.value)?.toModel()
-
-    override suspend fun getNextBatch(): ArticleBatchModel? =
-        batchDao.getByType(BatchType.NEXT.value)?.toModel()
-
-    override suspend fun getExpiredBatches(): List<ArticleBatchModel> =
-        batchDao.getAllByType(BatchStatus.EXPIRED.value).map { it.toModel() }
-
-    override fun observeArticles(batchId: Long): Flow<List<Article>> =
-        articleDao.observeByBatch(batchId).map { list -> list.map { it.toModel() } }
-
-    override suspend fun getArticle(articleId: Long): Article? =
-        articleDao.getById(articleId)?.toModel()?.let { article ->
-            val paragraphs = paragraphDao.getByArticle(articleId).map { p ->
-                ArticleParagraph(p.orderIndex, p.englishText, p.chineseTranslation)
-            }
-            article.copy(paragraphs = paragraphs)
+    override suspend fun getAllDailyLearningInfos(): List<DailyLearningInfo> {
+        val allReads = dailyLearningDao.getAll()
+        return allReads.mapNotNull { read ->
+            val batch = batchDao.getById(read.refBatchId)?.toModel() ?: return@mapNotNull null
+            DailyLearningInfo(
+                learningDate = read.learningDate,
+                dailyCountSnapshot = read.dailyCountSnapshot,
+                batch = batch
+            )
         }
+    }
+
+    override suspend fun getMaxRefBatchDate(): String? =
+        dailyLearningDao.getMaxRefBatchDate()
+
+    override suspend fun assignBatchForToday(batchId: Long, refBatchDate: String, dailyCount: Int): Boolean {
+        val today = ContextaTypeConverters.currentDateString()
+        // Check if today already has a daily_learning record
+        val existing = dailyLearningDao.getByLearningDate(today)
+        if (existing != null) return false
+
+        dailyLearningDao.insert(
+            DailyLearningEntity(
+                learningDate = today,
+                refBatchDate = refBatchDate,
+                refBatchId = batchId,
+                dailyCountSnapshot = dailyCount
+            )
+        )
+        return true
+    }
 
     override suspend fun isPipelineBlocked(): Boolean =
         pipelineStatusDao.get()?.isBlocked == true
@@ -73,17 +92,13 @@ class ArticleRepositoryImpl @Inject constructor(
     }
 
     override suspend fun createBatch(
-        batchType: String,
         difficulty: String,
-        dailyCount: Int,
         generatedOn: String?
     ): Long {
         val date = generatedOn ?: ContextaTypeConverters.currentDateString()
         val entity = ArticleBatchEntity(
-            batchType = batchType,
             status = "PENDING",
             difficultyLevelSnapshot = difficulty,
-            dailyCountSnapshot = dailyCount,
             generatedOn = date
         )
         return batchDao.insert(entity)
@@ -158,32 +173,6 @@ class ArticleRepositoryImpl @Inject constructor(
         pipelineStatusDao.setBlocked(reason, now, appVersionCode)
     }
 
-    override suspend fun promoteNextToCurrent(nextBatchId: Long) {
-        val current = batchDao.getByType(BatchType.CURRENT.value)
-        val now = System.currentTimeMillis()
-        val today = ContextaTypeConverters.currentDateString()
-
-        if (current != null) {
-            batchDao.expire(current.id, now)
-            batchDao.updateBatchType(current.id, "EXPIRED", now)
-        }
-        batchDao.updateBatchType(nextBatchId, "CURRENT", now)
-        batchDao.promoteToCurrent(nextBatchId, today, now)
-    }
-
-    override suspend fun expireBatch(batchId: Long) {
-        val now = System.currentTimeMillis()
-        batchDao.updateStatus(batchId, "EXPIRED", now)
-        batchDao.updateBatchType(batchId, "EXPIRED", now)
-    }
-
-    override suspend fun reactivateBatch(batchId: Long, dailyCount: Int) {
-        val now = System.currentTimeMillis()
-        batchDao.updateBatchType(batchId, "NEXT", now)
-        batchDao.updateStatus(batchId, "READY", now)
-        batchDao.updateDailyCountSnapshot(batchId, dailyCount, now)
-    }
-
     override suspend fun failArticle(
         articleId: Long,
         status: String,
@@ -231,6 +220,17 @@ class ArticleRepositoryImpl @Inject constructor(
         articleDao.resetAllGenerating()
     }
 
+    override fun observeArticles(batchId: Long): Flow<List<Article>> =
+        articleDao.observeByBatch(batchId).map { list -> list.map { it.toModel() } }
+
+    override suspend fun getArticle(articleId: Long): Article? =
+        articleDao.getById(articleId)?.toModel()?.let { article ->
+            val paragraphs = paragraphDao.getByArticle(articleId).map { p ->
+                ArticleParagraph(p.orderIndex, p.englishText, p.chineseTranslation)
+            }
+            article.copy(paragraphs = paragraphs)
+        }
+
     override fun observeGenerationErrors(): Flow<List<Article>> =
         articleDao.observeGenerationErrors().map { list -> list.map { it.toModel() } }
 
@@ -238,22 +238,19 @@ class ArticleRepositoryImpl @Inject constructor(
         articleDao.resetForRetry(articleId)
     }
 
-    // ─── Mapping helpers ───
-
     override suspend fun getBatchByDifficultyAndDate(
         difficulty: String,
         date: String
     ): ArticleBatchModel? =
         batchDao.getByDifficultyAndDate(difficulty, date)?.toModel()
 
+    // ─── Mapping helpers ───
+
     private fun ArticleBatchEntity.toModel() = ArticleBatchModel(
         id = id,
-        batchType = BatchType.from(batchType),
         status = BatchStatus.from(status),
         difficultyLevelSnapshot = difficultyLevelSnapshot,
-        dailyCountSnapshot = dailyCountSnapshot,
         generatedOn = generatedOn,
-        unlockedOn = unlockedOn,
         lastUpdatedAt = lastUpdatedAt,
         errorCode = errorCode,
         errorMessage = errorMessage,

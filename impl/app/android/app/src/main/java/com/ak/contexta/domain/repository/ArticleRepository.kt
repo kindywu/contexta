@@ -3,17 +3,10 @@ package com.ak.contexta.domain.repository
 import com.ak.contexta.domain.model.Article
 import com.ak.contexta.domain.model.ArticleBatch
 import com.ak.contexta.domain.model.ArticleParagraph
+import com.ak.contexta.domain.model.DailyLearningInfo
 import kotlinx.coroutines.flow.Flow
 
 interface ArticleRepository {
-    fun observeCurrentBatch(): Flow<ArticleBatch?>
-    fun observeNextBatch(): Flow<ArticleBatch?>
-    fun observeExpiredBatches(): Flow<List<ArticleBatch>>
-
-    suspend fun getCurrentBatch(): ArticleBatch?
-    suspend fun getNextBatch(): ArticleBatch?
-    suspend fun getExpiredBatches(): List<ArticleBatch>
-
     fun observeArticles(batchId: Long): Flow<List<Article>>
 
     suspend fun getArticle(articleId: Long): Article?
@@ -26,15 +19,41 @@ interface ArticleRepository {
 
     /**
      * 按难度和生成日期查找批次。
-     * 用于防止同一天对同一难度重复创建批次（规则 1）。
+     * 用于防止同一天对同一难度重复创建批次。
      */
     suspend fun getBatchByDifficultyAndDate(difficulty: String, date: String): ArticleBatch?
 
+    /**
+     * 查找下一个可用的 READY 批次。
+     * - [afterDate] 为 null 时返回第一个 READY 批次
+     * - 否则返回 [generated_on] >= [afterDate] 且尚未被 [daily_learning] 引用的 READY 批次
+     */
+    suspend fun findNextReadyBatch(difficulty: String, afterDate: String?): ArticleBatch?
+
+    /**
+     * 获取所有未被 daily_learning 引用的 READY 批次（按 generated_on 升序）。
+     * @param minGeneratedOn 只返回 generated_on >= 此日期的批次
+     */
+    suspend fun getUnassignedReadyBatches(difficulty: String, minGeneratedOn: String? = null): List<ArticleBatch>
+
+    /** 获取指定阅读日期的已分配批次。 */
+    suspend fun getAssignedBatchForDate(readDate: String): ArticleBatch?
+
+    /** 获取所有阅读记录（含关联批次），按日期降序。 */
+    suspend fun getAllDailyLearningInfos(): List<DailyLearningInfo>
+
+    /** 获取所有阅读记录中的最大 [refBatchDate]。为 null 表示尚无阅读记录。 */
+    suspend fun getMaxRefBatchDate(): String?
+
+    /**
+     * 将批次分配给今天的阅读，插入 daily_learning 记录。
+     * @return true 表示成功插入，false 表示今天已有记录
+     */
+    suspend fun assignBatchForToday(batchId: Long, refBatchDate: String, dailyCount: Int): Boolean
+
     /** Create a new batch (PENDING) */
     suspend fun createBatch(
-        batchType: String,
         difficulty: String,
-        dailyCount: Int,
         generatedOn: String? = null
     ): Long
 
@@ -69,21 +88,6 @@ interface ArticleRepository {
 
     /** Mark batch as BLOCKED */
     suspend fun markBatchBlocked(batchId: Long, reason: String, appVersionCode: Int)
-
-    /** Promote next to current */
-    suspend fun promoteNextToCurrent(nextBatchId: Long)
-
-    /**
-     * 废弃一个 NEXT 批次（难度变更时使用）。
-     * 将 batch_type 和 status 均设为 EXPIRED。
-     */
-    suspend fun expireBatch(batchId: Long)
-
-    /**
-     * 复用一个已完成的 EXPIRED 批次（难度匹配时使用）。
-     * 将 batch_type 改为 NEXT，status 设为 READY，更新 daily_count_snapshot。
-     */
-    suspend fun reactivateBatch(batchId: Long, dailyCount: Int)
 
     /** Mark article as FAILED or TIMEOUT with optional error context */
     suspend fun failArticle(

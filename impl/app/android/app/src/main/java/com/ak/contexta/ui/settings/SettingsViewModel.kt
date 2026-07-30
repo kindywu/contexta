@@ -1,5 +1,6 @@
 package com.ak.contexta.ui.settings
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ak.contexta.domain.repository.SettingsRepository
@@ -20,7 +21,15 @@ data class SettingsUiState(
     val masteryThreshold: Int = 1,
     val autoPlayAudio: Boolean = false,
     val stats: StatsData = StatsData(),
-    val isLoading: Boolean = true
+    val isLoading: Boolean = true,
+    // Info tip dialogs (click ℹ️ icon)
+    val showLevelInfoDialog: Boolean = false,
+    val showCountInfoDialog: Boolean = false,
+    // Confirmation dialogs (setting takes effect tomorrow)
+    val showLevelConfirmDialog: Boolean = false,
+    val showCountConfirmDialog: Boolean = false,
+    val pendingLevel: String? = null,       //暂存待确认的难度
+    val pendingCount: Int? = null            //暂存待确认的篇数
 )
 
 data class StatsData(
@@ -74,35 +83,98 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun updateLevel(level: String) {
+    // ── ℹ️ Info dialogs ──
+
+    fun showLevelInfo() {
+        _state.value = _state.value.copy(showLevelInfoDialog = true)
+    }
+
+    fun showCountInfo() {
+        _state.value = _state.value.copy(showCountInfoDialog = true)
+    }
+
+    fun dismissInfoDialog() {
+        _state.value = _state.value.copy(
+            showLevelInfoDialog = false,
+            showCountInfoDialog = false
+        )
+    }
+
+    // ── Level change: request → confirm → persist + trigger generation ──
+
+    /** 用户选择新难度后调用：暂存并弹出确认弹窗。 */
+    fun requestLevelChange(level: String) {
+        if (level == _state.value.level) {
+            Log.d("SettingsVM", "requestLevelChange: $level == current, ignored")
+            return // 未变更
+        }
+        Log.d("SettingsVM", "requestLevelChange: $level, pendingLevel=$level, showConfirmDialog")
+        _state.value = _state.value.copy(
+            pendingLevel = level,
+            showLevelConfirmDialog = true
+        )
+    }
+
+    /** 用户确认修改难度。 */
+    fun confirmLevelChange() {
+        val level = _state.value.pendingLevel
+        Log.d("SettingsVM", "confirmLevelChange: pendingLevel=$level, dailyCount=${_state.value.dailyCount}")
+        if (level == null) return
         viewModelScope.launch {
+            Log.d("SettingsVM", "launch: updating level to $level")
             settingsRepository.updateLevel(level)
             _state.value = _state.value.copy(level = level)
-            // Trigger generation for new difficulty — triggerNextBatchGeneration
-            // skips if a matching batch already exists
+            Log.d("SettingsVM", "launch: calling triggerNextBatch($level, ${_state.value.dailyCount})")
             triggerNextBatch(level, _state.value.dailyCount)
+            Log.d("SettingsVM", "launch: triggerNextBatch completed")
         }
+        _state.value = _state.value.copy(
+            showLevelConfirmDialog = false,
+            pendingLevel = null
+        )
     }
 
-    fun incrementDailyCount() {
-        viewModelScope.launch {
-            val newCount = _state.value.dailyCount + 1
-            if (newCount <= 5 && settingsRepository.updateDailyArticleCount(newCount)) {
-                _state.value = _state.value.copy(dailyCount = newCount)
-            }
-            // 注意：仅写 DB，不触发新批次生成。
-            // 篇数变化要在下次创建 NEXT 批次（如改难度或第二天启动）时才会反映到 snapshot。
-        }
+    /** 用户取消修改难度。 */
+    fun cancelLevelChange() {
+        _state.value = _state.value.copy(
+            showLevelConfirmDialog = false,
+            pendingLevel = null
+        )
     }
 
-    fun decrementDailyCount() {
+    // ── Daily count change: request → confirm → persist (no generation) ──
+
+    /** 用户点击 ± 后调用：暂存并弹出确认弹窗。 */
+    fun requestCountChange(newCount: Int) {
+        if (newCount < 1 || newCount > 5) return
+        if (newCount == _state.value.dailyCount) return // 未变更
+        _state.value = _state.value.copy(
+            pendingCount = newCount,
+            showCountConfirmDialog = true
+        )
+    }
+
+    /** 用户确认修改篇数。 */
+    fun confirmCountChange() {
+        val count = _state.value.pendingCount ?: return
         viewModelScope.launch {
-            val newCount = _state.value.dailyCount - 1
-            if (newCount >= 1 && settingsRepository.updateDailyArticleCount(newCount)) {
-                _state.value = _state.value.copy(dailyCount = newCount)
-            }
-            // 注意：同上——仅写 DB，不触发新批次生成。
+            settingsRepository.updateDailyArticleCount(count)
+            _state.value = _state.value.copy(dailyCount = count)
+            // 仅写 DB，不触发新批次生成。
+            // 篇数变化在下一次分配批次时通过 dailyCountSnapshot 体现。
         }
+        _state.value = _state.value.copy(
+            showCountConfirmDialog = false,
+            pendingCount = null
+        )
+    }
+
+    /** 用户取消修改篇数。 */
+    fun cancelCountChange() {
+        _state.value = _state.value.copy(
+            showCountConfirmDialog = false,
+            pendingCount = null
+        )
     }
 
     fun updateTranslationMode(mode: String) {

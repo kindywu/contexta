@@ -11,6 +11,7 @@ import com.ak.contexta.data.local.dao.ArticleDao
 import com.ak.contexta.data.local.dao.ArticleParagraphDao
 import com.ak.contexta.data.local.dao.ConfigChangeLogDao
 import com.ak.contexta.data.local.dao.DailyLearningLogDao
+import com.ak.contexta.data.local.dao.DailyLearningDao
 import com.ak.contexta.data.local.dao.ExampleSentenceDao
 import com.ak.contexta.data.local.dao.GenerationPipelineStatusDao
 import com.ak.contexta.data.local.dao.LearningStatsSummaryDao
@@ -55,6 +56,7 @@ object AppModule {
     // DAO bindings — required because Room's abstract DAO methods need explicit
     // @Provides for Dagger/Hilt to resolve them in RepositoryImpl constructors.
     @Provides fun provideUserSettingsDao(db: ContextaDatabase): UserSettingsDao = db.userSettingsDao()
+    @Provides fun provideDailyLearningDao(db: ContextaDatabase): DailyLearningDao = db.dailyLearningDao()
     @Provides fun provideConfigChangeLogDao(db: ContextaDatabase): ConfigChangeLogDao = db.configChangeLogDao()
     @Provides fun provideArticleBatchDao(db: ContextaDatabase): ArticleBatchDao = db.articleBatchDao()
     @Provides fun provideArticleDao(db: ContextaDatabase): ArticleDao = db.articleDao()
