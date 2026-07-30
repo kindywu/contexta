@@ -31,6 +31,13 @@
   impl/app/android  # Contexta的Android版本实现
 ```
 
+### 实现代码中的文档目录
+
+```
+impl/app/android/app/docs/           # 系统设计文档（参照代码生成，反映当前系统的现况，供参考）
+impl/app/android/app/temp_docs/      # 临时计划文档（执行复杂任务前编写的计划，执行完后可删除）
+```
+
 ### 文档布局（根目录 `/`）
 文档存储在根目录，按类别组织：
 - **产品** — 产品需求文档、用户故事
