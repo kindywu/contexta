@@ -165,6 +165,19 @@ class ArticleRepositoryImpl @Inject constructor(
         batchDao.promoteToCurrent(nextBatchId, today, now)
     }
 
+    override suspend fun expireBatch(batchId: Long) {
+        val now = System.currentTimeMillis()
+        batchDao.updateStatus(batchId, "EXPIRED", now)
+        batchDao.updateBatchType(batchId, "EXPIRED", now)
+    }
+
+    override suspend fun reactivateBatch(batchId: Long, dailyCount: Int) {
+        val now = System.currentTimeMillis()
+        batchDao.updateBatchType(batchId, "NEXT", now)
+        batchDao.updateStatus(batchId, "READY", now)
+        batchDao.updateDailyCountSnapshot(batchId, dailyCount, now)
+    }
+
     override suspend fun failArticle(
         articleId: Long,
         status: String,

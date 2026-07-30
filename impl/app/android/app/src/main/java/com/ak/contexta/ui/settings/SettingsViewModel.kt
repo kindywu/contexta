@@ -90,6 +90,8 @@ class SettingsViewModel @Inject constructor(
             if (newCount <= 5 && settingsRepository.updateDailyArticleCount(newCount)) {
                 _state.value = _state.value.copy(dailyCount = newCount)
             }
+            // 注意：仅写 DB，不触发新批次生成。
+            // 篇数变化要在下次创建 NEXT 批次（如改难度或第二天启动）时才会反映到 snapshot。
         }
     }
 
@@ -99,6 +101,7 @@ class SettingsViewModel @Inject constructor(
             if (newCount >= 1 && settingsRepository.updateDailyArticleCount(newCount)) {
                 _state.value = _state.value.copy(dailyCount = newCount)
             }
+            // 注意：同上——仅写 DB，不触发新批次生成。
         }
     }
 

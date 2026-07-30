@@ -244,10 +244,56 @@ claimBatch() → status='GENERATING' (CAS 操作，只有 PENDING 才能抢占)
                                  → 新 batch 变 CURRENT (unlocked_on=today)
 ```
 
+**关键设计 ⚠️：生成篇数 vs 显示篇数 分离**
+
+```
+MAX_ARTICLES_PER_BATCH = 5（硬编码，见 TriggerNextBatchUseCase）
+```
+
+- **生成数量永远是 5 篇/批**，是常量，不存数据库
+- `daily_count_snapshot` 记录的**不是**生成了多少篇，而是**首页展示多少篇**
+- 修改 `daily_article_count` 设置后：
+  - ✅ **当前批次（CURRENT）**：立即生效（从 `user_settings` 读取当前值，见 `HomeViewModel`）
+  - ✅ **未来批次**：新创建时会把当前设置写入 `daily_count_snapshot`
+  - ❌ **历史批次（EXPIRED）**：不变，保留创建时的 snapshot 值
+- 代码实现：`HomeViewModel.observeArticles()` 判断 `batch.batchType == CURRENT` 时用当前设置，否则用 `batch.dailyCountSnapshot`
+
+**首页显示的批次必须在 ViewModel 层过滤 `unlocked_on`**
+- 只有曾经晋升为 CURRENT 的批次才有 `unlocked_on`（由 `promoteToCurrent()` 设置）
+- 被 INVALIDATED 的 NEXT 批次或残留批次没有 `unlocked_on`
+- DAO 返回全量数据（内部逻辑如批次复用也需要查无解锁日期的批次）
+- HomeViewModel 通过 `.filter { it.dateLabel.isNotEmpty() }` 过滤（`dateLabelFor(null) → ""`）
+
+**篇数修改后何时反映到新批次？**
+
+| 操作 | 是否触发 TriggerNextBatchUseCase | NEXT 批次行为 |
+|------|-------------------------------|-------------|
+| 改难度 | ✅ `updateLevel()` 调用 | 复用已有 completed 批次 or 创建新批次+Worker |
+| 只改篇数 | ❌ `incrementDailyCount()` 仅写 DB | 当前批次立即可见，下个 NEXT 才存 snapshot |
+| 第二天启动 | ✅ `StartupOrchestrationUseCase` 触发 | 创建新 NEXT 批次 |
+
+**难点 ⚡：难度变更时的批次复用**
+
+改难度不是无条件创建新批次。`TriggerNextBatchUseCase` 三步流程：
+
+```
+1. 废弃当前 NEXT（难度不同）→ expireBatch()
+2. 在 EXPIRED 批次中查找已完成 + 难度匹配的
+   → 找到 → reactivateBatch() 复用，无需 Worker
+   → 未找到 → 创建新批次 + 调度 Worker
+```
+
+这避免了用户在不同难度间来回切换时反复生成相同文章。
+
 **关键代码位置**：
-- `StartupOrchestrationUseCase.kt` — 启动时判断「是否新的一天」并推进批次
-- `ArticleRepositoryImpl.promoteNextToCurrent()` — 批次推进逻辑
-- `ArticleBatchDao` — CAS 抢占 + 状态更新 SQL
+- `TriggerNextBatchUseCase` — 批次复用主逻辑（废弃→查找→复用or新建）
+- `ArticleRepositoryImpl.expireBatch()` — 将 NEXT 批次标为 EXPIRED
+- `ArticleRepositoryImpl.reactivateBatch()` — 将 EXPIRED 批次改回 NEXT/READY
+- `TriggerNextBatchUseCase.MAX_ARTICLES_PER_BATCH` — 生成篇数常量 = 5
+- `GetHomeArticlesUseCase.invoke(displayLimit)` — 用 displayLimit 限制显示
+- `HomeViewModel.observeArticles()` — CURRENT 用当前设置，EXPIRED 用 snapshot
+- `SettingsViewModel` — `updateLevel()` 触发新批次/`incrementDailyCount()` 仅写 DB
+- `StartupOrchestrationUseCase` — 启动时创建 NEXT（使用当前 `user_settings`）
 
 **难点 ⚡：首页显示多个日期分组**
 

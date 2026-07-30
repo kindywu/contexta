@@ -8,6 +8,7 @@ import com.ak.contexta.domain.generation.categoryToDifficulty
 import com.ak.contexta.domain.model.Article
 import com.ak.contexta.domain.model.ArticleBatch
 import com.ak.contexta.domain.model.ArticleStatus
+import com.ak.contexta.domain.model.BatchType
 import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.repository.SettingsRepository
 import com.ak.contexta.domain.repository.StatsRepository
@@ -195,7 +196,13 @@ class HomeViewModel @Inject constructor(
 
             results
                 .map { (batch, articles) ->
-                    val shown = getHomeArticles(articles, userDifficulty, batch.dailyCountSnapshot)
+                    // CURRENT 批次用当前用户设置，EXPIRED 批次用历史 snapshot
+                    val displayLimit = if (batch.batchType == BatchType.CURRENT) {
+                        settings?.dailyArticleCount ?: batch.dailyCountSnapshot
+                    } else {
+                        batch.dailyCountSnapshot
+                    }
+                    val shown = getHomeArticles(articles, userDifficulty, displayLimit)
                     ArticleGroupUi(
                         dateLabel = dateLabelFor(batch.unlockedOn),
                         articles = shown.map { article ->
@@ -211,6 +218,8 @@ class HomeViewModel @Inject constructor(
                     )
                 }
                 .filter { it.articles.isNotEmpty() }
+                // 只显示有解锁日期的批次（过滤掉从未被解锁的残留批次）
+                .filter { it.dateLabel.isNotEmpty() }
         }.collect { groups ->
             val hasContent = groups.any { it.articles.isNotEmpty() }
             _state.value = _state.value.copy(

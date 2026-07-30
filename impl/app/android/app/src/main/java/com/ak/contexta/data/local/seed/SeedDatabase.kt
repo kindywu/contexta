@@ -41,6 +41,7 @@ fun seedDatabase(context: Context, json: Json, db: SupportSQLiteDatabase) {
                 put("title", article.title)
                 put("status", "SUCCESS")
                 put("retry_count", 0)
+                put("max_retries", 3)
                 put("accumulated_read_seconds", 0)
                 put("generation_completed_at", now)
             }

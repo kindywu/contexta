@@ -15,9 +15,16 @@ interface ArticleBatchDao {
     @Query("SELECT * FROM article_batch WHERE batch_type = :batchType ORDER BY id DESC LIMIT 1")
     suspend fun getByType(batchType: String): ArticleBatchEntity?
 
+    /**
+     * 获取指定类型的所有批次（含无解锁记录的，供内部逻辑查询）。
+     * 首页显示时需自行过滤 unlocked_on IS NOT NULL（见 HomeViewModel）。
+     */
     @Query("SELECT * FROM article_batch WHERE batch_type = :batchType ORDER BY id DESC")
     fun observeAllByType(batchType: String): Flow<List<ArticleBatchEntity>>
 
+    /**
+     * 同上，仅用于挂起查询。
+     */
     @Query("SELECT * FROM article_batch WHERE batch_type = :batchType ORDER BY id DESC")
     suspend fun getAllByType(batchType: String): List<ArticleBatchEntity>
 
@@ -62,6 +69,13 @@ interface ArticleBatchDao {
         WHERE id = :batchId
     """)
     suspend fun updateBatchType(batchId: Long, batchType: String, now: Long)
+
+    @Query("""
+        UPDATE article_batch
+        SET daily_count_snapshot = :dailyCount, last_updated_at = :now
+        WHERE id = :batchId
+    """)
+    suspend fun updateDailyCountSnapshot(batchId: Long, dailyCount: Int, now: Long)
 
     @Query("""
         UPDATE article_batch

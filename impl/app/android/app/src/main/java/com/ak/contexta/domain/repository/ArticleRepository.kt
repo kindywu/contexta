@@ -62,6 +62,18 @@ interface ArticleRepository {
     /** Promote next to current */
     suspend fun promoteNextToCurrent(nextBatchId: Long)
 
+    /**
+     * 废弃一个 NEXT 批次（难度变更时使用）。
+     * 将 batch_type 和 status 均设为 EXPIRED。
+     */
+    suspend fun expireBatch(batchId: Long)
+
+    /**
+     * 复用一个已完成的 EXPIRED 批次（难度匹配时使用）。
+     * 将 batch_type 改为 NEXT，status 设为 READY，更新 daily_count_snapshot。
+     */
+    suspend fun reactivateBatch(batchId: Long, dailyCount: Int)
+
     /** Mark article as FAILED or TIMEOUT with optional error context */
     suspend fun failArticle(
         articleId: Long,
