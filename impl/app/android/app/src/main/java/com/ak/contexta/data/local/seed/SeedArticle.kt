@@ -3,22 +3,22 @@ package com.ak.contexta.data.local.seed
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class SeedDataDto(
+data class SeedData(
     val version: Int,
-    val seedArticles: List<SeedArticleDto>
+    val seedArticles: List<SeedArticle>
 )
 
 @Serializable
-data class SeedArticleDto(
+data class SeedArticle(
     val difficultyLevel: String,
     val contentCategory: String,
     val orderIndex: Int,
     val title: String,
-    val paragraphs: List<SeedParagraphDto>
+    val paragraphs: List<SeedParagraph>
 )
 
 @Serializable
-data class SeedParagraphDto(
+data class SeedParagraph(
     val orderIndex: Int,
     val englishText: String,
     val chineseTranslation: String

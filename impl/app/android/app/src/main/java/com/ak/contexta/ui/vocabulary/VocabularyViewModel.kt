@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ak.contexta.domain.repository.SettingsRepository
 import com.ak.contexta.domain.repository.VocabularyRepository
-import com.ak.contexta.domain.tts.TtsManager
+import com.ak.contexta.domain.tts.TtsEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,7 +39,7 @@ data class VocabCardData(
 class VocabularyViewModel @Inject constructor(
     private val vocabularyRepository: VocabularyRepository,
     private val settingsRepository: SettingsRepository,
-    private val ttsManager: TtsManager
+    private val ttsEngine: TtsEngine
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(VocabularyUiState())
@@ -151,7 +151,7 @@ class VocabularyViewModel @Inject constructor(
 
     fun playWord() {
         val word = _state.value.currentWord?.word ?: return
-        ttsManager.speak(word)
+        ttsEngine.speak(word)
     }
 
     /** Restart the review session from scratch. */

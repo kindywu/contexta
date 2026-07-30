@@ -45,7 +45,7 @@ class GenerationWorkerFactory @Inject constructor() {
             appContext,
             workerParams,
             entryPoint.articleRepository(),
-            entryPoint.llmCaller()
+            entryPoint.generateArticlesUseCase()
         )
     }
 }

@@ -1,17 +1,18 @@
-package com.ak.contexta.domain.tts
+package com.ak.contexta.data.tts
 
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.util.Log
+import com.ak.contexta.domain.tts.TtsEngine
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Manages Android Text-To-Speech for word and paragraph pronunciation.
+ * Android TTS 引擎实现。
  *
  * On Xiaomi devices the built-in TTS engine (com.xiaomi.mibrain.speech) may
  * not be discovered via the default TextToSpeech(context) constructor, so
@@ -23,9 +24,10 @@ import javax.inject.Singleton
  * The first one that initialises successfully is kept.
  */
 @Singleton
-class TtsManager @Inject constructor(
+class TtsEngineImpl @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : TtsEngine {
+
     private var tts: TextToSpeech? = null
     private var ready = false
     private var failureMessage: String? = null
@@ -86,16 +88,13 @@ class TtsManager @Inject constructor(
         }
     }
 
-    /** Whether a TTS engine is available and ready. */
-    fun isAvailable(): Boolean = ready
+    override fun isAvailable(): Boolean = ready
 
-    /** Human-readable description of why TTS is unavailable, or null if available. */
-    fun unavailabilityReason(): String? = failureMessage
+    override fun unavailabilityReason(): String? = failureMessage
 
-    /** Speak a word/phrase, stopping any current utterance. Returns true if spoken. */
     @Suppress("DEPRECATION")
     @Synchronized
-    fun speak(text: String, speed: Float = 1.0f): Boolean {
+    override fun speak(text: String, speed: Float): Boolean {
         if (ready) {
             return try {
                 tts?.setSpeechRate(speed)
@@ -113,14 +112,13 @@ class TtsManager @Inject constructor(
         return false
     }
 
-    /** Stop any current utterance. */
-    fun stop() {
+    override fun stop() {
         try {
             tts?.stop()
         } catch (_: Exception) { }
     }
 
     companion object {
-        private const val TAG = "TtsManager"
+        private const val TAG = "TtsEngineImpl"
     }
 }

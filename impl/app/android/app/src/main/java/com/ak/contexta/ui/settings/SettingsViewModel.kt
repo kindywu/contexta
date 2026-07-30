@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ak.contexta.domain.repository.SettingsRepository
 import com.ak.contexta.domain.repository.StatsRepository
+import com.ak.contexta.domain.usecase.TriggerNextBatchUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +19,6 @@ data class SettingsUiState(
     val translationMode: String = "FULL",
     val masteryThreshold: Int = 1,
     val autoPlayAudio: Boolean = false,
-    val canModifyDailyCount: Boolean = true,
     val stats: StatsData = StatsData(),
     val isLoading: Boolean = true
 )
@@ -35,7 +35,8 @@ data class StatsData(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
-    private val statsRepository: StatsRepository
+    private val statsRepository: StatsRepository,
+    private val triggerNextBatch: TriggerNextBatchUseCase
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
@@ -49,7 +50,6 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             val settings = settingsRepository.getSettings()
             val stats = statsRepository.getStats()
-            val canModify = settingsRepository.canModifyDailyCount()
 
             if (settings != null) {
                 _state.value = SettingsUiState(
@@ -58,7 +58,6 @@ class SettingsViewModel @Inject constructor(
                     translationMode = settings.translationDisplayMode,
                     masteryThreshold = settings.masteryThresholdN,
                     autoPlayAudio = settings.autoPlayAudio,
-                    canModifyDailyCount = canModify,
                     stats = StatsData(
                         totalArticlesRead = stats?.totalArticlesRead ?: 0,
                         totalWordsAdded = stats?.totalWordsAdded ?: 0,
@@ -79,13 +78,16 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             settingsRepository.updateLevel(level)
             _state.value = _state.value.copy(level = level)
+            // Trigger generation for new difficulty — triggerNextBatchGeneration
+            // skips if a matching batch already exists
+            triggerNextBatch(level, _state.value.dailyCount)
         }
     }
 
     fun incrementDailyCount() {
         viewModelScope.launch {
             val newCount = _state.value.dailyCount + 1
-            if (newCount <= 10 && settingsRepository.updateDailyArticleCount(newCount)) {
+            if (newCount <= 5 && settingsRepository.updateDailyArticleCount(newCount)) {
                 _state.value = _state.value.copy(dailyCount = newCount)
             }
         }

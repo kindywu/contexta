@@ -15,6 +15,12 @@ interface ArticleBatchDao {
     @Query("SELECT * FROM article_batch WHERE batch_type = :batchType ORDER BY id DESC LIMIT 1")
     suspend fun getByType(batchType: String): ArticleBatchEntity?
 
+    @Query("SELECT * FROM article_batch WHERE batch_type = :batchType ORDER BY id DESC")
+    fun observeAllByType(batchType: String): Flow<List<ArticleBatchEntity>>
+
+    @Query("SELECT * FROM article_batch WHERE batch_type = :batchType ORDER BY id DESC")
+    suspend fun getAllByType(batchType: String): List<ArticleBatchEntity>
+
     @Query("SELECT * FROM article_batch WHERE id = :id")
     suspend fun getById(id: Long): ArticleBatchEntity?
 
@@ -52,8 +58,26 @@ interface ArticleBatchDao {
 
     @Query("""
         UPDATE article_batch
-        SET status = 'INVALIDATED', last_updated_at = :now
+        SET batch_type = :batchType, last_updated_at = :now
         WHERE id = :batchId
     """)
-    suspend fun invalidate(batchId: Long, now: Long)
+    suspend fun updateBatchType(batchId: Long, batchType: String, now: Long)
+
+    @Query("""
+        UPDATE article_batch
+        SET status = 'BLOCKED',
+            blocked_reason = :reason,
+            blocked_at = :now,
+            error_code = :errorCode,
+            error_message = :errorMessage,
+            last_updated_at = :now
+        WHERE id = :batchId
+    """)
+    suspend fun markBlocked(
+        batchId: Long,
+        reason: String?,
+        errorCode: String?,
+        errorMessage: String?,
+        now: Long
+    )
 }

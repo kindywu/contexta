@@ -13,6 +13,11 @@ data class Article(
     val accumulatedReadSeconds: Int,
     val readCompletedAt: Long?,
     val lastRetryAt: Long?,
+    val errorCode: String? = null,
+    val errorMessage: String? = null,
+    val errorHelp: String? = null,
+    val maxRetries: Int = 3,
+    val nextRetryAt: Long? = null,
     val paragraphs: List<ArticleParagraph> = emptyList()
 )
 

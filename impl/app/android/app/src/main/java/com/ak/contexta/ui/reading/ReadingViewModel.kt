@@ -5,7 +5,7 @@ import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ak.contexta.data.remote.LlmCaller
+import com.ak.contexta.domain.LlmClient
 import com.ak.contexta.domain.generation.buildWordLookupSystemPrompt
 import com.ak.contexta.domain.generation.buildWordLookupUserPrompt
 import com.ak.contexta.domain.generation.parseWordLlmResponse
@@ -15,7 +15,7 @@ import com.ak.contexta.domain.repository.SettingsRepository
 import com.ak.contexta.domain.repository.StatsRepository
 import com.ak.contexta.domain.repository.VocabularyRepository
 import com.ak.contexta.domain.repository.WordRepository
-import com.ak.contexta.domain.tts.TtsManager
+import com.ak.contexta.domain.tts.TtsEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
@@ -67,8 +67,8 @@ class ReadingViewModel @Inject constructor(
     private val wordRepository: WordRepository,
     private val vocabularyRepository: VocabularyRepository,
     private val statsRepository: StatsRepository,
-    private val llmCaller: LlmCaller,
-private val ttsManager: TtsManager
+    private val llmClient: LlmClient,
+private val ttsEngine: TtsEngine
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ReadingUiState())
@@ -199,7 +199,7 @@ private val ttsManager: TtsManager
             val detail = try {
                 wordRepository.lookupWord(normalized) { rawWord ->
                     // LLM fallback: call DeepSeek for word definition
-                    val result = llmCaller.call(
+                    val result = llmClient.call(
                         buildWordLookupSystemPrompt(),
                         buildWordLookupUserPrompt(rawWord)
                     )
@@ -275,27 +275,27 @@ private val ttsManager: TtsManager
     fun playWordPronunciation() {
         val word = _state.value.wordSheetData?.word ?: return
         val speed = _state.value.ttsSpeed
-        if (!ttsManager.isAvailable()) {
+        if (!ttsEngine.isAvailable()) {
             _state.value = _state.value.copy(
                 snackbarMessage = TTS_ERROR_MESSAGE,
                 openTtsSettings = true
             )
             return
         }
-        ttsManager.speak(word, speed)
+        ttsEngine.speak(word, speed)
     }
 
     /** Speak an arbitrary text (paragraph, sentence, etc.). */
     fun playText(text: String) {
         val speed = _state.value.ttsSpeed
-        if (!ttsManager.isAvailable()) {
+        if (!ttsEngine.isAvailable()) {
             _state.value = _state.value.copy(
                 snackbarMessage = TTS_ERROR_MESSAGE,
                 openTtsSettings = true
             )
             return
         }
-        ttsManager.speak(text, speed)
+        ttsEngine.speak(text, speed)
     }
 
     /** Speak the entire article from start to finish. */

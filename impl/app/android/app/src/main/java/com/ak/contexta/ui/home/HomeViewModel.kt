@@ -3,20 +3,28 @@ package com.ak.contexta.ui.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ak.contexta.BuildConfig
-import com.ak.contexta.domain.GenerationManager
+import com.ak.contexta.domain.BackgroundWorkScheduler
 import com.ak.contexta.domain.generation.categoryToDifficulty
+import com.ak.contexta.domain.model.Article
+import com.ak.contexta.domain.model.ArticleBatch
 import com.ak.contexta.domain.model.ArticleStatus
 import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.repository.SettingsRepository
 import com.ak.contexta.domain.repository.StatsRepository
-import com.ak.contexta.worker.GenerationScheduler
+import com.ak.contexta.domain.usecase.CreateInitialBatchUseCase
+import com.ak.contexta.domain.usecase.GetHomeArticlesUseCase
+import com.ak.contexta.domain.usecase.StartupOrchestrationUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.ZoneId
 import javax.inject.Inject
 
 data class HomeUiState(
@@ -26,7 +34,16 @@ data class HomeUiState(
     val articleGroups: List<ArticleGroupUi> = emptyList(),
     val isLoading: Boolean = true,
     val isGenerating: Boolean = false,
-    val generationMessage: String = ""
+    val generationMessage: String = "",
+    val generationErrors: List<ErrorUi> = emptyList()
+)
+
+data class ErrorUi(
+    val articleId: Long,
+    val errorCode: String,
+    val errorMessage: String,
+    val errorHelp: String,
+    val canRetry: Boolean
 )
 
 data class ArticleGroupUi(
@@ -48,8 +65,10 @@ class HomeViewModel @Inject constructor(
     private val articleRepository: ArticleRepository,
     private val settingsRepository: SettingsRepository,
     private val statsRepository: StatsRepository,
-    private val generationManager: GenerationManager,
-    private val generationScheduler: GenerationScheduler
+    private val startupOrch: StartupOrchestrationUseCase,
+    private val createInitialBatch: CreateInitialBatchUseCase,
+    private val getHomeArticles: GetHomeArticlesUseCase,
+    private val generationScheduler: BackgroundWorkScheduler
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(HomeUiState())
@@ -57,6 +76,25 @@ class HomeViewModel @Inject constructor(
 
     init {
         loadHome()
+        observeErrors()
+    }
+
+    private fun observeErrors() {
+        viewModelScope.launch {
+            articleRepository.observeGenerationErrors().collect { errors ->
+                _state.value = _state.value.copy(
+                    generationErrors = errors.map { article ->
+                        ErrorUi(
+                            articleId = article.id,
+                            errorCode = article.errorCode ?: "UNKNOWN",
+                            errorMessage = article.errorMessage ?: "未知错误",
+                            errorHelp = article.errorHelp ?: "",
+                            canRetry = article.status.name in listOf("FAILED", "TIMEOUT", "FATAL")
+                        )
+                    }
+                )
+            }
+        }
     }
 
     private fun loadHome() {
@@ -77,93 +115,110 @@ class HomeViewModel @Inject constructor(
 
             // Run app startup — check batch state and trigger generation if needed
             val appVersion = BuildConfig.VERSION_CODE
-            val startupResult = generationManager.onAppStart(appVersion)
+            val startupResult = startupOrch(appVersion)
 
             when (startupResult) {
-                is GenerationManager.StartupResult.NeedsInitialBatch -> {
+                is StartupOrchestrationUseCase.StartupResult.NeedsInitialBatch -> {
                     _state.value = _state.value.copy(
                         isGenerating = true,
                         generationMessage = "正在准备文章…"
                     )
-                    // Create initial batch
-                    val batchId = generationManager.startInitialGeneration(
+                    val batchId = createInitialBatch(
                         difficulty = startupResult.difficulty,
                         dailyCount = startupResult.dailyCount
                     )
-                    // Schedule WorkManager to generate the articles via LLM
                     generationScheduler.scheduleBatchGeneration(batchId)
-                    // Start observing the batch
-                    observeCurrentBatch()
+                    observeArticles()
                 }
-                is GenerationManager.StartupResult.Ready -> {
-                    observeCurrentBatch()
+                is StartupOrchestrationUseCase.StartupResult.Ready -> {
+                    observeArticles()
                 }
-                is GenerationManager.StartupResult.WaitingForGeneration -> {
+                is StartupOrchestrationUseCase.StartupResult.WaitingForGeneration -> {
                     _state.value = _state.value.copy(
                         isGenerating = true,
                         generationMessage = "上一批文章已展完，正在生成新文章…"
                     )
-                    observeCurrentBatch()
+                    observeArticles()
                 }
-                is GenerationManager.StartupResult.PipelineBlocked -> {
+                is StartupOrchestrationUseCase.StartupResult.PipelineBlocked -> {
                     _state.value = _state.value.copy(
                         isLoading = false,
                         generationMessage = "生成管道被阻塞，请联系技术支持"
                     )
                 }
-                is GenerationManager.StartupResult.NeedsOnboarding -> {
-                    // Shouldn't reach here — NavGraph handles onboarding first
+                is StartupOrchestrationUseCase.StartupResult.NeedsOnboarding -> {
                     _state.value = _state.value.copy(isLoading = false)
                 }
             }
         }
     }
 
-    private suspend fun observeCurrentBatch() {
+    private fun dateLabelFor(unlockedOn: String?): String {
+        if (unlockedOn == null) return ""
+        val zoneId = ZoneId.of("Asia/Shanghai")
+        val date = LocalDate.parse(unlockedOn)
+        val today = LocalDate.now(zoneId)
+        val yesterday = today.minusDays(1)
+        return when (date) {
+            today -> "今天"
+            yesterday -> "昨天"
+            else -> "${date.year}年${date.monthValue}月${date.dayOfMonth}日"
+        }
+    }
+
+    private suspend fun observeArticles() {
         val currentBatch = articleRepository.getCurrentBatch()
+        val expiredBatches = articleRepository.getExpiredBatches()
+
+        val allFlows = mutableListOf<Flow<Pair<ArticleBatch, List<Article>>>>()
         if (currentBatch != null) {
-            articleRepository.observeArticles(currentBatch.id)
-                .map { articles ->
-                    val settings = settingsRepository.getSettings()
-                    val userDifficulty = settings?.difficultyLevel ?: "MEDIUM"
-                    val dailyCount = settings?.dailyArticleCount ?: Int.MAX_VALUE
+            allFlows.add(
+                articleRepository.observeArticles(currentBatch.id)
+                    .map { articles -> currentBatch to articles }
+            )
+        }
+        for (batch in expiredBatches) {
+            allFlows.add(
+                articleRepository.observeArticles(batch.id)
+                    .map { articles -> batch to articles }
+            )
+        }
 
-                    // Filter by user's difficulty level and limit by daily count
-                    val shownArticles = articles
-                        .filter { it.status != ArticleStatus.PENDING }
-                        .filter { categoryToDifficulty(it.contentCategory) == userDifficulty }
-                        .sortedBy { it.orderIndex }
-                        .take(dailyCount)
+        if (allFlows.isEmpty()) {
+            _state.value = _state.value.copy(isLoading = false)
+            return
+        }
 
-                    shownArticles.map { article ->
-                        ArticleItemUi(
-                            id = article.id,
-                            title = article.title,
-                            description = article.contentCategory,
-                            difficultyLabel = userDifficulty,
-                            categoryLabel = article.contentCategory.replace("_", " "),
-                            isReadCompleted = article.readCompletedAt != null
-                        )
-                    }.let { items ->
-                        listOf(
-                            ArticleGroupUi(
-                                dateLabel = _state.value.dateLabel,
-                                articles = items
+        combine(allFlows) { results ->
+            val settings = settingsRepository.getSettings()
+            val userDifficulty = settings?.difficultyLevel ?: "MEDIUM"
+
+            results
+                .map { (batch, articles) ->
+                    val shown = getHomeArticles(articles, userDifficulty, batch.dailyCountSnapshot)
+                    ArticleGroupUi(
+                        dateLabel = dateLabelFor(batch.unlockedOn),
+                        articles = shown.map { article ->
+                            ArticleItemUi(
+                                id = article.id,
+                                title = article.title,
+                                description = article.contentCategory,
+                                difficultyLabel = userDifficulty,
+                                categoryLabel = article.contentCategory.replace("_", " "),
+                                isReadCompleted = article.readCompletedAt != null
                             )
-                        )
-                    }
-                }
-                .collect { groups ->
-                    val hasContent = groups.any { it.articles.isNotEmpty() }
-                    _state.value = _state.value.copy(
-                        articleGroups = groups,
-                        isLoading = false,
-                        isGenerating = !hasContent,
-                        generationMessage = if (!hasContent) "当前等级暂无文章" else ""
+                        }
                     )
                 }
-        } else {
-            _state.value = _state.value.copy(isLoading = false)
+                .filter { it.articles.isNotEmpty() }
+        }.collect { groups ->
+            val hasContent = groups.any { it.articles.isNotEmpty() }
+            _state.value = _state.value.copy(
+                articleGroups = groups,
+                isLoading = false,
+                isGenerating = !hasContent,
+                generationMessage = if (!hasContent) "当前等级暂无文章" else ""
+            )
         }
     }
 }

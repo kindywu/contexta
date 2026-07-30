@@ -3,8 +3,11 @@ package com.ak.contexta.data.remote
 import com.ak.contexta.BuildConfig
 import com.ak.contexta.data.remote.dto.ChatCompletionRequest
 import com.ak.contexta.data.remote.dto.ChatMessage
+import com.ak.contexta.domain.LlmClient
 import com.ak.contexta.domain.LlmErrorClassifier
-import com.ak.contexta.domain.PipelineBlockingException
+import com.ak.contexta.domain.error.LlmFatalException
+import com.ak.contexta.domain.error.LlmRecoverableExhaustedException
+import com.ak.contexta.domain.error.PipelineBlockingException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
@@ -19,7 +22,7 @@ import javax.inject.Singleton
 @Singleton
 class LlmCaller @Inject constructor(
     private val deepSeekApi: DeepSeekApi
-) {
+) : LlmClient {
 
     companion object {
         private const val MAX_RETRIES = 3
@@ -27,20 +30,15 @@ class LlmCaller @Inject constructor(
         private const val MAX_RETRY_AFTER_SECONDS = 30
     }
 
-    data class LlmResult(
-        val content: String,
-        val retryCount: Int
-    )
-
     /**
      * Call LLM with the given system and user prompts.
      * Returns the response content or throws.
      */
-    suspend fun call(
+    override suspend fun call(
         systemPrompt: String,
         userPrompt: String,
-        timeoutMs: Long = GENERATION_TIMEOUT_MS
-    ): LlmResult = withTimeout(timeoutMs) {
+        timeoutMs: Long
+    ): LlmClient.LlmResult = withTimeout(timeoutMs) {
         var retryCount = 0
         var lastError: Throwable? = null
 
@@ -58,7 +56,7 @@ class LlmCaller @Inject constructor(
                 val content = response.choices.firstOrNull()?.message?.content
                     ?: throw IllegalStateException("Empty response from LLM")
 
-                return@withTimeout LlmResult(content = content, retryCount = retryCount)
+                return@withTimeout LlmClient.LlmResult(content = content, retryCount = retryCount)
 
             } catch (e: Exception) {
                 lastError = e
@@ -118,16 +116,3 @@ class LlmCaller @Inject constructor(
         return match?.groupValues?.get(1)?.toIntOrNull()
     }
 }
-
-/** Non-recoverable LLM-side error (auth, bad request, content policy) */
-class LlmFatalException(
-    message: String,
-    cause: Throwable? = null
-) : Exception(message, cause)
-
-/** Recoverable error that exhausted all retries */
-class LlmRecoverableExhaustedException(
-    message: String,
-    cause: Throwable? = null,
-    val attempts: Int = 0
-) : Exception(message, cause)

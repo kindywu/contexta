@@ -15,6 +15,8 @@ val localProperties = rootProject.file("local.properties").takeIf { it.exists() 
 val deepSeekApiKey: String = localProperties?.getProperty("deepseek.apiKey") ?: ""
 val deepSeekModel: String = localProperties?.getProperty("deepseek.model") ?: "deepseek-v4-flash"
 val deepSeekBaseUrl: String = localProperties?.getProperty("deepseek.baseUrl") ?: "https://api.deepseek.com"
+val feishuWebhookUrl: String = localProperties?.getProperty("feishu.webhookUrl") ?: ""
+val feishuSignSecret: String = localProperties?.getProperty("feishu.signSecret") ?: ""
 
 android {
     namespace = "com.ak.contexta"
@@ -38,6 +40,14 @@ android {
         buildConfigField("String", "DEEPSEEK_API_KEY", "\"${deepSeekApiKey}\"")
         buildConfigField("String", "DEEPSEEK_MODEL", "\"${deepSeekModel}\"")
         buildConfigField("String", "DEEPSEEK_BASE_URL", "\"${deepSeekBaseUrl}\"")
+        buildConfigField("String", "FEISHU_WEBHOOK_URL", "\"${feishuWebhookUrl}\"")
+        buildConfigField("String", "FEISHU_SIGN_SECRET", "\"${feishuSignSecret}\"")
+
+        testOptions {
+            unitTests {
+                isReturnDefaultValues = true
+            }
+        }
     }
 
     buildTypes {

@@ -9,6 +9,10 @@ data class ArticleBatch(
     val generatedOn: String?,
     val unlockedOn: String?,
     val lastUpdatedAt: Long,
+    val errorCode: String? = null,
+    val errorMessage: String? = null,
+    val blockedReason: String? = null,
+    val blockedAt: Long? = null,
     val articles: List<Article> = emptyList()
 )
 
@@ -28,7 +32,6 @@ enum class BatchStatus(val value: String) {
     READY("READY"),
     CURRENT("CURRENT"),
     EXPIRED("EXPIRED"),
-    INVALIDATED("INVALIDATED"),
     BLOCKED("BLOCKED");
 
     companion object {

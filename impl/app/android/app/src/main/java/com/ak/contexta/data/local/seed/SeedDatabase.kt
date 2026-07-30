@@ -12,7 +12,7 @@ fun seedDatabase(context: Context, json: Json, db: SupportSQLiteDatabase) {
     val jsonText = context.assets.open("seed_articles.json")
         .bufferedReader()
         .use { it.readText() }
-    val seedData = json.decodeFromString<SeedDataDto>(jsonText)
+    val seedData = json.decodeFromString<SeedData>(jsonText)
 
     val today = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString()
     val now = System.currentTimeMillis()

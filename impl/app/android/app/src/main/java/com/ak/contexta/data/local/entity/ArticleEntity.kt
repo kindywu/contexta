@@ -42,5 +42,15 @@ data class ArticleEntity(
     @ColumnInfo(name = "read_completed_at")
     val readCompletedAt: Long? = null,
     @ColumnInfo(name = "last_retry_at")
-    val lastRetryAt: Long? = null
+    val lastRetryAt: Long? = null,
+    @ColumnInfo(name = "error_code")
+    val errorCode: String? = null,
+    @ColumnInfo(name = "error_message")
+    val errorMessage: String? = null,
+    @ColumnInfo(name = "error_help")
+    val errorHelp: String? = null,
+    @ColumnInfo(name = "max_retries")
+    val maxRetries: Int = 3,
+    @ColumnInfo(name = "next_retry_at")
+    val nextRetryAt: Long? = null
 )

@@ -6,6 +6,7 @@ import androidx.work.BackoffPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.ak.contexta.domain.BackgroundWorkScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
@@ -20,7 +21,7 @@ import javax.inject.Singleton
 @Singleton
 class GenerationScheduler @Inject constructor(
     @ApplicationContext private val context: Context
-) {
+) : BackgroundWorkScheduler {
     companion object {
         private const val TAG = "GenerationScheduler"
         private const val UNIQUE_WORK_PREFIX = "article_generation_batch_"
@@ -30,7 +31,7 @@ class GenerationScheduler @Inject constructor(
      * Enqueue generation for a batch.
      * Returns true if the work was newly enqueued, false if already pending/running.
      */
-    fun scheduleBatchGeneration(batchId: Long, appVersionCode: Int = 0): Boolean {
+    override fun scheduleBatchGeneration(batchId: Long, appVersionCode: Int): Boolean {
         Log.i(TAG, "Scheduling Worker for batch $batchId")
 
         val workRequest = OneTimeWorkRequestBuilder<ArticleGenerationWorker>()
@@ -57,7 +58,7 @@ class GenerationScheduler @Inject constructor(
     /**
      * Cancel any pending generation for a specific batch.
      */
-    fun cancelBatchGeneration(batchId: Long) {
+    override fun cancelBatchGeneration(batchId: Long) {
         val uniqueWorkName = "$UNIQUE_WORK_PREFIX$batchId"
         WorkManager.getInstance(context).cancelUniqueWork(uniqueWorkName)
     }
@@ -65,7 +66,7 @@ class GenerationScheduler @Inject constructor(
     /**
      * Cancel all pending article generation work.
      */
-    fun cancelAllGeneration() {
+    override fun cancelAllGeneration() {
         WorkManager.getInstance(context).cancelAllWorkByTag("article_generation")
     }
 }

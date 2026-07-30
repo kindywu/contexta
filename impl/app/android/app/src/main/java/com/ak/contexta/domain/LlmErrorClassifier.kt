@@ -1,5 +1,7 @@
 package com.ak.contexta.domain
 
+import com.ak.contexta.domain.error.PipelineBlockingException
+
 /**
  * Classifies LLM call errors into three categories:
  * - Recoverable: network issues, 429 rate-limit, 5xx, bad JSON → retryable
@@ -55,12 +57,3 @@ object LlmErrorClassifier {
         return match?.groupValues?.get(1)?.toIntOrNull()
     }
 }
-
-/**
- * Exception thrown by code-level errors (e.g. DB constraint violation) that should
- * trigger FATAL article status and BLOCKED pipeline state.
- */
-class PipelineBlockingException(
-    message: String,
-    cause: Throwable? = null
-) : Exception(message, cause)

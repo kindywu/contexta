@@ -105,10 +105,10 @@ fun SettingsScreen(
             // Daily count stepper
             SettingsStepperItem(
                 label = "每日文章数量",
-                description = "每天最多修改1次，每月最多3次",
+                description = "从CURRENT batch中展示的文章数，最多5篇",
                 value = state.dailyCount,
                 canDecrement = state.dailyCount > 1,
-                canIncrement = state.dailyCount < 10,
+                canIncrement = state.dailyCount < 5,
                 onDecrement = { viewModel.decrementDailyCount() },
                 onIncrement = { viewModel.incrementDailyCount() }
             )

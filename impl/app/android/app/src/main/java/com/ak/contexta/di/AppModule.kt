@@ -25,7 +25,6 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import kotlinx.serialization.json.Json
 import javax.inject.Singleton
 
 @Module
@@ -36,7 +35,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(
         @ApplicationContext context: Context,
-        json: Json
+        json: kotlinx.serialization.json.Json
     ): ContextaDatabase {
         return Room.databaseBuilder(
             context,
@@ -53,6 +52,8 @@ object AppModule {
             .build()
     }
 
+    // DAO bindings — required because Room's abstract DAO methods need explicit
+    // @Provides for Dagger/Hilt to resolve them in RepositoryImpl constructors.
     @Provides fun provideUserSettingsDao(db: ContextaDatabase): UserSettingsDao = db.userSettingsDao()
     @Provides fun provideConfigChangeLogDao(db: ContextaDatabase): ConfigChangeLogDao = db.configChangeLogDao()
     @Provides fun provideArticleBatchDao(db: ContextaDatabase): ArticleBatchDao = db.articleBatchDao()

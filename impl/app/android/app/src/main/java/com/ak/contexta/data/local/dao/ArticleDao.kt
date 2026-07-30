@@ -43,6 +43,39 @@ interface ArticleDao {
     suspend fun updateStatus(articleId: Long, status: String)
 
     @Query("""
+        UPDATE article SET
+            status = :status,
+            error_code = :errorCode,
+            error_message = :errorMessage,
+            error_help = :errorHelp,
+            last_retry_at = :now
+        WHERE id = :articleId
+    """)
+    suspend fun updateStatusWithError(
+        articleId: Long,
+        status: String,
+        errorCode: String?,
+        errorMessage: String?,
+        errorHelp: String?,
+        now: Long
+    )
+
+    @Query("""
+        UPDATE article SET
+            status = 'FATAL',
+            error_code = :errorCode,
+            error_message = :errorMessage,
+            last_retry_at = :now
+        WHERE id = :articleId
+    """)
+    suspend fun markFatal(
+        articleId: Long,
+        errorCode: String?,
+        errorMessage: String?,
+        now: Long
+    )
+
+    @Query("""
         UPDATE article SET title = :title, status = 'SUCCESS', generation_completed_at = :now, retry_count = :retryCount WHERE id = :articleId
     """)
     suspend fun markSuccess(articleId: Long, title: String, retryCount: Int, now: Long)
@@ -76,6 +109,17 @@ interface ArticleDao {
         UPDATE article SET status = 'PENDING', retry_count = 0 WHERE status = 'GENERATING' AND batch_id = :batchId
     """)
     suspend fun resetOrphanGenerating(batchId: Long)
+
+    @Query("""
+        SELECT * FROM article WHERE error_code IS NOT NULL ORDER BY last_retry_at DESC
+    """)
+    fun observeGenerationErrors(): Flow<List<ArticleEntity>>
+
+    @Query("""
+        UPDATE article SET status = 'PENDING', error_code = NULL, error_message = NULL, error_help = NULL, retry_count = 0, last_retry_at = NULL
+        WHERE id = :articleId
+    """)
+    suspend fun resetForRetry(articleId: Long)
 
     @Query("""
         UPDATE article SET accumulated_read_seconds = accumulated_read_seconds + :deltaSeconds WHERE id = :articleId
