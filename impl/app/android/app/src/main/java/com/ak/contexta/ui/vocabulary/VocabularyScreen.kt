@@ -10,6 +10,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,14 +45,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ak.contexta.ui.components.AppButton
-import com.ak.contexta.ui.components.AppButtonVariant
 import com.ak.contexta.ui.components.AppCard
 import com.ak.contexta.ui.components.AppIconButton
 import com.ak.contexta.ui.components.AppTopBar
 import com.ak.contexta.ui.components.EmptyState
 import com.ak.contexta.ui.components.LoadingIndicator
 import com.ak.contexta.ui.theme.Background
-import com.ak.contexta.ui.theme.BodyText
 import com.ak.contexta.ui.theme.Hairline
 import com.ak.contexta.ui.theme.Ink
 import com.ak.contexta.ui.theme.Muted
@@ -155,10 +154,7 @@ fun VocabularyScreen(
                         VocabularyCard(
                             word = word.word,
                             phonetic = word.phonetic,
-                            translation = word.translation,
-                            definitions = word.definitions,
-                            exampleEn = word.exampleEn,
-                            exampleZh = word.exampleZh,
+                            senses = word.senses,
                             reviewStreak = word.reviewStreak,
                             masteryThreshold = word.masteryThreshold,
                             onPlayWord = { viewModel.playWord() }
@@ -167,10 +163,9 @@ fun VocabularyScreen(
 
                     Spacer(modifier = Modifier.weight(1f))
 
-                    // Action buttons
+                    // Action button
                     VocabularyActions(
-                        onCorrect = { viewModel.markCorrect() },
-                        onIncorrect = { viewModel.markIncorrect() }
+                        onCorrect = { viewModel.markCorrect() }
                     )
                 }
             }
@@ -283,10 +278,7 @@ private fun VocabularyProgressDots(current: Int, total: Int) {
 private fun VocabularyCard(
     word: String,
     phonetic: String?,
-    translation: String?,
-    definitions: List<String>,
-    exampleEn: String?,
-    exampleZh: String?,
+    senses: List<VocabSenseData>,
     reviewStreak: Int,
     masteryThreshold: Int,
     onPlayWord: () -> Unit
@@ -325,56 +317,20 @@ private fun VocabularyCard(
             tint = Primary
         )
 
-        // Translation
-        if (translation != null) {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = translation,
-                style = MaterialTheme.typography.headlineMedium,
-                color = Ink
+        // Sense blocks — one per part of speech
+        Spacer(modifier = Modifier.height(16.dp))
+        senses.forEach { sense ->
+            SenseBlock(
+                partOfSpeech = sense.partOfSpeech,
+                chineseMeaning = sense.chineseMeaning,
+                englishDefinition = sense.englishDefinition,
+                examples = sense.examples
             )
-        }
-
-        // Definitions
-        if (definitions.isNotEmpty()) {
             Spacer(modifier = Modifier.height(12.dp))
-            definitions.forEach { definition ->
-                Text(
-                    text = definition,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = BodyText
-                )
-            }
-        }
-
-        // Example
-        if (exampleEn != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(SurfaceSoft)
-                    .padding(12.dp)
-            ) {
-                Text(
-                    text = exampleEn,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Ink
-                )
-                if (exampleZh != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = exampleZh,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Muted
-                    )
-                }
-            }
         }
 
         // Review streak info
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = "已认识 $reviewStreak/$masteryThreshold 次",
             style = MaterialTheme.typography.labelMedium,
@@ -384,26 +340,92 @@ private fun VocabularyCard(
 }
 
 @Composable
+private fun SenseBlock(
+    partOfSpeech: String,
+    chineseMeaning: String,
+    englishDefinition: String,
+    examples: List<VocabExampleData>
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(Radius.Sm))
+            .background(SurfaceSoft)
+            .padding(12.dp)
+    ) {
+        // POS label + Chinese meaning on same row
+        Row(verticalAlignment = Alignment.Top) {
+            Text(
+                text = partOfSpeech,
+                style = MaterialTheme.typography.labelLarge,
+                color = Primary
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = chineseMeaning,
+                style = MaterialTheme.typography.headlineSmall,
+                color = Ink
+            )
+        }
+
+        // English definition
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = englishDefinition,
+            style = MaterialTheme.typography.bodySmall,
+            color = Muted
+        )
+
+        // Examples with vertical bar
+        if (examples.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            examples.forEachIndexed { index, example ->
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    // Quote bar
+                    Box(
+                        modifier = Modifier
+                            .width(2.dp)
+                            .height(IntrinsicSize.Min)
+                            .clip(RoundedCornerShape(1.dp))
+                            .background(Primary)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = example.sentenceEn,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Ink
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = example.sentenceZh,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Muted
+                        )
+                    }
+                }
+                if (index < examples.lastIndex) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun VocabularyActions(
-    onCorrect: () -> Unit,
-    onIncorrect: () -> Unit
+    onCorrect: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement = Arrangement.Center
     ) {
-        AppButton(
-            text = "✗ 不认识",
-            onClick = onIncorrect,
-            modifier = Modifier.weight(1f),
-            variant = AppButtonVariant.Secondary
-        )
         AppButton(
             text = "✓ 认识了",
             onClick = onCorrect,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }

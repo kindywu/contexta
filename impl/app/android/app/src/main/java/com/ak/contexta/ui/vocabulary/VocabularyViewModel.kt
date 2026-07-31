@@ -23,14 +23,23 @@ data class VocabularyUiState(
     val newlyKnownCount: Int = 0
 )
 
+data class VocabExampleData(
+    val sentenceEn: String,
+    val sentenceZh: String
+)
+
+data class VocabSenseData(
+    val partOfSpeech: String,
+    val chineseMeaning: String,
+    val englishDefinition: String,
+    val examples: List<VocabExampleData>
+)
+
 data class VocabCardData(
     val entryId: Long,
     val word: String,
     val phonetic: String?,
-    val translation: String?,
-    val definitions: List<String>,
-    val exampleEn: String?,
-    val exampleZh: String?,
+    val senses: List<VocabSenseData>,
     val reviewStreak: Int = 0,
     val masteryThreshold: Int = 1
 )
@@ -86,10 +95,19 @@ class VocabularyViewModel @Inject constructor(
                 entryId = item.entryId,
                 word = item.spellingDisplay,
                 phonetic = item.phoneticIpa,
-                translation = item.allSenses.firstOrNull()?.chineseMeaning,
-                definitions = item.allSenses.map { it.chineseMeaning },
-                exampleEn = item.allSenses.firstOrNull()?.examples?.firstOrNull()?.sentenceEn,
-                exampleZh = item.allSenses.firstOrNull()?.examples?.firstOrNull()?.sentenceZh,
+                senses = item.allSenses.map { sense ->
+                    VocabSenseData(
+                        partOfSpeech = sense.partOfSpeech,
+                        chineseMeaning = sense.chineseMeaning,
+                        englishDefinition = sense.englishDefinition,
+                        examples = sense.examples.map { example ->
+                            VocabExampleData(
+                                sentenceEn = example.sentenceEn,
+                                sentenceZh = example.sentenceZh
+                            )
+                        }
+                    )
+                },
                 reviewStreak = item.correctReviewStreak,
                 masteryThreshold = masteryThreshold
             ),
