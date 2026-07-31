@@ -57,6 +57,7 @@ fun ContextaNavGraph(
 
         composable(Screen.Vocabulary.route) {
             VocabularyScreen(
+                onBack = { navController.popBackStack() },
                 onAddWord = { navController.navigate(Screen.AddWord.route) }
             )
         }

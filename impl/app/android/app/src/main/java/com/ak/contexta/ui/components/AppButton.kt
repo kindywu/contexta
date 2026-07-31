@@ -33,7 +33,8 @@ fun AppButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     variant: AppButtonVariant = AppButtonVariant.Primary,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(Radius.Sm)
 ) {
     val container = when {
         !enabled -> PrimaryDisabled.copy(alpha = 0.4f)
@@ -47,7 +48,7 @@ fun AppButton(
     }
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(Radius.Sm))
+            .clip(shape)
             .background(container)
             .clickable(enabled = enabled) { onClick() }
             .padding(horizontal = 20.dp, vertical = 12.dp),

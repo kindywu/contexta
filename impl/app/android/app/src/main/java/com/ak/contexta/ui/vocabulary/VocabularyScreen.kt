@@ -1,12 +1,7 @@
 package com.ak.contexta.ui.vocabulary
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Celebration
 import androidx.compose.material.icons.outlined.EditNote
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -35,19 +31,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ak.contexta.ui.components.AppButton
 import com.ak.contexta.ui.components.AppCard
 import com.ak.contexta.ui.components.AppIconButton
-import com.ak.contexta.ui.components.AppTopBar
 import com.ak.contexta.ui.components.EmptyState
 import com.ak.contexta.ui.components.LoadingIndicator
 import com.ak.contexta.ui.theme.Background
@@ -55,17 +48,17 @@ import com.ak.contexta.ui.theme.Hairline
 import com.ak.contexta.ui.theme.Ink
 import com.ak.contexta.ui.theme.Muted
 import com.ak.contexta.ui.theme.MutedSoft
+import com.ak.contexta.ui.theme.OnPrimary
 import com.ak.contexta.ui.theme.PhoneticStyle
 import com.ak.contexta.ui.theme.Primary
 import com.ak.contexta.ui.theme.Radius
 import com.ak.contexta.ui.theme.Success
-import com.ak.contexta.ui.theme.SurfaceCard
 import com.ak.contexta.ui.theme.SurfaceSoft
-import kotlinx.coroutines.launch
 
 @Composable
 fun VocabularyScreen(
     viewModel: VocabularyViewModel = hiltViewModel(),
+    onBack: () -> Unit = {},
     onAddWord: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
@@ -75,26 +68,35 @@ fun VocabularyScreen(
             .fillMaxSize()
             .background(Background)
     ) {
-        // Header
-        AppTopBar(
-            title = if (!state.isSummary) "生词复习" else "复习总结",
-            actions = {
-                if (!state.isSummary) {
-                    Text(
-                        text = "${state.totalCount} 个词",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Muted,
-                        modifier = Modifier.padding(end = 12.dp)
-                    )
-                    AppIconButton(
-                        icon = Icons.Outlined.Add,
-                        contentDescription = "录入单词",
-                        onClick = onAddWord,
-                        tint = Primary
-                    )
-                }
+        // Top bar: back button + progress dots + add button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Background)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppIconButton(
+                icon = Icons.AutoMirrored.Outlined.ArrowBack,
+                contentDescription = "返回",
+                onClick = onBack,
+                tint = MutedSoft
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            if (!state.isSummary && state.totalCount > 0) {
+                VocabularyProgressDots(
+                    current = state.currentIndex + 1,
+                    total = state.totalCount
+                )
             }
-        )
+            Spacer(modifier = Modifier.weight(1f))
+            AppIconButton(
+                icon = Icons.Outlined.Add,
+                contentDescription = "录入单词",
+                onClick = onAddWord,
+                tint = Primary
+            )
+        }
 
         when {
             state.isLoading -> LoadingIndicator()
@@ -111,62 +113,59 @@ fun VocabularyScreen(
             else -> {
                 val word = state.currentWord
                 if (word != null) {
-                    // Progress dots
-                    VocabularyProgressDots(
-                        current = state.currentIndex + 1,
-                        total = state.totalCount
-                    )
-
-                    // Word card
-                    val scope = rememberCoroutineScope()
-                    val offsetY = remember { Animatable(0f) }
-                    // Swipe-to-switch card (prototype: vertical drag >60dp, spring back)
+                    // Card area — scrollable content, fling at boundaries switches word
+                    val scrollState = rememberScrollState()
                     Box(
                         modifier = Modifier
+                            .weight(1f)
                             .fillMaxWidth()
-                            .pointerInput(Unit) {
-                                detectDragGestures(
-                                    onDrag = { change, amount ->
-                                        change.consume()
-                                        scope.launch { offsetY.snapTo(offsetY.value + amount.y) }
-                                    },
-                                    onDragEnd = {
-                                        val threshold = 60.dp.toPx()
-                                        scope.launch {
-                                            when {
-                                                offsetY.value < -threshold -> {
-                                                    offsetY.animateTo(offsetY.value * 1.5f, tween(150))
-                                                    viewModel.goNext()
-                                                    offsetY.snapTo(0f)
-                                                }
-                                                offsetY.value > threshold -> {
-                                                    viewModel.goPrevious()
-                                                    offsetY.snapTo(0f)
-                                                }
-                                                else -> offsetY.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
-                                            }
+                            .nestedScroll(
+                                remember(scrollState) {
+                                    CardSwitchNestedScroll(scrollState) { direction ->
+                                        when (direction) {
+                                            -1 -> viewModel.goNext()
+                                            1 -> viewModel.goPrevious()
                                         }
                                     }
-                                )
-                            }
-                            .graphicsLayer { translationY = offsetY.value }
+                                }
+                            )
                     ) {
-                        VocabularyCard(
-                            word = word.word,
-                            phonetic = word.phonetic,
-                            senses = word.senses,
-                            reviewStreak = word.reviewStreak,
-                            masteryThreshold = word.masteryThreshold,
-                            onPlayWord = { viewModel.playWord() }
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(scrollState),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            VocabularyCard(
+                                word = word.word,
+                                phonetic = word.phonetic,
+                                senses = word.senses,
+                                reviewStreak = word.reviewStreak,
+                                masteryThreshold = word.masteryThreshold,
+                                onPlayWord = { viewModel.playWord() }
+                            )
+                            // Bottom space so content clears the FAB
+                            Spacer(modifier = Modifier.height(80.dp))
+                        }
+
+                        // Floating action button — bottom-end, circular
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(20.dp)
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(Primary)
+                                .clickable { viewModel.markCorrect() },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "✓",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = OnPrimary
+                            )
+                        }
                     }
-
-                    Spacer(modifier = Modifier.weight(1f))
-
-                    // Action button
-                    VocabularyActions(
-                        onCorrect = { viewModel.markCorrect() }
-                    )
                 }
             }
         }
@@ -237,9 +236,7 @@ private fun SummaryStat(value: String, label: String) {
 @Composable
 private fun VocabularyProgressDots(current: Int, total: Int) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 8.dp),
+        modifier = Modifier.padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -247,29 +244,26 @@ private fun VocabularyProgressDots(current: Int, total: Int) {
             text = "$current / $total",
             style = MaterialTheme.typography.labelMedium,
             color = MutedSoft,
-            modifier = Modifier.padding(end = 12.dp)
+            modifier = Modifier.padding(end = 8.dp)
         )
-        // dots: current = 16dp coral pill, done = muted dot, upcoming = hairline dot
-        Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            repeat(total) { index ->
-                val step = index + 1
-                val isCurrent = step == current
-                val isDone = step < current
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 2.dp)
-                        .height(6.dp)
-                        .width(if (isCurrent) 16.dp else 6.dp)
-                        .clip(if (isCurrent) RoundedCornerShape(3.dp) else CircleShape)
-                        .background(
-                            when {
-                                isCurrent -> Primary
-                                isDone -> Muted.copy(alpha = 0.4f)
-                                else -> Hairline
-                            }
-                        )
-                )
-            }
+        repeat(total) { index ->
+            val step = index + 1
+            val isCurrent = step == current
+            val isDone = step < current
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 2.dp)
+                    .height(6.dp)
+                    .width(if (isCurrent) 16.dp else 6.dp)
+                    .clip(if (isCurrent) RoundedCornerShape(3.dp) else CircleShape)
+                    .background(
+                        when {
+                            isCurrent -> Primary
+                            isDone -> Muted.copy(alpha = 0.4f)
+                            else -> Hairline
+                        }
+                    )
+            )
         }
     }
 }
@@ -286,11 +280,7 @@ private fun VocabularyCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp)
-            .clip(RoundedCornerShape(Radius.Md))
-            .background(SurfaceCard)
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
+            .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Word
@@ -412,20 +402,27 @@ private fun SenseBlock(
     }
 }
 
-@Composable
-private fun VocabularyActions(
-    onCorrect: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.Center
-    ) {
-        AppButton(
-            text = "✓ 认识了",
-            onClick = onCorrect,
-            modifier = Modifier.fillMaxWidth()
-        )
+/**
+ * Nested scroll connection that switches cards when the user flings past
+ * the scroll boundary. Content scrolls normally within bounds; a fling
+ * at the top or bottom edge triggers card switch.
+ */
+private class CardSwitchNestedScroll(
+    private val scrollState: androidx.compose.foundation.ScrollState,
+    private val onSwitch: (direction: Int) -> Unit // -1 = next, +1 = previous
+) : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+
+    override suspend fun onPostFling(
+        consumed: androidx.compose.ui.unit.Velocity,
+        available: androidx.compose.ui.unit.Velocity
+    ): androidx.compose.ui.unit.Velocity {
+        if (available.y < -500f) {
+            // Fling past bottom → next word
+            onSwitch(-1)
+        } else if (available.y > 500f) {
+            // Fling past top → previous word
+            onSwitch(1)
+        }
+        return androidx.compose.ui.unit.Velocity.Zero
     }
 }

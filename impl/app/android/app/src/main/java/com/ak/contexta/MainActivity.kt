@@ -42,7 +42,6 @@ private fun ContextaApp() {
     // Show bottom nav only on main tab screens
     val showBottomBar = currentRoute in listOf(
         Screen.Home.route,
-        Screen.Vocabulary.route,
         Screen.Reference.route,
         Screen.Settings.route
     )
