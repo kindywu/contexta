@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import com.ak.contexta.domain.tts.TtsEngine
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -32,6 +33,8 @@ class TtsEngineImpl @Inject constructor(
     private var ready = false
     private var failureMessage: String? = null
     private var pendingText: String? = null
+    private var onSpeakingFinished: (() -> Unit)? = null
+    private var utteranceCounter = 0L
 
     private val engineCandidates = listOf(
         "com.xiaomi.mibrain.speech",
@@ -82,9 +85,32 @@ class TtsEngineImpl @Inject constructor(
         ready = true
         Log.i(TAG, "TTS engine ready")
 
+        // Fire onSpeakingFinished for every utterance end (done / stopped / error)
+        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) {}
+
+            override fun onDone(utteranceId: String?) {
+                notifySpeakingFinished()
+            }
+
+            override fun onError(utteranceId: String?) {
+                notifySpeakingFinished()
+            }
+
+            override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                notifySpeakingFinished()
+            }
+        })
+
         pendingText?.let { text ->
             tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
             pendingText = null
+        }
+    }
+
+    private fun notifySpeakingFinished() {
+        Handler(Looper.getMainLooper()).post {
+            onSpeakingFinished?.invoke()
         }
     }
 
@@ -96,9 +122,10 @@ class TtsEngineImpl @Inject constructor(
     @Synchronized
     override fun speak(text: String, speed: Float): Boolean {
         if (ready) {
+            val utteranceId = "ctx-${utteranceCounter++}"
             return try {
                 tts?.setSpeechRate(speed)
-                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
                 true
             } catch (e: Exception) {
                 Log.w(TAG, "TTS speak failed for '$text': ${e.message}")
@@ -116,6 +143,10 @@ class TtsEngineImpl @Inject constructor(
         try {
             tts?.stop()
         } catch (_: Exception) { }
+    }
+
+    override fun setOnSpeakingFinished(callback: (() -> Unit)?) {
+        onSpeakingFinished = callback
     }
 
     companion object {

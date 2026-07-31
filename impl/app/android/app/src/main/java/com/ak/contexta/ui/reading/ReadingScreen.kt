@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicText
@@ -21,8 +22,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -45,7 +49,6 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -59,6 +62,7 @@ import com.ak.contexta.ui.components.EmptyState
 import com.ak.contexta.ui.components.LoadingIndicator
 import com.ak.contexta.ui.theme.Background
 import com.ak.contexta.ui.theme.BodyText
+import com.ak.contexta.ui.theme.Hairline
 import com.ak.contexta.ui.theme.Ink
 import com.ak.contexta.ui.theme.Muted
 import com.ak.contexta.ui.theme.MutedSoft
@@ -121,21 +125,12 @@ fun ReadingScreen(
                     .background(Primary)
             )
 
-            // App bar
+            // App bar: back + read status + translation mode (title lives in content)
             ReadingAppBar(
-                title = state.title ?: "文章",
                 onBack = onBack,
                 translationMode = state.translationMode,
-                ttsSpeed = state.ttsSpeed,
-                onToggleTtsSpeed = { viewModel.toggleTtsSpeed() },
-                onPlayFullArticle = { viewModel.playFullArticle() },
-                isReadCompleted = state.isReadCompleted
-            )
-
-            // Translation mode indicator bar
-            TranslationModeBar(
-                mode = state.translationMode,
-                onCycle = { viewModel.cycleTranslationMode() }
+                isReadCompleted = state.isReadCompleted,
+                onCycleTranslationMode = { viewModel.cycleTranslationMode() }
             )
 
             // Content
@@ -153,7 +148,20 @@ fun ReadingScreen(
                             .verticalScroll(scrollState)
                             .padding(horizontal = 20.dp)
                     ) {
+                        // Article title at the top of the content — serif, larger than body
                         Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = state.title ?: "文章",
+                            style = MaterialTheme.typography.displayMedium.copy(color = Ink)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(Hairline)
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
                         state.paragraphs.forEachIndexed { index, paragraph ->
                             ReadingParagraph(
                                 englishText = paragraph.englishText,
@@ -171,14 +179,26 @@ fun ReadingScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(24.dp))
+                        // Mark-as-read at the end of the article content (follows scroll)
+                        if (!state.isReadCompleted) {
+                            AppButton(
+                                text = "标记已读",
+                                onClick = { viewModel.markAsRead() },
+                                modifier = Modifier.fillMaxWidth(),
+                                variant = AppButtonVariant.Secondary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
                     }
                 }
             }
 
-            // Footer
-            ReadingFooter(
-                isReadCompleted = state.isReadCompleted,
-                onMarkAsRead = { viewModel.markAsRead() }
+            // Bottom player bar (always visible, music-player style)
+            ReadingPlayerBar(
+                isSpeaking = state.isSpeakingFullArticle,
+                ttsSpeed = state.ttsSpeed,
+                onTogglePlayback = { viewModel.toggleFullArticlePlayback() },
+                onToggleTtsSpeed = { viewModel.toggleTtsSpeed() }
             )
         }
 
@@ -196,13 +216,10 @@ fun ReadingScreen(
 
 @Composable
 private fun ReadingAppBar(
-    title: String,
     onBack: () -> Unit,
     translationMode: TranslationMode,
-    ttsSpeed: Float,
-    onToggleTtsSpeed: () -> Unit,
-    onPlayFullArticle: () -> Unit,
-    isReadCompleted: Boolean
+    isReadCompleted: Boolean,
+    onCycleTranslationMode: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -217,17 +234,9 @@ private fun ReadingAppBar(
             onClick = onBack,
             tint = MutedSoft
         )
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        // Read status (read-only badge; marking read moved to footer)
+        // Read status (read-only badge; marking read lives at the end of the content)
         if (isReadCompleted) {
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = "✓ 已读",
                 style = MaterialTheme.typography.labelMedium,
@@ -235,46 +244,8 @@ private fun ReadingAppBar(
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
         }
-        Spacer(modifier = Modifier.width(4.dp))
-        // Play full article
-        AppIconButton(
-            icon = Icons.AutoMirrored.Outlined.VolumeUp,
-            contentDescription = "朗读全文",
-            onClick = onPlayFullArticle,
-            tint = Primary
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        // Speed toggle
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(if (ttsSpeed < 1.0f) SurfaceSoft else Primary)
-                .clickable { onToggleTtsSpeed() }
-                .padding(horizontal = 8.dp, vertical = 4.dp)
-        ) {
-            Text(
-                text = if (ttsSpeed < 1.0f) "0.5x" else "1x",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = if (ttsSpeed < 1.0f) MutedSoft else OnPrimary
-            )
-        }
-    }
-}
-
-@Composable
-private fun TranslationModeBar(
-    mode: TranslationMode,
-    onCycle: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Background)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
+        Spacer(modifier = Modifier.weight(1f))
+        // Translation mode selector (moved up from the former separate bar)
         Text(
             text = "译文",
             style = MaterialTheme.typography.labelMedium,
@@ -285,12 +256,12 @@ private fun TranslationModeBar(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
                 .background(SurfaceCard)
-                .clickable { onCycle() }
+                .clickable { onCycleTranslationMode() }
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = mode.label,
+                text = translationMode.label,
                 style = MaterialTheme.typography.labelMedium,
                 color = BodyText
             )
@@ -408,22 +379,57 @@ private fun ReadingParagraph(
 }
 
 @Composable
-private fun ReadingFooter(
-    isReadCompleted: Boolean,
-    onMarkAsRead: () -> Unit
+private fun ReadingPlayerBar(
+    isSpeaking: Boolean,
+    ttsSpeed: Float,
+    onTogglePlayback: () -> Unit,
+    onToggleTtsSpeed: () -> Unit
 ) {
-    // 未读时显示「标记已读」；已读后无底部操作区（返回走顶栏返回钮）
-    if (!isReadCompleted) {
-        Column(
+    // Music-player style bar: circular play/stop + label + speed chip. Always visible.
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SurfaceCard)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Circular play/stop button
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 16.dp)
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(Primary)
+                .clickable { onTogglePlayback() },
+            contentAlignment = Alignment.Center
         ) {
-            AppButton(
-                text = "标记已读",
-                onClick = onMarkAsRead,
-                modifier = Modifier.fillMaxWidth(),
-                variant = AppButtonVariant.Secondary
+            Icon(
+                imageVector = if (isSpeaking) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                contentDescription = if (isSpeaking) "停止朗读" else "朗读全文",
+                tint = OnPrimary,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = if (isSpeaking) "正在朗读…" else "朗读全文",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = if (isSpeaking) Primary else BodyText
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        // Speed toggle
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (ttsSpeed < 1.0f) SurfaceSoft else Primary)
+                .clickable { onToggleTtsSpeed() }
+                .padding(horizontal = 8.dp, vertical = 4.dp)
+        ) {
+            Text(
+                text = if (ttsSpeed < 1.0f) "0.5x" else "1x",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (ttsSpeed < 1.0f) MutedSoft else OnPrimary
             )
         }
     }

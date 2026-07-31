@@ -15,4 +15,11 @@ interface TtsEngine {
 
     /** Stop any current utterance. */
     fun stop()
+
+    /**
+     * Register a callback fired when the current utterance finishes — either
+     * naturally (onDone), by [stop], or because it was interrupted by a new
+     * utterance (onStop/onError). Invoked on the main thread. Pass null to unregister.
+     */
+    fun setOnSpeakingFinished(callback: (() -> Unit)?)
 }

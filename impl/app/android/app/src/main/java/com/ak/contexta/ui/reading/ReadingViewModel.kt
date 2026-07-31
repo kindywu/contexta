@@ -40,7 +40,8 @@ data class ReadingUiState(
     val snackbarMessage: String? = null,
     val openTtsSettings: Boolean = false,
     val ttsSpeed: Float = 1.0f,
-    val isReadCompleted: Boolean = false
+    val isReadCompleted: Boolean = false,
+    val isSpeakingFullArticle: Boolean = false
 )
 
 enum class TranslationMode(val label: String) {
@@ -86,6 +87,13 @@ private val ttsEngine: TtsEngine
 
     private var articleId: Long = -1
     private var readTimerJob: Job? = null
+
+    init {
+        // Full-article playback ends (naturally / stopped / interrupted) → reset player state
+        ttsEngine.setOnSpeakingFinished {
+            _state.value = _state.value.copy(isSpeakingFullArticle = false)
+        }
+    }
 
     fun loadArticle(articleId: Long) {
         this.articleId = articleId
@@ -300,9 +308,11 @@ private val ttsEngine: TtsEngine
             return
         }
         ttsEngine.speak(word, speed)
+        // Word pronunciation supersedes full-article playback
+        _state.value = _state.value.copy(isSpeakingFullArticle = false)
     }
 
-    /** Speak an arbitrary text (paragraph, sentence, etc.). */
+    /** Speak an arbitrary text (paragraph, sentence, etc.). Interrupts full-article playback. */
     fun playText(text: String) {
         val speed = _state.value.ttsSpeed
         if (!ttsEngine.isAvailable()) {
@@ -313,13 +323,28 @@ private val ttsEngine: TtsEngine
             return
         }
         ttsEngine.speak(text, speed)
+        // Any other utterance supersedes full-article playback
+        _state.value = _state.value.copy(isSpeakingFullArticle = false)
     }
 
-    /** Speak the entire article from start to finish. */
-    fun playFullArticle() {
+    /** Toggle full-article playback: start if idle, stop if speaking. */
+    fun toggleFullArticlePlayback() {
+        if (_state.value.isSpeakingFullArticle) {
+            ttsEngine.stop()
+            _state.value = _state.value.copy(isSpeakingFullArticle = false)
+            return
+        }
         val fullText = _state.value.paragraphs
             .joinToString(" ") { it.englishText }
-        playText(fullText)
+        if (!ttsEngine.isAvailable()) {
+            _state.value = _state.value.copy(
+                snackbarMessage = TTS_ERROR_MESSAGE,
+                openTtsSettings = true
+            )
+            return
+        }
+        ttsEngine.speak(fullText, _state.value.ttsSpeed)
+        _state.value = _state.value.copy(isSpeakingFullArticle = true)
     }
 
     /** Clear the snackbar after it has been shown. */

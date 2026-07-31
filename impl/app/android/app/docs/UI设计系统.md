@@ -91,9 +91,9 @@
 | Compose 键 | 字号 | 字重 | 行高 | 字距 | 字体族 | 用途 |
 |-----------|------|------|------|------|--------|------|
 | `displayLarge` | 36sp | 400 | 41sp | -0.5sp | Serif | 页面大标题（Onboarding logo） |
-| `displayMedium` | 28sp | 400 | 34sp | -0.3sp | Serif | 页面标题（AppTopBar、Home 问候语、Onboarding 步骤标题） |
+| `displayMedium` | 28sp | 400 | 34sp | -0.3sp | Serif | 页面标题（AppTopBar、Home 问候语、Onboarding 步骤标题、**Reading 正文顶部文章标题**） |
 | `headlineLarge` | 22sp | 500 | 29sp | 0 | Serif | 卡片大标题（复习完成、AddWord 单词详情） |
-| `headlineMedium` | 18sp | 500 | 25sp | 0 | Serif | 卡片标题（ArticleCard、StatCard 数字、Reading 顶栏标题、Settings 弹窗标题） |
+| `headlineMedium` | 18sp | 500 | 25sp | 0 | Serif | 卡片标题（ArticleCard、StatCard 数字、Settings 弹窗标题） |
 | `headlineSmall` | 16sp | 500 | 22sp | 0 | Sans | 列表标签、Stepper 数值 |
 | `titleLarge` | 18sp | 500 | 25sp | 0 | Sans | 屏幕标题位（阶梯保留，当前页面未直接引用） |
 | `titleMedium` | 16sp | 500 | 22sp | 0 | Sans | 列表项/标签（设置行、InlineTabs、DayGroup、radio-card） |
@@ -234,17 +234,17 @@ classDiagram
 
 ### 5.2 Reading 阅读页（`ui/reading/ReadingScreen.kt`）
 
-布局自上而下：**滚动进度条 → 顶栏 → 译文模式条 → 正文 → 底部操作区**，查词弹窗悬浮其上。
+布局自上而下：**滚动进度条 → 顶栏 → 正文（标题 + 段落 + 标记已读）→ 底部播放条**，查词弹窗悬浮其上。
 
 1. **滚动进度条**：顶部 3dp 高、Primary 珊瑚、宽度 = `scrollFraction`（`derivedStateOf` 计算 `scrollValue / maxValue`），随滚动线性增宽。
-2. **顶栏**：44dp 返回（MutedSoft）+ 标题 `headlineMedium`（本页不用 displayMedium）+ 已读只读标记「✓ 已读」+ 全文朗读（`VolumeUp` 珊瑚 44dp）+ **语速胶囊**（0.5x/1x 切换，激活 = Primary 底 OnPrimary 字，未激活 = SurfaceSoft 底 MutedSoft 字，6dp 圆角）。「标记已读」不在顶栏，在底部操作区。
-3. **译文模式条（胶囊循环）**：右侧胶囊（SurfaceCard 底 + 模式名 + ▾），点击 `cycleTranslationMode()` 沿 `FULL → DIM → BLURRED → HIDDEN` 循环并持久化到设置。**4 种模式渲染差异**：
+2. **顶栏**：44dp 返回（MutedSoft）+ 已读只读标记「✓ 已读」（labelMedium MutedSoft，仅已读后显示；未读时此处空白）+ 最右**译文模式胶囊**（SurfaceCard 底 + 模式名 + ▾）。**标题不在顶栏**——在正文顶部（见 4）。发音/语速不在顶栏——在底部播放条（见 5）。
+3. **译文模式（胶囊循环，顶栏最右）**：点击 `cycleTranslationMode()` 沿 `FULL → DIM → BLURRED → HIDDEN` 循环并持久化到设置。**4 种模式渲染差异**：
    - FULL：直接显示中文译文（bodyMedium MutedSoft）
    - DIM：`graphicsLayer(alpha = 0.55f)` 淡化
    - BLURRED：`blur(4dp)` 模糊，点击段落揭示，**10 秒后自动重新模糊**
    - HIDDEN：不渲染译文
-4. **正文**：16sp（bodyLarge）+ `lineHeight 27sp`（约 1.7 倍）；分词用 `LinkAnnotation.Clickable`（BasicText），点击词 → 查词 Modal；**生词高亮**：已在生词表的词加 `background = 0x2ECC785C`（珊瑚 18% 透明度底）。
-5. **底部操作区**（**固定底栏，始终可见**——位于滚动正文之后的 `weight(1f)` 容器下方，不随正文滚动）：未读时仅「标记已读」（secondary 全宽）；**已读后无底部操作区**（返回走顶栏返回钮，无「复习单词」「返回列表」入口）。
+4. **正文**（跟随滚动）：文章标题置顶——`displayMedium`（serif 28sp）Ink 色，下方 Hairline 1dp 分割线与正文区分；正文 16sp（bodyLarge）+ `lineHeight 27sp`（约 1.7 倍）；分词用 `LinkAnnotation.Clickable`（BasicText），点击词 → 查词 Modal；**生词高亮**：已在生词表的词加 `background = 0x2ECC785C`（珊瑚 18% 透明度底）。**正文末尾「标记已读」**（secondary 全宽，未读时显示）：点击 `markAsRead()` 置已读，按钮消失、顶栏出现「✓ 已读」；已读后正文末尾无按钮。
+5. **底部播放条**（**固定底栏，始终可见**——位于滚动正文 `weight(1f)` 容器下方，不随正文滚动；音乐播放器样式）：圆形 44dp Primary 播放按钮（`PlayArrow` ▶ / `Stop` ■ 按状态切换）+「朗读全文 / 正在朗读…」文字（bodyMedium Medium，播放中变 Primary）+ **语速胶囊**（0.5x/1x 切换，激活 = Primary 底 OnPrimary 字，未激活 = SurfaceSoft 底 MutedSoft 字，6dp 圆角）。点击 `toggleFullArticlePlayback()`：空闲 → 朗读全文、置 `isSpeakingFullArticle = true`；播放中 → `ttsEngine.stop()` 复位。**播放状态复位**：TTS 自然播完（`TtsEngine.setOnSpeakingFinished` 回调）、手动停止、或段落/单词朗读打断（`playText` / `playWordPronunciation` 同步复位）→ 播放条回到 ▶。
 6. **查词弹窗**（底部全宽 AppModal，`alignment = BottomCenter`）：右上 32dp X 关闭 → 词头 26sp serif + 发音钮 36dp 同行（词头左、发音钮右）→ 音标 13sp 珊瑚独占一行（无 maxLines，长音标自然折行）→ 加载态（20dp 珊瑚 spinner + 「正在查询…」）→ **词义分组**：按词性分组（组序 = 义项首次出现序，语境匹配义项优先；同词性义项合并为一组），每组 = 词性标签 `labelMedium` 珊瑚（仅组首显示一次）+ 英文解释 `bodySmall` Ink + 中文解释 `bodySmall` MutedSoft；内容超 75% 屏高时释义区滚动、按钮固定底部 → 全宽按钮：未加入 = 「加入生词表」（primary），已加入 = 「从生词表移除」（secondary）。**无例句、无独立中文释义行**（中文已在词义分组内）。
 7. **阅读计时**：进入未读文章即启动 120s 纯计时（15s tick 累计 + 达标 `tryMarkReadCompleted`），与 4 种译文模式、手动标记已读互不影响。
 
