@@ -10,7 +10,7 @@
 
 **设计语言定位**：**warm-canvas editorial**（暖色画布 · 编辑排版风）。暖米色画布底、珊瑚色单点强调、衬线标题 + 无衬线正文、克制留白——整体气质接近印刷刊物而非扁平化 App。
 
-**核心答案**：全部视觉呈现由 `ui/theme/` 下四组 token（`Color.kt` / `Type.kt` / `Dimens.kt` / `Motion.kt`）+ `ui/components/` 下 12 个组件 + 7 个页面组合而成。页面只消费 token 与组件，不直接写死颜色/字号（个别页面级微调除外）。
+**核心答案**：全部视觉呈现由 `ui/theme/` 下四组 token（`Color.kt` / `Type.kt` / `Dimens.kt` / `Motion.kt`）+ `ui/components/` 下 9 个组件文件（13 个 composable）+ 7 个页面组合而成。页面只消费 token 与组件，不直接写死颜色/字号（个别页面级微调除外）。
 
 **关键决策**：
 
@@ -28,7 +28,7 @@
 |------|------|---------|
 | 暖色画布 | 全站底色为暖米色 `#FAF9F5`，任何卡片/弹窗都比画布深一级 | `Background` / `SurfaceSoft` / `SurfaceCard` / `SurfaceStrong` 四级色阶 |
 | 珊瑚单点强调 | 珊瑚色只用于**可操作/当前态**：按钮、链接、进度条、选中态、音标 | `Primary` + `OnPrimary` |
-| 衬线标题 400 不加粗 | 展示/标题级字体 serif 且 **weight 400，绝不加粗**（原型铁律），负字距 | `displayLarge` / `displayMedium` / `headlineLarge` / `headlineMedium` |
+| 衬线标题 400 不加粗 | display 级 serif 恒为 **weight 400，绝不加粗**（原型铁律），负字距；headline 级为 serif 500 | `displayLarge` / `displayMedium`（400）· `headlineLarge` / `headlineMedium`（500） |
 | 无衬线正文 | 正文与标签用 sans，正文 400、标签 500 | `body*` / `title*` / `label*` |
 | 克制留白 | 4dp 基数间距；卡片内边距 16dp；页面水平留白 20dp | `Spacing` / `Page` |
 | 无阴影分层 | 层次由色块深浅承担，阴影极少（原型 `shadow(4.dp)` alpha≈0.04 级） | 代码中未使用 elevation 阴影 |
@@ -162,7 +162,7 @@
 
 ### 4.1 组件总览与依赖
 
-12 个组件文件：`AppButton`（含 `AppIconButton`）、`AppBadge`、`AppCard`、`AppModal`（含 `AppToast`）、`AppTopBar`（含 `SectionLabel`）、`ArticleCard`、`StatCard`、`BottomNavBar`、`LoadingIndicator`（含 `EmptyState`）。
+9 个组件文件、13 个 composable：`AppButton`（含 `AppIconButton`）、`AppBadge`、`AppCard`、`AppModal`（含 `AppToast`）、`AppTopBar`（含 `SectionLabel`）、`ArticleCard`、`StatCard`、`BottomNavBar`、`LoadingIndicator`（含 `EmptyState`）。
 
 ```mermaid
 classDiagram
@@ -208,7 +208,7 @@ classDiagram
 | `AppBadge` | `(text, variant = Default)` | `Radius.Pill` 胶囊；Default = SurfaceSoft 底 + Muted 字、Coral = Primary 底 + OnPrimary 字、Green = Success 底 + OnPrimary 字；文字 `labelMedium`；内边距 h8 v2 |
 | `AppCard` | `(modifier, onClick = null, content: ColumnScope)` | SurfaceCard 底 + `Radius.Md` 12dp 圆角 + 16dp 内边距；`onClick != null` 时整卡可点 |
 | `AppModal` | `(visible, onDismiss, modifier, content)` | **无 `if(visible)` 守卫**——用 `AnimatedVisibility(visible)` 自带淡入淡出（fadeIn/fadeOut，默认 tween 300ms）；全屏 Scrim 遮罩（`Scrim`）点击即 onDismiss；面板居中、`fillMaxWidth` + `widthIn(max = 360dp)`、`Radius.Lg` 16dp 圆角、Background 底、24dp 内边距；**内层 Column 消费点击**（`indication = null` 的 clickable），防点击面板空白区穿透触发关闭 |
-| `AppToast` | `(text, modifier)` | ToastDark（`#181715`）底 + Background 色文字 + 8dp 圆角；内边距 h16 v10；文字 `bodyMedium`（由页面配合 SnackbarHost 使用） |
+| `AppToast` | `(text, modifier)` | ToastDark（`#181715`）底 + Background 色文字 + 8dp 圆角；内边距 h16 v10；文字 `bodyMedium`（预留组件，当前未接线——Reading 页仍用 Material3 Snackbar 原生样式） |
 | `AppTopBar` | `(title, onBack = null, modifier, actions)` | Background 底、内边距 h12 v6；有 onBack 时左侧 44dp 返回钮（`ArrowBack`，tint MutedSoft）；标题 `displayMedium` 28sp serif 单行；右侧 `actions` 槽位 |
 | `SectionLabel` | `(title, modifier)` | `title.uppercase()` + `labelSmall`（12sp/500/+1.5sp 字距）全大写 + MutedSoft 色；上下内边距 20dp/6dp |
 | `LoadingIndicator` | `(message = "加载中…", modifier)` | 居中 32dp `CircularProgressIndicator`（Primary 珊瑚、strokeWidth 3dp）+ `bodyMedium` 文字 |
@@ -353,7 +353,7 @@ stateDiagram-v2
 |------|------|
 | 页面加载 | `LoadingIndicator`（32dp 珊瑚 spinner + 文案），AddWord 提交中带阶段消息 |
 | 空数据 | `EmptyState`（48dp outline 图标 + 标题 + 可选副文案）：首页无文章/生成中、生词表为空、Reading 文章未找到（ErrorOutline 图标） |
-| 查词失败 | 查词 Modal 降级展示：仅有词头与音标位，无释义/例句，「加入生词表」按钮保留（有词即可加）；LLM 解析失败走 `Log.w` 静默兜底 |
+| 查词失败 | 查词 Modal 降级展示：仅有词头，无释义/例句，「加入生词表」按钮保留（降级路径 wordId 为空，点击无响应）；LLM 解析失败走 `Log.w` 静默兜底 |
 | TTS 不可用 | Snackbar 提示「语音引擎未安装，请在系统设置中开启「文字转语音」功能」+ 自动拉起系统 TTS 设置页（`openTtsSettings`） |
 | 表单校验 | AddWord 输入非法 → Error 色文案；Onboarding 未选 → 按钮禁用态（不是错误文案） |
 | 状态反馈 | 已读标记（阅读页/文章卡「✓ 已读」）、加入生词表即时切换按钮态、复习总结页统计、Snackbar（阅读页 TTS 错误） |

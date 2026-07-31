@@ -136,7 +136,7 @@ fun VocabularyScreen(
                                         scope.launch {
                                             when {
                                                 offsetY.value < -threshold -> {
-                                                    offsetY.animateTo(-offsetY.value * 1.5f, tween(150))
+                                                    offsetY.animateTo(offsetY.value * 1.5f, tween(150))
                                                     viewModel.goNext()
                                                     offsetY.snapTo(0f)
                                                 }
