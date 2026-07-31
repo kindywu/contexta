@@ -1,7 +1,6 @@
 package com.ak.contexta.ui.addword
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,16 +10,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -37,19 +36,24 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ak.contexta.domain.model.WordSense
+import com.ak.contexta.ui.components.AppButton
+import com.ak.contexta.ui.components.AppButtonVariant
+import com.ak.contexta.ui.components.AppCard
+import com.ak.contexta.ui.components.AppTopBar
 import com.ak.contexta.ui.components.LoadingIndicator
-import com.ak.contexta.ui.theme.Accent
-import com.ak.contexta.ui.theme.AccentOn
 import com.ak.contexta.ui.theme.Background
-import com.ak.contexta.ui.theme.Border
-import com.ak.contexta.ui.theme.Danger
+import com.ak.contexta.ui.theme.BodyText
+import com.ak.contexta.ui.theme.Error
 import com.ak.contexta.ui.theme.Foreground
 import com.ak.contexta.ui.theme.ForegroundSecondary
+import com.ak.contexta.ui.theme.Hairline
 import com.ak.contexta.ui.theme.Meta
 import com.ak.contexta.ui.theme.Muted
+import com.ak.contexta.ui.theme.MutedSoft
+import com.ak.contexta.ui.theme.PhoneticStyle
+import com.ak.contexta.ui.theme.Primary
 import com.ak.contexta.ui.theme.Success
-import com.ak.contexta.ui.theme.Surface
-import com.ak.contexta.ui.theme.SurfaceWarm
+import com.ak.contexta.ui.theme.SurfaceSoft
 
 @Composable
 fun AddWordScreen(
@@ -63,7 +67,7 @@ fun AddWordScreen(
             .fillMaxSize()
             .background(Background)
     ) {
-        AddWordHeader(onBack = onBack)
+        AppTopBar(title = "录入单词", onBack = onBack)
 
         if (state.success != null) {
             AddWordResultContent(
@@ -83,30 +87,6 @@ fun AddWordScreen(
 }
 
 @Composable
-private fun AddWordHeader(onBack: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Surface)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "←",
-            style = MaterialTheme.typography.titleLarge,
-            color = Accent,
-            modifier = Modifier.clickable { onBack() }
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = "录入单词",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
-}
-
-@Composable
 private fun AddWordInputContent(
     state: AddWordUiState,
     onInputChange: (String) -> Unit,
@@ -119,47 +99,36 @@ private fun AddWordInputContent(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Surface)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "输入英文单词",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+                    style = MaterialTheme.typography.headlineMedium
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = state.input,
                     onValueChange = onInputChange,
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("例如：serendipity", color = Meta) },
+                    placeholder = { Text("例如：serendipity", color = MutedSoft) },
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(8.dp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { onSubmit() }),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Accent,
-                        unfocusedBorderColor = Border,
+                        focusedBorderColor = Primary,
+                        unfocusedBorderColor = Hairline,
                         focusedContainerColor = Background,
                         unfocusedContainerColor = Background
                     )
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                Button(
+                AppButton(
+                    text = "生成释义并加入生词库",
                     onClick = onSubmit,
-                    enabled = state.input.isNotBlank() && !state.isSubmitting,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Accent,
-                        contentColor = AccentOn
-                    )
-                ) {
-                    Text("生成释义并加入生词库")
-                }
+                    enabled = state.input.isNotBlank() && !state.isSubmitting
+                )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "本地词库没有该词时，将调用 AI 生成音标、释义与例句",
@@ -174,34 +143,21 @@ private fun AddWordInputContent(
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Danger
+                color = Error
             )
         }
 
         state.error?.let { message ->
             Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = SurfaceWarm)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
+            AppCard() {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = message,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = ForegroundSecondary
+                        color = BodyText
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    Button(
-                        onClick = onRetry,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Accent,
-                            contentColor = AccentOn
-                        )
-                    ) {
-                        Text("重试")
-                    }
+                    AppButton(text = "重试", onClick = onRetry)
                 }
             }
         }
@@ -229,24 +185,27 @@ private fun AddWordResultContent(
             .padding(16.dp)
     ) {
         // 加入状态徽标
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (success.addedToVocabulary) Success else SurfaceWarm
-            )
-        ) {
+        AppCard() {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = if (success.addedToVocabulary) "✓" else "•",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (success.addedToVocabulary) Success else Muted
-                )
+                if (success.addedToVocabulary) {
+                    Icon(
+                        imageVector = Icons.Outlined.CheckCircle,
+                        contentDescription = null,
+                        tint = Success,
+                        modifier = Modifier.size(20.dp)
+                    )
+                } else {
+                    Text(
+                        text = "•",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Muted
+                    )
+                }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when {
@@ -256,7 +215,7 @@ private fun AddWordResultContent(
                         else -> "该词已在生词库中"
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (success.addedToVocabulary) Success else ForegroundSecondary,
+                    color = if (success.addedToVocabulary) Success else BodyText,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -265,28 +224,22 @@ private fun AddWordResultContent(
         Spacer(modifier = Modifier.height(16.dp))
 
         // 单词详情卡片
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Surface)
-        ) {
+        AppCard() {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
+                    .padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
                     text = success.word,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.headlineLarge
                 )
                 if (success.phonetic != null) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = success.phonetic,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Meta
+                        style = PhoneticStyle
                     )
                 }
 
@@ -299,29 +252,18 @@ private fun AddWordResultContent(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Button(
+        AppButton(
+            text = "再录一个",
             onClick = onAddAnother,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Accent,
-                contentColor = AccentOn
-            )
-        ) {
-            Text("再录一个")
-        }
+            modifier = Modifier.fillMaxWidth()
+        )
         Spacer(modifier = Modifier.height(8.dp))
-        Button(
+        AppButton(
+            text = "返回生词本",
             onClick = onDone,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = SurfaceWarm,
-                contentColor = Foreground
-            )
-        ) {
-            Text("返回生词本")
-        }
+            variant = AppButtonVariant.Secondary
+        )
     }
 }
 
@@ -331,14 +273,14 @@ private fun SenseBlock(sense: WordSense) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(Background)
+            .background(SurfaceSoft)
             .padding(12.dp)
     ) {
         Row(verticalAlignment = Alignment.Top) {
             Text(
                 text = sense.partOfSpeech,
                 style = MaterialTheme.typography.labelLarge,
-                color = Accent,
+                color = Primary,
                 modifier = Modifier.padding(top = 2.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
