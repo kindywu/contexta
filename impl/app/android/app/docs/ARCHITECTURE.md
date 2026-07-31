@@ -155,8 +155,9 @@ com.ak.contexta/
 │   │   ├── AddWordScreen.kt         ← 手动录入单词页
 │   │   └── AddWordViewModel.kt
 │   ├── reference/
-│   │   ├── ReferenceScreen.kt       ← 参考页（InlineTabs/8 分类音标/字母弹窗/TTS）
-│   │   └── ReferenceViewModel.kt
+│   │   ├── ReferenceScreen.kt       ← 参考页（InlineTabs/8 分类音标/字母弹窗/TTS/语法分组折叠）
+│   │   ├── ReferenceViewModel.kt
+│   │   └── GrammarData.kt           ← 语法数据（4 组 23 条：时态/词形变化/功能词/句式）
 │   ├── settings/
 │   │   ├── SettingsScreen.kt        ← 设置页
 │   │   └── SettingsViewModel.kt     ← 难度/篇数/翻译/阈值
