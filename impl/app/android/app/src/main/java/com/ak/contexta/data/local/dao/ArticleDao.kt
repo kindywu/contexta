@@ -101,6 +101,17 @@ interface ArticleDao {
     """)
     suspend fun resetAllGenerating()
 
+    /**
+     * 重置所有 TIMEOUT / FAILED 文章回 PENDING（应用启动时调用）。
+     * 这些文章因为协程超时取消等问题被标记为错误状态但从未重试，
+     * 与 GENERATING 一样需要启动恢复。
+     */
+    @Query("""
+        UPDATE article SET status = 'PENDING', retry_count = 0, last_retry_at = NULL
+        WHERE status IN ('TIMEOUT', 'FAILED')
+    """)
+    suspend fun resetAllTimedOutAndFailed()
+
     @Query("""
         UPDATE article SET status = 'PENDING', retry_count = 0, last_retry_at = NULL
         WHERE id = :articleId

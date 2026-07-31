@@ -1,6 +1,8 @@
 package com.ak.contexta.domain.usecase
 
 import com.ak.contexta.domain.AppInfoProvider
+import com.ak.contexta.domain.DeveloperAlertSender
+import com.ak.contexta.domain.ErrorContext
 import com.ak.contexta.domain.LlmClient
 import com.ak.contexta.domain.error.LlmFatalException
 import com.ak.contexta.domain.error.LlmRecoverableExhaustedException
@@ -23,7 +25,8 @@ class GenerateArticlesUseCase @Inject constructor(
     private val articleRepository: ArticleRepository,
     private val llmClient: LlmClient,
     private val timeProvider: TimeProvider,
-    private val appInfo: AppInfoProvider
+    private val appInfo: AppInfoProvider,
+    private val alertSender: DeveloperAlertSender
 ) {
     /**
      * 为指定的批次生成所有文章。
@@ -57,6 +60,14 @@ class GenerateArticlesUseCase @Inject constructor(
 
             } catch (e: LlmFatalException) {
                 articleRepository.fatalArticle(article.id, "LLM_FATAL", e.message, article.retryCount)
+                alertSender.sendLlmFatalError(
+                    com.ak.contexta.domain.error.AppError.LlmFatal(
+                        code = com.ak.contexta.domain.error.LlmFatalCode.AUTH_FAILED,
+                        message = e.message ?: "Unknown",
+                        cause = e
+                    ),
+                    ErrorContext(batchId, article.id, appVersionCode ?: 0, timeProvider.nowMillis())
+                )
                 continue
 
             } catch (e: LlmRecoverableExhaustedException) {
@@ -64,11 +75,25 @@ class GenerateArticlesUseCase @Inject constructor(
                     article.id, "FAILED", "LLM_RECOVERABLE_EXHAUSTED", e.message,
                     retryCount = article.retryCount
                 )
+                alertSender.sendArticleFailure(
+                    status = "FAILED",
+                    errorCode = "LLM_RECOVERABLE_EXHAUSTED",
+                    errorMessage = e.message ?: "Unknown",
+                    context = ErrorContext(batchId, article.id, appVersionCode ?: 0, timeProvider.nowMillis())
+                )
                 continue
 
             } catch (e: PipelineBlockingException) {
                 articleRepository.fatalArticle(article.id, "PIPELINE_BLOCKING", e.message, article.retryCount)
                 articleRepository.markBatchBlocked(batchId, e.message ?: "Unknown", appVersionCode ?: 0)
+                alertSender.sendStructuralError(
+                    com.ak.contexta.domain.error.AppError.Structural(
+                        code = com.ak.contexta.domain.error.StructuralCode.UNEXPECTED_ERROR,
+                        message = e.message ?: "Unknown",
+                        cause = e
+                    ),
+                    ErrorContext(batchId, article.id, appVersionCode ?: 0, timeProvider.nowMillis())
+                )
                 throw e
 
             } catch (e: Exception) {
@@ -76,13 +101,26 @@ class GenerateArticlesUseCase @Inject constructor(
                     article.id, "TIMEOUT", "UNEXPECTED", e.message,
                     retryCount = article.retryCount
                 )
+                alertSender.sendArticleFailure(
+                    status = "TIMEOUT",
+                    errorCode = "UNEXPECTED",
+                    errorMessage = e.message ?: "Unknown",
+                    context = ErrorContext(batchId, article.id, appVersionCode ?: 0, timeProvider.nowMillis())
+                )
                 continue
             }
         }
 
         when {
             articleRepository.hasFatalArticle(batchId) -> { /* leave as GENERATING */ }
-            articleRepository.isBatchComplete(batchId) -> articleRepository.markBatchReady(batchId)
+            articleRepository.isBatchComplete(batchId) -> {
+                articleRepository.markBatchReady(batchId)
+                alertSender.sendBatchReady(
+                    batchId = batchId,
+                    articleCount = articles.size,
+                    context = ErrorContext(batchId, null, appVersionCode ?: 0, timeProvider.nowMillis())
+                )
+            }
         }
     }
 }

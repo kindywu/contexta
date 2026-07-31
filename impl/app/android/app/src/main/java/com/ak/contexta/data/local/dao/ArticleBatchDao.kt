@@ -89,4 +89,17 @@ interface ArticleBatchDao {
         reason: String?,
         now: String
     )
+
+    /** 获取所有 GENERATING 状态的批次（用于启动恢复：重新调度卡死的批次）。 */
+    @Query("""
+        SELECT * FROM article_batch WHERE status = 'GENERATING'
+    """)
+    suspend fun getGeneratingBatches(): List<ArticleBatchEntity>
+
+    /** 将所有 GENERATING 状态的批次重置为 PENDING（启动恢复用）。 */
+    @Query("""
+        UPDATE article_batch SET status = 'PENDING'
+        WHERE status = 'GENERATING'
+    """)
+    suspend fun resetAllGeneratingBatches()
 }

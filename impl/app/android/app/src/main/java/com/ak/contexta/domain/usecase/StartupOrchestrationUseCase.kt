@@ -1,5 +1,7 @@
 package com.ak.contexta.domain.usecase
 
+import android.util.Log
+import com.ak.contexta.domain.BackgroundWorkScheduler
 import com.ak.contexta.domain.model.BatchStatus
 import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.repository.SettingsRepository
@@ -13,9 +15,10 @@ import javax.inject.Singleton
  * **流程：**
  * 1. 检查 pipeline 是否阻塞 → 尝试恢复或返回阻塞状态
  * 2. 检查是否完成 onboarding → 返回 NeedsOnboarding
- * 3. 修复孤儿文章（重置 GENERATING → PENDING）
- * 4. 检查今天是否已有 daily_learning 分配 → Ready
- * 5. 查找下一个可用的 READY 批次（未被 daily_learning 引用，匹配难度）
+ * 3. 修复孤儿文章（重置 GENERATING/TIMEOUT/FAILED → PENDING）
+ * 4. 重新调度所有卡在 GENERATING 状态的 batch 的 Worker
+ * 5. 检查今天是否已有 daily_learning 分配 → Ready
+ * 6. 查找下一个可用的 READY 批次（未被 daily_learning 引用，匹配难度）
  *    - 找到 → 分配给今天，触发下一批前置生成 → Ready
  *    - 未找到 → NeedsInitialBatch（调用方创建并触发生成）
  */
@@ -24,7 +27,8 @@ class StartupOrchestrationUseCase @Inject constructor(
     private val articleRepository: ArticleRepository,
     private val settingsRepository: SettingsRepository,
     private val timeProvider: TimeProvider,
-    private val triggerNextBatch: TriggerNextBatchUseCase
+    private val triggerNextBatch: TriggerNextBatchUseCase,
+    private val generationScheduler: BackgroundWorkScheduler
 ) {
     sealed class StartupResult {
         data object PipelineBlocked : StartupResult()
@@ -47,8 +51,21 @@ class StartupOrchestrationUseCase @Inject constructor(
         val settings = settingsRepository.getSettings()
         if (settings == null || !settings.isOnboarded) return StartupResult.NeedsOnboarding
 
-        // 3. Reconcile orphan GENERATING articles
+        // 3. 先查询卡在 GENERATING 的 batch（reconciliation 会重置它们）
+        val stuckBatches = articleRepository.getGeneratingBatches()
+
+        // 4. Reconcile orphan GENERATING/TIMEOUT/FAILED articles + reset GENERATING batches
         articleRepository.reconcileOrphanArticles()
+
+        // 5. 重新调度之前卡死的 batch
+        //    reconcileOrphanArticles 已将孤儿文章和 batch 重置为 PENDING，
+        //    这里重新 enqueue Worker 让它们重新被认领生成。
+        if (stuckBatches.isNotEmpty()) {
+            Log.i("StartupOrch", "Re-scheduling ${stuckBatches.size} stuck batch(es)")
+            stuckBatches.forEach { batch ->
+                generationScheduler.scheduleBatchGeneration(batch.id)
+            }
+        }
 
         val today = timeProvider.todayDateString()
 

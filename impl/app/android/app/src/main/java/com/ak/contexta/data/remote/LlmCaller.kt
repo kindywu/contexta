@@ -9,7 +9,7 @@ import com.ak.contexta.domain.error.LlmFatalException
 import com.ak.contexta.domain.error.LlmRecoverableExhaustedException
 import com.ak.contexta.domain.error.PipelineBlockingException
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -38,7 +38,10 @@ class LlmCaller @Inject constructor(
         systemPrompt: String,
         userPrompt: String,
         timeoutMs: Long
-    ): LlmClient.LlmResult = withTimeout(timeoutMs) {
+    ): LlmClient.LlmResult {
+        // withTimeoutOrNull: 超时返回 null 而不是抛出 TimeoutCancellationException。
+        // 避免 CancellationException 取消协程导致同批次后续文章无法继续生成。
+        val result = withTimeoutOrNull(timeoutMs) {
         var retryCount = 0
         var lastError: Throwable? = null
 
@@ -56,7 +59,7 @@ class LlmCaller @Inject constructor(
                 val content = response.choices.firstOrNull()?.message?.content
                     ?: throw IllegalStateException("Empty response from LLM")
 
-                return@withTimeout LlmClient.LlmResult(content = content, retryCount = retryCount)
+                return@withTimeoutOrNull LlmClient.LlmResult(content = content, retryCount = retryCount)
 
             } catch (e: Exception) {
                 lastError = e
@@ -107,6 +110,13 @@ class LlmCaller @Inject constructor(
             lastError,
             MAX_RETRIES
         )
+        } // withTimeoutOrNull
+
+        if (result != null) return result
+
+        // 超时 → 抛出普通 Exception（非 CancellationException），
+        // 让 GenerateArticlesUseCase 按 TIMEOUT 处理，且不取消协程
+        throw Exception("Timed out waiting for $timeoutMs ms")
     }
 
     private fun extractHttpCode(e: Exception): Int? {

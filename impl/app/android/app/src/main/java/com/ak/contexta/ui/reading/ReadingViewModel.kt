@@ -299,11 +299,20 @@ private val ttsEngine: TtsEngine
         const val TTS_ERROR_MESSAGE = "语音引擎未安装，请在系统设置中开启「文字转语音」功能"
     }
 
-    /** Toggle TTS speed between 1x and 0.5x. */
+    /** Toggle TTS speed between 1x and 0.75x. */
     fun toggleTtsSpeed() {
         val current = _state.value.ttsSpeed
-        val next = if (current < 1.0f) 1.0f else 0.5f
+        val next = if (current < 1.0f) 1.0f else 0.75f
         _state.value = _state.value.copy(ttsSpeed = next)
+    }
+
+    /**
+     * Map the display speed (1.0 / 0.75) to a slightly slower, more natural actual rate.
+     * The UI label doesn't need to match the underlying API value exactly.
+     */
+    private fun actualSpeechRate(displaySpeed: Float): Float = when {
+        displaySpeed < 0.8f -> 0.45f  // "0.75x" → very slow, comfortable for learners
+        else -> 0.70f                 // "1x" → slower than system default, more natural
     }
 
     /** Speak the word currently shown in the bottom sheet. */
@@ -317,7 +326,7 @@ private val ttsEngine: TtsEngine
             )
             return
         }
-        val id = ttsEngine.speak(word, speed)
+        val id = ttsEngine.speak(word, actualSpeechRate(speed))
         if (id != null) {
             currentUtteranceId = id
             // Word pronunciation supersedes full-article and paragraph playback
@@ -343,7 +352,7 @@ private val ttsEngine: TtsEngine
             return
         }
         val text = _state.value.paragraphs[index].englishText
-        val id = ttsEngine.speak(text, speed)
+        val id = ttsEngine.speak(text, actualSpeechRate(speed))
         if (id != null) {
             currentUtteranceId = id
             _state.value = _state.value.copy(
@@ -369,7 +378,7 @@ private val ttsEngine: TtsEngine
             )
             return
         }
-        val id = ttsEngine.speak(fullText, _state.value.ttsSpeed)
+        val id = ttsEngine.speak(fullText, actualSpeechRate(_state.value.ttsSpeed))
         if (id != null) {
             currentUtteranceId = id
             _state.value = _state.value.copy(

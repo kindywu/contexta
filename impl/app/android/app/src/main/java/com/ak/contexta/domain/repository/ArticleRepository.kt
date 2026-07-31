@@ -120,8 +120,11 @@ interface ArticleRepository {
     /** Force marking read completed regardless of accumulated time. */
     suspend fun forceMarkReadCompleted(articleId: Long)
 
-    /** Reset orphan GENERATING articles during app startup reconciliation */
+    /** Reset orphan GENERATING/TIMEOUT/FAILED articles during app startup reconciliation */
     suspend fun reconcileOrphanArticles()
+
+    /** Get all batches whose status is GENERATING (for startup recovery) */
+    suspend fun getGeneratingBatches(): List<ArticleBatch>
 
     /** Observe latest generation error per article (from generation_error_log, joined with article status) */
     fun observeGenerationErrors(): Flow<List<GenerationError>>

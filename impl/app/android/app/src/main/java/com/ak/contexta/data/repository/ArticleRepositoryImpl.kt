@@ -244,10 +244,18 @@ class ArticleRepositoryImpl @Inject constructor(
 
     override suspend fun reconcileOrphanArticles() {
         // 重置所有 GENERATING 文章回 PENDING。
+        // 同时重置 TIMEOUT / FAILED 文章 —— 这些可能是上一次超时
+        // 导致协程取消而遗留的孤儿状态。
+        // 同时重置 GENERATING 批次回 PENDING —— 使 Worker 可以重新 claim。
         // Worker 的 claimArticle() 有 CAS 保护（只认 PENDING/TIMEOUT/FAILED），
         // 即使 batch 仍在处理中，worker 会重新 claim，不会重复生成。
         articleDao.resetAllGenerating()
+        articleDao.resetAllTimedOutAndFailed()
+        batchDao.resetAllGeneratingBatches()
     }
+
+    override suspend fun getGeneratingBatches(): List<ArticleBatchModel> =
+        batchDao.getGeneratingBatches().map { it.toModel() }
 
     override fun observeArticles(batchId: Long): Flow<List<Article>> =
         articleDao.observeByBatch(batchId).map { list -> list.map { it.toModel() } }

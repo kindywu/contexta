@@ -445,7 +445,7 @@ private fun ReadingPlayerBar(
                 .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
             Text(
-                text = if (ttsSpeed < 1.0f) "0.5x" else "1x",
+                text = if (ttsSpeed < 1.0f) "0.75x" else "1x",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = if (ttsSpeed < 1.0f) MutedSoft else OnPrimary

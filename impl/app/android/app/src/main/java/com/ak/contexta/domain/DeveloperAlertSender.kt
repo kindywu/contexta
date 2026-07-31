@@ -15,7 +15,7 @@ data class ErrorContext(
 
 /**
  * 开发者通知接口。
- * 仅用于不可恢复错误（LlmFatal 和 Structural），通知失败不应影响主流程。
+ * 用于不可恢复或需要关注的错误，通知失败不应影响主流程。
  */
 interface DeveloperAlertSender {
     /**
@@ -29,4 +29,26 @@ interface DeveloperAlertSender {
      * 用于 Structural 错误（代码级 bug）。
      */
     suspend fun sendStructuralError(error: AppError.Structural, context: ErrorContext)
+
+    /**
+     * 发送文章生成失败通知。
+     * 用于 TIMEOUT / FAILED / FATAL 等非 SUCCESS 终态，
+     * 帮助开发者发现 LLM 服务不稳定或超时问题。
+     */
+    suspend fun sendArticleFailure(
+        status: String,
+        errorCode: String,
+        errorMessage: String,
+        context: ErrorContext
+    )
+
+    /**
+     * 发送批次生成完成通知。
+     * 批次所有文章生成成功时发送，作为心跳/状态确认。
+     */
+    suspend fun sendBatchReady(
+        batchId: Long,
+        articleCount: Int,
+        context: ErrorContext
+    )
 }
