@@ -36,6 +36,9 @@ interface WordRepository {
     /** Get word details for multiple word IDs */
     suspend fun getWordDetails(wordIds: List<Long>): Map<Long, WordDetail>
 
+    /** Invalidate cached WordDetail so the next lookup re-reads from DB */
+    suspend fun invalidateCache(spelling: String)
+
     companion object {
         fun normalize(spelling: String): String {
             return spelling.trim().lowercase()

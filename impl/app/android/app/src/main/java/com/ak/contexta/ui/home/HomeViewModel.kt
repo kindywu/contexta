@@ -28,7 +28,6 @@ import java.time.ZoneId
 import javax.inject.Inject
 
 data class HomeUiState(
-    val greeting: String = "今天",
     val dateLabel: String = "",
     val streak: Int = 0,
     val articleGroups: List<ArticleGroupUi> = emptyList(),
@@ -101,7 +100,7 @@ class HomeViewModel @Inject constructor(
 
     private fun loadHome() {
         viewModelScope.launch {
-            // Date greeting
+            // Date label
             val today = LocalDate.now(ZoneId.systemDefault())
             val dayOfWeek = arrayOf("日", "一", "二", "三", "四", "五", "六")[today.dayOfWeek.value % 7]
             val dateLabel = "${today.year}年${today.monthValue}月${today.dayOfMonth}日 星期$dayOfWeek"

@@ -65,7 +65,6 @@ fun HomeScreen(
         // Header
         item {
             HomeHeader(
-                greeting = state.greeting,
                 dateLabel = state.dateLabel,
                 streak = state.streak
             )
@@ -109,7 +108,6 @@ fun HomeScreen(
 
 @Composable
 private fun HomeHeader(
-    greeting: String,
     dateLabel: String,
     streak: Int
 ) {
@@ -118,20 +116,12 @@ private fun HomeHeader(
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 20.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
-            Text(
-                text = greeting,
-                style = MaterialTheme.typography.displayMedium
-            )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = dateLabel,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Muted
-            )
-        }
+        Text(
+            text = dateLabel,
+            style = MaterialTheme.typography.titleMedium
+        )
 
         if (streak > 0) {
             StreakBadge(streak = streak)

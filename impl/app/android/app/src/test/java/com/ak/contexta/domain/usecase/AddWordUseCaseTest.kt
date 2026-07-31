@@ -75,7 +75,7 @@ class AddWordUseCaseTest {
     fun `existing word not in vocab is added to vocab and reported as AlreadyExists`() = runTest {
         val detail = sampleDetail(wordId = 1, isInVocabulary = false)
         coEvery { wordRepository.findLocal("serendipity") } returns detail
-        coEvery { vocabularyRepository.addWord(1) } returns true
+        coEvery { vocabularyRepository.addWord(1) } returns 1L
         coEvery { statsRepository.recordWordAdded() } returns Unit
 
         val result = useCase("Serendipity")
@@ -118,7 +118,7 @@ class AddWordUseCaseTest {
                 normalized = "serendipity"
             )
         } returns sampleDetail(wordId = 42, isInVocabulary = false)
-        coEvery { vocabularyRepository.addWord(42) } returns true
+        coEvery { vocabularyRepository.addWord(42) } returns 42L
         coEvery { statsRepository.recordWordAdded() } returns Unit
 
         val stages = mutableListOf<AddWordUseCase.Stage>()

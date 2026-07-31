@@ -129,6 +129,11 @@ class WordRepositoryImpl @Inject constructor(
         return words.associate { it.id to buildWordDetail(it) }
     }
 
+    override suspend fun invalidateCache(spelling: String) {
+        val normalized = WordRepository.normalize(spelling)
+        lruCache.remove(normalized)
+    }
+
     /** Build full WordDetail from a WordEntity (with senses + examples) */
     private suspend fun buildWordDetail(word: WordEntity): WordDetail {
         val senses = wordSenseDao.getByWord(word.id)

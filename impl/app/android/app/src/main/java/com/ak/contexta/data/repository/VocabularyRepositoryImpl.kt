@@ -60,9 +60,9 @@ class VocabularyRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun addWord(wordId: Long): Boolean {
+    override suspend fun addWord(wordId: Long): Long? {
         val existing = vocabularyEntryDao.getActiveByWord(wordId)
-        if (existing != null) return false
+        if (existing != null) return null
 
         val nextInstance = vocabularyEntryDao.nextInstanceNumber(wordId)
         val entry = VocabularyEntryEntity(
@@ -70,8 +70,7 @@ class VocabularyRepositoryImpl @Inject constructor(
             instanceNumber = nextInstance,
             status = "NEW"
         )
-        vocabularyEntryDao.insert(entry)
-        return true
+        return vocabularyEntryDao.insert(entry)
     }
 
     override suspend fun markCorrect(entryId: Long, masteryThreshold: Int) {

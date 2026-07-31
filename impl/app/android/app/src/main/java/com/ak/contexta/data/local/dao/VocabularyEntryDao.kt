@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.Flow
 interface VocabularyEntryDao {
     @Query("""
         SELECT * FROM vocabulary_entry
-        WHERE word_id = :wordId AND deleted_at IS NULL
+        WHERE word_id = :wordId AND deleted_at IS NULL AND status != 'MASTERED'
         ORDER BY instance_number DESC LIMIT 1
     """)
     suspend fun getActiveByWord(wordId: Long): VocabularyEntryEntity?

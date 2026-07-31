@@ -13,8 +13,9 @@ interface VocabularyRepository {
     /** One-shot: get all active vocab words mapped to domain models */
     suspend fun getActiveWords(): List<VocabWord>
 
-    /** Add word to vocabulary (creates new instance) */
-    suspend fun addWord(wordId: Long): Boolean
+    /** Add word to vocabulary (creates new instance).
+     * @return new entry ID, or null if already active in vocabulary */
+    suspend fun addWord(wordId: Long): Long?
 
     /** Mark word as "known" — increment streak, auto-master if streak reaches threshold */
     suspend fun markCorrect(entryId: Long, masteryThreshold: Int = 1)

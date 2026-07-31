@@ -393,18 +393,27 @@ private val ttsEngine: TtsEngine
 
     fun addToVocabulary() {
         val wordId = _state.value.wordSheetData?.wordId ?: return
+        val word = _state.value.wordSheetData?.word ?: return
         viewModelScope.launch {
-            vocabularyRepository.addWord(wordId)
-            statsRepository.recordWordAdded()
-            val data = _state.value.wordSheetData?.copy(isInVocabulary = true)
+            val entryId = vocabularyRepository.addWord(wordId)
+            if (entryId != null) {
+                statsRepository.recordWordAdded()
+                wordRepository.invalidateCache(word)
+            }
+            val data = _state.value.wordSheetData?.copy(
+                isInVocabulary = entryId != null,
+                vocabularyEntryId = entryId
+            )
             _state.value = _state.value.copy(wordSheetData = data)
         }
     }
 
     fun removeFromVocabulary() {
         val entryId = _state.value.wordSheetData?.vocabularyEntryId ?: return
+        val word = _state.value.wordSheetData?.word ?: return
         viewModelScope.launch {
             vocabularyRepository.removeWord(entryId)
+            wordRepository.invalidateCache(word)
             val data = _state.value.wordSheetData?.copy(
                 isInVocabulary = false,
                 vocabularyEntryId = null

@@ -109,9 +109,9 @@ class AddWordUseCase @Inject constructor(
 
     /** 加入生词库并记录统计，返回是否新增（false = 已在生词库）。 */
     private suspend fun addToVocabulary(wordId: Long): Boolean {
-        val added = vocabularyRepository.addWord(wordId)
-        if (added) statsRepository.recordWordAdded()
-        return added
+        val entryId = vocabularyRepository.addWord(wordId)
+        if (entryId != null) statsRepository.recordWordAdded()
+        return entryId != null
     }
 
     companion object {
