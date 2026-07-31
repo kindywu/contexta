@@ -16,7 +16,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
@@ -34,20 +37,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ak.contexta.ui.components.AppTopBar
 import com.ak.contexta.ui.components.LoadingIndicator
+import com.ak.contexta.ui.components.SectionLabel
 import com.ak.contexta.ui.components.StatCard
 import com.ak.contexta.ui.components.StatCardData
 import com.ak.contexta.ui.theme.Accent
 import com.ak.contexta.ui.theme.AccentOn
 import com.ak.contexta.ui.theme.Background
 import com.ak.contexta.ui.theme.Foreground
-import com.ak.contexta.ui.theme.ForegroundSecondary
+import com.ak.contexta.ui.theme.Ink
 import com.ak.contexta.ui.theme.Meta
 import com.ak.contexta.ui.theme.Muted
+import com.ak.contexta.ui.theme.MutedSoft
+import com.ak.contexta.ui.theme.Primary
 import com.ak.contexta.ui.theme.Surface
+import com.ak.contexta.ui.theme.SurfaceCard
 import com.ak.contexta.ui.theme.SurfaceWarm
 
 @Composable
@@ -68,20 +75,7 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(Background)
     ) {
-        // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Surface)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "设置",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
+        AppTopBar(title = "设置")
 
         Column(
             modifier = Modifier
@@ -92,7 +86,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             // Learning settings section
-            SectionTitle(title = "学习设置")
+            SectionLabel(title = "学习设置")
 
             // Level picker
             Row(
@@ -157,7 +151,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Stats section
-            SectionTitle(title = "学习统计")
+            SectionLabel(title = "学习统计")
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -205,7 +199,7 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // About section
-            SectionTitle(title = "关于")
+            SectionLabel(title = "关于")
 
             Row(
                 modifier = Modifier
@@ -215,13 +209,12 @@ fun SettingsScreen(
             ) {
                 Text(
                     text = "版本",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium
+                    style = MaterialTheme.typography.titleMedium
                 )
                 Text(
                     text = "Contexta 1.0.0",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Meta
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MutedSoft
                 )
             }
 
@@ -324,8 +317,7 @@ private fun SettingsPickerDialog(
         title = {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                style = MaterialTheme.typography.headlineMedium
             )
         },
         text = {
@@ -342,8 +334,8 @@ private fun SettingsPickerDialog(
                             selected = value == selectedValue,
                             onClick = { onSelect(value) },
                             colors = RadioButtonDefaults.colors(
-                                selectedColor = Accent,
-                                unselectedColor = Meta
+                                selectedColor = Primary,
+                                unselectedColor = MutedSoft
                             )
                         )
                         Spacer(modifier = Modifier.width(12.dp))
@@ -357,20 +349,8 @@ private fun SettingsPickerDialog(
             }
         },
         confirmButton = {},
-        containerColor = Surface,
-        titleContentColor = Foreground
-    )
-}
-
-@Composable
-private fun SectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.SemiBold,
-        color = Meta,
-        letterSpacing = 0.5.sp,
-        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)
+        containerColor = SurfaceCard,
+        titleContentColor = Ink
     )
 }
 
@@ -391,8 +371,7 @@ private fun SettingsPickerItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.titleMedium,
                 color = Foreground
             )
             Text(
@@ -404,13 +383,14 @@ private fun SettingsPickerItem(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = value,
-                style = MaterialTheme.typography.bodySmall,
-                color = Meta
+                style = MaterialTheme.typography.bodyMedium,
+                color = Muted
             )
-            Text(
-                text = "›",
-                style = MaterialTheme.typography.titleMedium,
-                color = SurfaceWarm
+            Icon(
+                imageVector = Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = MutedSoft,
+                modifier = Modifier.size(20.dp)
             )
         }
     }
@@ -435,8 +415,7 @@ private fun SettingsStepperItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.titleMedium,
                 color = Foreground
             )
             Text(
@@ -451,7 +430,7 @@ private fun SettingsStepperItem(
         ) {
             Box(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(44.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(if (canDecrement) Surface else SurfaceWarm.copy(alpha = 0.3f))
                     .clickable(enabled = canDecrement) { onDecrement() }
@@ -461,7 +440,7 @@ private fun SettingsStepperItem(
                 Text(
                     text = "−",
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (canDecrement) Foreground else Muted.copy(alpha = 0.3f)
+                    color = if (canDecrement) Foreground else MutedSoft.copy(alpha = 0.3f)
                 )
             }
             Text(
@@ -473,7 +452,7 @@ private fun SettingsStepperItem(
             )
             Box(
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(44.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(if (canIncrement) Surface else SurfaceWarm.copy(alpha = 0.3f))
                     .clickable(enabled = canIncrement) { onIncrement() }
@@ -483,7 +462,7 @@ private fun SettingsStepperItem(
                 Text(
                     text = "+",
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (canIncrement) Foreground else Muted.copy(alpha = 0.3f)
+                    color = if (canIncrement) Foreground else MutedSoft.copy(alpha = 0.3f)
                 )
             }
         }
@@ -506,8 +485,7 @@ private fun SettingsToggleItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium,
+                style = MaterialTheme.typography.titleMedium,
                 color = Foreground
             )
             Text(
@@ -599,8 +577,8 @@ private fun SettingsInfoDialog(
                     .padding(horizontal = 16.dp, vertical = 10.dp)
             )
         },
-        containerColor = Surface,
-        titleContentColor = Foreground
+        containerColor = SurfaceCard,
+        titleContentColor = Ink
     )
 }
 
@@ -651,7 +629,7 @@ private fun SettingsConfirmDialog(
                     .padding(horizontal = 16.dp, vertical = 10.dp)
             )
         },
-        containerColor = Surface,
-        titleContentColor = Foreground
+        containerColor = SurfaceCard,
+        titleContentColor = Ink
     )
 }
