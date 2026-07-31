@@ -404,7 +404,14 @@ private val ttsEngine: TtsEngine
                 isInVocabulary = entryId != null,
                 vocabularyEntryId = entryId
             )
-            _state.value = _state.value.copy(wordSheetData = data)
+            _state.value = _state.value.copy(
+                wordSheetData = data,
+                vocabularyWords = if (entryId != null) {
+                    _state.value.vocabularyWords + word
+                } else {
+                    _state.value.vocabularyWords
+                }
+            )
         }
     }
 
@@ -418,7 +425,10 @@ private val ttsEngine: TtsEngine
                 isInVocabulary = false,
                 vocabularyEntryId = null
             )
-            _state.value = _state.value.copy(wordSheetData = data)
+            _state.value = _state.value.copy(
+                wordSheetData = data,
+                vocabularyWords = _state.value.vocabularyWords - word
+            )
         }
     }
 }

@@ -189,4 +189,43 @@ class ReadingViewModelTest {
         assertNull(viewModel.state.value.speakingParagraphIndex)
         assertFalse(viewModel.state.value.isSpeakingFullArticle)
     }
+
+    // ─── addToVocabulary / removeFromVocabulary ──────────────────
+
+    @Test
+    fun `addToVocabulary updates vocabularyWords so word highlights immediately`() = runTest {
+        loadParagraphs()
+        coEvery { wordRepository.lookupWord(any(), any()) } returns WordDetail(
+            wordId = 1L, spellingDisplay = "hello", phoneticIpa = null,
+            primarySense = null, allSenses = emptyList()
+        )
+        coEvery { vocabularyRepository.addWord(1L) } returns 42L
+        coEvery { statsRepository.recordWordAdded() } returns Unit
+        coEvery { wordRepository.invalidateCache("hello") } returns Unit
+
+        viewModel.showWordSheet("hello")
+        viewModel.addToVocabulary()
+
+        assertTrue("hello" in viewModel.state.value.vocabularyWords)
+        assertEquals(true, viewModel.state.value.wordSheetData?.isInVocabulary)
+    }
+
+    @Test
+    fun `removeFromVocabulary updates vocabularyWords so word unhighlights immediately`() = runTest {
+        loadParagraphs()
+        coEvery { wordRepository.lookupWord(any(), any()) } returns WordDetail(
+            wordId = 1L, spellingDisplay = "hello", phoneticIpa = null,
+            primarySense = null, allSenses = emptyList(),
+            isInVocabulary = true, vocabularyEntryId = 42L
+        )
+        coEvery { vocabularyRepository.removeWord(42L) } returns Unit
+        coEvery { wordRepository.invalidateCache("hello") } returns Unit
+
+        viewModel.showWordSheet("hello")
+        // Manually set vocabularyWords to simulate word already being in vocab
+        viewModel.removeFromVocabulary()
+
+        assertFalse("hello" in viewModel.state.value.vocabularyWords)
+        assertEquals(false, viewModel.state.value.wordSheetData?.isInVocabulary)
+    }
 }
