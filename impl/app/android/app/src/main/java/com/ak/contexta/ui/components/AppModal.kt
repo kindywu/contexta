@@ -35,31 +35,29 @@ fun AppModal(
     content: @Composable ColumnScope.() -> Unit
 ) {
     AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
-        if (visible) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Scrim)
-                    .clickable { onDismiss() }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Scrim)
+                .clickable { onDismiss() }
+        ) {
+            // 内层 Column 必须消费点击（无涟漪 indication = null），
+            // 否则点击卡片空白区会穿透到外层 scrim 误触发 onDismiss
+            Column(
+                modifier = modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth()
+                    .widthIn(max = 360.dp)
+                    .clip(RoundedCornerShape(Radius.Lg))
+                    .background(Background)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    )
+                    .padding(24.dp)
             ) {
-                // 内层 Column 必须消费点击（无涟漪 indication = null），
-                // 否则点击卡片空白区会穿透到外层 scrim 误触发 onDismiss
-                Column(
-                    modifier = modifier
-                        .align(Alignment.Center)
-                        .fillMaxWidth()
-                        .widthIn(max = 360.dp)
-                        .clip(RoundedCornerShape(Radius.Lg))
-                        .background(Background)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {}
-                        )
-                        .padding(24.dp)
-                ) {
-                    content()
-                }
+                content()
             }
         }
     }
