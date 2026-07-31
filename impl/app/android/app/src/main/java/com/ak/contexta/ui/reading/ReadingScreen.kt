@@ -65,7 +65,6 @@ import com.ak.contexta.ui.theme.MutedSoft
 import com.ak.contexta.ui.theme.OnPrimary
 import com.ak.contexta.ui.theme.PhoneticStyle
 import com.ak.contexta.ui.theme.Primary
-import com.ak.contexta.ui.theme.Radius
 import com.ak.contexta.ui.theme.SurfaceCard
 import com.ak.contexta.ui.theme.SurfaceSoft
 
@@ -455,7 +454,7 @@ private fun WordModalOverlay(
     onRemoveFromVocabulary: () -> Unit,
     onPlayWord: () -> Unit
 ) {
-    AppModal(visible = visible, onDismiss = onDismiss) {
+    AppModal(visible = visible, onDismiss = onDismiss, alignment = Alignment.BottomCenter) {
         // Close X — top right
         Box(modifier = Modifier.fillMaxWidth()) {
             AppIconButton(
@@ -470,20 +469,12 @@ private fun WordModalOverlay(
 
         if (data == null) return@AppModal
 
-        // Word header: 30sp serif + phonetic coral + speaker
-        Row(verticalAlignment = Alignment.Bottom) {
+        // Word header: 26sp serif + speaker; phonetic on its own wrapping line below
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = data.word,
-                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 30.sp)
+                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 26.sp)
             )
-            if (data.phonetic != null && !data.isLoading) {
-                Spacer(modifier = Modifier.width(10.dp))
-                Text(
-                    text = data.phonetic,
-                    style = PhoneticStyle.copy(fontSize = 15.sp),
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-            }
             Spacer(modifier = Modifier.weight(1f))
             if (!data.isLoading) {
                 AppIconButton(
@@ -494,6 +485,12 @@ private fun WordModalOverlay(
                     tint = Primary
                 )
             }
+        }
+        if (data.phonetic != null && !data.isLoading) {
+            Text(
+                text = data.phonetic,
+                style = PhoneticStyle.copy(fontSize = 13.sp)
+            )
         }
 
         // Loading state
@@ -512,36 +509,41 @@ private fun WordModalOverlay(
             return@AppModal
         }
 
-        // Translation (Chinese)
-        if (data.translation != null) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(text = data.translation, style = MaterialTheme.typography.headlineMedium, color = Ink)
-        }
-
-        // Definitions
-        if (data.definitions.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                data.definitions.forEach { def ->
-                    Text(text = def, style = MaterialTheme.typography.bodyMedium, color = BodyText)
-                }
-            }
-        }
-
-        // Example block (SurfaceSoft)
-        if (data.exampleEn != null) {
+        // Senses grouped by part of speech: POS label (coral) → English definition → Chinese meaning.
+        // Same-POS senses are adjacent (grouped in ViewModel); label only on the first item of a group.
+        // Scrollable so the action button stays pinned while content exceeds the sheet height.
+        if (data.senses.isNotEmpty()) {
             Spacer(modifier = Modifier.height(12.dp))
             Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(Radius.Sm))
-                    .background(SurfaceSoft)
-                    .padding(12.dp)
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState())
             ) {
-                Text(text = data.exampleEn, style = MaterialTheme.typography.bodyMedium, color = Ink)
-                if (data.exampleZh != null) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = data.exampleZh, style = MaterialTheme.typography.bodyMedium, color = MutedSoft)
+                data.senses.forEachIndexed { index, sense ->
+                    val isNewGroup =
+                        index == 0 || sense.partOfSpeech != data.senses[index - 1].partOfSpeech
+                    if (isNewGroup) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = sense.partOfSpeech,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    } else {
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    Text(
+                        text = sense.englishDefinition,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Ink
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = sense.chineseMeaning,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MutedSoft
+                    )
                 }
             }
         }

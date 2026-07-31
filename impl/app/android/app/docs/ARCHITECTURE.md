@@ -146,7 +146,7 @@ com.ak.contexta/
 │   │   ├── HomeScreen.kt            ← 首页（多日期分组）
 │   │   └── HomeViewModel.kt         ← 启动编排+文章观察
 │   ├── reading/
-│   │   ├── ReadingScreen.kt         ← 阅读页（进度条/4 种译文模式/居中查词 Modal/TTS）
+│   │   ├── ReadingScreen.kt         ← 阅读页（进度条/4 种译文模式/底部查词弹窗/TTS）
 │   │   └── ReadingViewModel.kt      ← 自动已读计时+查词
 │   ├── vocabulary/
 │   │   ├── VocabularyScreen.kt      ← 生词卡片复习（滑动切卡/进度点，顶部「+」入口）
@@ -164,7 +164,7 @@ com.ak.contexta/
 │   │   ├── AppButton.kt             ← 按钮（Primary/Secondary/禁用态）+ AppIconButton
 │   │   ├── AppBadge.kt              ← 徽章（Default/Coral/Green 三色胶囊）
 │   │   ├── AppCard.kt               ← 卡片（SurfaceCard 底 + 12dp 圆角 + 16dp 内边距）
-│   │   ├── AppModal.kt              ← 居中弹窗（Scrim 遮罩/X 关闭/淡入淡出）+ AppToast
+│   │   ├── AppModal.kt              ← 弹窗（居中/底部两态，Scrim 遮罩/X 关闭/淡入淡出）+ AppToast
 │   │   ├── AppTopBar.kt             ← 统一顶栏（44dp 返回 + serif 标题）+ SectionLabel
 │   │   ├── ArticleCard.kt           ← 文章卡片（难度徽标/已读标记）
 │   │   ├── BottomNavBar.kt          ← 底部导航（4 tab 图标化）
@@ -196,7 +196,7 @@ com.ak.contexta/
 |------|--------|-----------|------|
 | `onboarding` | OnboardingScreen | OnboardingViewModel | 首次使用引导：选择水平→篇数→确认 |
 | `home` | HomeScreen | HomeViewModel | 首页：多日期分组文章列表 |
-| `reading/{articleId}` | ReadingScreen | ReadingViewModel | 阅读页：滚动进度条/4 种译文模式（FULL/DIM/BLURRED/HIDDEN）/居中查词 Modal/TTS/自动已读 |
+| `reading/{articleId}` | ReadingScreen | ReadingViewModel | 阅读页：滚动进度条/4 种译文模式（FULL/DIM/BLURRED/HIDDEN）/底部查词弹窗/TTS/自动已读 |
 | `vocabulary` | VocabularyScreen | VocabularyViewModel | 生词本：卡片复习流（滑动切卡/进度点/总结页，顶部「+」→ 录入单词） |
 | `add_word` | AddWordScreen | AddWordViewModel | 录入单词：输入→本地查→LLM 生成→加入生词库 |
 | `reference` | ReferenceScreen | ReferenceViewModel | 参考页 |

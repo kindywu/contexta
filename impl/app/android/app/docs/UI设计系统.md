@@ -93,15 +93,15 @@
 | `displayLarge` | 36sp | 400 | 41sp | -0.5sp | Serif | 页面大标题（Onboarding logo） |
 | `displayMedium` | 28sp | 400 | 34sp | -0.3sp | Serif | 页面标题（AppTopBar、Home 问候语、Onboarding 步骤标题） |
 | `headlineLarge` | 22sp | 500 | 29sp | 0 | Serif | 卡片大标题（复习完成、AddWord 单词详情） |
-| `headlineMedium` | 18sp | 500 | 25sp | 0 | Serif | 卡片标题（ArticleCard、查词 Modal 中文释义、StatCard 数字、Reading 顶栏标题、Settings 弹窗标题） |
+| `headlineMedium` | 18sp | 500 | 25sp | 0 | Serif | 卡片标题（ArticleCard、StatCard 数字、Reading 顶栏标题、Settings 弹窗标题） |
 | `headlineSmall` | 16sp | 500 | 22sp | 0 | Sans | 列表标签、Stepper 数值 |
 | `titleLarge` | 18sp | 500 | 25sp | 0 | Sans | 屏幕标题位（阶梯保留，当前页面未直接引用） |
 | `titleMedium` | 16sp | 500 | 22sp | 0 | Sans | 列表项/标签（设置行、InlineTabs、DayGroup、radio-card） |
 | `titleSmall` | 14sp | 500 | 20sp | 0 | Sans | 按钮文字（AppButton）、BottomNav 标签、语法卡片标题 |
 | `bodyLarge` | 16sp | 400 | 25sp | 0 | Sans | 正文；**阅读正文特例**：`lineHeight = 27sp`（约 1.7 倍行高） |
-| `bodyMedium` | 14sp | 400 | 22sp | 0 | Sans | 辅助正文（查词 Modal 释义、Toast、设置行描述、例句） |
+| `bodyMedium` | 14sp | 400 | 22sp | 0 | Sans | 辅助正文（Toast、设置行描述、例句） |
 | `bodySmall` | 13sp | 400 | 18sp | 0 | Sans | 说明、小字 |
-| `labelLarge` | 14sp | 500 | 20sp | 0 | Sans | 弹窗按钮文字（Settings 弹窗）、词性标签 |
+| `labelLarge` | 14sp | 500 | 20sp | 0 | Sans | 弹窗按钮文字（Settings 弹窗）、AddWord 词性标签 |
 | `labelMedium` | 13sp | 500 | 18sp | 0 | Sans | 徽标、语速胶囊、进度计数 |
 | `labelSmall` | 12sp | 500 | 17sp | +1.5sp | Sans | 全大写分组标签（SectionLabel）、「已读」标记 |
 | `PhoneticStyle`（独立常量） | 14sp | 400 | 22sp | 0 | 默认（无衬线 fallback） | 音标 IPA，颜色 `Primary`（珊瑚） |
@@ -110,7 +110,7 @@
 
 ### 3.3 音标样式 PhoneticStyle 与等宽字体决策记录
 
-`PhoneticStyle` 是独立于阶梯之外的 `TextStyle`：**默认无衬线（sans-serif）+ Primary 珊瑚色**，14sp / 400 / 行高 22sp。页面使用时按场景微调字号（查词 Modal 与复习卡片 15sp、字母网格 13sp）。
+`PhoneticStyle` 是独立于阶梯之外的 `TextStyle`：**默认无衬线（sans-serif）+ Primary 珊瑚色**，14sp / 400 / 行高 22sp。页面使用时按场景微调字号（复习卡片 15sp、查词弹窗与字母网格 13sp）。
 
 > **决策记录：为什么不用等宽字体（Monospace）？**
 > 原型与重构初期设计采用 Monospace 音标。2026-07 真机验证发现：部分厂商 ROM（如小米 HyperOS）的系统**等宽字体链缺少 IPA 字形块**，音标渲染为乱码/豆腐块。因不打包字体文件的约束，改为**依赖系统默认无衬线字体的 fallback 链**补齐 IPA 字形（与重构前行为一致），并把珊瑚色作为音标的品牌色保留下来。此决策在 `Type.kt` 中留有代码注释备查。
@@ -154,7 +154,7 @@
 | `Motion.BaseMs` | 200ms | 预留常量——当前动画代码为字面量，未绑定 |
 | `Motion.SlowMs` | 300ms | 预留常量——Modal 淡入淡出实际走 AnimatedVisibility 默认 fadeIn/fadeOut（tween 300ms），未绑定 |
 
-> **使用情况**：以上四组尺寸/动效常量中，**`Radius` 被组件实际引用**（AppButton / AppBadge / AppCard / AppModal 的 `Radius.*`、VocabularyScreen 卡片、ReadingScreen 例句块）；**`Spacing` / `Page` / `Motion` 为预留常量，当前 `ui/` 代码未引用**——页面与组件均使用字面量（如 `16.dp`、`44.dp`、`20.dp`、滑动切卡 `tween(150)`）。Spacing 表「典型用途」列为设计意图，标注口径与 §3.2 `titleLarge` 一致。
+> **使用情况**：以上四组尺寸/动效常量中，**`Radius` 被组件实际引用**（AppButton / AppBadge / AppCard / AppModal 的 `Radius.*`、VocabularyScreen 卡片）；**`Spacing` / `Page` / `Motion` 为预留常量，当前 `ui/` 代码未引用**——页面与组件均使用字面量（如 `16.dp`、`44.dp`、`20.dp`、滑动切卡 `tween(150)`）。Spacing 表「典型用途」列为设计意图，标注口径与 §3.2 `titleLarge` 一致。
 
 ---
 
@@ -207,7 +207,7 @@ classDiagram
 | `AppIconButton` | `(icon, contentDescription, onClick, modifier, size = 44, tint = onSurface)` | Material3 IconButton 包装，圆形触控目标 `size.dp`；默认 44dp，正文内辅助发音钮允许 36dp |
 | `AppBadge` | `(text, variant = Default)` | `Radius.Pill` 胶囊；Default = SurfaceSoft 底 + Muted 字、Coral = Primary 底 + OnPrimary 字、Green = Success 底 + OnPrimary 字；文字 `labelMedium`；内边距 h8 v2 |
 | `AppCard` | `(modifier, onClick = null, content: ColumnScope)` | SurfaceCard 底 + `Radius.Md` 12dp 圆角 + 16dp 内边距；`onClick != null` 时整卡可点 |
-| `AppModal` | `(visible, onDismiss, modifier, content)` | **无 `if(visible)` 守卫**——用 `AnimatedVisibility(visible)` 自带淡入淡出（fadeIn/fadeOut，默认 tween 300ms）；全屏 Scrim 遮罩（`Scrim`）点击即 onDismiss；面板居中、`fillMaxWidth` + `widthIn(max = 360dp)`、`Radius.Lg` 16dp 圆角、Background 底、24dp 内边距；**内层 Column 消费点击**（`indication = null` 的 clickable），防点击面板空白区穿透触发关闭 |
+| `AppModal` | `(visible, onDismiss, modifier, alignment = Center, content)` | **无 `if(visible)` 守卫**——用 `AnimatedVisibility(visible)` 自带淡入淡出（fadeIn/fadeOut，默认 tween 300ms）；全屏 Scrim 遮罩（`Scrim`）点击即 onDismiss；Background 底、24dp 内边距；**内层 Column 消费点击**（`indication = null` 的 clickable），防点击面板空白区穿透触发关闭。**`alignment = Center`（默认，参考页弹窗）**：`widthIn(max = 360dp)` + 四角 `Radius.Lg` 16dp 圆角；**`alignment = BottomCenter`（底部弹层，查词弹窗）**：全宽 + 仅上两角 `Radius.Lg` 16dp 圆角（下角直角贴底）+ `heightIn(max = 75% 屏高)` |
 | `AppToast` | `(text, modifier)` | ToastDark（`#181715`）底 + Background 色文字 + 8dp 圆角；内边距 h16 v10；文字 `bodyMedium`（预留组件，当前未接线——Reading 页仍用 Material3 Snackbar 原生样式） |
 | `AppTopBar` | `(title, onBack = null, modifier, actions)` | Background 底、内边距 h12 v6；有 onBack 时左侧 44dp 返回钮（`ArrowBack`，tint MutedSoft）；标题 `displayMedium` 28sp serif 单行；右侧 `actions` 槽位 |
 | `SectionLabel` | `(title, modifier)` | `title.uppercase()` + `labelSmall`（12sp/500/+1.5sp 字距）全大写 + MutedSoft 色；上下内边距 20dp/6dp |
@@ -245,7 +245,7 @@ classDiagram
    - HIDDEN：不渲染译文
 4. **正文**：16sp（bodyLarge）+ `lineHeight 27sp`（约 1.7 倍）；分词用 `LinkAnnotation.Clickable`（BasicText），点击词 → 查词 Modal；**生词高亮**：已在生词表的词加 `background = 0x2ECC785C`（珊瑚 18% 透明度底）。
 5. **底部操作区**（**固定底栏，始终可见**——位于滚动正文之后的 `weight(1f)` 容器下方，不随正文滚动）：未读时「标记已读」（secondary 全宽）；「复习单词」（primary 全宽，路由 Vocabulary）；「← 返回列表」（珊瑚文字链接）。
-6. **查词 Modal**（居中 AppModal，替代旧 BottomSheet）：右上 32dp X 关闭 → 词头 30sp serif + 音标 15sp 珊瑚 + 发音钮 36dp → 加载态（20dp 珊瑚 spinner + 「正在查询…」）→ 中文释义 `headlineMedium` + 释义列表 `bodyMedium` → 例句块（SurfaceSoft 底、`Radius.Sm`、12dp 内边距、英文 Ink + 中文 MutedSoft）→ 全宽按钮：未加入 = 「加入生词表」（primary），已加入 = 「从生词表移除」（secondary）。
+6. **查词弹窗**（底部全宽 AppModal，`alignment = BottomCenter`）：右上 32dp X 关闭 → 词头 26sp serif + 发音钮 36dp 同行（词头左、发音钮右）→ 音标 13sp 珊瑚独占一行（无 maxLines，长音标自然折行）→ 加载态（20dp 珊瑚 spinner + 「正在查询…」）→ **词义分组**：按词性分组（组序 = 义项首次出现序，语境匹配义项优先；同词性义项合并为一组），每组 = 词性标签 `labelMedium` 珊瑚（仅组首显示一次）+ 英文解释 `bodySmall` Ink + 中文解释 `bodySmall` MutedSoft；内容超 75% 屏高时释义区滚动、按钮固定底部 → 全宽按钮：未加入 = 「加入生词表」（primary），已加入 = 「从生词表移除」（secondary）。**无例句、无独立中文释义行**（中文已在词义分组内）。
 7. **阅读计时**：进入未读文章即启动 120s 纯计时（15s tick 累计 + 达标 `tryMarkReadCompleted`），与 4 种译文模式、手动标记已读互不影响。
 
 查词交互时序：
@@ -266,13 +266,13 @@ sequenceDiagram
     VM-->>S: Modal 立即显示 + 珊瑚 spinner「正在查询…」
     VM->>WR: lookupWord(normalized) { LLM 兜底回调 }
     alt 本地词库命中
-        WR-->>VM: WordDetail（音标/释义/例句/isInVocabulary）
+        WR-->>VM: WordDetail（音标/词义[词性+英中释义]/isInVocabulary）
     else 本地未命中
         WR->>LC: 调用 DeepSeek（查词提示词）
         LC-->>WR: XML 解析成功 → saveLlmResult 落库
     end
     VM-->>S: state.wordSheetData = 完整结果（isLoading=false）
-    S-->>U: Modal 展示词头/释义/例句/按钮
+    S-->>U: 弹窗展示词头/音标/词义分组（词性+英中释义）/按钮
     U->>S: 点击「加入生词表」
     S->>VM: addToVocabulary()
     VM->>VR: addWord(wordId) + recordWordAdded()
@@ -353,7 +353,7 @@ stateDiagram-v2
 |------|------|
 | 页面加载 | `LoadingIndicator`（32dp 珊瑚 spinner + 文案），AddWord 提交中带阶段消息 |
 | 空数据 | `EmptyState`（48dp outline 图标 + 标题 + 可选副文案）：首页无文章/生成中、生词表为空、Reading 文章未找到（ErrorOutline 图标） |
-| 查词失败 | 查词 Modal 降级展示：仅有词头，无释义/例句，「加入生词表」按钮保留（降级路径 wordId 为空，点击无响应）；LLM 解析失败走 `Log.w` 静默兜底 |
+| 查词失败 | 查词弹窗降级展示：仅有词头，无释义，「加入生词表」按钮保留（降级路径 wordId 为空，点击无响应）；LLM 解析失败走 `Log.w` 静默兜底 |
 | TTS 不可用 | Snackbar 提示「语音引擎未安装，请在系统设置中开启「文字转语音」功能」+ 自动拉起系统 TTS 设置页（`openTtsSettings`） |
 | 表单校验 | AddWord 输入非法 → Error 色文案；Onboarding 未选 → 按钮禁用态（不是错误文案） |
 | 状态反馈 | 已读标记（阅读页/文章卡「✓ 已读」）、加入生词表即时切换按钮态、复习总结页统计、Snackbar（阅读页 TTS 错误） |
@@ -368,7 +368,7 @@ stateDiagram-v2
 | serif 400 展示标题 + 负字距 | ✅ 采纳 | Type.kt 阶梯，display 恒 400 不加粗 |
 | 线性 outline 图标 | ✅ 采纳 | material-icons-extended；少量文字符号（✓ ✗ ← ▾ ℹ 🔥）保留为文案字符 |
 | 音标 Monospace | ❌ 未采纳 | HyperOS 等宽字体链缺 IPA 字形 → 默认无衬线 fallback（决策记录见 3.3） |
-| 查词 BottomSheet | ❌ 改为居中 Modal | 居中 AppModal + Scrim，X 关闭 |
+| 查词 BottomSheet | ❌ 改为底部全宽弹层 | 全宽 AppModal（`alignment = BottomCenter`）+ 仅上角 16dp 圆角 + 75% 屏高上限 + Scrim + X 关闭 |
 | 译文模式眼睛 popover | ❌ 未采纳 | 保留现有胶囊条循环切换（模式可见性最好、改动最小） |
 | 阅读计时「120s 且滚动 >80%」 | ❌ 未采纳 | 保留纯 120s 计时（既有逻辑不变） |
 | 收藏文章 | ❌ 不加 | Contexta 无此数据模型，守「不改功能」边界 |

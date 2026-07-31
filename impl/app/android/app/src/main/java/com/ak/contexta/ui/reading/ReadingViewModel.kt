@@ -10,6 +10,7 @@ import com.ak.contexta.domain.generation.buildWordLookupSystemPrompt
 import com.ak.contexta.domain.generation.buildWordLookupUserPrompt
 import com.ak.contexta.domain.generation.parseWordLlmResponse
 import com.ak.contexta.domain.model.ArticleParagraph
+import com.ak.contexta.domain.model.WordSense
 import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.repository.SettingsRepository
 import com.ak.contexta.domain.repository.StatsRepository
@@ -56,13 +57,17 @@ data class WordSheetData(
     val word: String,
     val isLoading: Boolean = false,
     val phonetic: String? = null,
-    val translation: String? = null,
-    val definitions: List<String> = emptyList(),
-    val exampleEn: String? = null,
-    val exampleZh: String? = null,
+    val senses: List<WordSenseUi> = emptyList(),
     val isInVocabulary: Boolean = false,
     val wordId: Long? = null,
     val vocabularyEntryId: Long? = null
+)
+
+/** 词性分组后的单个义项。同词性义项在 [WordSheetData.senses] 中相邻排列。 */
+data class WordSenseUi(
+    val partOfSpeech: String,
+    val englishDefinition: String,
+    val chineseMeaning: String
 )
 
 @HiltViewModel
@@ -228,16 +233,12 @@ private val ttsEngine: TtsEngine
             }
 
             if (detail != null) {
-                val primarySense = detail.primarySense
                 _state.value = _state.value.copy(
                     wordSheetData = WordSheetData(
                         word = detail.spellingDisplay,
                         isLoading = false,
                         phonetic = detail.phoneticIpa,
-                        translation = primarySense?.chineseMeaning,
-                        definitions = detail.allSenses.map { "${it.partOfSpeech} ${it.chineseMeaning}" },
-                        exampleEn = primarySense?.examples?.firstOrNull()?.sentenceEn,
-                        exampleZh = primarySense?.examples?.firstOrNull()?.sentenceZh,
+                        senses = groupSensesByPartOfSpeech(detail.allSenses),
                         isInVocabulary = detail.isInVocabulary,
                         wordId = detail.wordId,
                         vocabularyEntryId = detail.vocabularyEntryId
@@ -254,6 +255,17 @@ private val ttsEngine: TtsEngine
                     isWordSheetVisible = true
                 )
             }
+        }
+    }
+
+    /** 按词性分组（组序 = 义项首次出现序，保留语境匹配义项优先），同词性义项相邻排列。 */
+    private fun groupSensesByPartOfSpeech(senses: List<WordSense>): List<WordSenseUi> {
+        val sensesByPos = LinkedHashMap<String, MutableList<WordSense>>()
+        senses.forEach { sense ->
+            sensesByPos.getOrPut(sense.partOfSpeech) { mutableListOf() }.add(sense)
+        }
+        return sensesByPos.flatMap { (pos, items) ->
+            items.map { WordSenseUi(pos, it.englishDefinition, it.chineseMeaning) }
         }
     }
 
