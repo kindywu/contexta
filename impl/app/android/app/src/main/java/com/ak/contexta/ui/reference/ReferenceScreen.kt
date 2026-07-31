@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -35,7 +36,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ak.contexta.ui.components.AppButton
 import com.ak.contexta.ui.components.AppIconButton
 import com.ak.contexta.ui.components.AppModal
-import com.ak.contexta.ui.components.AppTopBar
 import com.ak.contexta.ui.theme.Background
 import com.ak.contexta.ui.theme.BodyText
 import com.ak.contexta.ui.theme.Ink
@@ -73,7 +73,6 @@ fun ReferenceScreen(
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("字母表", "音标", "语法")
-    val onSpeak: (String) -> Unit = { text -> viewModel.speak(text) }
     var selectedCell by remember { mutableStateOf<ReferenceCellData?>(null) }
 
     Column(
@@ -81,9 +80,6 @@ fun ReferenceScreen(
             .fillMaxSize()
             .background(Background)
     ) {
-        // Header
-        AppTopBar(title = "基础参考")
-
         // Tabs (inline underline style)
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
             tabs.forEachIndexed { index, label ->
@@ -124,7 +120,7 @@ fun ReferenceScreen(
             when (selectedTab) {
                 0 -> AlphabetContent(onCellClick = { selectedCell = it })
                 1 -> PhonicsContent(onCellClick = { selectedCell = it })
-                2 -> GrammarContent(onSpeak = onSpeak)
+                2 -> GrammarContent()
             }
         }
     }
@@ -330,54 +326,133 @@ private fun PhonicsGridCard(
 }
 
 @Composable
-private fun GrammarContent(onSpeak: (String) -> Unit) {
-    grammarGroups.flatMap { it.items }.forEach { item ->
-        Column(
+private fun GrammarContent() {
+    var expandedGroups by remember { mutableStateOf(setOf(0)) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 16.dp)
+    ) {
+        grammarGroups.forEachIndexed { index, group ->
+            GrammarGroupHeader(
+                name = group.name,
+                count = group.items.size,
+                expanded = index in expandedGroups,
+                onClick = {
+                    expandedGroups =
+                        if (index in expandedGroups) expandedGroups - index else expandedGroups + index
+                }
+            )
+            if (index in expandedGroups) {
+                group.items.forEach { item ->
+                    GrammarCard(item = item)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun GrammarGroupHeader(
+    name: String,
+    count: Int,
+    expanded: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(SurfaceCard)
-                .padding(14.dp)
-        ) {
-            Text(
-                text = item.name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = Primary
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = item.explanation,
-                style = MaterialTheme.typography.bodySmall,
-                color = Muted
-            )
-            Text(
-                text = item.chineseExplanation,
-                style = MaterialTheme.typography.bodySmall,
-                color = BodyText
-            )
-            item.examples.forEach { (en, zh) ->
-                Column(
+                .width(3.dp)
+                .height(16.dp)
+                .background(Primary, RoundedCornerShape(2.dp))
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = name,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = Primary
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "($count)",
+            style = MaterialTheme.typography.labelMedium,
+            color = MutedSoft
+        )
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = if (expanded) "▾" else "▸",
+            style = MaterialTheme.typography.titleSmall,
+            color = MutedSoft
+        )
+    }
+}
+
+@Composable
+private fun GrammarCard(item: GrammarItem) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(SurfaceCard)
+            .padding(14.dp)
+    ) {
+        // ① 语法：名称
+        Text(
+            text = item.name,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = Primary
+        )
+        // ② 解析：英文规则 + 中文说明
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = item.explanation,
+            style = MaterialTheme.typography.bodySmall,
+            color = Muted
+        )
+        Text(
+            text = item.chineseExplanation,
+            style = MaterialTheme.typography.bodySmall,
+            color = BodyText
+        )
+        // ③ 例句：主色竖条引文，不可点击不发音
+        Spacer(modifier = Modifier.height(8.dp))
+        item.examples.forEachIndexed { index, (en, zh) ->
+            Row {
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Background)
-                        .clickable { onSpeak(en) }
-                        .padding(8.dp)
-                ) {
+                        .width(2.dp)
+                        .height(IntrinsicSize.Min)
+                        .clip(RoundedCornerShape(1.dp))
+                        .background(Primary)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
                     Text(
                         text = en,
                         style = MaterialTheme.typography.bodySmall,
                         color = Ink
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = zh,
                         style = MaterialTheme.typography.labelSmall,
                         color = Muted
                     )
                 }
+            }
+            if (index < item.examples.lastIndex) {
+                Spacer(modifier = Modifier.height(8.dp))
             }
         }
     }
