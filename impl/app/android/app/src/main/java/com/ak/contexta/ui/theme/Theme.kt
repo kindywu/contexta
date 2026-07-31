@@ -1,31 +1,30 @@
 package com.ak.contexta.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 
 private val ContextaLightColorScheme = lightColorScheme(
-    primary = Accent,
-    onPrimary = AccentOn,
-    primaryContainer = SurfaceWarm,
-    onPrimaryContainer = Foreground,
-    secondary = ForegroundSecondary,
-    onSecondary = AccentOn,
-    secondaryContainer = SurfaceWarm,
-    onSecondaryContainer = Foreground,
-    tertiary = Meta,
-    onTertiary = AccentOn,
+    primary = Primary,
+    onPrimary = OnPrimary,
+    primaryContainer = SurfaceStrong,
+    onPrimaryContainer = Ink,
+    secondary = BodyText,
+    onSecondary = OnPrimary,
+    secondaryContainer = SurfaceSoft,
+    onSecondaryContainer = Ink,
+    tertiary = MutedSoft,
+    onTertiary = OnPrimary,
     background = Background,
-    onBackground = Foreground,
-    surface = Surface,
-    onSurface = Foreground,
-    surfaceVariant = SurfaceWarm,
-    onSurfaceVariant = ForegroundSecondary,
-    outline = Border,
-    outlineVariant = BorderSoft,
-    error = Danger,
-    onError = AccentOn
+    onBackground = Ink,
+    surface = SurfaceCard,
+    onSurface = Ink,
+    surfaceVariant = SurfaceSoft,
+    onSurfaceVariant = BodyText,
+    outline = Hairline,
+    outlineVariant = HairlineSoft,
+    error = Error,
+    onError = OnPrimary
 )
 
 @Composable

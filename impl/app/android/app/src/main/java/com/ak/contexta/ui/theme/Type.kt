@@ -2,106 +2,126 @@ package com.ak.contexta.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// ─── Contexta Typography ───
-// Matches prototype: Anthropic Serif for display, system sans-serif for body
-// Sizes: xs=10, sm=12, base=14, lg=16, xl=18, 2xl=20, 3xl=24, 4xl=28
+// ─── Contexta Typography — lingua prototype type scale (px→sp) ───
+// Display serif: weight 400, NEVER bold (prototype rule). Body: Inter-like sans.
 
 private val DisplayFontFamily = FontFamily.Serif
 private val BodyFontFamily = FontFamily.SansSerif
 private val MonoFontFamily = FontFamily.Monospace
 
 val ContextaTypography = Typography(
-    // Headline = 4xl (28sp) — article titles, hero text
-    headlineLarge = TextStyle(
+    // display-md 36px serif 400 — hero titles
+    displayLarge = TextStyle(
         fontFamily = DisplayFontFamily,
-        fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
-        lineHeight = 34.sp,
+        fontWeight = FontWeight.Normal,
+        fontSize = 36.sp,
+        lineHeight = 41.sp,
         letterSpacing = (-0.5).sp
     ),
-    // Headline medium = 3xl (24sp) — screen titles
-    headlineMedium = TextStyle(
+    // display-sm 28px serif 400 — page titles
+    displayMedium = TextStyle(
         fontFamily = DisplayFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 24.sp,
-        lineHeight = 30.sp,
+        fontWeight = FontWeight.Normal,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
         letterSpacing = (-0.3).sp
     ),
-    // Headline small = 2xl (20sp) — section headers
-    headlineSmall = TextStyle(
+    // title-lg 22px serif 500 — card hero titles
+    headlineLarge = TextStyle(
         fontFamily = DisplayFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 20.sp,
-        lineHeight = 26.sp,
-        letterSpacing = (-0.2).sp
+        fontWeight = FontWeight.Medium,
+        fontSize = 22.sp,
+        lineHeight = 29.sp
     ),
-    // Title large = xl (18sp) — app bar titles
-    titleLarge = TextStyle(
-        fontFamily = BodyFontFamily,
-        fontWeight = FontWeight.SemiBold,
+    // title-md 18px serif 500 — card titles
+    headlineMedium = TextStyle(
+        fontFamily = DisplayFontFamily,
+        fontWeight = FontWeight.Medium,
         fontSize = 18.sp,
-        lineHeight = 24.sp
+        lineHeight = 25.sp
     ),
-    // Title medium = lg (16sp) — card titles
-    titleMedium = TextStyle(
+    // title-sm 16px sans 500 — list labels
+    headlineSmall = TextStyle(
         fontFamily = BodyFontFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Medium,
         fontSize = 16.sp,
         lineHeight = 22.sp
     ),
-    // Title small = base (14sp) — button text, list items
+    // app bar / screen header titles
+    titleLarge = TextStyle(
+        fontFamily = BodyFontFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 18.sp,
+        lineHeight = 25.sp
+    ),
+    // card titles / list items
+    titleMedium = TextStyle(
+        fontFamily = BodyFontFamily,
+        fontWeight = FontWeight.Medium,
+        fontSize = 16.sp,
+        lineHeight = 22.sp
+    ),
+    // buttons, small labels
     titleSmall = TextStyle(
         fontFamily = BodyFontFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
         lineHeight = 20.sp
     ),
-    // Body large = base (14sp) — article text
+    // body-md 16px — body text (reading text uses 1.7 lineHeight override)
     bodyLarge = TextStyle(
         fontFamily = BodyFontFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
-        lineHeight = 22.sp,
-        letterSpacing = 0.25.sp
+        fontSize = 16.sp,
+        lineHeight = 25.sp
     ),
-    // Body medium = sm (12sp) — secondary text
+    // body-sm 14px — secondary text
     bodyMedium = TextStyle(
         fontFamily = BodyFontFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 12.sp,
-        lineHeight = 18.sp
+        fontSize = 14.sp,
+        lineHeight = 22.sp
     ),
-    // Body small = xs (10sp) — meta text, tags
+    // caption 13px — hints
     bodySmall = TextStyle(
         fontFamily = BodyFontFamily,
         fontWeight = FontWeight.Normal,
-        fontSize = 10.sp,
-        lineHeight = 14.sp
+        fontSize = 13.sp,
+        lineHeight = 18.sp
     ),
-    // Label large = base (14sp) — chip labels
+    // button label 14px / 500
     labelLarge = TextStyle(
         fontFamily = BodyFontFamily,
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
         lineHeight = 20.sp
     ),
-    // Label medium = sm (12sp) — tab labels, small buttons
+    // caption 13px / 500 — badges
     labelMedium = TextStyle(
         fontFamily = BodyFontFamily,
         fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp
+        fontSize = 13.sp,
+        lineHeight = 18.sp
     ),
-    // Label small = xs (10sp) — badges, counters
+    // caption-upper 12px / 500 / +1.5sp — uppercase section labels
     labelSmall = TextStyle(
         fontFamily = BodyFontFamily,
         fontWeight = FontWeight.Medium,
-        fontSize = 10.sp,
-        lineHeight = 14.sp
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
+        letterSpacing = 1.5.sp
     )
+)
+
+/** Phonetic (IPA) style: monospace + coral, per prototype. */
+val PhoneticStyle = TextStyle(
+    fontFamily = MonoFontFamily,
+    fontWeight = FontWeight.Normal,
+    fontSize = 14.sp,
+    lineHeight = 22.sp,
+    color = Primary
 )
