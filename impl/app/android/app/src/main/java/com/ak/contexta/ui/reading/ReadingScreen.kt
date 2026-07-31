@@ -44,7 +44,10 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
@@ -169,6 +172,7 @@ fun ReadingScreen(
                                 translationMode = state.translationMode,
                                 isRevealed = index in state.revealedParagraphs,
                                 vocabularyWords = state.vocabularyWords,
+                                isSpeaking = state.speakingParagraphIndex == index,
                                 onWordClick = { word -> viewModel.showWordSheet(word) },
                                 onTranslationClick = {
                                     if (state.translationMode == TranslationMode.BLURRED) {
@@ -275,6 +279,9 @@ private fun ReadingAppBar(
     }
 }
 
+/** 内联播放按钮在 AnnotatedString 中的占位标记（英文正文不会出现该字符串）。 */
+private const val INLINE_PLAY_PLACEHOLDER = "⟨play⟩"
+
 @Composable
 private fun ReadingParagraph(
     englishText: String,
@@ -282,54 +289,65 @@ private fun ReadingParagraph(
     translationMode: TranslationMode,
     isRevealed: Boolean = false,
     vocabularyWords: Set<String> = emptySet(),
+    isSpeaking: Boolean = false,
     onWordClick: (String) -> Unit,
     onTranslationClick: () -> Unit,
     onPlay: () -> Unit
 ) {
     Column(modifier = Modifier.padding(bottom = 20.dp)) {
-        // English text row with play icon
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Top
-        ) {
-            // English text with clickable words
-            val annotatedString = buildAnnotatedString {
-                val words = englishText.split(Regex("(?<=\\s)|(?=\\s)"))
-                words.forEach { token ->
-                    val isWord = token.matches(Regex("[A-Za-z'-]+"))
-                    if (isWord) {
-                        val normalized = token.lowercase()
-                        val isVocab = normalized in vocabularyWords
-                        val link = LinkAnnotation.Clickable(
-                            tag = "word",
-                            styles = TextLinkStyles(style = SpanStyle(color = Ink))
-                        ) { onWordClick(normalized) }
-                        withLink(link) {
-                            withStyle(
-                                if (isVocab) SpanStyle(color = Ink, background = Color(0x2ECC785C))
-                                else SpanStyle(color = Ink)
-                            ) { append(token) }
-                        }
-                    } else {
-                        append(token)
+        // English text with clickable words + inline play icon at the end of the last line
+        val annotatedString = buildAnnotatedString {
+            val words = englishText.split(Regex("(?<=\\s)|(?=\\s)"))
+            words.forEach { token ->
+                val isWord = token.matches(Regex("[A-Za-z'-]+"))
+                if (isWord) {
+                    val normalized = token.lowercase()
+                    val isVocab = normalized in vocabularyWords
+                    val link = LinkAnnotation.Clickable(
+                        tag = "word",
+                        styles = TextLinkStyles(style = SpanStyle(color = Ink))
+                    ) { onWordClick(normalized) }
+                    withLink(link) {
+                        withStyle(
+                            if (isVocab) SpanStyle(color = Ink, background = Color(0x2ECC785C))
+                            else SpanStyle(color = Ink)
+                        ) { append(token) }
                     }
+                } else {
+                    append(token)
                 }
             }
-            BasicText(
-                text = annotatedString,
-                style = MaterialTheme.typography.bodyLarge.copy(color = Ink, lineHeight = 27.sp),
-                modifier = Modifier.weight(1f).padding(end = 8.dp)
-            )
-
-            // Play icon
-            AppIconButton(
-                icon = Icons.AutoMirrored.Outlined.VolumeUp,
-                contentDescription = "朗读本段",
-                onClick = onPlay,
-                size = 36,
-                tint = Primary
-            )
+            // 不换行空格（U+00A0）：图标与最后一个单词整体换行，不单独甩到下一行
+            append(" ")
+            append(INLINE_PLAY_PLACEHOLDER)
         }
+        BasicText(
+            text = annotatedString,
+            style = MaterialTheme.typography.bodyLarge.copy(color = Ink, lineHeight = 27.sp),
+            modifier = Modifier.fillMaxWidth(),
+            inlineContent = mapOf(
+                INLINE_PLAY_PLACEHOLDER to InlineTextContent(
+                    placeholder = Placeholder(
+                        width = 18.sp,
+                        height = 18.sp,
+                        placeholderVerticalAlign = PlaceholderVerticalAlign.Center
+                    )
+                ) {
+                    Box(
+                        modifier = Modifier.clickable(onClick = onPlay),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isSpeaking) Icons.Outlined.Stop
+                            else Icons.AutoMirrored.Outlined.VolumeUp,
+                            contentDescription = if (isSpeaking) "停止朗读" else "朗读本段",
+                            tint = if (isSpeaking) Primary else MutedSoft,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            )
+        )
 
         Spacer(modifier = Modifier.height(4.dp))
 
