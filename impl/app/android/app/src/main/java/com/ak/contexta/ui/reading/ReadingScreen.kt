@@ -45,6 +45,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
@@ -319,7 +320,7 @@ private fun ReadingParagraph(
             }
             // 不换行空格（U+00A0）：图标与最后一个单词整体换行，不单独甩到下一行
             append(" ")
-            append(INLINE_PLAY_PLACEHOLDER)
+            appendInlineContent(INLINE_PLAY_PLACEHOLDER, "🔊")
         }
         BasicText(
             text = annotatedString,
