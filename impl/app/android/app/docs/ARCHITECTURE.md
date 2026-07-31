@@ -97,7 +97,7 @@ com.ak.contexta/
 │   │   ├── WordPrompts.kt           ← 单词 Prompt 构建+解析
 │   │   └── PromptLoader.kt          ← 资源文件 Prompt 加载器
 │   ├── time/  TimeProvider.kt       ← 时间抽象接口
-│   ├── tts/   TtsEngine.kt          ← TTS 引擎接口
+│   ├── tts/   TtsEngine.kt          ← TTS 引擎接口（speak → String?/回调带 id）
 │   ├── di/    CoroutineDispatchers.kt
 │   ├── LlmClient.kt                 ← LLM 调用接口
 │   ├── LlmErrorClassifier.kt        ← 错误分类器
@@ -225,7 +225,7 @@ com.ak.contexta/
 - **网络**：Retrofit + OkHttp + kotlinx.serialization
 - **UI**：Jetpack Compose + Material3，视觉由自定义设计 token（warm-canvas editorial）与 `ui/components/` 组件库承载，详见 [UI设计系统.md](UI设计系统.md)
 - **后台任务**：WorkManager（指数退避 30s，KEEP 策略防重复）
-- **TTS**：Android TextToSpeech（引擎回退链：小米 → Google → 系统默认）
+- **TTS**：Android TextToSpeech（引擎回退链：小米 → Google → 系统默认）。`speak()` 返回 utteranceId（`String?`），`setOnSpeakingFinished` 回调携带 id，用于阅读页段落播放状态机区分迟到的旧发声事件。
 - **时间**：落库时间统一 ISO 8601 字符串（`yyyy-MM-dd'T'HH:mm:ssXXX`，如 `2026-07-31T10:30:00+08:00`），**手机当前时区**（`ZoneId.systemDefault()`），通过 `TimeProvider` 获取；仅内存/协议用途保留 Long 毫秒
 - **LLM**：DeepSeek API（`LlmCaller` 封装，最多 3 次重试，120s 超时）
 - **手动录入**：生词本「+」图标入口 → 本地优先（`findLocal`），新词走 LLM 生成（复用阅读查词提示词），详见 [手动录入单词.md](手动录入单词.md)
