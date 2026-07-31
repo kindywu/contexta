@@ -24,6 +24,12 @@ interface WordRepository {
         normalized: String = normalize(spellingDisplay)
     ): WordDetail
 
+    /**
+     * Local-only lookup (LRU cache → DB). Never triggers an LLM call.
+     * Returns null when the word is not in the local dictionary.
+     */
+    suspend fun findLocal(spelling: String): WordDetail?
+
     /** Get a WordDetail by word ID (for vocabulary review) */
     suspend fun getWordDetail(wordId: Long): WordDetail?
 

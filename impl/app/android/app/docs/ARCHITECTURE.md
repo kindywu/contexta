@@ -85,6 +85,7 @@ com.ak.contexta/
 │   │   ├── CreateInitialBatchUseCase.kt    ← 创建初始批次
 │   │   ├── TriggerNextBatchUseCase.kt      ← 触发下一批次
 │   │   ├── GenerateArticlesUseCase.kt      ← LLM 生成文章
+│   │   ├── AddWordUseCase.kt               ← 手动录入单词
 │   │   └── GetHomeArticlesUseCase.kt       ← 首页文章过滤排序
 │   ├── error/                       ← ★ 统一错误处理
 │   │   ├── AppError.kt              ← Recoverable / LlmFatal / Structural
@@ -148,8 +149,11 @@ com.ak.contexta/
 │   │   ├── ReadingScreen.kt         ← 阅读页（单词点击+TTS）
 │   │   └── ReadingViewModel.kt      ← 自动已读计时+查词
 │   ├── vocabulary/
-│   │   ├── VocabularyScreen.kt      ← 生词卡片复习
+│   │   ├── VocabularyScreen.kt      ← 生词卡片复习（头部「➕」入口）
 │   │   └── VocabularyViewModel.kt
+│   ├── addword/
+│   │   ├── AddWordScreen.kt         ← 手动录入单词页
+│   │   └── AddWordViewModel.kt
 │   ├── reference/
 │   │   ├── ReferenceScreen.kt       ← 参考页（TTS）
 │   │   └── ReferenceViewModel.kt
@@ -186,7 +190,8 @@ com.ak.contexta/
 | `onboarding` | OnboardingScreen | OnboardingViewModel | 首次使用引导：选择水平→篇数→确认 |
 | `home` | HomeScreen | HomeViewModel | 首页：多日期分组文章列表 |
 | `reading/{articleId}` | ReadingScreen | ReadingViewModel | 阅读页：翻译模式/查词/TTS/自动已读 |
-| `vocabulary` | VocabularyScreen | VocabularyViewModel | 生词本：卡片复习流 |
+| `vocabulary` | VocabularyScreen | VocabularyViewModel | 生词本：卡片复习流（头部「➕」→ 录入单词） |
+| `add_word` | AddWordScreen | AddWordViewModel | 录入单词：输入→本地查→LLM 生成→加入生词库 |
 | `reference` | ReferenceScreen | ReferenceViewModel | 参考页 |
 | `settings` | SettingsScreen | SettingsViewModel | 设置页：难度/篇数/翻译/阈值/TTS |
 
@@ -216,6 +221,7 @@ com.ak.contexta/
 - **TTS**：Android TextToSpeech（引擎回退链：小米 → Google → 系统默认）
 - **时间**：落库时间统一 ISO 8601 字符串（`yyyy-MM-dd'T'HH:mm:ssXXX`，如 `2026-07-31T10:30:00+08:00`），**手机当前时区**（`ZoneId.systemDefault()`），通过 `TimeProvider` 获取；仅内存/协议用途保留 Long 毫秒
 - **LLM**：DeepSeek API（`LlmCaller` 封装，最多 3 次重试，120s 超时）
+- **手动录入**：生词本「➕」→ 本地优先（`findLocal`），新词走 LLM 生成（复用阅读查词提示词），详见 [手动录入单词.md](手动录入单词.md)
 
 ### 关键 Gradle 配置
 
@@ -243,6 +249,7 @@ buildConfigField("String", "DEEPSEEK_MODEL", "\"...\"")
 | 8 | [引导与设置.md](引导与设置.md) | `onboarding` / `settings` | 3 步引导、难度/篇数/翻译模式/掌握阈值/TTS/自动朗读设置 |
 | 9 | [学习统计.md](学习统计.md) | — | 每日学习日志、统计表单例、连续天数算法 |
 | 10 | [错误监控.md](错误监控.md) | — | 三分类错误体系、飞书通知、Pipeline 阻塞恢复 |
+| 11 | [手动录入单词.md](手动录入单词.md) | `add_word` | 手动录入单词：本地优先+LLM 兜底、复用查词契约、加入生词库 |
 
 ---
 

@@ -7,6 +7,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.ak.contexta.ui.addword.AddWordScreen
 import com.ak.contexta.ui.home.HomeScreen
 import com.ak.contexta.ui.onboarding.OnboardingScreen
 import com.ak.contexta.ui.reading.ReadingScreen
@@ -55,7 +56,15 @@ fun ContextaNavGraph(
         }
 
         composable(Screen.Vocabulary.route) {
-            VocabularyScreen()
+            VocabularyScreen(
+                onAddWord = { navController.navigate(Screen.AddWord.route) }
+            )
+        }
+
+        composable(Screen.AddWord.route) {
+            AddWordScreen(
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable(Screen.Reference.route) {

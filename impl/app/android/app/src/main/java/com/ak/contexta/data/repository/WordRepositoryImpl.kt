@@ -59,6 +59,15 @@ class WordRepositoryImpl @Inject constructor(
         return@withPermit detail
     }
 
+    override suspend fun findLocal(spelling: String): WordDetail? {
+        val normalized = WordRepository.normalize(spelling)
+        lruCache[normalized]?.let { return it }
+        val existingWord = wordDao.getByNormalized(normalized) ?: return null
+        val detail = buildWordDetail(existingWord)
+        lruCache[normalized] = detail
+        return detail
+    }
+
     override suspend fun saveLlmResult(
         spellingDisplay: String,
         phoneticIpa: String?,

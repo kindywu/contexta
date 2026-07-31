@@ -7,6 +7,7 @@ sealed class Screen(val route: String) {
         fun createRoute(articleId: Long) = "reading/$articleId"
     }
     data object Vocabulary : Screen("vocabulary")
+    data object AddWord : Screen("add_word")
     data object Reference : Screen("reference")
     data object Settings : Screen("settings")
 }

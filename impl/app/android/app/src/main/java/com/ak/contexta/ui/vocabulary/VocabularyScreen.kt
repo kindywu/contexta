@@ -47,7 +47,8 @@ import com.ak.contexta.ui.theme.SurfaceWarm
 
 @Composable
 fun VocabularyScreen(
-    viewModel: VocabularyViewModel = hiltViewModel()
+    viewModel: VocabularyViewModel = hiltViewModel(),
+    onAddWord: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
 
@@ -59,7 +60,8 @@ fun VocabularyScreen(
         // Header
         VocabularyHeader(
             totalCount = state.totalCount,
-            isSummary = state.isSummary
+            isSummary = state.isSummary,
+            onAddWord = onAddWord
         )
 
         when {
@@ -110,7 +112,11 @@ fun VocabularyScreen(
 }
 
 @Composable
-private fun VocabularyHeader(totalCount: Int, isSummary: Boolean) {
+private fun VocabularyHeader(
+    totalCount: Int,
+    isSummary: Boolean,
+    onAddWord: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -128,7 +134,14 @@ private fun VocabularyHeader(totalCount: Int, isSummary: Boolean) {
             Text(
                 text = "$totalCount 个词",
                 style = MaterialTheme.typography.labelMedium,
-                color = Muted
+                color = Muted,
+                modifier = Modifier.padding(end = 12.dp)
+            )
+            Text(
+                text = "➕",
+                style = MaterialTheme.typography.titleMedium,
+                color = Accent,
+                modifier = Modifier.clickable { onAddWord() }
             )
         }
     }
