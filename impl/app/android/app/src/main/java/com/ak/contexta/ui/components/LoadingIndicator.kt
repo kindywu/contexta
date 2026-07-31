@@ -7,14 +7,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import com.ak.contexta.ui.theme.Accent
 
 @Composable
 fun LoadingIndicator(
@@ -28,7 +31,7 @@ fun LoadingIndicator(
     ) {
         CircularProgressIndicator(
             modifier = Modifier.size(32.dp),
-            color = Accent,
+            color = MaterialTheme.colorScheme.primary,
             strokeWidth = 3.dp
         )
         Spacer(modifier = Modifier.height(12.dp))
@@ -42,7 +45,7 @@ fun LoadingIndicator(
 
 @Composable
 fun EmptyState(
-    icon: String = "📝",
+    icon: ImageVector = Icons.Outlined.Inbox,
     message: String = "暂无内容",
     subMessage: String = "",
     modifier: Modifier = Modifier
@@ -54,7 +57,12 @@ fun EmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(text = icon, style = MaterialTheme.typography.headlineLarge)
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.size(48.dp)
+        )
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = message,

@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -72,7 +74,7 @@ fun VocabularyScreen(
                 onRestart = { viewModel.restart() }
             )
             state.totalCount == 0 -> EmptyState(
-                icon = "📝",
+                icon = Icons.Outlined.EditNote,
                 message = "生词表为空",
                 subMessage = "阅读时点击单词可加入生词表"
             )

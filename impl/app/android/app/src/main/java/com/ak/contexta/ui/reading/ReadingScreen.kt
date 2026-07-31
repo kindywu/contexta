@@ -20,6 +20,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -119,7 +121,7 @@ fun ReadingScreen(
             when {
                 state.isLoading -> LoadingIndicator()
                 state.error != null -> EmptyState(
-                    icon = "⚠️",
+                    icon = Icons.Outlined.ErrorOutline,
                     message = state.error!!,
                     subMessage = "请返回重新选择"
                 )
