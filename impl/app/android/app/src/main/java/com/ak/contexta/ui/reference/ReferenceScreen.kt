@@ -27,16 +27,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ak.contexta.ui.components.AppTopBar
 import com.ak.contexta.ui.theme.Accent
-import com.ak.contexta.ui.theme.AccentOn
 import com.ak.contexta.ui.theme.Background
+import com.ak.contexta.ui.theme.BodyText
 import com.ak.contexta.ui.theme.Foreground
 import com.ak.contexta.ui.theme.ForegroundSecondary
-import com.ak.contexta.ui.theme.Meta
+import com.ak.contexta.ui.theme.Ink
 import com.ak.contexta.ui.theme.Muted
+import com.ak.contexta.ui.theme.MutedSoft
+import com.ak.contexta.ui.theme.PhoneticStyle
+import com.ak.contexta.ui.theme.Primary
 import com.ak.contexta.ui.theme.Surface
-import com.ak.contexta.ui.theme.SurfaceWarm
+import com.ak.contexta.ui.theme.SurfaceCard
 
 data class AlphabetItem(
     val char: String,
@@ -72,43 +77,32 @@ fun ReferenceScreen(
             .background(Background)
     ) {
         // Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Surface)
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "基础参考",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
+        AppTopBar(title = "基础参考")
 
-        // Tabs
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-        ) {
+        // Tabs (inline underline style)
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
             tabs.forEachIndexed { index, label ->
                 val isSelected = index == selectedTab
-                val bg = if (isSelected) Accent else SurfaceWarm
-                val textColor = if (isSelected) AccentOn else Foreground
-
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = textColor,
+                Column(
                     modifier = Modifier
-                        .padding(end = 12.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(bg)
                         .clickable { selectedTab = index }
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                )
+                        .padding(end = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                        color = if (isSelected) Primary else MutedSoft
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(if (isSelected) Primary else androidx.compose.ui.graphics.Color.Transparent)
+                    )
+                }
             }
         }
 
@@ -169,7 +163,7 @@ private fun AlphabetGridCard(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(Surface)
+            .background(SurfaceCard)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -177,14 +171,12 @@ private fun AlphabetGridCard(
         Text(
             text = item.char,
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = Foreground
+            color = Ink
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = item.phone,
-            style = MaterialTheme.typography.bodySmall,
-            color = Meta
+            style = PhoneticStyle.copy(fontSize = 13.sp)
         )
     }
 }
@@ -220,60 +212,25 @@ private fun PhonicsContent(onSpeak: (String) -> Unit) {
             .fillMaxWidth()
             .padding(bottom = 16.dp)
     ) {
-        // ── 元音区 ──
-        SectionHeader(title = "元音 (20个)")
-
-        val vowelCardModifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(SurfaceWarm)
-
-        phonicsVowels.chunked(3).forEach { row ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                row.forEach { item ->
-                    PhonicsGridCard(
-                        item = item,
-                        bgModifier = vowelCardModifier,
-                        onClick = { onSpeak(item.example) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                repeat(3 - row.size) {
-                    Spacer(modifier = Modifier.weight(1f))
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // ── 辅音区 ──
-        SectionHeader(title = "辅音 (28个)")
-
-        val consonantCardModifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(Surface)
-
-        phonicsConsonants.chunked(3).forEach { row ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                row.forEach { item ->
-                    PhonicsGridCard(
-                        item = item,
-                        bgModifier = consonantCardModifier,
-                        onClick = { onSpeak(item.example) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                repeat(3 - row.size) {
-                    Spacer(modifier = Modifier.weight(1f))
+        phonicsGroups.forEach { group ->
+            SectionHeader(title = group.name)
+            group.items.chunked(3).forEach { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    row.forEach { item ->
+                        PhonicsGridCard(
+                            item = item,
+                            onClick = { onSpeak(item.example) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    repeat(3 - row.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -283,27 +240,26 @@ private fun PhonicsContent(onSpeak: (String) -> Unit) {
 @Composable
 private fun PhonicsGridCard(
     item: PhonicsItem,
-    bgModifier: Modifier,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
-            .then(bgModifier)
+            .clip(RoundedCornerShape(8.dp))
+            .background(SurfaceCard)
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = item.phone,
-            style = MaterialTheme.typography.bodyMedium,
-            color = Foreground
+            style = PhoneticStyle.copy(fontSize = 15.sp)
         )
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = item.example,
-            style = MaterialTheme.typography.bodySmall,
-            color = ForegroundSecondary
+            style = MaterialTheme.typography.bodyMedium,
+            color = BodyText
         )
         Spacer(modifier = Modifier.height(1.dp))
         Text(
@@ -399,58 +355,50 @@ private val alphabetData = listOf(
     AlphabetItem("Z z", "/zed/", "Zebra", "斑马")
 )
 
-private val phonicsVowels = listOf(
-    PhonicsItem("/iː/", "see", "/siː/"),
-    PhonicsItem("/ɪ/", "sit", "/sɪt/"),
-    PhonicsItem("/e/", "bed", "/bed/"),
-    PhonicsItem("/æ/", "cat", "/kæt/"),
-    PhonicsItem("/ɑː/", "car", "/kɑːr/"),
-    PhonicsItem("/ɒ/", "hot", "/hɒt/"),
-    PhonicsItem("/ɔː/", "door", "/dɔːr/"),
-    PhonicsItem("/ʊ/", "book", "/bʊk/"),
-    PhonicsItem("/uː/", "moon", "/muːn/"),
-    PhonicsItem("/ʌ/", "cup", "/kʌp/"),
-    PhonicsItem("/ɜː/", "bird", "/bɜːd/"),
-    PhonicsItem("/ə/", "about", "/əˈbaʊt/"),
-    PhonicsItem("/eɪ/", "cake", "/keɪk/"),
-    PhonicsItem("/aɪ/", "time", "/taɪm/"),
-    PhonicsItem("/ɔɪ/", "boy", "/bɔɪ/"),
-    PhonicsItem("/aʊ/", "house", "/haʊs/"),
-    PhonicsItem("/əʊ/", "home", "/həʊm/"),
-    PhonicsItem("/ɪə/", "ear", "/ɪər/"),
-    PhonicsItem("/eə/", "hair", "/heər/"),
-    PhonicsItem("/ʊə/", "tour", "/tʊər/")
-)
+data class PhonicsGroup(val name: String, val items: List<PhonicsItem>)
 
-private val phonicsConsonants = listOf(
-    PhonicsItem("/p/", "pen", "/pen/"),
-    PhonicsItem("/b/", "book", "/bʊk/"),
-    PhonicsItem("/t/", "top", "/tɒp/"),
-    PhonicsItem("/d/", "dog", "/dɒɡ/"),
-    PhonicsItem("/k/", "cat", "/kæt/"),
-    PhonicsItem("/ɡ/", "go", "/ɡəʊ/"),
-    PhonicsItem("/f/", "fish", "/fɪʃ/"),
-    PhonicsItem("/v/", "van", "/væn/"),
-    PhonicsItem("/θ/", "think", "/θɪŋk/"),
-    PhonicsItem("/ð/", "this", "/ðɪs/"),
-    PhonicsItem("/s/", "sun", "/sʌn/"),
-    PhonicsItem("/z/", "zoo", "/zuː/"),
-    PhonicsItem("/ʃ/", "ship", "/ʃɪp/"),
-    PhonicsItem("/ʒ/", "vision", "/ˈvɪʒən/"),
-    PhonicsItem("/h/", "hat", "/hæt/"),
-    PhonicsItem("/m/", "man", "/mæn/"),
-    PhonicsItem("/n/", "nose", "/nəʊz/"),
-    PhonicsItem("/ŋ/", "sing", "/sɪŋ/"),
-    PhonicsItem("/l/", "leg", "/leɡ/"),
-    PhonicsItem("/r/", "red", "/red/"),
-    PhonicsItem("/j/", "yes", "/jes/"),
-    PhonicsItem("/w/", "wet", "/wet/"),
-    PhonicsItem("/tʃ/", "chips", "/tʃɪps/"),
-    PhonicsItem("/dʒ/", "jump", "/dʒʌmp/"),
-    PhonicsItem("/tr/", "tree", "/triː/"),
-    PhonicsItem("/dr/", "dress", "/dres/"),
-    PhonicsItem("/ts/", "cats", "/kæts/"),
-    PhonicsItem("/dz/", "beds", "/bedz/")
+private val phonicsGroups = listOf(
+    PhonicsGroup("单元音 (12)", listOf(
+        PhonicsItem("/iː/", "see", "/siː/"), PhonicsItem("/ɪ/", "sit", "/sɪt/"),
+        PhonicsItem("/e/", "bed", "/bed/"), PhonicsItem("/æ/", "cat", "/kæt/"),
+        PhonicsItem("/ɑː/", "car", "/kɑːr/"), PhonicsItem("/ɒ/", "hot", "/hɒt/"),
+        PhonicsItem("/ɔː/", "door", "/dɔːr/"), PhonicsItem("/ʊ/", "book", "/bʊk/"),
+        PhonicsItem("/uː/", "moon", "/muːn/"), PhonicsItem("/ʌ/", "cup", "/kʌp/"),
+        PhonicsItem("/ɜː/", "bird", "/bɜːd/"), PhonicsItem("/ə/", "about", "/əˈbaʊt/")
+    )),
+    PhonicsGroup("双元音 (8)", listOf(
+        PhonicsItem("/eɪ/", "cake", "/keɪk/"), PhonicsItem("/aɪ/", "time", "/taɪm/"),
+        PhonicsItem("/ɔɪ/", "boy", "/bɔɪ/"), PhonicsItem("/aʊ/", "house", "/haʊs/"),
+        PhonicsItem("/əʊ/", "home", "/həʊm/"), PhonicsItem("/ɪə/", "ear", "/ɪər/"),
+        PhonicsItem("/eə/", "hair", "/heər/"), PhonicsItem("/ʊə/", "tour", "/tʊər/")
+    )),
+    PhonicsGroup("爆破音 (6)", listOf(
+        PhonicsItem("/p/", "pen", "/pen/"), PhonicsItem("/b/", "book", "/bʊk/"),
+        PhonicsItem("/t/", "top", "/tɒp/"), PhonicsItem("/d/", "dog", "/dɒɡ/"),
+        PhonicsItem("/k/", "cat", "/kæt/"), PhonicsItem("/ɡ/", "go", "/ɡəʊ/")
+    )),
+    PhonicsGroup("摩擦音 (10)", listOf(
+        PhonicsItem("/f/", "fish", "/fɪʃ/"), PhonicsItem("/v/", "van", "/væn/"),
+        PhonicsItem("/θ/", "think", "/θɪŋk/"), PhonicsItem("/ð/", "this", "/ðɪs/"),
+        PhonicsItem("/s/", "sun", "/sʌn/"), PhonicsItem("/z/", "zoo", "/zuː/"),
+        PhonicsItem("/ʃ/", "ship", "/ʃɪp/"), PhonicsItem("/ʒ/", "vision", "/ˈvɪʒən/"),
+        PhonicsItem("/h/", "hat", "/hæt/"), PhonicsItem("/r/", "red", "/red/")
+    )),
+    PhonicsGroup("破擦音 (6)", listOf(
+        PhonicsItem("/tʃ/", "chips", "/tʃɪps/"), PhonicsItem("/dʒ/", "jump", "/dʒʌmp/"),
+        PhonicsItem("/tr/", "tree", "/triː/"), PhonicsItem("/dr/", "dress", "/dres/"),
+        PhonicsItem("/ts/", "cats", "/kæts/"), PhonicsItem("/dz/", "beds", "/bedz/")
+    )),
+    PhonicsGroup("鼻辅音 (3)", listOf(
+        PhonicsItem("/m/", "man", "/mæn/"), PhonicsItem("/n/", "nose", "/nəʊz/"),
+        PhonicsItem("/ŋ/", "sing", "/sɪŋ/")
+    )),
+    PhonicsGroup("舌侧音 (1)", listOf(
+        PhonicsItem("/l/", "leg", "/leɡ/")
+    )),
+    PhonicsGroup("半元音 (2)", listOf(
+        PhonicsItem("/j/", "yes", "/jes/"), PhonicsItem("/w/", "wet", "/wet/")
+    ))
 )
 
 private val grammarData = listOf(
