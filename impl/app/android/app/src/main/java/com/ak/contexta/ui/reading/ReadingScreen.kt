@@ -1,8 +1,5 @@
 package com.ak.contexta.ui.reading
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,9 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
@@ -32,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -39,6 +38,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -48,26 +49,42 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ak.contexta.ui.components.AppButton
+import com.ak.contexta.ui.components.AppButtonVariant
+import com.ak.contexta.ui.components.AppIconButton
+import com.ak.contexta.ui.components.AppModal
 import com.ak.contexta.ui.components.EmptyState
 import com.ak.contexta.ui.components.LoadingIndicator
-import com.ak.contexta.ui.theme.Accent
-import com.ak.contexta.ui.theme.AccentOn
 import com.ak.contexta.ui.theme.Background
-import com.ak.contexta.ui.theme.Foreground
-import com.ak.contexta.ui.theme.ForegroundSecondary
-import com.ak.contexta.ui.theme.Meta
+import com.ak.contexta.ui.theme.BodyText
+import com.ak.contexta.ui.theme.Ink
 import com.ak.contexta.ui.theme.Muted
-import com.ak.contexta.ui.theme.Surface
-import com.ak.contexta.ui.theme.SurfaceWarm
+import com.ak.contexta.ui.theme.MutedSoft
+import com.ak.contexta.ui.theme.OnPrimary
+import com.ak.contexta.ui.theme.PhoneticStyle
+import com.ak.contexta.ui.theme.Primary
+import com.ak.contexta.ui.theme.Radius
+import com.ak.contexta.ui.theme.SurfaceCard
+import com.ak.contexta.ui.theme.SurfaceSoft
 
 @Composable
 fun ReadingScreen(
     articleId: Long,
     onBack: () -> Unit,
+    onReviewWords: () -> Unit,
     viewModel: ReadingViewModel = hiltViewModel()
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
+
+    val scrollState = rememberScrollState()
+    val scrollFraction = remember {
+        derivedStateOf {
+            val max = scrollState.maxValue
+            if (max > 0) scrollState.value.toFloat() / max.toFloat() else 0f
+        }
+    }
 
     LaunchedEffect(articleId) {
         viewModel.loadArticle(articleId)
@@ -98,17 +115,23 @@ fun ReadingScreen(
             modifier = Modifier.align(Alignment.TopCenter)
         )
         Column(modifier = Modifier.fillMaxSize().background(Background)) {
+            // 3dp coral reading progress bar
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(scrollFraction.value)
+                    .height(3.dp)
+                    .background(Primary)
+            )
+
             // App bar
             ReadingAppBar(
                 title = state.title ?: "文章",
                 onBack = onBack,
-                onTranslationModeToggle = { viewModel.cycleTranslationMode() },
                 translationMode = state.translationMode,
                 ttsSpeed = state.ttsSpeed,
                 onToggleTtsSpeed = { viewModel.toggleTtsSpeed() },
                 onPlayFullArticle = { viewModel.playFullArticle() },
-                isReadCompleted = state.isReadCompleted,
-                onMarkAsRead = { viewModel.markAsRead() }
+                isReadCompleted = state.isReadCompleted
             )
 
             // Translation mode indicator bar
@@ -129,8 +152,8 @@ fun ReadingScreen(
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp)
+                            .verticalScroll(scrollState)
+                            .padding(horizontal = 20.dp)
                     ) {
                         Spacer(modifier = Modifier.height(12.dp))
                         state.paragraphs.forEachIndexed { index, paragraph ->
@@ -139,6 +162,7 @@ fun ReadingScreen(
                                 chineseTranslation = paragraph.chineseTranslation,
                                 translationMode = state.translationMode,
                                 isRevealed = index in state.revealedParagraphs,
+                                vocabularyWords = state.vocabularyWords,
                                 onWordClick = { word -> viewModel.showWordSheet(word) },
                                 onTranslationClick = {
                                     if (state.translationMode == TranslationMode.BLURRED) {
@@ -154,11 +178,16 @@ fun ReadingScreen(
             }
 
             // Footer
-            ReadingFooter(onBack = onBack)
+            ReadingFooter(
+                isReadCompleted = state.isReadCompleted,
+                onMarkAsRead = { viewModel.markAsRead() },
+                onBack = onBack,
+                onReviewWords = onReviewWords
+            )
         }
 
-        // Word bottom sheet overlay
-        WordBottomSheetOverlay(
+        // Word modal overlay (centered)
+        WordModalOverlay(
             visible = state.isWordSheetVisible,
             data = state.wordSheetData,
             onDismiss = { viewModel.hideWordSheet() },
@@ -173,70 +202,57 @@ fun ReadingScreen(
 private fun ReadingAppBar(
     title: String,
     onBack: () -> Unit,
-    onTranslationModeToggle: () -> Unit,
     translationMode: TranslationMode,
     ttsSpeed: Float,
     onToggleTtsSpeed: () -> Unit,
     onPlayFullArticle: () -> Unit,
-    isReadCompleted: Boolean,
-    onMarkAsRead: () -> Unit
+    isReadCompleted: Boolean
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Surface)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .background(Background)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "←",
-            modifier = Modifier.clickable { onBack() },
-            style = MaterialTheme.typography.titleLarge,
-            color = Foreground
+        AppIconButton(
+            icon = Icons.AutoMirrored.Outlined.ArrowBack,
+            contentDescription = "返回",
+            onClick = onBack,
+            tint = MutedSoft
         )
-        Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(4.dp))
         Text(
             text = title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.headlineMedium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
         Spacer(modifier = Modifier.width(8.dp))
-        // Read status
+        // Read status (read-only badge; marking read moved to footer)
         if (isReadCompleted) {
             Text(
                 text = "✓ 已读",
-                style = MaterialTheme.typography.labelSmall,
-                color = Muted
-            )
-        } else {
-            Text(
-                text = "✓ 标记已读",
-                style = MaterialTheme.typography.labelSmall,
-                color = Accent,
-                modifier = Modifier
-                    .clickable { onMarkAsRead() }
-                    .padding(horizontal = 4.dp)
+                style = MaterialTheme.typography.labelMedium,
+                color = MutedSoft,
+                modifier = Modifier.padding(horizontal = 4.dp)
             )
         }
         Spacer(modifier = Modifier.width(4.dp))
         // Play full article
-        Text(
-            text = "🔊",
-            style = MaterialTheme.typography.titleMedium,
-            color = Accent,
-            modifier = Modifier
-                .clickable { onPlayFullArticle() }
-                .padding(horizontal = 4.dp)
+        AppIconButton(
+            icon = Icons.AutoMirrored.Outlined.VolumeUp,
+            contentDescription = "朗读全文",
+            onClick = onPlayFullArticle,
+            tint = Primary
         )
         Spacer(modifier = Modifier.width(4.dp))
         // Speed toggle
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(6.dp))
-                .background(if (ttsSpeed < 1.0f) SurfaceWarm else Accent)
+                .background(if (ttsSpeed < 1.0f) SurfaceSoft else Primary)
                 .clickable { onToggleTtsSpeed() }
                 .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
@@ -244,7 +260,7 @@ private fun ReadingAppBar(
                 text = if (ttsSpeed < 1.0f) "0.5x" else "1x",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = if (ttsSpeed < 1.0f) Meta else AccentOn
+                color = if (ttsSpeed < 1.0f) MutedSoft else OnPrimary
             )
         }
     }
@@ -266,13 +282,13 @@ private fun TranslationModeBar(
         Text(
             text = "译文",
             style = MaterialTheme.typography.labelMedium,
-            color = Meta
+            color = MutedSoft
         )
         Spacer(modifier = Modifier.width(8.dp))
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(Surface)
+                .background(SurfaceCard)
                 .clickable { onCycle() }
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -280,13 +296,13 @@ private fun TranslationModeBar(
             Text(
                 text = mode.label,
                 style = MaterialTheme.typography.labelMedium,
-                color = ForegroundSecondary
+                color = BodyText
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
                 text = "▾",
                 style = MaterialTheme.typography.labelSmall,
-                color = Meta
+                color = MutedSoft
             )
         }
     }
@@ -298,6 +314,7 @@ private fun ReadingParagraph(
     chineseTranslation: String,
     translationMode: TranslationMode,
     isRevealed: Boolean = false,
+    vocabularyWords: Set<String> = emptySet(),
     onWordClick: (String) -> Unit,
     onTranslationClick: () -> Unit,
     onPlay: () -> Unit
@@ -314,16 +331,17 @@ private fun ReadingParagraph(
                 words.forEach { token ->
                     val isWord = token.matches(Regex("[A-Za-z'-]+"))
                     if (isWord) {
+                        val normalized = token.lowercase()
+                        val isVocab = normalized in vocabularyWords
                         val link = LinkAnnotation.Clickable(
                             tag = "word",
-                            styles = TextLinkStyles(style = SpanStyle(color = Foreground))
-                        ) {
-                            onWordClick(token.lowercase())
-                        }
+                            styles = TextLinkStyles(style = SpanStyle(color = Ink))
+                        ) { onWordClick(normalized) }
                         withLink(link) {
-                            withStyle(SpanStyle(color = Foreground)) {
-                                append(token)
-                            }
+                            withStyle(
+                                if (isVocab) SpanStyle(color = Ink, background = Color(0x2ECC785C))
+                                else SpanStyle(color = Ink)
+                            ) { append(token) }
                         }
                     } else {
                         append(token)
@@ -332,18 +350,17 @@ private fun ReadingParagraph(
             }
             BasicText(
                 text = annotatedString,
-                style = MaterialTheme.typography.bodyLarge.copy(color = Foreground),
+                style = MaterialTheme.typography.bodyLarge.copy(color = Ink, lineHeight = 27.sp),
                 modifier = Modifier.weight(1f).padding(end = 8.dp)
             )
 
             // Play icon
-            Text(
-                text = "🔊",
-                style = MaterialTheme.typography.titleMedium,
-                color = Accent,
-                modifier = Modifier
-                    .clickable { onPlay() }
-                    .padding(top = 2.dp)
+            AppIconButton(
+                icon = Icons.AutoMirrored.Outlined.VolumeUp,
+                contentDescription = "朗读本段",
+                onClick = onPlay,
+                size = 36,
+                tint = Primary
             )
         }
 
@@ -356,7 +373,7 @@ private fun ReadingParagraph(
                 Text(
                     text = chineseTranslation,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Muted,
+                    color = MutedSoft,
                     modifier = translationModifier
                 )
             }
@@ -365,19 +382,27 @@ private fun ReadingParagraph(
                     Text(
                         text = chineseTranslation,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Muted,
+                        color = MutedSoft,
                         modifier = translationModifier.clickable { onTranslationClick() }
                     )
                 } else {
                     Text(
                         text = chineseTranslation,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Muted,
+                        color = MutedSoft,
                         modifier = translationModifier.then(
                             Modifier.blur(radius = 4.dp)
                         ).clickable { onTranslationClick() }
                     )
                 }
+            }
+            TranslationMode.DIM -> {
+                Text(
+                    text = chineseTranslation,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MutedSoft,
+                    modifier = translationModifier.graphicsLayer(alpha = 0.55f)
+                )
             }
             TranslationMode.HIDDEN -> {
                 // Hidden: don't show
@@ -387,32 +412,42 @@ private fun ReadingParagraph(
 }
 
 @Composable
-private fun ReadingFooter(onBack: () -> Unit) {
-    Row(
+private fun ReadingFooter(
+    isReadCompleted: Boolean,
+    onMarkAsRead: () -> Unit,
+    onBack: () -> Unit,
+    onReviewWords: () -> Unit
+) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Surface)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = "← 返回列表",
-            style = MaterialTheme.typography.labelMedium,
-            color = Accent,
-            modifier = Modifier.clickable { onBack() }
+        if (!isReadCompleted) {
+            AppButton(
+                text = "标记已读",
+                onClick = onMarkAsRead,
+                modifier = Modifier.fillMaxWidth(),
+                variant = AppButtonVariant.Secondary
+            )
+        }
+        AppButton(
+            text = "复习单词",
+            onClick = onReviewWords,
+            modifier = Modifier.fillMaxWidth()
         )
         Text(
-            text = "下一篇 →",
-            style = MaterialTheme.typography.labelMedium,
-            color = Accent,
-            modifier = Modifier.clickable { /* next article placeholder */ }
+            text = "← 返回列表",
+            style = MaterialTheme.typography.titleSmall,
+            color = Primary,
+            modifier = Modifier.align(Alignment.CenterHorizontally).clickable { onBack() }.padding(8.dp)
         )
     }
 }
 
 @Composable
-private fun WordBottomSheetOverlay(
+private fun WordModalOverlay(
     visible: Boolean,
     data: WordSheetData?,
     onDismiss: () -> Unit,
@@ -420,172 +455,115 @@ private fun WordBottomSheetOverlay(
     onRemoveFromVocabulary: () -> Unit,
     onPlayWord: () -> Unit
 ) {
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(),
-        exit = fadeOut()
-    ) {
-        if (visible && data != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.3f))
-                    .clickable { onDismiss() }
+    AppModal(visible = visible, onDismiss = onDismiss) {
+        // Close X — top right
+        Box(modifier = Modifier.fillMaxWidth()) {
+            AppIconButton(
+                icon = Icons.Outlined.Close,
+                contentDescription = "关闭",
+                onClick = onDismiss,
+                modifier = Modifier.align(Alignment.TopEnd),
+                size = 32,
+                tint = MutedSoft
+            )
+        }
+
+        if (data == null) return@AppModal
+
+        // Word header: 30sp serif + phonetic coral + speaker
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = data.word,
+                style = MaterialTheme.typography.headlineLarge.copy(fontSize = 30.sp)
+            )
+            if (data.phonetic != null && !data.isLoading) {
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = data.phonetic,
+                    style = PhoneticStyle.copy(fontSize = 15.sp),
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            if (!data.isLoading) {
+                AppIconButton(
+                    icon = Icons.AutoMirrored.Outlined.VolumeUp,
+                    contentDescription = "发音",
+                    onClick = onPlayWord,
+                    size = 36,
+                    tint = Primary
+                )
+            }
+        }
+
+        // Loading state
+        if (data.isLoading) {
+            Spacer(modifier = Modifier.height(20.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                        .background(Surface)
-                        .clickable(enabled = false) {} // prevent dismiss when tapping sheet
-                        .padding(horizontal = 20.dp, vertical = 16.dp)
-                ) {
-                    Column {
-                        // Handle bar
-                        Box(
-                            modifier = Modifier
-                                .width(36.dp)
-                                .height(4.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(SurfaceWarm)
-                                .align(Alignment.CenterHorizontally)
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Primary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(text = "正在查询…", style = MaterialTheme.typography.bodyMedium, color = Muted)
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+            return@AppModal
+        }
 
-                        // Word header
-                        Row(verticalAlignment = Alignment.Bottom) {
-                            Text(
-                                text = data.word,
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold
-                            )
-                            if (data.phonetic != null && !data.isLoading) {
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = data.phonetic,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = Meta
-                                )
-                            }
-                            Spacer(modifier = Modifier.weight(1f))
-                            if (!data.isLoading) {
-                                Text(
-                                    text = "🔊",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = Accent,
-                                    modifier = Modifier.clickable { onPlayWord() }
-                                )
-                            }
-                        }
+        // Translation (Chinese)
+        if (data.translation != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(text = data.translation, style = MaterialTheme.typography.headlineMedium, color = Ink)
+        }
 
-                        // Loading state
-                        if (data.isLoading) {
-                            Spacer(modifier = Modifier.height(20.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Accent
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = "正在查询…",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = Muted
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(20.dp))
-                            return@Column
-                        }
-
-                        // Translation
-                        if (data.translation != null) {
-                            Text(
-                                text = data.translation,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = ForegroundSecondary,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-                        }
-
-                        // Definitions
-                        if (data.definitions.isNotEmpty()) {
-                            Text(
-                                text = data.definitions.joinToString("; "),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Muted
-                            )
-                        }
-
-                        // Example
-                        if (data.exampleEn != null) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Background)
-                                    .padding(10.dp)
-                                    .padding(top = 8.dp)
-                            ) {
-                                Text(
-                                    text = data.exampleEn,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Foreground
-                                )
-                                if (data.exampleZh != null) {
-                                    Text(
-                                        text = data.exampleZh,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Muted,
-                                        modifier = Modifier.padding(top = 4.dp)
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        // Actions
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            if (data.isInVocabulary) {
-                                Button(
-                                    onClick = onRemoveFromVocabulary,
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = SurfaceWarm,
-                                        contentColor = Foreground
-                                    )
-                                ) {
-                                    Text("🗑️ 从生词表移除")
-                                }
-                            } else {
-                                Button(
-                                    onClick = onAddToVocabulary,
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Accent,
-                                        contentColor = AccentOn
-                                    )
-                                ) {
-                                    Text("+ 加入生词表")
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
+        // Definitions
+        if (data.definitions.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                data.definitions.forEach { def ->
+                    Text(text = def, style = MaterialTheme.typography.bodyMedium, color = BodyText)
                 }
             }
         }
+
+        // Example block (SurfaceSoft)
+        if (data.exampleEn != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Radius.Sm))
+                    .background(SurfaceSoft)
+                    .padding(12.dp)
+            ) {
+                Text(text = data.exampleEn, style = MaterialTheme.typography.bodyMedium, color = Ink)
+                if (data.exampleZh != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(text = data.exampleZh, style = MaterialTheme.typography.bodyMedium, color = MutedSoft)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // Full-width action button (secondary style when already in vocabulary)
+        if (data.isInVocabulary) {
+            AppButton(
+                text = "从生词表移除",
+                onClick = onRemoveFromVocabulary,
+                modifier = Modifier.fillMaxWidth(),
+                variant = AppButtonVariant.Secondary
+            )
+        } else {
+            AppButton(
+                text = "加入生词表",
+                onClick = onAddToVocabulary,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
     }
 }

@@ -44,18 +44,14 @@ import com.ak.contexta.ui.components.LoadingIndicator
 import com.ak.contexta.ui.components.SectionLabel
 import com.ak.contexta.ui.components.StatCard
 import com.ak.contexta.ui.components.StatCardData
-import com.ak.contexta.ui.theme.Accent
-import com.ak.contexta.ui.theme.AccentOn
 import com.ak.contexta.ui.theme.Background
-import com.ak.contexta.ui.theme.Foreground
 import com.ak.contexta.ui.theme.Ink
-import com.ak.contexta.ui.theme.Meta
 import com.ak.contexta.ui.theme.Muted
 import com.ak.contexta.ui.theme.MutedSoft
+import com.ak.contexta.ui.theme.OnPrimary
 import com.ak.contexta.ui.theme.Primary
-import com.ak.contexta.ui.theme.Surface
 import com.ak.contexta.ui.theme.SurfaceCard
-import com.ak.contexta.ui.theme.SurfaceWarm
+import com.ak.contexta.ui.theme.SurfaceSoft
 
 @Composable
 fun SettingsScreen(
@@ -189,8 +185,7 @@ fun SettingsScreen(
                 StatCard(
                     stat = StatCardData(
                         number = state.stats.currentStreak.toString(),
-                        label = "当前连续学习",
-                        sub = "🔥 连续 ${state.stats.currentStreak} 天，继续加油！"
+                        label = "当前连续学习"
                     ),
                     modifier = Modifier.weight(1f)
                 )
@@ -246,6 +241,7 @@ fun SettingsScreen(
             title = "选择译文默认模式",
             options = listOf(
                 "FULL" to "完全显示",
+                "DIM" to "淡化",
                 "BLURRED" to "模糊",
                 "HIDDEN" to "隐藏"
             ),
@@ -342,7 +338,7 @@ private fun SettingsPickerDialog(
                         Text(
                             text = label,
                             style = MaterialTheme.typography.bodyLarge,
-                            color = Foreground
+                            color = Ink
                         )
                     }
                 }
@@ -372,7 +368,7 @@ private fun SettingsPickerItem(
             Text(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,
-                color = Foreground
+                color = Ink
             )
             Text(
                 text = description,
@@ -416,7 +412,7 @@ private fun SettingsStepperItem(
             Text(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,
-                color = Foreground
+                color = Ink
             )
             Text(
                 text = description,
@@ -432,7 +428,7 @@ private fun SettingsStepperItem(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(if (canDecrement) Surface else SurfaceWarm.copy(alpha = 0.3f))
+                    .background(if (canDecrement) SurfaceCard else SurfaceSoft.copy(alpha = 0.3f))
                     .clickable(enabled = canDecrement) { onDecrement() }
                     .padding(0.dp),
                 contentAlignment = Alignment.Center
@@ -440,7 +436,7 @@ private fun SettingsStepperItem(
                 Text(
                     text = "−",
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (canDecrement) Foreground else MutedSoft.copy(alpha = 0.3f)
+                    color = if (canDecrement) Ink else MutedSoft.copy(alpha = 0.3f)
                 )
             }
             Text(
@@ -454,7 +450,7 @@ private fun SettingsStepperItem(
                 modifier = Modifier
                     .size(44.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(if (canIncrement) Surface else SurfaceWarm.copy(alpha = 0.3f))
+                    .background(if (canIncrement) SurfaceCard else SurfaceSoft.copy(alpha = 0.3f))
                     .clickable(enabled = canIncrement) { onIncrement() }
                     .padding(0.dp),
                 contentAlignment = Alignment.Center
@@ -462,7 +458,7 @@ private fun SettingsStepperItem(
                 Text(
                     text = "+",
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (canIncrement) Foreground else MutedSoft.copy(alpha = 0.3f)
+                    color = if (canIncrement) Ink else MutedSoft.copy(alpha = 0.3f)
                 )
             }
         }
@@ -486,7 +482,7 @@ private fun SettingsToggleItem(
             Text(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,
-                color = Foreground
+                color = Ink
             )
             Text(
                 text = description,
@@ -498,10 +494,10 @@ private fun SettingsToggleItem(
             checked = checked,
             onCheckedChange = { onToggle() },
             colors = SwitchDefaults.colors(
-                checkedThumbColor = AccentOn,
-                checkedTrackColor = Accent,
-                uncheckedThumbColor = Foreground,
-                uncheckedTrackColor = SurfaceWarm
+                checkedThumbColor = OnPrimary,
+                checkedTrackColor = Primary,
+                uncheckedThumbColor = Ink,
+                uncheckedTrackColor = SurfaceSoft
             )
         )
     }
@@ -523,6 +519,7 @@ private fun levelDescription(level: String): String = when (level) {
 
 private fun translationModeLabel(mode: String): String = when (mode) {
     "FULL" -> "完全显示"
+    "DIM" -> "淡化"
     "BLURRED" -> "模糊"
     "HIDDEN" -> "隐藏"
     else -> mode
@@ -535,7 +532,7 @@ private fun InfoTipButton(onClick: () -> Unit) {
     Text(
         text = "ℹ",
         style = MaterialTheme.typography.titleSmall,
-        color = Meta,
+        color = MutedSoft,
         modifier = Modifier
             .clickable { onClick() }
             .padding(8.dp)
@@ -563,7 +560,7 @@ private fun SettingsInfoDialog(
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Foreground
+                color = Ink
             )
         },
         confirmButton = {
@@ -571,7 +568,7 @@ private fun SettingsInfoDialog(
                 text = "知道了",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = Accent,
+                color = Primary,
                 modifier = Modifier
                     .clickable { onConfirm() }
                     .padding(horizontal = 16.dp, vertical = 10.dp)
@@ -605,7 +602,7 @@ private fun SettingsConfirmDialog(
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Foreground
+                color = Ink
             )
         },
         confirmButton = {
@@ -613,7 +610,7 @@ private fun SettingsConfirmDialog(
                 text = confirmLabel,
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = Accent,
+                color = Primary,
                 modifier = Modifier
                     .clickable { onConfirm() }
                     .padding(horizontal = 16.dp, vertical = 10.dp)

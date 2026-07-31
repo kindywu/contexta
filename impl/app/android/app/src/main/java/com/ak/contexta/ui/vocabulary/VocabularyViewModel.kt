@@ -136,6 +136,18 @@ class VocabularyViewModel @Inject constructor(
         }
     }
 
+    /** Swipe up / down navigation — no judgment recorded. */
+    fun goNext() {
+        advanceToNext()
+    }
+
+    fun goPrevious() {
+        val prev = _state.value.currentIndex - 1
+        if (prev >= 0) {
+            showWordAt(prev)
+        }
+    }
+
     private fun advanceToNext() {
         val nextIndex = _state.value.currentIndex + 1
         if (nextIndex >= vocabList.size) {

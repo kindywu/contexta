@@ -31,6 +31,7 @@ data class ReadingUiState(
     val paragraphs: List<ArticleParagraph> = emptyList(),
     val translationMode: TranslationMode = TranslationMode.FULL,
     val revealedParagraphs: Set<Int> = emptySet(),
+    val vocabularyWords: Set<String> = emptySet(),
     val isLoading: Boolean = true,
     val error: String? = null,
     val wordSheetData: WordSheetData? = null,
@@ -43,8 +44,12 @@ data class ReadingUiState(
 
 enum class TranslationMode(val label: String) {
     FULL("完全显示"),
+    DIM("淡化"),
     BLURRED("模糊"),
-    HIDDEN("隐藏")
+    HIDDEN("隐藏");
+
+    val next: TranslationMode
+        get() = entries[(ordinal + 1) % entries.size]
 }
 
 data class WordSheetData(
@@ -96,13 +101,17 @@ private val ttsEngine: TtsEngine
 
             if (article != null) {
                 val alreadyRead = article.readCompletedAt != null
+                val vocabWords = vocabularyRepository.getActiveWords()
+                    .map { WordRepository.normalize(it.spellingDisplay) }
+                    .toSet()
                 _state.value = _state.value.copy(
                     title = article.title ?: "Untitled",
                     paragraphs = article.paragraphs,
                     translationMode = savedMode,
                     revealedParagraphs = emptySet(),
                     isLoading = false,
-                    isReadCompleted = alreadyRead
+                    isReadCompleted = alreadyRead,
+                    vocabularyWords = vocabWords
                 )
                 // Record reading activity for stats
                 statsRepository.recordReadingActivity()
@@ -154,11 +163,7 @@ private val ttsEngine: TtsEngine
 
     fun cycleTranslationMode() {
         val current = _state.value.translationMode
-        val next = when (current) {
-            TranslationMode.FULL -> TranslationMode.BLURRED
-            TranslationMode.BLURRED -> TranslationMode.HIDDEN
-            TranslationMode.HIDDEN -> TranslationMode.FULL
-        }
+        val next = current.next
         _state.value = _state.value.copy(
             translationMode = next,
             revealedParagraphs = emptySet()

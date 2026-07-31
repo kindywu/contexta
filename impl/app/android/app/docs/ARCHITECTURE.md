@@ -10,8 +10,8 @@
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│  ui/ — Jetpack Compose UI                               │
-│  onboarding / home / reading / vocabulary / reference / settings │
+│  ui/ — Jetpack Compose UI（设计 token + 组件库 + 页面）  │
+│  onboarding / home / reading / vocabulary / addword / reference / settings │
 │  每个 Screen 对应一个 ViewModel，ViewModel 调 Use Case    │
 ├──────────────────────────────────────────────────────────┤
 │  worker/ — WorkManager 层（薄层胶水）                     │
@@ -146,29 +146,36 @@ com.ak.contexta/
 │   │   ├── HomeScreen.kt            ← 首页（多日期分组）
 │   │   └── HomeViewModel.kt         ← 启动编排+文章观察
 │   ├── reading/
-│   │   ├── ReadingScreen.kt         ← 阅读页（单词点击+TTS）
+│   │   ├── ReadingScreen.kt         ← 阅读页（进度条/4 种译文模式/居中查词 Modal/TTS）
 │   │   └── ReadingViewModel.kt      ← 自动已读计时+查词
 │   ├── vocabulary/
-│   │   ├── VocabularyScreen.kt      ← 生词卡片复习（头部「➕」入口）
+│   │   ├── VocabularyScreen.kt      ← 生词卡片复习（滑动切卡/进度点，顶部「+」入口）
 │   │   └── VocabularyViewModel.kt
 │   ├── addword/
 │   │   ├── AddWordScreen.kt         ← 手动录入单词页
 │   │   └── AddWordViewModel.kt
 │   ├── reference/
-│   │   ├── ReferenceScreen.kt       ← 参考页（TTS）
+│   │   ├── ReferenceScreen.kt       ← 参考页（InlineTabs/8 分类音标/字母弹窗/TTS）
 │   │   └── ReferenceViewModel.kt
 │   ├── settings/
 │   │   ├── SettingsScreen.kt        ← 设置页
 │   │   └── SettingsViewModel.kt     ← 难度/篇数/翻译/阈值
 │   ├── components/
-│   │   ├── ArticleCard.kt           ← 文章卡片
-│   │   ├── BottomNavBar.kt          ← 底部导航
-│   │   ├── LoadingIndicator.kt      ← 加载指示器
+│   │   ├── AppButton.kt             ← 按钮（Primary/Secondary/禁用态）+ AppIconButton
+│   │   ├── AppBadge.kt              ← 徽章（Default/Coral/Green 三色胶囊）
+│   │   ├── AppCard.kt               ← 卡片（SurfaceCard 底 + 12dp 圆角 + 16dp 内边距）
+│   │   ├── AppModal.kt              ← 居中弹窗（Scrim 遮罩/X 关闭/淡入淡出）+ AppToast
+│   │   ├── AppTopBar.kt             ← 统一顶栏（44dp 返回 + serif 标题）+ SectionLabel
+│   │   ├── ArticleCard.kt           ← 文章卡片（难度徽标/已读标记）
+│   │   ├── BottomNavBar.kt          ← 底部导航（4 tab 图标化）
+│   │   ├── LoadingIndicator.kt      ← 加载指示器 + EmptyState 空态
 │   │   └── StatCard.kt              ← 统计卡片
 │   └── theme/
-│       ├── Color.kt
-│       ├── Theme.kt
-│       └── Type.kt
+│       ├── Color.kt                 ← 颜色 token（warm-canvas 暖色系）
+│       ├── Type.kt                  ← 字体阶梯 + PhoneticStyle
+│       ├── Dimens.kt                ← Spacing / Radius / Page
+│       ├── Motion.kt                ← 动效时长（150/200/300ms）
+│       └── Theme.kt                 ← Material3 lightColorScheme 映射
 │
 ├── navigation/
 │   ├── NavGraph.kt                  ← 导航图
@@ -189,8 +196,8 @@ com.ak.contexta/
 |------|--------|-----------|------|
 | `onboarding` | OnboardingScreen | OnboardingViewModel | 首次使用引导：选择水平→篇数→确认 |
 | `home` | HomeScreen | HomeViewModel | 首页：多日期分组文章列表 |
-| `reading/{articleId}` | ReadingScreen | ReadingViewModel | 阅读页：翻译模式/查词/TTS/自动已读 |
-| `vocabulary` | VocabularyScreen | VocabularyViewModel | 生词本：卡片复习流（头部「➕」→ 录入单词） |
+| `reading/{articleId}` | ReadingScreen | ReadingViewModel | 阅读页：滚动进度条/4 种译文模式（FULL/DIM/BLURRED/HIDDEN）/居中查词 Modal/TTS/自动已读 |
+| `vocabulary` | VocabularyScreen | VocabularyViewModel | 生词本：卡片复习流（滑动切卡/进度点/总结页，顶部「+」→ 录入单词） |
 | `add_word` | AddWordScreen | AddWordViewModel | 录入单词：输入→本地查→LLM 生成→加入生词库 |
 | `reference` | ReferenceScreen | ReferenceViewModel | 参考页 |
 | `settings` | SettingsScreen | SettingsViewModel | 设置页：难度/篇数/翻译/阈值/TTS |
@@ -216,12 +223,12 @@ com.ak.contexta/
 - **依赖注入**：Hilt
 - **数据库**：Room（version 2，`fallbackToDestructiveMigration`；开发期不递增 version、不写 Migration，schema 变化靠卸载重装重建）
 - **网络**：Retrofit + OkHttp + kotlinx.serialization
-- **UI**：Jetpack Compose
+- **UI**：Jetpack Compose + Material3，视觉由自定义设计 token（warm-canvas editorial）与 `ui/components/` 组件库承载，详见 [UI设计系统.md](UI设计系统.md)
 - **后台任务**：WorkManager（指数退避 30s，KEEP 策略防重复）
 - **TTS**：Android TextToSpeech（引擎回退链：小米 → Google → 系统默认）
 - **时间**：落库时间统一 ISO 8601 字符串（`yyyy-MM-dd'T'HH:mm:ssXXX`，如 `2026-07-31T10:30:00+08:00`），**手机当前时区**（`ZoneId.systemDefault()`），通过 `TimeProvider` 获取；仅内存/协议用途保留 Long 毫秒
 - **LLM**：DeepSeek API（`LlmCaller` 封装，最多 3 次重试，120s 超时）
-- **手动录入**：生词本「➕」→ 本地优先（`findLocal`），新词走 LLM 生成（复用阅读查词提示词），详见 [手动录入单词.md](手动录入单词.md)
+- **手动录入**：生词本「+」图标入口 → 本地优先（`findLocal`），新词走 LLM 生成（复用阅读查词提示词），详见 [手动录入单词.md](手动录入单词.md)
 
 ### 关键 Gradle 配置
 
@@ -242,7 +249,7 @@ buildConfigField("String", "DEEPSEEK_MODEL", "\"...\"")
 | 1 | [数据库初始化.md](数据库初始化.md) | — | Entity 表结构、种子数据、TypeConverters、数据库版本 |
 | 2 | [TTS朗读.md](TTS朗读.md) | — | TTS 引擎接口、实现、引擎回退链、语速切换 |
 | 3 | [文章生成.md](文章生成.md) | — | 生成管道全貌（业务/技术/数据/错误四线 + UML 状态图、时序图、活动图、ER 图）：状态机、CAS 抢占、前置生成、LLM 重试、错误流水账 |
-| 4 | [阅读文章.md](阅读文章.md) | `reading/{articleId}` | 阅读页交互、2min 自动已读、翻译三模式、段落揭示 |
+| 4 | [阅读文章.md](阅读文章.md) | `reading/{articleId}` | 阅读页交互、2min 自动已读、翻译四模式（FULL/DIM/BLURRED/HIDDEN）、段落揭示 |
 | 5 | [查词.md](查词.md) | `reading`(内嵌) / `reference` | 3-tier 查词流程、LRU 缓存、拼写归一化 |
 | 6 | [生词本.md](生词本.md) | `vocabulary` | 卡片复习流、掌握阈值、连续正确递增、软删除 |
 | 7 | [首页.md](首页.md) | `home` | 多日期分组、文章过滤排序、展开/折叠、连续天数徽章 |
@@ -250,6 +257,7 @@ buildConfigField("String", "DEEPSEEK_MODEL", "\"...\"")
 | 9 | [学习统计.md](学习统计.md) | — | 每日学习日志、统计表单例、连续天数算法 |
 | 10 | [错误监控.md](错误监控.md) | — | 三分类错误体系、飞书通知、Pipeline 阻塞恢复 |
 | 11 | [手动录入单词.md](手动录入单词.md) | `add_word` | 手动录入单词：本地优先+LLM 兜底、复用查词契约、加入生词库 |
+| 12 | [UI设计系统.md](UI设计系统.md) | 全部页面 | 设计语言、颜色/字体/间距/动效 token、组件库规范、7 页面交互规范、与原型取舍 |
 
 ---
 

@@ -44,10 +44,8 @@ import com.ak.contexta.ui.components.LoadingIndicator
 import com.ak.contexta.ui.theme.Background
 import com.ak.contexta.ui.theme.BodyText
 import com.ak.contexta.ui.theme.Error
-import com.ak.contexta.ui.theme.Foreground
-import com.ak.contexta.ui.theme.ForegroundSecondary
 import com.ak.contexta.ui.theme.Hairline
-import com.ak.contexta.ui.theme.Meta
+import com.ak.contexta.ui.theme.Ink
 import com.ak.contexta.ui.theme.Muted
 import com.ak.contexta.ui.theme.MutedSoft
 import com.ak.contexta.ui.theme.PhoneticStyle
@@ -289,7 +287,7 @@ private fun SenseBlock(sense: WordSense) {
                     text = sense.chineseMeaning,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Foreground
+                    color = Ink
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
@@ -306,12 +304,12 @@ private fun SenseBlock(sense: WordSense) {
                 Text(
                     text = example.sentenceEn,
                     style = MaterialTheme.typography.bodySmall,
-                    color = ForegroundSecondary
+                    color = BodyText
                 )
                 Text(
                     text = example.sentenceZh,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Meta
+                    color = MutedSoft
                 )
             }
         }

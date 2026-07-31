@@ -41,7 +41,6 @@ import com.ak.contexta.ui.components.ArticleCard
 import com.ak.contexta.ui.components.EmptyState
 import com.ak.contexta.ui.components.LoadingIndicator
 import com.ak.contexta.ui.theme.Background
-import com.ak.contexta.ui.theme.Foreground
 import com.ak.contexta.ui.theme.Muted
 import com.ak.contexta.ui.theme.Primary
 import com.ak.contexta.ui.theme.SurfaceSoft

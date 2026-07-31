@@ -15,11 +15,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,18 +32,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ak.contexta.ui.components.AppButton
+import com.ak.contexta.ui.components.AppIconButton
+import com.ak.contexta.ui.components.AppModal
 import com.ak.contexta.ui.components.AppTopBar
-import com.ak.contexta.ui.theme.Accent
 import com.ak.contexta.ui.theme.Background
 import com.ak.contexta.ui.theme.BodyText
-import com.ak.contexta.ui.theme.Foreground
-import com.ak.contexta.ui.theme.ForegroundSecondary
 import com.ak.contexta.ui.theme.Ink
 import com.ak.contexta.ui.theme.Muted
 import com.ak.contexta.ui.theme.MutedSoft
 import com.ak.contexta.ui.theme.PhoneticStyle
 import com.ak.contexta.ui.theme.Primary
-import com.ak.contexta.ui.theme.Surface
 import com.ak.contexta.ui.theme.SurfaceCard
 
 data class AlphabetItem(
@@ -63,6 +65,15 @@ data class GrammarItem(
     val examples: List<Pair<String, String>>
 )
 
+/** 弹窗展示数据：字母或音标格子点击后弹出 */
+data class ReferenceCellData(
+    val char: String,        // 字母 "A a" 或音标 "/iː/"
+    val reading: String,     // 字母 → 音标；音标 → 分类名
+    val example: String,     // 例词
+    val exampleCn: String,   // 例词中文
+    val isPhonetic: Boolean  // false=字母格子, true=音标格子（弹窗头部区分类别展示）
+)
+
 @Composable
 fun ReferenceScreen(
     viewModel: ReferenceViewModel = hiltViewModel()
@@ -70,6 +81,7 @@ fun ReferenceScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("字母表", "音标", "语法")
     val onSpeak: (String) -> Unit = { text -> viewModel.speak(text) }
+    var selectedCell by remember { mutableStateOf<ReferenceCellData?>(null) }
 
     Column(
         modifier = Modifier
@@ -85,6 +97,7 @@ fun ReferenceScreen(
                 val isSelected = index == selectedTab
                 Column(
                     modifier = Modifier
+                        .weight(1f)
                         .clickable { selectedTab = index }
                         .padding(end = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -116,16 +129,69 @@ fun ReferenceScreen(
                 .padding(horizontal = 16.dp)
         ) {
             when (selectedTab) {
-                0 -> AlphabetContent(onSpeak = onSpeak)
-                1 -> PhonicsContent(onSpeak = onSpeak)
+                0 -> AlphabetContent(onCellClick = { selectedCell = it })
+                1 -> PhonicsContent(onCellClick = { selectedCell = it })
                 2 -> GrammarContent(onSpeak = onSpeak)
             }
+        }
+    }
+
+    AppModal(visible = selectedCell != null, onDismiss = { selectedCell = null }) {
+        selectedCell?.let { cell ->
+            Box(modifier = Modifier.fillMaxWidth()) {
+                AppIconButton(
+                    icon = Icons.Outlined.Close,
+                    contentDescription = "关闭",
+                    onClick = { selectedCell = null },
+                    modifier = Modifier.align(Alignment.TopEnd),
+                    size = 32,
+                    tint = MutedSoft
+                )
+            }
+            // 56sp serif character
+            Text(
+                text = cell.char,
+                style = MaterialTheme.typography.displayLarge.copy(fontSize = 56.sp),
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            // reading: phonetic in coral (letters) / category name (phonetics)
+            if (cell.isPhonetic) {
+                Text(
+                    text = cell.reading,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Muted,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            } else {
+                Text(
+                    text = cell.reading,
+                    style = PhoneticStyle.copy(fontSize = 15.sp),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            // Example
+            Text(
+                text = cell.example + if (cell.exampleCn.isNotEmpty()) "  ${cell.exampleCn}" else "",
+                style = MaterialTheme.typography.bodyMedium,
+                color = BodyText,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+            // Speak button
+            AppButton(
+                text = "发音",
+                onClick = { viewModel.speak(cell.example) },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(4.dp))
         }
     }
 }
 
 @Composable
-private fun AlphabetContent(onSpeak: (String) -> Unit) {
+private fun AlphabetContent(onCellClick: (ReferenceCellData) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -141,7 +207,7 @@ private fun AlphabetContent(onSpeak: (String) -> Unit) {
                 row.forEach { item ->
                     AlphabetGridCard(
                         item = item,
-                        onClick = { onSpeak(item.example) },
+                        onClick = { onCellClick(ReferenceCellData(item.char, item.phone, item.example, item.cn, isPhonetic = false)) },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -193,20 +259,20 @@ private fun SectionHeader(title: String) {
             modifier = Modifier
                 .width(3.dp)
                 .height(16.dp)
-                .background(Accent, RoundedCornerShape(2.dp))
+                .background(Primary, RoundedCornerShape(2.dp))
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = title,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
-            color = Accent
+            color = Primary
         )
     }
 }
 
 @Composable
-private fun PhonicsContent(onSpeak: (String) -> Unit) {
+private fun PhonicsContent(onCellClick: (ReferenceCellData) -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -224,7 +290,7 @@ private fun PhonicsContent(onSpeak: (String) -> Unit) {
                     row.forEach { item ->
                         PhonicsGridCard(
                             item = item,
-                            onClick = { onSpeak(item.example) },
+                            onClick = { onCellClick(ReferenceCellData(item.phone, group.name, item.example, "", isPhonetic = true)) },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -278,14 +344,14 @@ private fun GrammarContent(onSpeak: (String) -> Unit) {
                 .fillMaxWidth()
                 .padding(vertical = 4.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Surface)
+                .background(SurfaceCard)
                 .padding(14.dp)
         ) {
             Text(
                 text = item.name,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Accent
+                color = Primary
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -296,7 +362,7 @@ private fun GrammarContent(onSpeak: (String) -> Unit) {
             Text(
                 text = item.chineseExplanation,
                 style = MaterialTheme.typography.bodySmall,
-                color = ForegroundSecondary
+                color = BodyText
             )
             item.examples.forEach { (en, zh) ->
                 Column(
@@ -311,7 +377,7 @@ private fun GrammarContent(onSpeak: (String) -> Unit) {
                     Text(
                         text = en,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Foreground
+                        color = Ink
                     )
                     Text(
                         text = zh,

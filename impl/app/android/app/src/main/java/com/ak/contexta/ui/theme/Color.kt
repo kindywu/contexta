@@ -35,18 +35,3 @@ val Error = Color(0xFFC64545)
 // Dark surfaces & scrim
 val ToastDark = Color(0xFF181715)        // toast background
 val Scrim = Color(0x59231815)            // rgba(24,23,21,0.35) — modal/sheet scrim
-
-// ─── Deprecated aliases (old names → new values; delete in final L3 task) ───
-@Deprecated("Use Primary") val Accent = Primary
-@Deprecated("Use OnPrimary") val AccentOn = OnPrimary
-@Deprecated("Use PrimaryPressed") val AccentHover = PrimaryPressed
-@Deprecated("Use PrimaryPressed") val AccentActive = PrimaryPressed
-@Deprecated("Use SurfaceCard") val Surface = SurfaceCard
-@Deprecated("Use SurfaceSoft") val SurfaceWarm = SurfaceSoft
-@Deprecated("Use Ink") val Foreground = Ink
-@Deprecated("Use BodyText") val ForegroundSecondary = BodyText
-@Deprecated("Use MutedSoft") val Meta = MutedSoft
-@Deprecated("Use Hairline") val Border = Hairline
-@Deprecated("Use HairlineSoft") val BorderSoft = HairlineSoft
-@Deprecated("Use Warning") val Warn = Warning
-@Deprecated("Use Error") val Danger = Error

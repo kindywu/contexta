@@ -1,7 +1,12 @@
 package com.ak.contexta.ui.vocabulary
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,38 +19,50 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Celebration
 import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ak.contexta.ui.components.AppButton
+import com.ak.contexta.ui.components.AppButtonVariant
+import com.ak.contexta.ui.components.AppCard
+import com.ak.contexta.ui.components.AppIconButton
+import com.ak.contexta.ui.components.AppTopBar
 import com.ak.contexta.ui.components.EmptyState
 import com.ak.contexta.ui.components.LoadingIndicator
-import com.ak.contexta.ui.theme.Accent
-import com.ak.contexta.ui.theme.AccentOn
 import com.ak.contexta.ui.theme.Background
-import com.ak.contexta.ui.theme.Foreground
-import com.ak.contexta.ui.theme.ForegroundSecondary
-import com.ak.contexta.ui.theme.Meta
+import com.ak.contexta.ui.theme.BodyText
+import com.ak.contexta.ui.theme.Hairline
+import com.ak.contexta.ui.theme.Ink
 import com.ak.contexta.ui.theme.Muted
-import com.ak.contexta.ui.theme.Surface
-import com.ak.contexta.ui.theme.SurfaceWarm
+import com.ak.contexta.ui.theme.MutedSoft
+import com.ak.contexta.ui.theme.PhoneticStyle
+import com.ak.contexta.ui.theme.Primary
+import com.ak.contexta.ui.theme.Radius
+import com.ak.contexta.ui.theme.Success
+import com.ak.contexta.ui.theme.SurfaceCard
+import com.ak.contexta.ui.theme.SurfaceSoft
+import kotlinx.coroutines.launch
 
 @Composable
 fun VocabularyScreen(
@@ -60,10 +77,24 @@ fun VocabularyScreen(
             .background(Background)
     ) {
         // Header
-        VocabularyHeader(
-            totalCount = state.totalCount,
-            isSummary = state.isSummary,
-            onAddWord = onAddWord
+        AppTopBar(
+            title = if (!state.isSummary) "生词复习" else "复习总结",
+            actions = {
+                if (!state.isSummary) {
+                    Text(
+                        text = "${state.totalCount} 个词",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Muted,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                    AppIconButton(
+                        icon = Icons.Outlined.Add,
+                        contentDescription = "录入单词",
+                        onClick = onAddWord,
+                        tint = Primary
+                    )
+                }
+            }
         )
 
         when {
@@ -81,24 +112,58 @@ fun VocabularyScreen(
             else -> {
                 val word = state.currentWord
                 if (word != null) {
-                    // Progress bar
-                    VocabularyProgress(
+                    // Progress dots
+                    VocabularyProgressDots(
                         current = state.currentIndex + 1,
                         total = state.totalCount
                     )
 
                     // Word card
-                    VocabularyCard(
-                        word = word.word,
-                        phonetic = word.phonetic,
-                        translation = word.translation,
-                        definitions = word.definitions,
-                        exampleEn = word.exampleEn,
-                        exampleZh = word.exampleZh,
-                        reviewStreak = word.reviewStreak,
-                        masteryThreshold = word.masteryThreshold,
-                        onPlayWord = { viewModel.playWord() }
-                    )
+                    val scope = rememberCoroutineScope()
+                    val offsetY = remember { Animatable(0f) }
+                    // Swipe-to-switch card (prototype: vertical drag >60dp, spring back)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pointerInput(Unit) {
+                                detectDragGestures(
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        scope.launch { offsetY.snapTo(offsetY.value + amount.y) }
+                                    },
+                                    onDragEnd = {
+                                        val threshold = 60.dp.toPx()
+                                        scope.launch {
+                                            when {
+                                                offsetY.value < -threshold -> {
+                                                    offsetY.animateTo(-offsetY.value * 1.5f, tween(150))
+                                                    viewModel.goNext()
+                                                    offsetY.snapTo(0f)
+                                                }
+                                                offsetY.value > threshold -> {
+                                                    viewModel.goPrevious()
+                                                    offsetY.snapTo(0f)
+                                                }
+                                                else -> offsetY.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                            .graphicsLayer { translationY = offsetY.value }
+                    ) {
+                        VocabularyCard(
+                            word = word.word,
+                            phonetic = word.phonetic,
+                            translation = word.translation,
+                            definitions = word.definitions,
+                            exampleEn = word.exampleEn,
+                            exampleZh = word.exampleZh,
+                            reviewStreak = word.reviewStreak,
+                            masteryThreshold = word.masteryThreshold,
+                            onPlayWord = { viewModel.playWord() }
+                        )
+                    }
 
                     Spacer(modifier = Modifier.weight(1f))
 
@@ -109,42 +174,6 @@ fun VocabularyScreen(
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun VocabularyHeader(
-    totalCount: Int,
-    isSummary: Boolean,
-    onAddWord: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Surface)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = if (!isSummary) "生词复习" else "复习总结",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f)
-        )
-        if (!isSummary) {
-            Text(
-                text = "$totalCount 个词",
-                style = MaterialTheme.typography.labelMedium,
-                color = Muted,
-                modifier = Modifier.padding(end = 12.dp)
-            )
-            Text(
-                text = "➕",
-                style = MaterialTheme.typography.titleMedium,
-                color = Accent,
-                modifier = Modifier.clickable { onAddWord() }
-            )
         }
     }
 }
@@ -162,27 +191,24 @@ private fun VocabularySummary(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = "🎉",
-            fontSize = 56.sp
+        Icon(
+            imageVector = Icons.Outlined.Celebration,
+            contentDescription = null,
+            tint = Success,
+            modifier = Modifier.size(56.dp)
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = "复习完成！",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
+            style = MaterialTheme.typography.headlineLarge
         )
         Spacer(modifier = Modifier.height(24.dp))
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Surface)
-        ) {
+        AppCard(modifier = Modifier.fillMaxWidth()) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
+                    .padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 SummaryStat(value = reviewedCount.toString(), label = "复习单词")
@@ -193,16 +219,7 @@ private fun VocabularySummary(
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        Button(
-            onClick = onRestart,
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Accent,
-                contentColor = AccentOn
-            )
-        ) {
-            Text("再来一轮")
-        }
+        AppButton(text = "再来一轮", onClick = onRestart)
     }
 }
 
@@ -211,9 +228,8 @@ private fun SummaryStat(value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-            color = Accent
+            style = MaterialTheme.typography.headlineMedium,
+            color = Primary
         )
         Text(
             text = label,
@@ -224,33 +240,41 @@ private fun SummaryStat(value: String, label: String) {
 }
 
 @Composable
-private fun VocabularyProgress(current: Int, total: Int) {
-    Column(
+private fun VocabularyProgressDots(current: Int, total: Int) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = "$current / $total",
             style = MaterialTheme.typography.labelMedium,
-            color = Muted
+            color = MutedSoft,
+            modifier = Modifier.padding(end = 12.dp)
         )
-        Spacer(modifier = Modifier.height(6.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(SurfaceWarm)
-        ) {
-            val progress = if (total > 0) current.toFloat() / total else 0f
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(progress)
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(Accent)
-            )
+        // dots: current = 16dp coral pill, done = muted dot, upcoming = hairline dot
+        Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            repeat(total) { index ->
+                val step = index + 1
+                val isCurrent = step == current
+                val isDone = step < current
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 2.dp)
+                        .height(6.dp)
+                        .width(if (isCurrent) 16.dp else 6.dp)
+                        .clip(if (isCurrent) RoundedCornerShape(3.dp) else CircleShape)
+                        .background(
+                            when {
+                                isCurrent -> Primary
+                                isDone -> Muted.copy(alpha = 0.4f)
+                                else -> Hairline
+                            }
+                        )
+                )
+            }
         }
     }
 }
@@ -270,9 +294,9 @@ private fun VocabularyCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Surface)
+            .padding(horizontal = 20.dp)
+            .clip(RoundedCornerShape(Radius.Md))
+            .background(SurfaceCard)
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -280,26 +304,25 @@ private fun VocabularyCard(
         // Word
         Text(
             text = word,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
+            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 30.sp)
         )
 
         if (phonetic != null) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = phonetic,
-                style = MaterialTheme.typography.bodyLarge,
-                color = Meta
+                style = PhoneticStyle.copy(fontSize = 15.sp)
             )
         }
 
         // Play button
         Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "🔊",
-            style = MaterialTheme.typography.titleMedium,
-            color = Accent,
-            modifier = Modifier.clickable { onPlayWord() }
+        AppIconButton(
+            icon = Icons.AutoMirrored.Outlined.VolumeUp,
+            contentDescription = "发音",
+            onClick = onPlayWord,
+            size = 36,
+            tint = Primary
         )
 
         // Translation
@@ -307,19 +330,21 @@ private fun VocabularyCard(
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = translation,
-                style = MaterialTheme.typography.titleMedium,
-                color = ForegroundSecondary
+                style = MaterialTheme.typography.headlineMedium,
+                color = Ink
             )
         }
 
         // Definitions
         if (definitions.isNotEmpty()) {
             Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = definitions.joinToString("; "),
-                style = MaterialTheme.typography.bodySmall,
-                color = Muted
-            )
+            definitions.forEach { definition ->
+                Text(
+                    text = definition,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = BodyText
+                )
+            }
         }
 
         // Example
@@ -329,13 +354,13 @@ private fun VocabularyCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Background)
+                    .background(SurfaceSoft)
                     .padding(12.dp)
             ) {
                 Text(
                     text = exampleEn,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Foreground
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Ink
                 )
                 if (exampleZh != null) {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -352,8 +377,8 @@ private fun VocabularyCard(
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "已认识 $reviewStreak/$masteryThreshold 次",
-            style = MaterialTheme.typography.labelSmall,
-            color = Meta
+            style = MaterialTheme.typography.labelMedium,
+            color = MutedSoft
         )
     }
 }
@@ -369,28 +394,16 @@ private fun VocabularyActions(
             .padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Button(
+        AppButton(
+            text = "✗ 不认识",
             onClick = onIncorrect,
             modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = SurfaceWarm,
-                contentColor = Foreground
-            )
-        ) {
-            Text("✗ 不认识")
-        }
-
-        Button(
+            variant = AppButtonVariant.Secondary
+        )
+        AppButton(
+            text = "✓ 认识了",
             onClick = onCorrect,
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Accent,
-                contentColor = AccentOn
-            )
-        ) {
-            Text("✓ 认识了")
-        }
+            modifier = Modifier.weight(1f)
+        )
     }
 }

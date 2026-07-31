@@ -11,7 +11,6 @@ import androidx.compose.ui.unit.sp
 
 private val DisplayFontFamily = FontFamily.Serif
 private val BodyFontFamily = FontFamily.SansSerif
-private val MonoFontFamily = FontFamily.Monospace
 
 val ContextaTypography = Typography(
     // display-md 36px serif 400 — hero titles
@@ -117,9 +116,12 @@ val ContextaTypography = Typography(
     )
 )
 
-/** Phonetic (IPA) style: monospace + coral, per prototype. */
+/**
+ * Phonetic (IPA) style: default sans-serif + coral.
+ * NOTE: 早期用 Monospace（原型风格），但部分厂商 ROM（如 HyperOS）等宽字体链缺少 IPA 字形块，
+ * 导致音标乱码；改用系统默认无衬线字体，依赖系统 fallback 链补齐 IPA 字形（与重构前行为一致）。
+ */
 val PhoneticStyle = TextStyle(
-    fontFamily = MonoFontFamily,
     fontWeight = FontWeight.Normal,
     fontSize = 14.sp,
     lineHeight = 22.sp,
