@@ -18,8 +18,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
+import androidx.compose.material.icons.outlined.AutoStories
+import androidx.compose.material.icons.outlined.School
+import androidx.compose.material.icons.outlined.WorkspacePremium
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -30,15 +36,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ak.contexta.ui.theme.Accent
 import com.ak.contexta.ui.theme.Background
-import com.ak.contexta.ui.theme.Foreground
+import com.ak.contexta.ui.theme.Hairline
+import com.ak.contexta.ui.theme.Ink
 import com.ak.contexta.ui.theme.Muted
-import com.ak.contexta.ui.theme.Surface
+import com.ak.contexta.ui.theme.MutedSoft
+import com.ak.contexta.ui.theme.OnPrimary
+import com.ak.contexta.ui.theme.Primary
+import com.ak.contexta.ui.theme.PrimaryDisabled
+import com.ak.contexta.ui.theme.SurfaceCard
+import com.ak.contexta.ui.theme.SurfaceStrong
 
 @Composable
 fun OnboardingScreen(
@@ -67,14 +78,12 @@ fun OnboardingScreen(
         // Logo area
         Text(
             text = "Contexta",
-            style = MaterialTheme.typography.headlineLarge,
-            fontFamily = MaterialTheme.typography.headlineLarge.fontFamily,
-            fontWeight = FontWeight.Medium
+            style = MaterialTheme.typography.displayLarge
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = "语境 · 沉浸式英语阅读",
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyMedium,
             color = Muted
         )
 
@@ -112,9 +121,9 @@ fun OnboardingScreen(
                 OutlinedButton(
                     onClick = { viewModel.previousStep() },
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(8.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = Foreground
+                        contentColor = Ink
                     )
                 ) {
                     Text("上一步")
@@ -138,12 +147,12 @@ fun OnboardingScreen(
                 },
                 enabled = canProceed,
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Accent,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    disabledContainerColor = MaterialTheme.colorScheme.outline,
-                    disabledContentColor = Muted
+                    containerColor = Primary,
+                    contentColor = OnPrimary,
+                    disabledContainerColor = PrimaryDisabled.copy(alpha = 0.5f),
+                    disabledContentColor = MutedSoft
                 )
             ) {
                 Text(if (state.currentStep < 3) "下一步" else "开始学习")
@@ -162,8 +171,7 @@ private fun Step1Level(
     Column {
         Text(
             text = "选择你的英文水平",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.SemiBold
+            style = MaterialTheme.typography.displayMedium
         )
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -172,21 +180,24 @@ private fun Step1Level(
             label = "初级 · LOW",
             desc = "小学、初中水平，从基础开始",
             isSelected = selectedLevel == "LOW",
-            onClick = { onSelectLevel("LOW") }
+            onClick = { onSelectLevel("LOW") },
+            icon = Icons.Outlined.School
         )
         LevelOption(
             value = "MEDIUM",
             label = "中级 · MEDIUM",
             desc = "高中、大学四六级水平",
             isSelected = selectedLevel == "MEDIUM",
-            onClick = { onSelectLevel("MEDIUM") }
+            onClick = { onSelectLevel("MEDIUM") },
+            icon = Icons.Outlined.AutoStories
         )
         LevelOption(
             value = "HIGH",
             label = "高级 · HIGH",
             desc = "专八、托福、雅思水平",
             isSelected = selectedLevel == "HIGH",
-            onClick = { onSelectLevel("HIGH") }
+            onClick = { onSelectLevel("HIGH") },
+            icon = Icons.Outlined.WorkspacePremium
         )
     }
 }
@@ -199,8 +210,7 @@ private fun Step2DailyCount(
     Column {
         Text(
             text = "每日文章数量",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.SemiBold
+            style = MaterialTheme.typography.displayMedium
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -242,8 +252,7 @@ private fun Step3Confirmation(
     Column {
         Text(
             text = "准备好了！",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.SemiBold
+            style = MaterialTheme.typography.displayMedium
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
@@ -257,16 +266,20 @@ private fun Step3Confirmation(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(Surface)
+                .background(SurfaceCard)
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(text = "📖", style = MaterialTheme.typography.headlineLarge)
+            Icon(
+                imageVector = Icons.AutoMirrored.Outlined.MenuBook,
+                contentDescription = null,
+                tint = Primary,
+                modifier = Modifier.size(40.dp)
+            )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "你的专属阅读之旅即将开始",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                style = MaterialTheme.typography.titleMedium
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -278,7 +291,7 @@ private fun Step3Confirmation(
             Text(
                 text = "水平：${levelLabel(level)}   |   每日 ${dailyCount} 篇",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Accent,
+                color = Primary,
                 textAlign = TextAlign.Center
             )
         }
@@ -291,10 +304,11 @@ private fun LevelOption(
     label: String,
     desc: String,
     isSelected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    icon: ImageVector
 ) {
-    val borderColor = if (isSelected) Accent else MaterialTheme.colorScheme.outline
-    val bgColor = if (isSelected) Accent.copy(alpha = 0.05f) else Surface
+    val borderColor = if (isSelected) Primary else Hairline
+    val bgColor = if (isSelected) SurfaceStrong else SurfaceCard
 
     Row(
         modifier = Modifier
@@ -307,11 +321,18 @@ private fun LevelOption(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (isSelected) Primary else MutedSoft,
+            modifier = Modifier.size(28.dp)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
         Box(
             modifier = Modifier
                 .size(22.dp)
                 .clip(CircleShape)
-                .border(2.dp, if (isSelected) Accent else MaterialTheme.colorScheme.outline, CircleShape),
+                .border(2.dp, if (isSelected) Primary else Hairline, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             if (isSelected) {
@@ -319,13 +340,13 @@ private fun LevelOption(
                     modifier = Modifier
                         .size(12.dp)
                         .clip(CircleShape)
-                        .background(Accent)
+                        .background(Primary)
                 )
             }
         }
         Spacer(modifier = Modifier.width(14.dp))
         Column {
-            Text(text = label, fontWeight = FontWeight.Medium)
+            Text(text = label, style = MaterialTheme.typography.titleMedium)
             Text(
                 text = desc,
                 style = MaterialTheme.typography.bodySmall,
@@ -343,8 +364,8 @@ private fun CountOption(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    val borderColor = if (isSelected) Accent else MaterialTheme.colorScheme.outline
-    val bgColor = if (isSelected) Accent.copy(alpha = 0.05f) else Surface
+    val borderColor = if (isSelected) Primary else Hairline
+    val bgColor = if (isSelected) SurfaceStrong else SurfaceCard
 
     Row(
         modifier = Modifier
@@ -361,7 +382,7 @@ private fun CountOption(
             modifier = Modifier
                 .size(22.dp)
                 .clip(CircleShape)
-                .border(2.dp, if (isSelected) Accent else MaterialTheme.colorScheme.outline, CircleShape),
+                .border(2.dp, if (isSelected) Primary else Hairline, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             if (isSelected) {
@@ -369,13 +390,13 @@ private fun CountOption(
                     modifier = Modifier
                         .size(12.dp)
                         .clip(CircleShape)
-                        .background(Accent)
+                        .background(Primary)
                 )
             }
         }
         Spacer(modifier = Modifier.width(14.dp))
         Column {
-            Text(text = label, fontWeight = FontWeight.Medium)
+            Text(text = label, style = MaterialTheme.typography.titleMedium)
             Text(
                 text = desc,
                 style = MaterialTheme.typography.bodySmall,
@@ -406,9 +427,9 @@ private fun ProgressDots(currentStep: Int) {
                     .clip(if (isActive) RoundedCornerShape(4.dp) else CircleShape)
                     .background(
                         when {
-                            isActive -> Accent
-                            isDone -> Accent.copy(alpha = 0.4f)
-                            else -> MaterialTheme.colorScheme.outline
+                            isActive -> Primary
+                            isDone -> Primary.copy(alpha = 0.4f)
+                            else -> Hairline
                         }
                     )
             )
