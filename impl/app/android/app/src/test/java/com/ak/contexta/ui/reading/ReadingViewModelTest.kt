@@ -4,6 +4,7 @@ import com.ak.contexta.domain.LlmClient
 import com.ak.contexta.domain.model.Article
 import com.ak.contexta.domain.model.ArticleParagraph
 import com.ak.contexta.domain.model.ArticleStatus
+import com.ak.contexta.domain.model.UserSettings
 import com.ak.contexta.domain.model.WordDetail
 import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.repository.SettingsRepository
@@ -91,7 +92,7 @@ class ReadingViewModelTest {
     }
 
     /** 载入两段文章（Hello world. / Second paragraph.）。同步 stub + 同步 launch。 */
-    private fun loadParagraphs() {
+    private fun loadParagraphs(autoPlayAudio: Boolean = false) {
         // readCompletedAt 非空 → 已读 → 不启动 readTimer 无限循环（否则 runTest 虚拟时钟推进时会死循环）
         coEvery { articleRepository.getArticle(1L) } returns Article(
             id = 1L, batchId = 1L, orderIndex = 0, contentCategory = "science",
@@ -104,10 +105,26 @@ class ReadingViewModelTest {
                 ArticleParagraph(1, "Second paragraph.", "第二段。")
             )
         )
-        coEvery { settingsRepository.getSettings() } returns null
+        coEvery { settingsRepository.getSettings() } returns UserSettings(autoPlayAudio = autoPlayAudio)
         coEvery { vocabularyRepository.getActiveWords() } returns emptyList()
         coEvery { statsRepository.recordReadingActivity() } returns Unit
         viewModel.loadArticle(1L)
+    }
+
+    // ─── 自动朗读（autoPlayAudio 设置） ─────────────────────────
+
+    @Test
+    fun `loadArticle auto-plays full article when autoPlayAudio is enabled`() = runTest {
+        loadParagraphs(autoPlayAudio = true)
+        assertTrue(viewModel.state.value.isSpeakingFullArticle)
+        assertEquals("Hello world. Second paragraph.", ttsEngine.lastSpokenText)
+    }
+
+    @Test
+    fun `loadArticle does not auto-play when autoPlayAudio is disabled`() = runTest {
+        loadParagraphs(autoPlayAudio = false)
+        assertFalse(viewModel.state.value.isSpeakingFullArticle)
+        assertNull(ttsEngine.lastSpokenText)
     }
 
     // ─── playParagraph ─────────────────────────────────────────

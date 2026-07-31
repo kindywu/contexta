@@ -56,6 +56,7 @@ class VocabularyViewModel @Inject constructor(
 
     private var vocabList: List<com.ak.contexta.domain.model.VocabWord> = emptyList()
     private var masteryThreshold = 1
+    private var autoPlayAudio = false
 
     init {
         loadVocabulary()
@@ -63,7 +64,9 @@ class VocabularyViewModel @Inject constructor(
 
     private fun loadVocabulary() {
         viewModelScope.launch {
-            masteryThreshold = settingsRepository.getSettings()?.masteryThresholdN ?: 1
+            val settings = settingsRepository.getSettings()
+            masteryThreshold = settings?.masteryThresholdN ?: 1
+            autoPlayAudio = settings?.autoPlayAudio ?: false
 
             val words = vocabularyRepository.getActiveWords().shuffled()
             vocabList = words
@@ -115,6 +118,11 @@ class VocabularyViewModel @Inject constructor(
             reviewedCount = reviewed,
             newlyKnownCount = _state.value.newlyKnownCount
         )
+
+        // 自动朗读：设置开启时每显示一个新单词自动朗读（TTS 不可用时静默跳过）
+        if (autoPlayAudio && ttsEngine.isAvailable()) {
+            ttsEngine.speak(item.spellingDisplay)
+        }
     }
 
     fun markCorrect() {

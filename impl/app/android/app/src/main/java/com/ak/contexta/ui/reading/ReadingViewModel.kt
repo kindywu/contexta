@@ -109,8 +109,11 @@ private val ttsEngine: TtsEngine
         viewModelScope.launch {
             val article = articleRepository.getArticle(articleId)
 
+            // Read settings once: translation mode + auto-play flag
+            val settings = settingsRepository.getSettings()
+
             // Read the saved translation mode from settings
-            val savedMode = settingsRepository.getSettings()
+            val savedMode = settings
                 ?.translationDisplayMode
                 ?.let { modeStr ->
                     try {
@@ -136,6 +139,10 @@ private val ttsEngine: TtsEngine
                     // 切换文章时重置段落播放状态，防止上一篇文章的状态残留
                     speakingParagraphIndex = null
                 )
+                // 自动朗读：设置开启时进入文章自动播全文（TTS 不可用时静默跳过，不打扰用户）
+                if (settings?.autoPlayAudio == true) {
+                    startFullArticlePlayback()
+                }
                 // Record reading activity for stats
                 statsRepository.recordReadingActivity()
                 // Start timer to track reading duration
@@ -369,8 +376,6 @@ private val ttsEngine: TtsEngine
             _state.value = _state.value.copy(isSpeakingFullArticle = false)
             return
         }
-        val fullText = _state.value.paragraphs
-            .joinToString(" ") { it.englishText }
         if (!ttsEngine.isAvailable()) {
             _state.value = _state.value.copy(
                 snackbarMessage = TTS_ERROR_MESSAGE,
@@ -378,14 +383,22 @@ private val ttsEngine: TtsEngine
             )
             return
         }
+        startFullArticlePlayback()
+    }
+
+    /** 开始全文朗读（手动播放与自动朗读共用）。TTS 不可用时静默返回 false，不弹提示。 */
+    private fun startFullArticlePlayback(): Boolean {
+        if (!ttsEngine.isAvailable()) return false
+        val fullText = _state.value.paragraphs
+            .joinToString(" ") { it.englishText }
         val id = ttsEngine.speak(fullText, actualSpeechRate(_state.value.ttsSpeed))
-        if (id != null) {
-            currentUtteranceId = id
-            _state.value = _state.value.copy(
-                isSpeakingFullArticle = true,
-                speakingParagraphIndex = null
-            )
-        }
+        if (id == null) return false
+        currentUtteranceId = id
+        _state.value = _state.value.copy(
+            isSpeakingFullArticle = true,
+            speakingParagraphIndex = null
+        )
+        return true
     }
 
     /** Clear the snackbar after it has been shown. */
