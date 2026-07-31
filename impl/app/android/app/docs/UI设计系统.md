@@ -230,11 +230,11 @@ classDiagram
 
 ### 5.1 导航骨架
 
-`NavGraph.kt`：`onboarding → home → reading/{articleId} → vocabulary → add_word → reference → settings`。四个一级页面（Home / Vocabulary / Reference / Settings）由 `BottomNavBar` 切换；Reading（全屏沉浸）、AddWord（返回键）不在底栏；Onboarding 完成后跳 Home 并清栈。Reading「复习单词」按钮直接路由到 Vocabulary。
+`NavGraph.kt`：`onboarding → home → reading/{articleId} → vocabulary → add_word → reference → settings`。四个一级页面（Home / Vocabulary / Reference / Settings）由 `BottomNavBar` 切换；Reading（全屏沉浸）、AddWord（返回键）不在底栏；Onboarding 完成后跳 Home 并清栈。
 
 ### 5.2 Reading 阅读页（`ui/reading/ReadingScreen.kt`）
 
-布局自上而下：**滚动进度条 → 顶栏 → 译文模式条 → 正文 → 底部操作区**，查词 Modal 悬浮其上。
+布局自上而下：**滚动进度条 → 顶栏 → 译文模式条 → 正文 → 底部操作区**，查词弹窗悬浮其上。
 
 1. **滚动进度条**：顶部 3dp 高、Primary 珊瑚、宽度 = `scrollFraction`（`derivedStateOf` 计算 `scrollValue / maxValue`），随滚动线性增宽。
 2. **顶栏**：44dp 返回（MutedSoft）+ 标题 `headlineMedium`（本页不用 displayMedium）+ 已读只读标记「✓ 已读」+ 全文朗读（`VolumeUp` 珊瑚 44dp）+ **语速胶囊**（0.5x/1x 切换，激活 = Primary 底 OnPrimary 字，未激活 = SurfaceSoft 底 MutedSoft 字，6dp 圆角）。「标记已读」不在顶栏，在底部操作区。
@@ -244,7 +244,7 @@ classDiagram
    - BLURRED：`blur(4dp)` 模糊，点击段落揭示，**10 秒后自动重新模糊**
    - HIDDEN：不渲染译文
 4. **正文**：16sp（bodyLarge）+ `lineHeight 27sp`（约 1.7 倍）；分词用 `LinkAnnotation.Clickable`（BasicText），点击词 → 查词 Modal；**生词高亮**：已在生词表的词加 `background = 0x2ECC785C`（珊瑚 18% 透明度底）。
-5. **底部操作区**（**固定底栏，始终可见**——位于滚动正文之后的 `weight(1f)` 容器下方，不随正文滚动）：未读时「标记已读」（secondary 全宽）；「复习单词」（primary 全宽，路由 Vocabulary）；「← 返回列表」（珊瑚文字链接）。
+5. **底部操作区**（**固定底栏，始终可见**——位于滚动正文之后的 `weight(1f)` 容器下方，不随正文滚动）：未读时仅「标记已读」（secondary 全宽）；**已读后无底部操作区**（返回走顶栏返回钮，无「复习单词」「返回列表」入口）。
 6. **查词弹窗**（底部全宽 AppModal，`alignment = BottomCenter`）：右上 32dp X 关闭 → 词头 26sp serif + 发音钮 36dp 同行（词头左、发音钮右）→ 音标 13sp 珊瑚独占一行（无 maxLines，长音标自然折行）→ 加载态（20dp 珊瑚 spinner + 「正在查询…」）→ **词义分组**：按词性分组（组序 = 义项首次出现序，语境匹配义项优先；同词性义项合并为一组），每组 = 词性标签 `labelMedium` 珊瑚（仅组首显示一次）+ 英文解释 `bodySmall` Ink + 中文解释 `bodySmall` MutedSoft；内容超 75% 屏高时释义区滚动、按钮固定底部 → 全宽按钮：未加入 = 「加入生词表」（primary），已加入 = 「从生词表移除」（secondary）。**无例句、无独立中文释义行**（中文已在词义分组内）。
 7. **阅读计时**：进入未读文章即启动 120s 纯计时（15s tick 累计 + 达标 `tryMarkReadCompleted`），与 4 种译文模式、手动标记已读互不影响。
 

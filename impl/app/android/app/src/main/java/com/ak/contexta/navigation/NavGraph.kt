@@ -51,10 +51,7 @@ fun ContextaNavGraph(
             val articleId = backStackEntry.arguments?.getLong("articleId") ?: return@composable
             ReadingScreen(
                 articleId = articleId,
-                onBack = { navController.popBackStack() },
-                onReviewWords = {
-                    navController.navigate(Screen.Vocabulary.route) { launchSingleTop = true }
-                }
+                onBack = { navController.popBackStack() }
             )
         }
 

@@ -72,7 +72,6 @@ import com.ak.contexta.ui.theme.SurfaceSoft
 fun ReadingScreen(
     articleId: Long,
     onBack: () -> Unit,
-    onReviewWords: () -> Unit,
     viewModel: ReadingViewModel = hiltViewModel()
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -179,9 +178,7 @@ fun ReadingScreen(
             // Footer
             ReadingFooter(
                 isReadCompleted = state.isReadCompleted,
-                onMarkAsRead = { viewModel.markAsRead() },
-                onBack = onBack,
-                onReviewWords = onReviewWords
+                onMarkAsRead = { viewModel.markAsRead() }
             )
         }
 
@@ -413,17 +410,15 @@ private fun ReadingParagraph(
 @Composable
 private fun ReadingFooter(
     isReadCompleted: Boolean,
-    onMarkAsRead: () -> Unit,
-    onBack: () -> Unit,
-    onReviewWords: () -> Unit
+    onMarkAsRead: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        if (!isReadCompleted) {
+    // 未读时显示「标记已读」；已读后无底部操作区（返回走顶栏返回钮）
+    if (!isReadCompleted) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp)
+        ) {
             AppButton(
                 text = "标记已读",
                 onClick = onMarkAsRead,
@@ -431,17 +426,6 @@ private fun ReadingFooter(
                 variant = AppButtonVariant.Secondary
             )
         }
-        AppButton(
-            text = "复习单词",
-            onClick = onReviewWords,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Text(
-            text = "← 返回列表",
-            style = MaterialTheme.typography.titleSmall,
-            color = Primary,
-            modifier = Modifier.align(Alignment.CenterHorizontally).clickable { onBack() }.padding(8.dp)
-        )
     }
 }
 
