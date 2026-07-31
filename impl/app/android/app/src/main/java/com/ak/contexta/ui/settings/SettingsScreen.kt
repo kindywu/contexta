@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,9 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ak.contexta.ui.components.AppTopBar
 import com.ak.contexta.ui.components.LoadingIndicator
-import com.ak.contexta.ui.components.SectionLabel
 import com.ak.contexta.ui.components.StatCard
 import com.ak.contexta.ui.components.StatCardData
 import com.ak.contexta.ui.theme.Background
@@ -58,6 +57,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val tabs = listOf("学习设置", "学习统计")
     var showLevelPicker by remember { mutableStateOf(false) }
     var showTranslationModePicker by remember { mutableStateOf(false) }
 
@@ -71,146 +72,51 @@ fun SettingsScreen(
             .fillMaxSize()
             .background(Background)
     ) {
-        AppTopBar(title = "设置")
+        // Tabs (inline underline style, 同参考页)
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+            tabs.forEachIndexed { index, label ->
+                val isSelected = index == selectedTab
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { selectedTab = index }
+                        .padding(end = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                        color = if (isSelected) Primary else MutedSoft
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(if (isSelected) Primary else androidx.compose.ui.graphics.Color.Transparent)
+                    )
+                }
+            }
+        }
 
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Content
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Learning settings section
-            SectionLabel(title = "学习设置")
-
-            // Level picker
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SettingsPickerItem(
-                    label = "英文水平",
-                    description = levelDescription(state.level),
-                    value = levelLabel(state.level),
-                    onClick = { showLevelPicker = true },
-                    modifier = Modifier.weight(1f)
+            when (selectedTab) {
+                0 -> LearningSettingsContent(
+                    state = state,
+                    viewModel = viewModel,
+                    onShowLevelPicker = { showLevelPicker = true },
+                    onShowTranslationModePicker = { showTranslationModePicker = true }
                 )
-                InfoTipButton(onClick = { viewModel.showLevelInfo() })
-            }
-
-            // Daily count stepper
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SettingsStepperItem(
-                    label = "每日文章数量",
-                    description = "从CURRENT batch中展示的文章数，最多5篇",
-                    value = state.dailyCount,
-                    canDecrement = state.dailyCount > 1,
-                    canIncrement = state.dailyCount < 5,
-                    onDecrement = { viewModel.requestCountChange(state.dailyCount - 1) },
-                    onIncrement = { viewModel.requestCountChange(state.dailyCount + 1) },
-                    modifier = Modifier.weight(1f)
-                )
-                InfoTipButton(onClick = { viewModel.showCountInfo() })
-            }
-
-            // Translation mode picker
-            SettingsPickerItem(
-                label = "译文默认模式",
-                description = "文章阅读时译文显示方式",
-                value = translationModeLabel(state.translationMode),
-                onClick = { showTranslationModePicker = true }
-            )
-
-            // Mastery threshold stepper
-            SettingsStepperItem(
-                label = "单词掌握阈值",
-                description = "标记认识 N 次后自动移除",
-                value = state.masteryThreshold,
-                canDecrement = state.masteryThreshold > 1,
-                canIncrement = state.masteryThreshold < 5,
-                onDecrement = { viewModel.decrementMasteryThreshold() },
-                onIncrement = { viewModel.incrementMasteryThreshold() }
-            )
-
-            // Auto play TTS toggle
-            SettingsToggleItem(
-                label = "自动朗读",
-                description = "进入文章后自动播放朗读",
-                checked = state.autoPlayAudio,
-                onToggle = { viewModel.toggleAutoPlayAudio() }
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Stats section
-            SectionLabel(title = "学习统计")
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StatCard(
-                    stat = StatCardData(
-                        number = state.stats.totalArticlesRead.toString(),
-                        label = "阅读文章"
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-                StatCard(
-                    stat = StatCardData(
-                        number = state.stats.totalWordsAdded.toString(),
-                        label = "添加单词"
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                StatCard(
-                    stat = StatCardData(
-                        number = state.stats.totalLearningDays.toString(),
-                        label = "累计学习天数"
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-                StatCard(
-                    stat = StatCardData(
-                        number = state.stats.currentStreak.toString(),
-                        label = "当前连续学习"
-                    ),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // About section
-            SectionLabel(title = "关于")
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 14.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "版本",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = "Contexta 1.0.0",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MutedSoft
-                )
+                1 -> StatsContent(state = state)
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -296,6 +202,121 @@ fun SettingsScreen(
             confirmLabel = "确认修改",
             onConfirm = { viewModel.confirmCountChange() },
             onDismiss = { viewModel.cancelCountChange() }
+        )
+    }
+}
+
+// ── Tab content ──
+
+@Composable
+private fun LearningSettingsContent(
+    state: SettingsUiState,
+    viewModel: SettingsViewModel,
+    onShowLevelPicker: () -> Unit,
+    onShowTranslationModePicker: () -> Unit
+) {
+    // Level picker
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SettingsPickerItem(
+            label = "英文水平",
+            description = levelDescription(state.level),
+            value = levelLabel(state.level),
+            onClick = onShowLevelPicker,
+            modifier = Modifier.weight(1f)
+        )
+        InfoTipButton(onClick = { viewModel.showLevelInfo() })
+    }
+
+    // Daily count stepper
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SettingsStepperItem(
+            label = "每日文章数量",
+            description = "从CURRENT batch中展示的文章数，最多5篇",
+            value = state.dailyCount,
+            canDecrement = state.dailyCount > 1,
+            canIncrement = state.dailyCount < 5,
+            onDecrement = { viewModel.requestCountChange(state.dailyCount - 1) },
+            onIncrement = { viewModel.requestCountChange(state.dailyCount + 1) },
+            modifier = Modifier.weight(1f)
+        )
+        InfoTipButton(onClick = { viewModel.showCountInfo() })
+    }
+
+    // Translation mode picker
+    SettingsPickerItem(
+        label = "译文默认模式",
+        description = "文章阅读时译文显示方式",
+        value = translationModeLabel(state.translationMode),
+        onClick = onShowTranslationModePicker
+    )
+
+    // Mastery threshold stepper
+    SettingsStepperItem(
+        label = "单词掌握阈值",
+        description = "标记认识 N 次后自动移除",
+        value = state.masteryThreshold,
+        canDecrement = state.masteryThreshold > 1,
+        canIncrement = state.masteryThreshold < 5,
+        onDecrement = { viewModel.decrementMasteryThreshold() },
+        onIncrement = { viewModel.incrementMasteryThreshold() }
+    )
+
+    // Auto play TTS toggle
+    SettingsToggleItem(
+        label = "自动朗读",
+        description = "进入文章后自动播放朗读",
+        checked = state.autoPlayAudio,
+        onToggle = { viewModel.toggleAutoPlayAudio() }
+    )
+}
+
+@Composable
+private fun StatsContent(state: SettingsUiState) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        StatCard(
+            stat = StatCardData(
+                number = state.stats.totalArticlesRead.toString(),
+                label = "阅读文章"
+            ),
+            modifier = Modifier.weight(1f)
+        )
+        StatCard(
+            stat = StatCardData(
+                number = state.stats.totalWordsAdded.toString(),
+                label = "添加单词"
+            ),
+            modifier = Modifier.weight(1f)
+        )
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        StatCard(
+            stat = StatCardData(
+                number = state.stats.totalLearningDays.toString(),
+                label = "累计学习天数"
+            ),
+            modifier = Modifier.weight(1f)
+        )
+        StatCard(
+            stat = StatCardData(
+                number = state.stats.currentStreak.toString(),
+                label = "当前连续学习"
+            ),
+            modifier = Modifier.weight(1f)
         )
     }
 }

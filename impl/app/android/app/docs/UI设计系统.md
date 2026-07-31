@@ -323,13 +323,12 @@ stateDiagram-v2
 
 ### 5.6 Settings 设置页（`ui/settings/SettingsScreen.kt`）
 
-1. **分组**：SectionLabel「学习设置 / 学习统计 / 关于」；行内边距 v14。
+1. **InlineTabs 双 tab**：学习设置 / 学习统计 两栏等宽（各 `weight(1f)`），下划线式——选中 tab `titleMedium` Medium 字重 + Primary 色 + 底部 2dp Primary 下划线；未选中 Normal 字重 + MutedSoft 无下划线。页顶无标题栏（AppTopBar 已移除），无「关于」区块。
 2. **Picker 行**（英文水平、译文默认模式）：`titleMedium` 标题 + `bodySmall` Muted 描述 + 当前值 + `ChevronRight` 20dp MutedSoft，点击弹 AlertDialog。
 3. **Stepper 行**（每日文章数量、单词掌握阈值）：44dp 圆形 −/+ 按钮（SurfaceCard 底、16dp 圆角，禁用时 `SurfaceSoft.copy(alpha=0.3f)`）+ 数值 `headlineSmall` SemiBold。
 4. **Toggle 行**（自动朗读）：Material3 Switch 定制——选中轨道 Primary / 拇指 OnPrimary，未选中轨道 SurfaceSoft / 拇指 Ink。
-5. **统计区**：StatCard 2×2（阅读文章 / 添加单词 / 累计学习天数 / 当前连续学习）。
-6. **关于**：版本行「Contexta 1.0.0」`bodyMedium` MutedSoft。
-7. **弹窗三件套**（Material3 AlertDialog，`containerColor = SurfaceCard`、标题 Ink）：Picker（RadioButton 选中 Primary / 未选中 MutedSoft）、Info（「知道了」珊瑚按钮）、Confirm（「确认修改」珊瑚 / 「取消」Muted）。
+5. **统计区**（学习统计 tab）：StatCard 2×2（阅读文章 / 添加单词 / 累计学习天数 / 当前连续学习）。
+6. **弹窗三件套**（Material3 AlertDialog，`containerColor = SurfaceCard`、标题 Ink）：Picker（RadioButton 选中 Primary / 未选中 MutedSoft）、Info（「知道了」珊瑚按钮）、Confirm（「确认修改」珊瑚 / 「取消」Muted）。
 
 ### 5.7 AddWord 手动录入页（`ui/addword/AddWordScreen.kt`）
 
