@@ -9,6 +9,7 @@ import com.ak.contexta.data.local.dao.ConfigChangeLogDao
 import com.ak.contexta.data.local.dao.DailyLearningLogDao
 import com.ak.contexta.data.local.dao.DailyLearningDao
 import com.ak.contexta.data.local.dao.ExampleSentenceDao
+import com.ak.contexta.data.local.dao.GenerationErrorLogDao
 import com.ak.contexta.data.local.dao.GenerationPipelineStatusDao
 import com.ak.contexta.data.local.dao.LearningStatsSummaryDao
 import com.ak.contexta.data.local.dao.SchemaMigrationLogDao
@@ -23,6 +24,7 @@ import com.ak.contexta.data.local.entity.ConfigChangeLogEntity
 import com.ak.contexta.data.local.entity.DailyLearningLogEntity
 import com.ak.contexta.data.local.entity.DailyLearningEntity
 import com.ak.contexta.data.local.entity.ExampleSentenceEntity
+import com.ak.contexta.data.local.entity.GenerationErrorLogEntity
 import com.ak.contexta.data.local.entity.GenerationPipelineStatusEntity
 import com.ak.contexta.data.local.entity.LearningStatsSummaryEntity
 import com.ak.contexta.data.local.entity.SchemaMigrationLogEntity
@@ -32,7 +34,7 @@ import com.ak.contexta.data.local.entity.WordEntity
 import com.ak.contexta.data.local.entity.WordSenseEntity
 
 @Database(
-    version = 1,
+    version = 2,
     entities = [
         UserSettingsEntity::class,
         ConfigChangeLogEntity::class,
@@ -46,6 +48,7 @@ import com.ak.contexta.data.local.entity.WordSenseEntity
         DailyLearningLogEntity::class,
         LearningStatsSummaryEntity::class,
         GenerationPipelineStatusEntity::class,
+        GenerationErrorLogEntity::class,
         SchemaMigrationLogEntity::class,
         DailyLearningEntity::class
     ]
@@ -63,6 +66,7 @@ abstract class ContextaDatabase : RoomDatabase() {
     abstract fun dailyLearningLogDao(): DailyLearningLogDao
     abstract fun learningStatsSummaryDao(): LearningStatsSummaryDao
     abstract fun generationPipelineStatusDao(): GenerationPipelineStatusDao
+    abstract fun generationErrorLogDao(): GenerationErrorLogDao
     abstract fun schemaMigrationLogDao(): SchemaMigrationLogDao
     abstract fun dailyLearningDao(): DailyLearningDao
 }

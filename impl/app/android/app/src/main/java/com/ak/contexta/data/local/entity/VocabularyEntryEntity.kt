@@ -30,9 +30,9 @@ data class VocabularyEntryEntity(
     @ColumnInfo(name = "correct_review_streak")
     val correctReviewStreak: Int = 0,
     @ColumnInfo(name = "mastered_at")
-    val masteredAt: Long? = null,
+    val masteredAt: String? = null,
     @ColumnInfo(name = "deleted_at")
-    val deletedAt: Long? = null, // soft delete
+    val deletedAt: String? = null, // soft delete
     @ColumnInfo(name = "deleted_reason")
     val deletedReason: String? = null // "MANUAL_REMOVAL" | "MASTERED"
 )

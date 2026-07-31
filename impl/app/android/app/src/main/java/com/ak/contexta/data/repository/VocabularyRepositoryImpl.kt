@@ -8,6 +8,7 @@ import com.ak.contexta.domain.model.VocabWord
 import com.ak.contexta.domain.model.WordSense
 import com.ak.contexta.domain.repository.VocabularyRepository
 import com.ak.contexta.domain.repository.WordRepository
+import com.ak.contexta.domain.time.TimeProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -17,7 +18,8 @@ import javax.inject.Singleton
 class VocabularyRepositoryImpl @Inject constructor(
     private val vocabularyEntryDao: VocabularyEntryDao,
     private val wordRepository: WordRepository,
-    private val wordDao: WordDao
+    private val wordDao: WordDao,
+    private val timeProvider: TimeProvider
 ) : VocabularyRepository {
 
     override fun observeActive(): Flow<List<VocabWord>> =
@@ -74,13 +76,13 @@ class VocabularyRepositoryImpl @Inject constructor(
 
     override suspend fun markCorrect(entryId: Long, masteryThreshold: Int) {
         if (masteryThreshold <= 1) {
-            val now = System.currentTimeMillis()
+            val now = timeProvider.nowDateTimeString()
             vocabularyEntryDao.markMastered(entryId, now)
         } else {
             vocabularyEntryDao.markCorrectReview(entryId, "LEARNING")
             val entry = vocabularyEntryDao.getById(entryId)
             if (entry != null && entry.correctReviewStreak >= masteryThreshold) {
-                vocabularyEntryDao.markMastered(entryId, System.currentTimeMillis())
+                vocabularyEntryDao.markMastered(entryId, timeProvider.nowDateTimeString())
             }
         }
     }
@@ -90,7 +92,7 @@ class VocabularyRepositoryImpl @Inject constructor(
     }
 
     override suspend fun removeWord(entryId: Long, reason: String) {
-        vocabularyEntryDao.softDelete(entryId, reason, System.currentTimeMillis())
+        vocabularyEntryDao.softDelete(entryId, reason, timeProvider.nowDateTimeString())
     }
 
     override suspend fun countDistinctWords(): Int =

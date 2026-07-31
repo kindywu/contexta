@@ -5,11 +5,9 @@ data class ArticleBatch(
     val status: BatchStatus,
     val difficultyLevelSnapshot: String,
     val generatedOn: String?,
-    val lastUpdatedAt: Long,
-    val errorCode: String? = null,
-    val errorMessage: String? = null,
+    val lastUpdatedAt: String,
     val blockedReason: String? = null,
-    val blockedAt: Long? = null,
+    val blockedAt: String? = null,
     val articles: List<Article> = emptyList()
 )
 

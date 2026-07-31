@@ -56,20 +56,26 @@ class GenerateArticlesUseCase @Inject constructor(
                 )
 
             } catch (e: LlmFatalException) {
-                articleRepository.fatalArticle(article.id)
+                articleRepository.fatalArticle(article.id, "LLM_FATAL", e.message, article.retryCount)
                 continue
 
             } catch (e: LlmRecoverableExhaustedException) {
-                articleRepository.failArticle(article.id, "FAILED")
+                articleRepository.failArticle(
+                    article.id, "FAILED", "LLM_RECOVERABLE_EXHAUSTED", e.message,
+                    retryCount = article.retryCount
+                )
                 continue
 
             } catch (e: PipelineBlockingException) {
-                articleRepository.fatalArticle(article.id)
+                articleRepository.fatalArticle(article.id, "PIPELINE_BLOCKING", e.message, article.retryCount)
                 articleRepository.markBatchBlocked(batchId, e.message ?: "Unknown", appVersionCode ?: 0)
                 throw e
 
             } catch (e: Exception) {
-                articleRepository.failArticle(article.id, "TIMEOUT")
+                articleRepository.failArticle(
+                    article.id, "TIMEOUT", "UNEXPECTED", e.message,
+                    retryCount = article.retryCount
+                )
                 continue
             }
         }

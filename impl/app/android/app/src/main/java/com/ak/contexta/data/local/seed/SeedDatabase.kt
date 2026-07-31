@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import androidx.room.OnConflictStrategy
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.ak.contexta.data.local.ContextaTypeConverters
 import kotlinx.serialization.json.Json
 
 /**
@@ -22,7 +23,8 @@ fun seedDatabase(context: Context, json: Json, db: SupportSQLiteDatabase) {
     val seedData = json.decodeFromString<SeedData>(jsonText)
 
     val seedDate = "2026-03-29"
-    val now = System.currentTimeMillis()
+    // 种子批次是历史数据，完成时间取固定日期（手机时区），与 generated_on 保持一致
+    val now = ContextaTypeConverters.dateTimeStringAt(2026, 3, 29, 12, 0)
 
     db.beginTransaction()
     try {

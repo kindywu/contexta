@@ -1,22 +1,26 @@
 package com.ak.contexta.data.repository
 
-import com.ak.contexta.data.local.ContextaTypeConverters
 import com.ak.contexta.data.local.dao.ArticleBatchDao
 import com.ak.contexta.data.local.dao.ArticleDao
 import com.ak.contexta.data.local.dao.ArticleParagraphDao
 import com.ak.contexta.data.local.dao.DailyLearningDao
+import com.ak.contexta.data.local.dao.GenerationErrorLogDao
+import com.ak.contexta.data.local.dao.GenerationErrorWithStatus
 import com.ak.contexta.data.local.dao.GenerationPipelineStatusDao
 import com.ak.contexta.data.local.entity.ArticleBatchEntity
 import com.ak.contexta.data.local.entity.ArticleEntity
 import com.ak.contexta.data.local.entity.ArticleParagraphEntity
 import com.ak.contexta.data.local.entity.DailyLearningEntity
+import com.ak.contexta.data.local.entity.GenerationErrorLogEntity
 import com.ak.contexta.domain.model.Article
 import com.ak.contexta.domain.model.ArticleParagraph
 import com.ak.contexta.domain.model.ArticleStatus
 import com.ak.contexta.domain.model.BatchStatus
 import com.ak.contexta.domain.model.DailyLearningInfo
+import com.ak.contexta.domain.model.GenerationError
 import com.ak.contexta.domain.model.ArticleBatch as ArticleBatchModel
 import com.ak.contexta.domain.repository.ArticleRepository
+import com.ak.contexta.domain.time.TimeProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -28,14 +32,16 @@ class ArticleRepositoryImpl @Inject constructor(
     private val articleDao: ArticleDao,
     private val paragraphDao: ArticleParagraphDao,
     private val pipelineStatusDao: GenerationPipelineStatusDao,
-    private val dailyLearningDao: DailyLearningDao
+    private val errorLogDao: GenerationErrorLogDao,
+    private val dailyLearningDao: DailyLearningDao,
+    private val timeProvider: TimeProvider
 ) : ArticleRepository {
 
     override suspend fun findNextReadyBatch(difficulty: String, afterDate: String?): ArticleBatchModel? =
         batchDao.findNextReadyBatch(difficulty, afterDate)?.toModel()
 
     override suspend fun getUnassignedReadyBatches(difficulty: String, minGeneratedOn: String?): List<ArticleBatchModel> {
-        val date = minGeneratedOn ?: ContextaTypeConverters.currentDateString()
+        val date = minGeneratedOn ?: timeProvider.todayDateString()
         return batchDao.getUnassignedReadyBatches(difficulty, date).map { it.toModel() }
     }
 
@@ -60,7 +66,7 @@ class ArticleRepositoryImpl @Inject constructor(
         dailyLearningDao.getMaxRefBatchDate()
 
     override suspend fun assignBatchForToday(batchId: Long, refBatchDate: String, dailyCount: Int): Boolean {
-        val today = ContextaTypeConverters.currentDateString()
+        val today = timeProvider.todayDateString()
         // Check if today already has a daily_learning record
         val existing = dailyLearningDao.getByLearningDate(today)
         if (existing != null) return false
@@ -95,7 +101,7 @@ class ArticleRepositoryImpl @Inject constructor(
         difficulty: String,
         generatedOn: String?
     ): Long {
-        val date = generatedOn ?: ContextaTypeConverters.currentDateString()
+        val date = generatedOn ?: timeProvider.todayDateString()
         val entity = ArticleBatchEntity(
             status = "PENDING",
             difficultyLevelSnapshot = difficulty,
@@ -119,12 +125,12 @@ class ArticleRepositoryImpl @Inject constructor(
         articleDao.getByBatch(batchId).map { it.toModel() }
 
     override suspend fun claimBatch(batchId: Long): Boolean {
-        val now = System.currentTimeMillis()
+        val now = timeProvider.nowDateTimeString()
         return batchDao.claimForGeneration(batchId, now) > 0
     }
 
     override suspend fun claimArticle(articleId: Long): Boolean {
-        val now = System.currentTimeMillis()
+        val now = timeProvider.nowDateTimeString()
         return articleDao.claimForGeneration(articleId, now) > 0
     }
 
@@ -134,7 +140,7 @@ class ArticleRepositoryImpl @Inject constructor(
         paragraphs: List<ArticleParagraph>,
         retryCount: Int
     ) {
-        val now = System.currentTimeMillis()
+        val now = timeProvider.nowDateTimeString()
         articleDao.markSuccess(articleId, title, retryCount, now)
         paragraphDao.deleteByArticle(articleId)
         val entities = paragraphs.mapIndexed { index, p ->
@@ -158,17 +164,21 @@ class ArticleRepositoryImpl @Inject constructor(
         articleDao.countFatalByBatch(batchId) > 0
 
     override suspend fun markBatchReady(batchId: Long) {
-        batchDao.updateStatus(batchId, "READY", System.currentTimeMillis())
+        batchDao.updateStatus(batchId, "READY", timeProvider.nowDateTimeString())
     }
 
     override suspend fun markBatchBlocked(batchId: Long, reason: String, appVersionCode: Int) {
-        val now = System.currentTimeMillis()
-        batchDao.markBlocked(
-            batchId = batchId,
-            reason = reason,
-            errorCode = "STRUCTURAL_PIPELINE_BLOCKED",
-            errorMessage = reason,
-            now = now
+        val now = timeProvider.nowDateTimeString()
+        batchDao.markBlocked(batchId = batchId, reason = reason, now = now)
+        // 批次错误详情写入流水账，pipeline_status 只保留全局开关
+        errorLogDao.insert(
+            GenerationErrorLogEntity(
+                entityType = "BATCH",
+                entityId = batchId,
+                errorCode = "STRUCTURAL_PIPELINE_BLOCKED",
+                errorMessage = reason,
+                createdAt = now
+            )
         )
         pipelineStatusDao.setBlocked(reason, now, appVersionCode)
     }
@@ -178,26 +188,45 @@ class ArticleRepositoryImpl @Inject constructor(
         status: String,
         errorCode: String?,
         errorMessage: String?,
-        errorHelp: String?
+        errorHelp: String?,
+        retryCount: Int
     ) {
-        val now = System.currentTimeMillis()
+        val now = timeProvider.nowDateTimeString()
+        articleDao.updateStatusWithRetryTime(articleId, status, now)
         if (errorCode != null || errorMessage != null) {
-            articleDao.updateStatusWithError(articleId, status, errorCode, errorMessage, errorHelp, now)
-        } else {
-            articleDao.updateStatus(articleId, status)
+            errorLogDao.insert(
+                GenerationErrorLogEntity(
+                    entityType = "ARTICLE",
+                    entityId = articleId,
+                    errorCode = errorCode ?: "UNKNOWN",
+                    errorMessage = errorMessage ?: "未知错误",
+                    errorHelp = errorHelp,
+                    retryCount = retryCount,
+                    createdAt = now
+                )
+            )
         }
     }
 
     override suspend fun fatalArticle(
         articleId: Long,
         errorCode: String?,
-        errorMessage: String?
+        errorMessage: String?,
+        retryCount: Int
     ) {
-        val now = System.currentTimeMillis()
+        val now = timeProvider.nowDateTimeString()
+        articleDao.updateStatusWithRetryTime(articleId, "FATAL", now)
         if (errorCode != null || errorMessage != null) {
-            articleDao.markFatal(articleId, errorCode, errorMessage, now)
-        } else {
-            articleDao.updateStatus(articleId, "FATAL")
+            errorLogDao.insert(
+                GenerationErrorLogEntity(
+                    entityType = "ARTICLE",
+                    entityId = articleId,
+                    errorCode = errorCode ?: "UNKNOWN",
+                    errorMessage = errorMessage ?: "未知错误",
+                    retryCount = retryCount,
+                    createdAt = now
+                )
+            )
         }
     }
 
@@ -206,11 +235,11 @@ class ArticleRepositoryImpl @Inject constructor(
     }
 
     override suspend fun tryMarkReadCompleted(articleId: Long) {
-        articleDao.markReadCompleted(articleId, System.currentTimeMillis())
+        articleDao.markReadCompleted(articleId, timeProvider.nowDateTimeString())
     }
 
     override suspend fun forceMarkReadCompleted(articleId: Long) {
-        articleDao.forceMarkReadCompleted(articleId, System.currentTimeMillis())
+        articleDao.forceMarkReadCompleted(articleId, timeProvider.nowDateTimeString())
     }
 
     override suspend fun reconcileOrphanArticles() {
@@ -231,8 +260,8 @@ class ArticleRepositoryImpl @Inject constructor(
             article.copy(paragraphs = paragraphs)
         }
 
-    override fun observeGenerationErrors(): Flow<List<Article>> =
-        articleDao.observeGenerationErrors().map { list -> list.map { it.toModel() } }
+    override fun observeGenerationErrors(): Flow<List<GenerationError>> =
+        errorLogDao.observeArticleErrors().map { list -> list.map { it.toModel() } }
 
     override suspend fun resetArticleForRetry(articleId: Long) {
         articleDao.resetForRetry(articleId)
@@ -252,8 +281,6 @@ class ArticleRepositoryImpl @Inject constructor(
         difficultyLevelSnapshot = difficultyLevelSnapshot,
         generatedOn = generatedOn,
         lastUpdatedAt = lastUpdatedAt,
-        errorCode = errorCode,
-        errorMessage = errorMessage,
         blockedReason = blockedReason,
         blockedAt = blockedAt
     )
@@ -271,10 +298,17 @@ class ArticleRepositoryImpl @Inject constructor(
         accumulatedReadSeconds = accumulatedReadSeconds,
         readCompletedAt = readCompletedAt,
         lastRetryAt = lastRetryAt,
-        errorCode = errorCode,
-        errorMessage = errorMessage,
-        errorHelp = errorHelp,
         maxRetries = maxRetries,
         nextRetryAt = nextRetryAt
+    )
+
+    private fun GenerationErrorWithStatus.toModel() = GenerationError(
+        entityId = error.entityId,
+        errorCode = error.errorCode,
+        errorMessage = error.errorMessage,
+        errorHelp = error.errorHelp,
+        retryCount = error.retryCount,
+        createdAt = error.createdAt,
+        status = articleStatus
     )
 }

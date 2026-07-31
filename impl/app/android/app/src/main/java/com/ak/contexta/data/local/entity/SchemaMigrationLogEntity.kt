@@ -3,6 +3,7 @@ package com.ak.contexta.data.local.entity
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.ak.contexta.data.local.ContextaTypeConverters
 
 @Entity(tableName = "schema_migration_log")
 data class SchemaMigrationLogEntity(
@@ -15,5 +16,5 @@ data class SchemaMigrationLogEntity(
     @ColumnInfo(name = "description")
     val description: String,
     @ColumnInfo(name = "created_at")
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: String = ContextaTypeConverters.currentDateTimeString()
 )

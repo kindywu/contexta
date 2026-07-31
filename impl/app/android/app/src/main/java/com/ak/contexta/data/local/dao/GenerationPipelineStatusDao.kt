@@ -26,5 +26,5 @@ interface GenerationPipelineStatusDao {
         SET is_blocked = 1, blocked_reason = :reason, blocked_at = :now, blocked_app_version_code = :appVersionCode
         WHERE id = 1
     """)
-    suspend fun setBlocked(reason: String, now: Long, appVersionCode: Int)
+    suspend fun setBlocked(reason: String, now: String, appVersionCode: Int)
 }

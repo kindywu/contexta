@@ -3,6 +3,7 @@ package com.ak.contexta.data.local.entity
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import com.ak.contexta.data.local.ContextaTypeConverters
 
 @Entity(tableName = "config_change_log")
 data class ConfigChangeLogEntity(
@@ -15,5 +16,5 @@ data class ConfigChangeLogEntity(
     @ColumnInfo(name = "new_value")
     val newValue: String,
     @ColumnInfo(name = "created_at")
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: String = ContextaTypeConverters.currentDateTimeString()
 )

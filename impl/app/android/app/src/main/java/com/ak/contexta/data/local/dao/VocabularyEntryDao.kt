@@ -50,7 +50,7 @@ interface VocabularyEntryDao {
         SET status = 'MASTERED', mastered_at = :now, correct_review_streak = correct_review_streak + 1
         WHERE id = :id AND deleted_at IS NULL
     """)
-    suspend fun markMastered(id: Long, now: Long)
+    suspend fun markMastered(id: Long, now: String)
 
     @Query("""
         UPDATE vocabulary_entry
@@ -64,7 +64,7 @@ interface VocabularyEntryDao {
         SET deleted_at = :now, deleted_reason = :reason
         WHERE id = :id AND deleted_at IS NULL
     """)
-    suspend fun softDelete(id: Long, reason: String, now: Long)
+    suspend fun softDelete(id: Long, reason: String, now: String)
 
     @Query("SELECT * FROM vocabulary_entry WHERE id = :id AND deleted_at IS NULL")
     suspend fun getById(id: Long): VocabularyEntryEntity?

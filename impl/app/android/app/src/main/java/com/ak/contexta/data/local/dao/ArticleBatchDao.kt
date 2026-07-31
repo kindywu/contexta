@@ -67,30 +67,26 @@ interface ArticleBatchDao {
         SET status = 'GENERATING', last_updated_at = :now
         WHERE id = :batchId AND status = 'PENDING'
     """)
-    suspend fun claimForGeneration(batchId: Long, now: Long): Int
+    suspend fun claimForGeneration(batchId: Long, now: String): Int
 
     @Query("""
         UPDATE article_batch
         SET status = :newStatus, last_updated_at = :now
         WHERE id = :batchId
     """)
-    suspend fun updateStatus(batchId: Long, newStatus: String, now: Long)
+    suspend fun updateStatus(batchId: Long, newStatus: String, now: String)
 
     @Query("""
         UPDATE article_batch
         SET status = 'BLOCKED',
             blocked_reason = :reason,
             blocked_at = :now,
-            error_code = :errorCode,
-            error_message = :errorMessage,
             last_updated_at = :now
         WHERE id = :batchId
     """)
     suspend fun markBlocked(
         batchId: Long,
         reason: String?,
-        errorCode: String?,
-        errorMessage: String?,
-        now: Long
+        now: String
     )
 }

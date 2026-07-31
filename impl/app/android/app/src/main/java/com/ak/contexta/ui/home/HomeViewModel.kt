@@ -85,13 +85,13 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             articleRepository.observeGenerationErrors().collect { errors ->
                 _state.value = _state.value.copy(
-                    generationErrors = errors.map { article ->
+                    generationErrors = errors.map { error ->
                         ErrorUi(
-                            articleId = article.id,
-                            errorCode = article.errorCode ?: "UNKNOWN",
-                            errorMessage = article.errorMessage ?: "未知错误",
-                            errorHelp = article.errorHelp ?: "",
-                            canRetry = article.status.name in listOf("FAILED", "TIMEOUT", "FATAL")
+                            articleId = error.entityId,
+                            errorCode = error.errorCode,
+                            errorMessage = error.errorMessage,
+                            errorHelp = error.errorHelp ?: "",
+                            canRetry = error.status in listOf("FAILED", "TIMEOUT", "FATAL")
                         )
                     }
                 )
@@ -102,7 +102,7 @@ class HomeViewModel @Inject constructor(
     private fun loadHome() {
         viewModelScope.launch {
             // Date greeting
-            val today = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"))
+            val today = LocalDate.now(ZoneId.systemDefault())
             val dayOfWeek = arrayOf("日", "一", "二", "三", "四", "五", "六")[today.dayOfWeek.value % 7]
             val dateLabel = "${today.year}年${today.monthValue}月${today.dayOfMonth}日 星期$dayOfWeek"
 
@@ -156,7 +156,7 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun dateLabelFor(readDate: String): String {
-        val zoneId = ZoneId.of("Asia/Shanghai")
+        val zoneId = ZoneId.systemDefault()
         val date = LocalDate.parse(readDate)
         val today = LocalDate.now(zoneId)
         val yesterday = today.minusDays(1)

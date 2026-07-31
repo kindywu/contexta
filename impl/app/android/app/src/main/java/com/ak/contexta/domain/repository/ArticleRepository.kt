@@ -4,6 +4,7 @@ import com.ak.contexta.domain.model.Article
 import com.ak.contexta.domain.model.ArticleBatch
 import com.ak.contexta.domain.model.ArticleParagraph
 import com.ak.contexta.domain.model.DailyLearningInfo
+import com.ak.contexta.domain.model.GenerationError
 import kotlinx.coroutines.flow.Flow
 
 interface ArticleRepository {
@@ -89,20 +90,25 @@ interface ArticleRepository {
     /** Mark batch as BLOCKED */
     suspend fun markBatchBlocked(batchId: Long, reason: String, appVersionCode: Int)
 
-    /** Mark article as FAILED or TIMEOUT with optional error context */
+    /**
+     * Mark article as FAILED or TIMEOUT.
+     * 错误详情（errorCode/errorMessage/errorHelp）和 [retryCount] 快照写入 generation_error_log 流水账。
+     */
     suspend fun failArticle(
         articleId: Long,
         status: String,
         errorCode: String? = null,
         errorMessage: String? = null,
-        errorHelp: String? = null
+        errorHelp: String? = null,
+        retryCount: Int = 0
     )
 
-    /** Mark article as FATAL with optional error context */
+    /** Mark article as FATAL. 错误详情和重试次数快照写入 generation_error_log 流水账。 */
     suspend fun fatalArticle(
         articleId: Long,
         errorCode: String? = null,
-        errorMessage: String? = null
+        errorMessage: String? = null,
+        retryCount: Int = 0
     )
 
     /** Add reading seconds */
@@ -117,8 +123,8 @@ interface ArticleRepository {
     /** Reset orphan GENERATING articles during app startup reconciliation */
     suspend fun reconcileOrphanArticles()
 
-    /** Observe articles with generation errors (error_code IS NOT NULL) across current batches */
-    fun observeGenerationErrors(): Flow<List<Article>>
+    /** Observe latest generation error per article (from generation_error_log, joined with article status) */
+    fun observeGenerationErrors(): Flow<List<GenerationError>>
 
     /** Clear error state and reset article to PENDING for manual retry */
     suspend fun resetArticleForRetry(articleId: Long)

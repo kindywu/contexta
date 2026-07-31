@@ -1,6 +1,6 @@
 # Contexta Android 架构文档
 
-> 基于 2026-07-30 代码状态。本文档为总索引，概述整体架构、目录结构和设计原则。各业务模块的详细文档见对应子文档。
+> 基于 2026-07-31 代码状态。本文档为总索引，概述整体架构、目录结构和设计原则。各业务模块的详细文档见对应子文档。
 
 ---
 
@@ -112,11 +112,11 @@ com.ak.contexta/
 │   │   ├── VocabularyRepositoryImpl.kt
 │   │   └── WordRepositoryImpl.kt    ← 3-tier 查词+LRU 缓存
 │   ├── local/
-│   │   ├── ContextaDatabase.kt      ← Room DB（version 1）
+│   │   ├── ContextaDatabase.kt      ← Room DB（version 2，开发期不做版本迁移）
 │   │   ├── Converter.kt             ← TypeConverters + 日期工具
 │   │   ├── Migrations.kt            ← Migration 数组（当前为空）
-│   │   ├── dao/                     ← 14 个 DAO
-│   │   ├── entity/                  ← 14 个 Entity
+│   │   ├── dao/                     ← 15 个 DAO
+│   │   ├── entity/                  ← 15 个 Entity
 │   │   └── seed/
 │   │       ├── SeedArticle.kt       ← 种子文章数据模型
 │   │       └── SeedDatabase.kt      ← 首次安装写入种子数据
@@ -196,7 +196,7 @@ com.ak.contexta/
 
 | 模块 | 类型 | 绑定内容 |
 |------|------|---------|
-| `AppModule.kt` | `@Provides` | `ContextaDatabase` + 14 个 DAO |
+| `AppModule.kt` | `@Provides` | `ContextaDatabase` + 15 个 DAO |
 | `RepositoryModule.kt` | `@Binds` | 5 个 Repository 接口→实现 |
 | `DomainModule.kt` | `@Binds` + `@Provides` | 6 个基础设施接口（TimeProvider, LlmClient, TtsEngine, BackgroundWorkScheduler, DeveloperAlertSender, AppInfoProvider）+ `CoroutineDispatchers` |
 | `NetworkModule.kt` | `@Provides` | `OkHttpClient` + `DeepSeekApi` |
@@ -209,12 +209,12 @@ com.ak.contexta/
 
 - **Min SDK**：26
 - **依赖注入**：Hilt
-- **数据库**：Room（version 1，`fallbackToDestructiveMigration`）
+- **数据库**：Room（version 2，`fallbackToDestructiveMigration`；开发期不递增 version、不写 Migration，schema 变化靠卸载重装重建）
 - **网络**：Retrofit + OkHttp + kotlinx.serialization
 - **UI**：Jetpack Compose
 - **后台任务**：WorkManager（指数退避 30s，KEEP 策略防重复）
 - **TTS**：Android TextToSpeech（引擎回退链：小米 → Google → 系统默认）
-- **时区**：硬编码 `Asia/Shanghai`
+- **时间**：落库时间统一 ISO 8601 字符串（`yyyy-MM-dd'T'HH:mm:ssXXX`，如 `2026-07-31T10:30:00+08:00`），**手机当前时区**（`ZoneId.systemDefault()`），通过 `TimeProvider` 获取；仅内存/协议用途保留 Long 毫秒
 - **LLM**：DeepSeek API（`LlmCaller` 封装，最多 3 次重试，120s 超时）
 
 ### 关键 Gradle 配置

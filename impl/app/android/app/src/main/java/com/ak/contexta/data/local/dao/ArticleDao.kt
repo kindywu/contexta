@@ -35,50 +35,34 @@ interface ArticleDao {
             last_retry_at = CASE WHEN status IN ('TIMEOUT', 'FAILED') THEN :now ELSE last_retry_at END
         WHERE id = :articleId AND status IN ('PENDING', 'TIMEOUT', 'FAILED')
     """)
-    suspend fun claimForGeneration(articleId: Long, now: Long): Int
+    suspend fun claimForGeneration(articleId: Long, now: String): Int
 
     @Query("""
         UPDATE article SET status = :status WHERE id = :articleId
     """)
     suspend fun updateStatus(articleId: Long, status: String)
 
+    /**
+     * 更新状态并记录重试时间。
+     * 错误详情（error_code / error_message / error_help）不再存本表，
+     * 由 [com.ak.contexta.data.local.dao.GenerationErrorLogDao] 记录。
+     */
     @Query("""
         UPDATE article SET
             status = :status,
-            error_code = :errorCode,
-            error_message = :errorMessage,
-            error_help = :errorHelp,
             last_retry_at = :now
         WHERE id = :articleId
     """)
-    suspend fun updateStatusWithError(
+    suspend fun updateStatusWithRetryTime(
         articleId: Long,
         status: String,
-        errorCode: String?,
-        errorMessage: String?,
-        errorHelp: String?,
-        now: Long
-    )
-
-    @Query("""
-        UPDATE article SET
-            status = 'FATAL',
-            error_code = :errorCode,
-            error_message = :errorMessage,
-            last_retry_at = :now
-        WHERE id = :articleId
-    """)
-    suspend fun markFatal(
-        articleId: Long,
-        errorCode: String?,
-        errorMessage: String?,
-        now: Long
+        now: String
     )
 
     @Query("""
         UPDATE article SET title = :title, status = 'SUCCESS', generation_completed_at = :now, retry_count = :retryCount WHERE id = :articleId
     """)
-    suspend fun markSuccess(articleId: Long, title: String, retryCount: Int, now: Long)
+    suspend fun markSuccess(articleId: Long, title: String, retryCount: Int, now: String)
 
     @Query("""
         UPDATE article SET retry_count = :count WHERE id = :articleId
@@ -118,12 +102,7 @@ interface ArticleDao {
     suspend fun resetAllGenerating()
 
     @Query("""
-        SELECT * FROM article WHERE error_code IS NOT NULL ORDER BY last_retry_at DESC
-    """)
-    fun observeGenerationErrors(): Flow<List<ArticleEntity>>
-
-    @Query("""
-        UPDATE article SET status = 'PENDING', error_code = NULL, error_message = NULL, error_help = NULL, retry_count = 0, last_retry_at = NULL
+        UPDATE article SET status = 'PENDING', retry_count = 0, last_retry_at = NULL
         WHERE id = :articleId
     """)
     suspend fun resetForRetry(articleId: Long)
@@ -136,10 +115,10 @@ interface ArticleDao {
     @Query("""
         UPDATE article SET read_completed_at = :now WHERE id = :articleId AND accumulated_read_seconds >= 120 AND read_completed_at IS NULL
     """)
-    suspend fun markReadCompleted(articleId: Long, now: Long)
+    suspend fun markReadCompleted(articleId: Long, now: String)
 
     @Query("""
         UPDATE article SET read_completed_at = :now WHERE id = :articleId AND read_completed_at IS NULL
     """)
-    suspend fun forceMarkReadCompleted(articleId: Long, now: Long)
+    suspend fun forceMarkReadCompleted(articleId: Long, now: String)
 }

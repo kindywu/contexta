@@ -13,6 +13,7 @@ import com.ak.contexta.data.local.dao.ConfigChangeLogDao
 import com.ak.contexta.data.local.dao.DailyLearningLogDao
 import com.ak.contexta.data.local.dao.DailyLearningDao
 import com.ak.contexta.data.local.dao.ExampleSentenceDao
+import com.ak.contexta.data.local.dao.GenerationErrorLogDao
 import com.ak.contexta.data.local.dao.GenerationPipelineStatusDao
 import com.ak.contexta.data.local.dao.LearningStatsSummaryDao
 import com.ak.contexta.data.local.dao.SchemaMigrationLogDao
@@ -68,5 +69,6 @@ object AppModule {
     @Provides fun provideDailyLearningLogDao(db: ContextaDatabase): DailyLearningLogDao = db.dailyLearningLogDao()
     @Provides fun provideLearningStatsSummaryDao(db: ContextaDatabase): LearningStatsSummaryDao = db.learningStatsSummaryDao()
     @Provides fun provideGenerationPipelineStatusDao(db: ContextaDatabase): GenerationPipelineStatusDao = db.generationPipelineStatusDao()
+    @Provides fun provideGenerationErrorLogDao(db: ContextaDatabase): GenerationErrorLogDao = db.generationErrorLogDao()
     @Provides fun provideSchemaMigrationLogDao(db: ContextaDatabase): SchemaMigrationLogDao = db.schemaMigrationLogDao()
 }

@@ -4,6 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.ak.contexta.data.local.ContextaTypeConverters
 
 @Entity(
     tableName = "article_batch",
@@ -25,13 +26,9 @@ data class ArticleBatchEntity(
     @ColumnInfo(name = "generated_on")
     val generatedOn: String, // ISO date
     @ColumnInfo(name = "last_updated_at")
-    val lastUpdatedAt: Long = System.currentTimeMillis(),
-    @ColumnInfo(name = "error_code")
-    val errorCode: String? = null,
-    @ColumnInfo(name = "error_message")
-    val errorMessage: String? = null,
+    val lastUpdatedAt: String = ContextaTypeConverters.currentDateTimeString(),
     @ColumnInfo(name = "blocked_reason")
     val blockedReason: String? = null,
     @ColumnInfo(name = "blocked_at")
-    val blockedAt: Long? = null
+    val blockedAt: String? = null
 )

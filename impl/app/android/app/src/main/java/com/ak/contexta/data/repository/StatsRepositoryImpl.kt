@@ -11,7 +11,6 @@ import com.ak.contexta.domain.repository.VocabularyRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -92,7 +91,6 @@ class StatsRepositoryImpl @Inject constructor(
     private fun calculateStreak(activeDates: List<String>, today: String): Int {
         if (activeDates.isEmpty()) return 0
 
-        val zoneId = ZoneId.of("Asia/Shanghai")
         val todayDate = LocalDate.parse(today)
 
         val lastActive = LocalDate.parse(activeDates.first())

@@ -13,7 +13,7 @@ data class GenerationPipelineStatusEntity(
     @ColumnInfo(name = "blocked_reason")
     val blockedReason: String? = null,
     @ColumnInfo(name = "blocked_at")
-    val blockedAt: Long? = null,
+    val blockedAt: String? = null,
     @ColumnInfo(name = "blocked_app_version_code")
     val blockedAppVersionCode: Int? = null
 )

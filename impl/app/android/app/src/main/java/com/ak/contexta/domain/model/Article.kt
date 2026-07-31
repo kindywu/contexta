@@ -7,17 +7,14 @@ data class Article(
     val contentCategory: String,
     val title: String?,
     val status: ArticleStatus,
-    val generationStartedAt: Long?,
-    val generationCompletedAt: Long?,
+    val generationStartedAt: String?,
+    val generationCompletedAt: String?,
     val retryCount: Int,
     val accumulatedReadSeconds: Int,
-    val readCompletedAt: Long?,
-    val lastRetryAt: Long?,
-    val errorCode: String? = null,
-    val errorMessage: String? = null,
-    val errorHelp: String? = null,
+    val readCompletedAt: String?,
+    val lastRetryAt: String?,
     val maxRetries: Int = 3,
-    val nextRetryAt: Long? = null,
+    val nextRetryAt: String? = null,
     val paragraphs: List<ArticleParagraph> = emptyList()
 )
 
