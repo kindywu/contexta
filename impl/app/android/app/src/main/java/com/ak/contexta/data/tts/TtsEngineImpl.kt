@@ -33,7 +33,7 @@ class TtsEngineImpl @Inject constructor(
     private var ready = false
     private var failureMessage: String? = null
     private var pendingText: String? = null
-    private var onSpeakingFinished: (() -> Unit)? = null
+    private var onSpeakingFinished: ((String?) -> Unit)? = null
     private var utteranceCounter = 0L
 
     private val engineCandidates = listOf(
@@ -90,15 +90,15 @@ class TtsEngineImpl @Inject constructor(
             override fun onStart(utteranceId: String?) {}
 
             override fun onDone(utteranceId: String?) {
-                notifySpeakingFinished()
+                notifySpeakingFinished(utteranceId)
             }
 
             override fun onError(utteranceId: String?) {
-                notifySpeakingFinished()
+                notifySpeakingFinished(utteranceId)
             }
 
             override fun onStop(utteranceId: String?, interrupted: Boolean) {
-                notifySpeakingFinished()
+                notifySpeakingFinished(utteranceId)
             }
         })
 
@@ -108,9 +108,9 @@ class TtsEngineImpl @Inject constructor(
         }
     }
 
-    private fun notifySpeakingFinished() {
+    private fun notifySpeakingFinished(utteranceId: String?) {
         Handler(Looper.getMainLooper()).post {
-            onSpeakingFinished?.invoke()
+            onSpeakingFinished?.invoke(utteranceId)
         }
     }
 
@@ -120,23 +120,23 @@ class TtsEngineImpl @Inject constructor(
 
     @Suppress("DEPRECATION")
     @Synchronized
-    override fun speak(text: String, speed: Float): Boolean {
+    override fun speak(text: String, speed: Float): String? {
         if (ready) {
             val utteranceId = "ctx-${utteranceCounter++}"
             return try {
                 tts?.setSpeechRate(speed)
                 tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
-                true
+                utteranceId
             } catch (e: Exception) {
                 Log.w(TAG, "TTS speak failed for '$text': ${e.message}")
-                false
+                null
             }
         }
         if (failureMessage == null) {
             pendingText = text
-            return true
+            return null
         }
-        return false
+        return null
     }
 
     override fun stop() {
@@ -145,7 +145,7 @@ class TtsEngineImpl @Inject constructor(
         } catch (_: Exception) { }
     }
 
-    override fun setOnSpeakingFinished(callback: (() -> Unit)?) {
+    override fun setOnSpeakingFinished(callback: ((String?) -> Unit)?) {
         onSpeakingFinished = callback
     }
 
