@@ -175,7 +175,7 @@ fun ReadingScreen(
                                         viewModel.revealTranslation(index)
                                     }
                                 },
-                                onPlay = { viewModel.playText(paragraph.englishText) }
+                                onPlay = { viewModel.playParagraph(index) }
                             )
                         }
                         Spacer(modifier = Modifier.height(24.dp))

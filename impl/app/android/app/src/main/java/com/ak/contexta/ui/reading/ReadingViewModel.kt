@@ -41,7 +41,8 @@ data class ReadingUiState(
     val openTtsSettings: Boolean = false,
     val ttsSpeed: Float = 1.0f,
     val isReadCompleted: Boolean = false,
-    val isSpeakingFullArticle: Boolean = false
+    val isSpeakingFullArticle: Boolean = false,
+    val speakingParagraphIndex: Int? = null
 )
 
 enum class TranslationMode(val label: String) {
@@ -87,11 +88,18 @@ private val ttsEngine: TtsEngine
 
     private var articleId: Long = -1
     private var readTimerJob: Job? = null
+    private var currentUtteranceId: String? = null
 
     init {
-        // Full-article playback ends (naturally / stopped / interrupted) → reset player state
-        ttsEngine.setOnSpeakingFinished {
-            _state.value = _state.value.copy(isSpeakingFullArticle = false)
+        // 只有当前 utterance 结束才清状态；迟到的旧 utterance 回调（快速切换播放时）被 id 校验过滤
+        ttsEngine.setOnSpeakingFinished { utteranceId ->
+            if (utteranceId == currentUtteranceId) {
+                currentUtteranceId = null
+                _state.value = _state.value.copy(
+                    isSpeakingFullArticle = false,
+                    speakingParagraphIndex = null
+                )
+            }
         }
     }
 
@@ -124,7 +132,9 @@ private val ttsEngine: TtsEngine
                     revealedParagraphs = emptySet(),
                     isLoading = false,
                     isReadCompleted = alreadyRead,
-                    vocabularyWords = vocabWords
+                    vocabularyWords = vocabWords,
+                    // 切换文章时重置段落播放状态，防止上一篇文章的状态残留
+                    speakingParagraphIndex = null
                 )
                 // Record reading activity for stats
                 statsRepository.recordReadingActivity()
@@ -307,13 +317,23 @@ private val ttsEngine: TtsEngine
             )
             return
         }
-        ttsEngine.speak(word, speed)
-        // Word pronunciation supersedes full-article playback
-        _state.value = _state.value.copy(isSpeakingFullArticle = false)
+        val id = ttsEngine.speak(word, speed)
+        if (id != null) {
+            currentUtteranceId = id
+            // Word pronunciation supersedes full-article and paragraph playback
+            _state.value = _state.value.copy(
+                isSpeakingFullArticle = false,
+                speakingParagraphIndex = null
+            )
+        }
     }
 
-    /** Speak an arbitrary text (paragraph, sentence, etc.). Interrupts full-article playback. */
-    fun playText(text: String) {
+    /** Speak a paragraph. Tapping the currently speaking paragraph stops it. */
+    fun playParagraph(index: Int) {
+        if (_state.value.speakingParagraphIndex == index) {
+            ttsEngine.stop()
+            return
+        }
         val speed = _state.value.ttsSpeed
         if (!ttsEngine.isAvailable()) {
             _state.value = _state.value.copy(
@@ -322,9 +342,15 @@ private val ttsEngine: TtsEngine
             )
             return
         }
-        ttsEngine.speak(text, speed)
-        // Any other utterance supersedes full-article playback
-        _state.value = _state.value.copy(isSpeakingFullArticle = false)
+        val text = _state.value.paragraphs[index].englishText
+        val id = ttsEngine.speak(text, speed)
+        if (id != null) {
+            currentUtteranceId = id
+            _state.value = _state.value.copy(
+                isSpeakingFullArticle = false,
+                speakingParagraphIndex = index
+            )
+        }
     }
 
     /** Toggle full-article playback: start if idle, stop if speaking. */
@@ -343,8 +369,14 @@ private val ttsEngine: TtsEngine
             )
             return
         }
-        ttsEngine.speak(fullText, _state.value.ttsSpeed)
-        _state.value = _state.value.copy(isSpeakingFullArticle = true)
+        val id = ttsEngine.speak(fullText, _state.value.ttsSpeed)
+        if (id != null) {
+            currentUtteranceId = id
+            _state.value = _state.value.copy(
+                isSpeakingFullArticle = true,
+                speakingParagraphIndex = null
+            )
+        }
     }
 
     /** Clear the snackbar after it has been shown. */
