@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ak.contexta.ui.components.LoadingIndicator
@@ -54,7 +57,8 @@ import com.ak.contexta.ui.theme.SurfaceSoft
 
 @Composable
 fun SettingsScreen(
-    viewModel: SettingsViewModel = hiltViewModel()
+    viewModel: SettingsViewModel = hiltViewModel(),
+    onArticleClick: (Long) -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -116,7 +120,7 @@ fun SettingsScreen(
                     onShowLevelPicker = { showLevelPicker = true },
                     onShowTranslationModePicker = { showTranslationModePicker = true }
                 )
-                1 -> StatsContent(state = state)
+                1 -> StatsContent(state = state, onArticleClick = onArticleClick)
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -277,7 +281,10 @@ private fun LearningSettingsContent(
 }
 
 @Composable
-private fun StatsContent(state: SettingsUiState) {
+private fun StatsContent(
+    state: SettingsUiState,
+    onArticleClick: (Long) -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -318,6 +325,69 @@ private fun StatsContent(state: SettingsUiState) {
             ),
             modifier = Modifier.weight(1f)
         )
+    }
+
+    Spacer(modifier = Modifier.height(24.dp))
+
+    Column {
+        Text(
+            text = "收藏的文章",
+            style = MaterialTheme.typography.titleMedium,
+            color = Ink
+        )
+        if (state.favoritedArticles.isEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = "暂无收藏文章",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Muted
+            )
+            Text(
+                text = "在阅读文章时点击顶栏星标收藏",
+                style = MaterialTheme.typography.bodySmall,
+                color = MutedSoft
+            )
+        } else {
+            // 两步式：点击文章名展开 → 出现「打开」→ 进入阅读页
+            var expandedArticleId by remember { mutableStateOf<Long?>(null) }
+            state.favoritedArticles.forEach { article ->
+                val isExpanded = expandedArticleId == article.id
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expandedArticleId = if (isExpanded) null else article.id }
+                        .padding(vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = article.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Ink,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                        contentDescription = null,
+                        tint = MutedSoft,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                if (isExpanded) {
+                    Text(
+                        text = "打开",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Primary,
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .clickable { onArticleClick(article.id) }
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                }
+            }
+        }
     }
 }
 

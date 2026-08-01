@@ -13,6 +13,7 @@ import com.ak.contexta.domain.repository.VocabularyRepository
 import com.ak.contexta.domain.repository.WordRepository
 import com.ak.contexta.domain.tts.TtsEngine
 import io.mockk.coEvery
+import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -92,7 +93,7 @@ class ReadingViewModelTest {
     }
 
     /** 载入两段文章（Hello world. / Second paragraph.）。同步 stub + 同步 launch。 */
-    private fun loadParagraphs(autoPlayAudio: Boolean = false) {
+    private fun loadParagraphs(autoPlayAudio: Boolean = false, isFavorited: Boolean = false) {
         // readCompletedAt 非空 → 已读 → 不启动 readTimer 无限循环（否则 runTest 虚拟时钟推进时会死循环）
         coEvery { articleRepository.getArticle(1L) } returns Article(
             id = 1L, batchId = 1L, orderIndex = 0, contentCategory = "science",
@@ -100,6 +101,7 @@ class ReadingViewModelTest {
             generationStartedAt = null, generationCompletedAt = null,
             retryCount = 0, accumulatedReadSeconds = 0, readCompletedAt = "2026-01-01T00:00:00Z",
             lastRetryAt = null,
+            isFavorited = isFavorited,
             paragraphs = listOf(
                 ArticleParagraph(0, "Hello world.", "你好世界。"),
                 ArticleParagraph(1, "Second paragraph.", "第二段。")
@@ -205,6 +207,34 @@ class ReadingViewModelTest {
         viewModel.playWordPronunciation()
         assertNull(viewModel.state.value.speakingParagraphIndex)
         assertFalse(viewModel.state.value.isSpeakingFullArticle)
+    }
+
+    // ─── 收藏 ──────────────────────────────────────────────────
+
+    @Test
+    fun `loadArticle sets isFavorited from the article`() = runTest {
+        loadParagraphs(isFavorited = true)
+        assertTrue(viewModel.state.value.isFavorited)
+    }
+
+    @Test
+    fun `toggleFavorite marks favorited and persists`() = runTest {
+        loadParagraphs()
+        coEvery { articleRepository.setFavorited(1L, true) } returns Unit
+        viewModel.toggleFavorite()
+        assertTrue(viewModel.state.value.isFavorited)
+        coVerify { articleRepository.setFavorited(1L, true) }
+    }
+
+    @Test
+    fun `toggleFavorite again unfavorites`() = runTest {
+        loadParagraphs()
+        coEvery { articleRepository.setFavorited(1L, true) } returns Unit
+        coEvery { articleRepository.setFavorited(1L, false) } returns Unit
+        viewModel.toggleFavorite()
+        viewModel.toggleFavorite()
+        assertFalse(viewModel.state.value.isFavorited)
+        coVerify { articleRepository.setFavorited(1L, false) }
     }
 
     // ─── addToVocabulary / removeFromVocabulary ──────────────────

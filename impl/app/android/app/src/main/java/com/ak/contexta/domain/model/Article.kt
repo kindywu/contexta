@@ -15,6 +15,8 @@ data class Article(
     val lastRetryAt: String?,
     val maxRetries: Int = 3,
     val nextRetryAt: String? = null,
+    val isFavorited: Boolean = false,
+    val favoritedAt: String? = null,
     val paragraphs: List<ArticleParagraph> = emptyList()
 )
 

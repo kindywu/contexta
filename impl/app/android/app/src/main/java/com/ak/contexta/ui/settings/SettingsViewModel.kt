@@ -3,6 +3,7 @@ package com.ak.contexta.ui.settings
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.repository.SettingsRepository
 import com.ak.contexta.domain.repository.StatsRepository
 import com.ak.contexta.domain.usecase.TriggerNextBatchUseCase
@@ -21,6 +22,7 @@ data class SettingsUiState(
     val masteryThreshold: Int = 1,
     val autoPlayAudio: Boolean = false,
     val stats: StatsData = StatsData(),
+    val favoritedArticles: List<FavoritedArticleUi> = emptyList(),
     val isLoading: Boolean = true,
     // Info tip dialogs (click ℹ️ icon)
     val showLevelInfoDialog: Boolean = false,
@@ -30,6 +32,11 @@ data class SettingsUiState(
     val showCountConfirmDialog: Boolean = false,
     val pendingLevel: String? = null,       //暂存待确认的难度
     val pendingCount: Int? = null            //暂存待确认的篇数
+)
+
+data class FavoritedArticleUi(
+    val id: Long,
+    val title: String
 )
 
 data class StatsData(
@@ -45,7 +52,8 @@ data class StatsData(
 class SettingsViewModel @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val statsRepository: StatsRepository,
-    private val triggerNextBatch: TriggerNextBatchUseCase
+    private val triggerNextBatch: TriggerNextBatchUseCase,
+    private val articleRepository: ArticleRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
@@ -53,6 +61,7 @@ class SettingsViewModel @Inject constructor(
 
     init {
         loadSettings()
+        observeFavoritedArticles()
     }
 
     private fun loadSettings() {
@@ -60,25 +69,35 @@ class SettingsViewModel @Inject constructor(
             val settings = settingsRepository.getSettings()
             val stats = statsRepository.getStats()
 
-            if (settings != null) {
-                _state.value = SettingsUiState(
-                    level = settings.difficultyLevel,
-                    dailyCount = settings.dailyArticleCount,
-                    translationMode = settings.translationDisplayMode,
-                    masteryThreshold = settings.masteryThresholdN,
-                    autoPlayAudio = settings.autoPlayAudio,
-                    stats = StatsData(
-                        totalArticlesRead = stats?.totalArticlesRead ?: 0,
-                        totalWordsAdded = stats?.totalWordsAdded ?: 0,
-                        totalWordsMastered = stats?.totalWordsMastered ?: 0,
-                        totalLearningDays = stats?.totalLearningDays ?: 0,
-                        currentStreak = stats?.currentStreak ?: 0,
-                        longestStreak = stats?.longestStreak ?: 0
-                    ),
-                    isLoading = false
+            // 用 copy() 写回而非整体替换 SettingsUiState()，
+            // 避免冲掉 observeFavoritedArticles() 并发写入的 favoritedArticles。
+            _state.value = _state.value.copy(
+                level = settings?.difficultyLevel ?: _state.value.level,
+                dailyCount = settings?.dailyArticleCount ?: _state.value.dailyCount,
+                translationMode = settings?.translationDisplayMode ?: _state.value.translationMode,
+                masteryThreshold = settings?.masteryThresholdN ?: _state.value.masteryThreshold,
+                autoPlayAudio = settings?.autoPlayAudio ?: _state.value.autoPlayAudio,
+                stats = StatsData(
+                    totalArticlesRead = stats?.totalArticlesRead ?: 0,
+                    totalWordsAdded = stats?.totalWordsAdded ?: 0,
+                    totalWordsMastered = stats?.totalWordsMastered ?: 0,
+                    totalLearningDays = stats?.totalLearningDays ?: 0,
+                    currentStreak = stats?.currentStreak ?: 0,
+                    longestStreak = stats?.longestStreak ?: 0
+                ),
+                isLoading = false
+            )
+        }
+    }
+
+    private fun observeFavoritedArticles() {
+        viewModelScope.launch {
+            articleRepository.observeFavoritedArticles().collect { articles ->
+                _state.value = _state.value.copy(
+                    favoritedArticles = articles.map {
+                        FavoritedArticleUi(it.id, it.title ?: "未命名文章")
+                    }
                 )
-            } else {
-                _state.value = SettingsUiState(isLoading = false)
             }
         }
     }

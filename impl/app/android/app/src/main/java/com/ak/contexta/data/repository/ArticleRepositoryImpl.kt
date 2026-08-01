@@ -278,6 +278,17 @@ class ArticleRepositoryImpl @Inject constructor(
         articleDao.resetForRetry(articleId)
     }
 
+    override fun observeFavoritedArticles(): Flow<List<Article>> =
+        articleDao.observeFavorited().map { list -> list.map { it.toModel() } }
+
+    override suspend fun setFavorited(articleId: Long, favorited: Boolean) {
+        articleDao.setFavorited(
+            articleId = articleId,
+            favorited = favorited,
+            favoritedAt = if (favorited) timeProvider.nowDateTimeString() else null
+        )
+    }
+
     override suspend fun getBatchByDifficultyAndDate(
         difficulty: String,
         date: String
@@ -310,7 +321,9 @@ class ArticleRepositoryImpl @Inject constructor(
         readCompletedAt = readCompletedAt,
         lastRetryAt = lastRetryAt,
         maxRetries = maxRetries,
-        nextRetryAt = nextRetryAt
+        nextRetryAt = nextRetryAt,
+        isFavorited = isFavorited,
+        favoritedAt = favoritedAt
     )
 
     private fun GenerationErrorWithStatus.toModel() = GenerationError(

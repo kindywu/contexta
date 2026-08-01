@@ -1,7 +1,7 @@
 # UI 设计系统
 
 > 主题文档：Contexta 的视觉语言与组件规范——设计 token、组件库、页面交互规范。
-> 最后同步于：2026-07-31
+> 最后同步于：2026-08-01
 > 设计来源：lingua 原型（warm-canvas editorial 风格，2026-07 UI 重构对齐）；**所有值以当前代码为准**（代码是系统真实完整的知识，本文档帮助人理解系统）。
 
 ---
@@ -17,7 +17,7 @@
 1. **无深色模式**：`ContextaTheme` 只定义 `lightColorScheme`，不使用 `isSystemInDarkTheme`（与原型一致）。
 2. **不打包字体文件**：Serif / Sans 均用系统字体族（`FontFamily.Serif` / `FontFamily.SansSerif`），依靠系统 fallback 链渲染 IPA 音标（详见 3.3）。
 3. **层次靠色块深浅，不用阴影**：卡片底色（SurfaceCard）深于画布（Background）一级，1px Hairline 描边区分边界；阴影稀少。
-4. **不新增业务功能**：重构只换皮与交互，不引入原型中的收藏文章等无数据模型支撑的功能。
+4. **业务功能边界**：重构起初不引入业务功能；2026-08 已按需求补上「收藏文章」——阅读页顶栏星标收藏/取消 + 学习统计 tab 收藏列表（数据模型 `article.is_favorited`，详见 [收藏文章.md](收藏文章.md)）。功能新增时同步更新本决策。
 5. **图标全站 outline 化**：引入 `material-icons-extended`，emoji 图标全部替换为 `Icons.Outlined` 线性图标；少数符号（✓ ✗ ← ▾ ℹ 🔥）仍作为**文字字符**保留在按钮文案与标签中。
 
 ---
@@ -59,7 +59,7 @@
 | 文字 | `Muted` | `#6C6A64` | 次要文字 |
 | 文字 | `MutedSoft` | `#8E8B82` | 说明、版权、返回按钮 |
 | 文字 | `OnPrimary` | `#FFFFFF` | 主按钮文字（Primary 上的反色） |
-| 语义 | `Amber` | `#E8A55A` | 收藏/书签态专用（当前无收藏功能，预留） |
+| 语义 | `Amber` | `#E8A55A` | 收藏/书签态专用（已用于收藏文章星标） |
 | 语义 | `Teal` | `#5DB8A6` | 次要强调（当前未直接使用） |
 | 语义 | `Success` | `#5DB872` | 成功、已学会、认识标记 |
 | 语义 | `Warning` | `#D4A017` | 警告（极少用） |
@@ -237,7 +237,7 @@ classDiagram
 布局自上而下：**滚动进度条 → 顶栏 → 正文（标题 + 段落 + 标记已读）→ 底部播放条**，查词弹窗悬浮其上。
 
 1. **滚动进度条**：顶部 3dp 高、Primary 珊瑚、宽度 = `scrollFraction`（`derivedStateOf` 计算 `scrollValue / maxValue`），随滚动线性增宽。
-2. **顶栏**：44dp 返回（MutedSoft）+ 已读只读标记「✓ 已读」（labelMedium MutedSoft，仅已读后显示；未读时此处空白）+ 最右**译文模式胶囊**（SurfaceCard 底 + 模式名 + ▾）。**标题不在顶栏**——在正文顶部（见 4）。发音/语速不在顶栏——在底部播放条（见 5）。
+2. **顶栏**：44dp 返回（MutedSoft）+ 已读只读标记「✓ 已读」（labelMedium MutedSoft，仅已读后显示；未读时此处空白）+ **收藏星标**（36dp：已收藏 `Icons.Filled.Star` Amber、未收藏 `Icons.Outlined.StarBorder` MutedSoft；点击 `toggleFavorite()` 收藏/取消，见 [收藏文章.md](收藏文章.md)）+ 最右**译文模式胶囊**（SurfaceCard 底 + 模式名 + ▾）。**标题不在顶栏**——在正文顶部（见 4）。发音/语速不在顶栏——在底部播放条（见 5）。
 3. **译文模式（胶囊循环，顶栏最右）**：点击 `cycleTranslationMode()` 沿 `FULL → DIM → BLURRED → HIDDEN` 循环并持久化到设置。**4 种模式渲染差异**：
    - FULL：直接显示中文译文（bodyMedium MutedSoft）
    - DIM：`graphicsLayer(alpha = 0.55f)` 淡化
@@ -327,7 +327,7 @@ stateDiagram-v2
 2. **Picker 行**（英文水平、译文默认模式）：`titleMedium` 标题 + `bodySmall` Muted 描述 + 当前值 + `ChevronRight` 20dp MutedSoft，点击弹 AlertDialog。
 3. **Stepper 行**（每日文章数量、单词掌握阈值）：44dp 圆形 −/+ 按钮（SurfaceCard 底、16dp 圆角，禁用时 `SurfaceSoft.copy(alpha=0.3f)`）+ 数值 `headlineSmall` SemiBold。
 4. **Toggle 行**（自动朗读）：Material3 Switch 定制——选中轨道 Primary / 拇指 OnPrimary，未选中轨道 SurfaceSoft / 拇指 Ink。
-5. **统计区**（学习统计 tab）：StatCard 2×2（阅读文章 / 添加单词 / 累计学习天数 / 当前连续学习）。
+5. **统计区**（学习统计 tab）：StatCard 2×2（阅读文章 / 添加单词 / 累计学习天数 / 当前连续学习）+ **收藏的文章**区块：观察 `observeFavoritedArticles()`（收藏时间倒序），**两步式**——点击文章名行（`titleMedium` 单行省略 + `ExpandMore`/`ExpandLess` 20dp MutedSoft）展开 → 出现「打开」（`labelLarge` SemiBold Primary，`align(End)`）→ 点击经 `onArticleClick` 进阅读页；空态为普通文字提示「暂无收藏文章 / 在阅读文章时点击顶栏星标收藏」（不用 EmptyState 组件——其在滚动列中 `fillMaxSize` 布局异常）。
 6. **弹窗三件套**（Material3 AlertDialog，`containerColor = SurfaceCard`、标题 Ink）：Picker（RadioButton 选中 Primary / 未选中 MutedSoft）、Info（「知道了」珊瑚按钮）、Confirm（「确认修改」珊瑚 / 「取消」Muted）。
 
 ### 5.7 AddWord 手动录入页（`ui/addword/AddWordScreen.kt`）
@@ -351,7 +351,7 @@ stateDiagram-v2
 | 场景 | 表现 |
 |------|------|
 | 页面加载 | `LoadingIndicator`（32dp 珊瑚 spinner + 文案），AddWord 提交中带阶段消息 |
-| 空数据 | `EmptyState`（48dp outline 图标 + 标题 + 可选副文案）：首页无文章/生成中、生词表为空、Reading 文章未找到（ErrorOutline 图标） |
+| 空数据 | `EmptyState`（48dp outline 图标 + 标题 + 可选副文案）：首页无文章/生成中、生词表为空、Reading 文章未找到（ErrorOutline 图标）；学习统计收藏列表为空 = 普通文字提示（滚动列中 EmptyState 布局异常） |
 | 查词失败 | 查词弹窗降级展示：仅有词头，无释义，「加入生词表」按钮保留（降级路径 wordId 为空，点击无响应）；LLM 解析失败走 `Log.w` 静默兜底 |
 | TTS 不可用 | Snackbar 提示「语音引擎未安装，请在系统设置中开启「文字转语音」功能」+ 自动拉起系统 TTS 设置页（`openTtsSettings`） |
 | 表单校验 | AddWord 输入非法 → Error 色文案；Onboarding 未选 → 按钮禁用态（不是错误文案） |
@@ -370,7 +370,7 @@ stateDiagram-v2
 | 查词 BottomSheet | ❌ 改为底部全宽弹层 | 全宽 AppModal（`alignment = BottomCenter`）+ 仅上角 16dp 圆角 + 75% 屏高上限 + Scrim + X 关闭 |
 | 译文模式眼睛 popover | ❌ 未采纳 | 保留现有胶囊条循环切换（模式可见性最好、改动最小） |
 | 阅读计时「120s 且滚动 >80%」 | ❌ 未采纳 | 保留纯 120s 计时（既有逻辑不变） |
-| 收藏文章 | ❌ 不加 | Contexta 无此数据模型，守「不改功能」边界 |
+| 收藏文章 | ✅ 已实现 | 阅读页顶栏星标收藏/取消（Amber），学习统计 tab 收藏列表（两步展开→打开），数据模型 `article.is_favorited`，见 [收藏文章.md](收藏文章.md) |
 | Home 今日阅读卡 | ❌ 不加 | 避免为此新增数据查询 |
 | 复习卡片内按钮 | ❌ 未采纳 | 保留底部「✗ 不认识 / ✓ 认识了」双按钮，样式对齐 AppButton |
 

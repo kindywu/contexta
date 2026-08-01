@@ -73,7 +73,11 @@ fun ContextaNavGraph(
         }
 
         composable(Screen.Settings.route) {
-            SettingsScreen()
+            SettingsScreen(
+                onArticleClick = { articleId ->
+                    navController.navigate(Screen.Reading.createRoute(articleId))
+                }
+            )
         }
     }
 }

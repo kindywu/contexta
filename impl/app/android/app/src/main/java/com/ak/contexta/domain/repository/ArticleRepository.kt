@@ -137,4 +137,10 @@ interface ArticleRepository {
 
     /** Clear error state and reset article to PENDING for manual retry */
     suspend fun resetArticleForRetry(articleId: Long)
+
+    /** Observe favorited articles, newest favorite first. */
+    fun observeFavoritedArticles(): Flow<List<Article>>
+
+    /** Set/unset favorite. Favoriting records [favoritedAt]; unfavoriting clears it. */
+    suspend fun setFavorited(articleId: Long, favorited: Boolean)
 }

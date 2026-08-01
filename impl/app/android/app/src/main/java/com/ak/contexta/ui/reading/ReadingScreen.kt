@@ -20,10 +20,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -64,6 +66,7 @@ import com.ak.contexta.ui.components.AppIconButton
 import com.ak.contexta.ui.components.AppModal
 import com.ak.contexta.ui.components.EmptyState
 import com.ak.contexta.ui.components.LoadingIndicator
+import com.ak.contexta.ui.theme.Amber
 import com.ak.contexta.ui.theme.Background
 import com.ak.contexta.ui.theme.BodyText
 import com.ak.contexta.ui.theme.Hairline
@@ -129,12 +132,14 @@ fun ReadingScreen(
                     .background(Primary)
             )
 
-            // App bar: back + read status + translation mode (title lives in content)
+            // App bar: back + read status + favorite + translation mode (title lives in content)
             ReadingAppBar(
                 onBack = onBack,
                 translationMode = state.translationMode,
                 isReadCompleted = state.isReadCompleted,
-                onCycleTranslationMode = { viewModel.cycleTranslationMode() }
+                isFavorited = state.isFavorited,
+                onCycleTranslationMode = { viewModel.cycleTranslationMode() },
+                onToggleFavorite = { viewModel.toggleFavorite() }
             )
 
             // Content
@@ -224,7 +229,9 @@ private fun ReadingAppBar(
     onBack: () -> Unit,
     translationMode: TranslationMode,
     isReadCompleted: Boolean,
-    onCycleTranslationMode: () -> Unit
+    isFavorited: Boolean,
+    onCycleTranslationMode: () -> Unit,
+    onToggleFavorite: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -250,6 +257,14 @@ private fun ReadingAppBar(
             )
         }
         Spacer(modifier = Modifier.weight(1f))
+        // Favorite star (Amber when favorited, outlined otherwise)
+        AppIconButton(
+            icon = if (isFavorited) Icons.Filled.Star else Icons.Outlined.StarBorder,
+            contentDescription = if (isFavorited) "取消收藏" else "收藏",
+            onClick = onToggleFavorite,
+            size = 36,
+            tint = if (isFavorited) Amber else MutedSoft
+        )
         // Translation mode selector (moved up from the former separate bar)
         Text(
             text = "译文",
