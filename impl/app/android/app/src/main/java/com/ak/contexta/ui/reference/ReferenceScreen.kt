@@ -171,7 +171,7 @@ fun ReferenceScreen(
             // Speak button
             AppButton(
                 text = "发音",
-                onClick = { viewModel.speak(cell.example) },
+                onClick = { viewModel.speak(speakTextFor(cell)) },
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(4.dp))
@@ -534,3 +534,7 @@ private val phonicsGroups = listOf(
         PhonicsItem("/j/", "yes", "/jes/"), PhonicsItem("/w/", "wet", "/wet/")
     ))
 )
+
+/** 发音文本：字母格先读字母名再读例词（句号停顿），音标格只读例词 */
+fun speakTextFor(cell: ReferenceCellData): String =
+    if (cell.isPhonetic) cell.example else "${cell.char.first()}. ${cell.example}"
