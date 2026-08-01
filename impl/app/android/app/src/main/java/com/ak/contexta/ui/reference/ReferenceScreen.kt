@@ -137,11 +137,13 @@ fun ReferenceScreen(
                     tint = MutedSoft
                 )
             }
-            // 56sp serif character
+            // 56sp serif character — clickable: alphabet reads letter name, phonetics reads own sound
             Text(
                 text = cell.char,
                 style = MaterialTheme.typography.displayLarge.copy(fontSize = 56.sp),
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clickable { viewModel.speak(ownSoundFor(cell)) }
             )
             Spacer(modifier = Modifier.height(8.dp))
             // reading: phonetic in coral (letters) / category name (phonetics)
@@ -160,13 +162,25 @@ fun ReferenceScreen(
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
-            // Example
+            // Example word — bigger + coral + clickable (点击单词发音)
             Text(
-                text = cell.example + if (cell.exampleCn.isNotEmpty()) "  ${cell.exampleCn}" else "",
-                style = MaterialTheme.typography.bodyMedium,
-                color = BodyText,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+                text = cell.example,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Medium,
+                color = Primary,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .clickable { viewModel.speak(cell.example) }
             )
+            if (cell.exampleCn.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = cell.exampleCn,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Muted,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                )
+            }
             Spacer(modifier = Modifier.height(20.dp))
             // Speak button
             AppButton(
@@ -491,7 +505,7 @@ private val alphabetData = listOf(
 
 data class PhonicsGroup(val name: String, val items: List<PhonicsItem>)
 
-private val phonicsGroups = listOf(
+internal val phonicsGroups = listOf(
     PhonicsGroup("单元音 (12)", listOf(
         PhonicsItem("/iː/", "see", "/siː/"), PhonicsItem("/ɪ/", "sit", "/sɪt/"),
         PhonicsItem("/e/", "bed", "/bed/"), PhonicsItem("/æ/", "cat", "/kæt/"),
@@ -538,3 +552,41 @@ private val phonicsGroups = listOf(
 /** 发音文本：字母格先读字母名再读例词（句号停顿），音标格只读例词 */
 fun speakTextFor(cell: ReferenceCellData): String =
     if (cell.isPhonetic) cell.example else "${cell.char.first()}. ${cell.example}"
+
+/**
+ * 音标→拟音映射：TTS 无法直接朗读 IPA 符号，每个音标配一个可读文本。
+ * 值为近似拟音，个别音标（短元音/个别辅音）依赖真机试听微调。
+ */
+internal val phonemeSoundMap: Map<String, String> = mapOf(
+    // 单元音
+    "/iː/" to "ee", "/ɪ/" to "ih", "/e/" to "eh", "/æ/" to "ack",
+    "/ɑː/" to "ah", "/ɒ/" to "aw", "/ɔː/" to "or", "/ʊ/" to "ook",
+    "/uː/" to "oo", "/ʌ/" to "uh", "/ɜː/" to "er", "/ə/" to "uh",
+    // 双元音
+    "/eɪ/" to "ay", "/aɪ/" to "eye", "/ɔɪ/" to "oy", "/aʊ/" to "ow",
+    "/əʊ/" to "oh", "/ɪə/" to "ear", "/eə/" to "air", "/ʊə/" to "oor",
+    // 爆破音
+    "/p/" to "puh", "/b/" to "buh", "/t/" to "tuh", "/d/" to "duh",
+    "/k/" to "kuh", "/ɡ/" to "guh",
+    // 摩擦音
+    "/f/" to "fuh", "/v/" to "vuh", "/θ/" to "thuh", "/ð/" to "thuh",
+    "/s/" to "suh", "/z/" to "zuh", "/ʃ/" to "shuh", "/ʒ/" to "zhuh",
+    "/h/" to "huh", "/r/" to "ruh",
+    // 破擦音
+    "/tʃ/" to "chuh", "/dʒ/" to "juh", "/tr/" to "truh", "/dr/" to "druh",
+    "/ts/" to "tsuh", "/dz/" to "dzuh",
+    // 鼻辅音
+    "/m/" to "muh", "/n/" to "nuh", "/ŋ/" to "nguh",
+    // 舌侧音
+    "/l/" to "luh",
+    // 半元音
+    "/j/" to "yuh", "/w/" to "wuh"
+)
+
+/** 音标自身拟音文本；未知音标返回 null（调用方兜底读例词） */
+fun phonemeOwnSound(phone: String): String? = phonemeSoundMap[phone]
+
+/** 弹窗大字发音文本：字母格读字母名，音标格读自身拟音（映射缺失兜底例词） */
+fun ownSoundFor(cell: ReferenceCellData): String =
+    if (cell.isPhonetic) phonemeOwnSound(cell.char) ?: cell.example
+    else cell.char.first().toString()

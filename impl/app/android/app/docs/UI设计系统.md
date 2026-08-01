@@ -285,7 +285,7 @@ sequenceDiagram
 2. **字母表（26 个）**：4 列网格（每行 4 格，末行空白格补齐），格子 SurfaceCard 底 + 8dp 圆角 + `titleMedium` 字符 + 13sp 珊瑚音标。
 3. **音标（48 个，8 分类分组展示，数据不变）**：单元音(12) / 双元音(8) / 爆破音(6) / 摩擦音(10) / 破擦音(6) / 鼻辅音(3) / 舌侧音(1) / 半元音(2)；组标题 `SectionHeader` = 3dp 珊瑚竖条 + `titleSmall` SemiBold 珊瑚；组内 3 列网格（15sp 珊瑚音标 + 例词 + 全拼）。
 4. **语法**：可折叠主题分组（时态 6 / 词形变化 6 / 功能词 5 / 句式 6，共 23 条，数据在 `ui/reference/GrammarData.kt`），组头 = 3dp 珊瑚竖条 + 组名（`titleSmall` SemiBold 珊瑚）+ 计数 + ▸/▾ 折叠指示，点击展开/收起（不互斥），首组默认展开；语法点卡片三部分——① 名称（Primary `titleSmall` SemiBold）② 解析（英文规则 Muted `bodySmall` + 中文说明 BodyText `bodySmall`）③ 例句（2dp 主色竖条引文 + 英文 Ink `bodySmall` + 中文 Muted `labelSmall`，**不可点击不发音**）。页顶无标题栏（AppTopBar 已移除）。
-5. **字母/音标弹窗**（居中 AppModal）：**56sp serif 大字**（`displayLarge.copy(fontSize = 56.sp)`）+ 读音行——字母格子显示珊瑚音标（`PhoneticStyle` 15sp）、音标格子显示分类名（bodyMedium Muted）+ 例词示例行（「apple 苹果」）+ 全宽「发音」按钮（经顶层函数 `speakTextFor(cell)` 生成文本——**字母格先读字母名再读例词**，如「A. Apple」（句号产生 TTS 自然停顿）；音标格仍只读例词）。
+5. **字母/音标弹窗**（居中 AppModal）：**56sp serif 大字可点击**（`displayLarge.copy(fontSize = 56.sp)`，点击经顶层函数 `ownSoundFor(cell)`——字母格读字母名 `A`、音标格读自身拟音）——拟音由 `phonemeSoundMap` 提供（TTS 无法直接朗读 IPA，48 个音标各配一个可读文本，如 /iː/→`ee`、/b/→`buh`；映射缺失兜底读例词）+ 读音行——字母格子显示珊瑚音标（`PhoneticStyle` 15sp）、音标格子显示分类名（bodyMedium Muted）+ **例词行**：单词 `headlineSmall` Medium 珊瑚色**可点击发音**，中文释义拆下行 `labelSmall` Muted + 全宽「发音」按钮（经顶层函数 `speakTextFor(cell)` 生成文本——**字母格先读字母名再读例词**，如「A. Apple」（句号产生 TTS 自然停顿）；音标格仍只读例词）。
 
 ### 5.4 Vocabulary 生词复习页（`ui/vocabulary/VocabularyScreen.kt`）
 
