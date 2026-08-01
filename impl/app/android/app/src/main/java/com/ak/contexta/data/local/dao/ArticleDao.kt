@@ -132,4 +132,12 @@ interface ArticleDao {
         UPDATE article SET read_completed_at = :now WHERE id = :articleId AND read_completed_at IS NULL
     """)
     suspend fun forceMarkReadCompleted(articleId: Long, now: String)
+
+    @Query("SELECT * FROM article WHERE is_favorited = 1 ORDER BY favorited_at DESC")
+    fun observeFavorited(): Flow<List<ArticleEntity>>
+
+    @Query("""
+        UPDATE article SET is_favorited = :favorited, favorited_at = :favoritedAt WHERE id = :articleId
+    """)
+    suspend fun setFavorited(articleId: Long, favorited: Boolean, favoritedAt: String?)
 }

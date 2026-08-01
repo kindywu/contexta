@@ -34,7 +34,7 @@ import com.ak.contexta.data.local.entity.WordEntity
 import com.ak.contexta.data.local.entity.WordSenseEntity
 
 @Database(
-    version = 1,
+    version = 2,
     entities = [
         UserSettingsEntity::class,
         ConfigChangeLogEntity::class,

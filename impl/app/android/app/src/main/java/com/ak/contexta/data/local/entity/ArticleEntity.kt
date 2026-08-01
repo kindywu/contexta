@@ -46,5 +46,9 @@ data class ArticleEntity(
     @ColumnInfo(name = "max_retries")
     val maxRetries: Int = 3,
     @ColumnInfo(name = "next_retry_at")
-    val nextRetryAt: String? = null
+    val nextRetryAt: String? = null,
+    @ColumnInfo(name = "is_favorited")
+    val isFavorited: Boolean = false,
+    @ColumnInfo(name = "favorited_at")
+    val favoritedAt: String? = null
 )

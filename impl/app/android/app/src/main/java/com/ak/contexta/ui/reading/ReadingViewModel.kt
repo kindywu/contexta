@@ -41,6 +41,7 @@ data class ReadingUiState(
     val openTtsSettings: Boolean = false,
     val ttsSpeed: Float = 1.0f,
     val isReadCompleted: Boolean = false,
+    val isFavorited: Boolean = false,
     val isSpeakingFullArticle: Boolean = false,
     val speakingParagraphIndex: Int? = null
 )
@@ -135,6 +136,7 @@ private val ttsEngine: TtsEngine
                     revealedParagraphs = emptySet(),
                     isLoading = false,
                     isReadCompleted = alreadyRead,
+                    isFavorited = article.isFavorited,
                     vocabularyWords = vocabWords,
                     // 切换文章时重置段落播放状态，防止上一篇文章的状态残留
                     speakingParagraphIndex = null
@@ -183,6 +185,16 @@ private val ttsEngine: TtsEngine
             articleRepository.forceMarkReadCompleted(articleId)
             _state.value = _state.value.copy(isReadCompleted = true)
             readTimerJob?.cancel()
+        }
+    }
+
+    /** Toggle favorite for the current article. */
+    fun toggleFavorite() {
+        if (articleId < 0) return
+        val current = _state.value.isFavorited
+        viewModelScope.launch {
+            articleRepository.setFavorited(articleId, !current)
+            _state.value = _state.value.copy(isFavorited = !current)
         }
     }
 

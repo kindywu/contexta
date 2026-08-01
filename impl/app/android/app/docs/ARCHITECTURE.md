@@ -201,7 +201,7 @@ com.ak.contexta/
 | `vocabulary` | VocabularyScreen | VocabularyViewModel | 生词本：卡片复习流（滑动切卡/进度点/总结页，顶部「+」→ 录入单词） |
 | `add_word` | AddWordScreen | AddWordViewModel | 录入单词：输入→本地查→LLM 生成→加入生词库 |
 | `reference` | ReferenceScreen | ReferenceViewModel | 参考页 |
-| `settings` | SettingsScreen | SettingsViewModel | 设置页：难度/篇数/翻译/阈值/TTS |
+| `settings` | SettingsScreen | SettingsViewModel | 设置页：难度/篇数/翻译/阈值/TTS + 学习统计 tab（含收藏文章列表） |
 
 ---
 
@@ -222,7 +222,7 @@ com.ak.contexta/
 
 - **Min SDK**：26
 - **依赖注入**：Hilt
-- **数据库**：Room（version 2，`fallbackToDestructiveMigration`；开发期不递增 version、不写 Migration，schema 变化靠卸载重装重建）
+- **数据库**：Room（version 2，`fallbackToDestructiveMigration`；开发期 schema 变化通过**递增 version** 触发破坏性重建，不写 Migration——如收藏功能 v1→v2 为 `article` 表加 `is_favorited`/`favorited_at` 两列；发布后改为手写 Migration 保数据）
 - **网络**：Retrofit + OkHttp + kotlinx.serialization
 - **UI**：Jetpack Compose + Material3，视觉由自定义设计 token（warm-canvas editorial）与 `ui/components/` 组件库承载，详见 [UI设计系统.md](UI设计系统.md)
 - **后台任务**：WorkManager（指数退避 30s，KEEP 策略防重复）
@@ -260,6 +260,7 @@ buildConfigField("String", "DEEPSEEK_MODEL", "\"...\"")
 | 10 | [错误监控.md](错误监控.md) | — | 三分类错误体系、飞书通知、Pipeline 阻塞恢复 |
 | 11 | [手动录入单词.md](手动录入单词.md) | `add_word` | 手动录入单词：本地优先+LLM 兜底、复用查词契约、加入生词库 |
 | 12 | [UI设计系统.md](UI设计系统.md) | 全部页面 | 设计语言、颜色/字体/间距/动效 token、组件库规范、7 页面交互规范、与原型取舍 |
+| 13 | [收藏文章.md](收藏文章.md) | `reading` / `settings` | 阅读页顶栏星标收藏 + 学习统计 tab 收藏列表（两步展开→打开） |
 
 ---
 
