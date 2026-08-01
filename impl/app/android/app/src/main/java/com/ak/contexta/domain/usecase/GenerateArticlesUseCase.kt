@@ -115,9 +115,13 @@ class GenerateArticlesUseCase @Inject constructor(
             articleRepository.hasFatalArticle(batchId) -> { /* leave as GENERATING */ }
             articleRepository.isBatchComplete(batchId) -> {
                 articleRepository.markBatchReady(batchId)
+                // 取批次信息（生成日期/难度），随完成通知一起展示
+                val batch = articleRepository.getBatchById(batchId)
                 alertSender.sendBatchReady(
                     batchId = batchId,
                     articleCount = articles.size,
+                    batchGeneratedOn = batch?.generatedOn,
+                    batchDifficulty = batch?.difficultyLevelSnapshot,
                     context = ErrorContext(batchId, null, appVersionCode ?: 0, timeProvider.nowMillis())
                 )
             }

@@ -20,14 +20,19 @@ interface ArticleBatchDao {
 
     /**
      * 查找下一个可用的 READY 批次。
-     * - [afterDate] 为 null 时返回第一个 READY 批次
-     * - 否则返回 [generated_on] >= [afterDate] 且尚未被 [daily_learning] 引用的 READY 批次
+     * - [afterDate] 为 null 时返回第一个 READY 批次（仅首次使用：无 daily_learning 记录）
+     * - 否则返回 [generated_on] > [afterDate]（严格晚于已消费批次日期）且尚未被 [daily_learning] 引用的 READY 批次
+     *
+     * **消费顺序语义**：批次按时间顺序消费，已消费日期（max ref_batch_date）之前的批次不再回头分配。
+     * 例如 seed 历史批次（generated_on=03-29）在用户已消费 03-29 批次后不再被分配，
+     * 即使它是该难度下最旧的 READY 批次——否则用户会重复读到旧种子内容，且
+     * TriggerNextBatchUseCase 会因"已有未来批次"而跳过新批次生成。
      */
     @Query("""
         SELECT * FROM article_batch
         WHERE status = 'READY'
           AND difficulty_level_snapshot = :difficulty
-          AND (generated_on >= :afterDate OR :afterDate IS NULL)
+          AND (generated_on > :afterDate OR :afterDate IS NULL)
           AND id NOT IN (SELECT ref_batch_id FROM daily_learning)
         ORDER BY generated_on ASC
         LIMIT 1

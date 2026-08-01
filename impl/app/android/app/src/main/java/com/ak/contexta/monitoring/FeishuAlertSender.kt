@@ -72,6 +72,8 @@ class FeishuAlertSender @Inject constructor(
     override suspend fun sendBatchReady(
         batchId: Long,
         articleCount: Int,
+        batchGeneratedOn: String?,
+        batchDifficulty: String?,
         context: ErrorContext
     ) {
         // 批次完成通知不做去重——每个批次只发一次
@@ -79,6 +81,8 @@ class FeishuAlertSender @Inject constructor(
             title = "🟢 Contexta Batch Ready",
             batchId = batchId,
             articleCount = articleCount,
+            batchGeneratedOn = batchGeneratedOn,
+            batchDifficulty = batchDifficulty,
             context = context
         )
     }
@@ -87,13 +91,17 @@ class FeishuAlertSender @Inject constructor(
         title: String,
         batchId: Long,
         articleCount: Int,
+        batchGeneratedOn: String?,
+        batchDifficulty: String?,
         context: ErrorContext
     ) {
         withContext(dispatchers.io) {
             try {
-                val message = buildFeishuSuccessCard(title, batchId, articleCount, context)
+                val message = buildFeishuSuccessCard(
+                    title, batchId, articleCount, batchGeneratedOn, batchDifficulty, context
+                )
                 sendToFeishu(message)
-                Log.i(TAG, "Success alert sent: batch=$batchId, articles=$articleCount")
+                Log.i(TAG, "Success alert sent: batch=$batchId, articles=$articleCount, generatedOn=$batchGeneratedOn, difficulty=$batchDifficulty")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to send success alert", e)
             }
@@ -199,6 +207,8 @@ class FeishuAlertSender @Inject constructor(
         title: String,
         batchId: Long,
         articleCount: Int,
+        batchGeneratedOn: String?,
+        batchDifficulty: String?,
         context: ErrorContext
     ): String {
         val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
@@ -219,7 +229,14 @@ class FeishuAlertSender @Inject constructor(
                         put("tag", "div")
                         put("text", JSONObject().apply {
                             put("tag", "lark_md")
-                            put("content", "**批次 $batchId 已完成：**${articleCount} 篇文章生成成功")
+                            put("content", "**${batchGeneratedOn ?: "?"} · ${batchDifficulty ?: "?"} 批次已完成：**${articleCount} 篇文章生成成功")
+                        })
+                    })
+                    put(JSONObject().apply {
+                        put("tag", "div")
+                        put("text", JSONObject().apply {
+                            put("tag", "lark_md")
+                            put("content", "**Batch ID：**$batchId")
                         })
                     })
                     put(JSONObject().apply {

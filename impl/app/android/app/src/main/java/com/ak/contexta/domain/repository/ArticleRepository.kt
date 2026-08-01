@@ -26,8 +26,11 @@ interface ArticleRepository {
 
     /**
      * 查找下一个可用的 READY 批次。
-     * - [afterDate] 为 null 时返回第一个 READY 批次
-     * - 否则返回 [generated_on] >= [afterDate] 且尚未被 [daily_learning] 引用的 READY 批次
+     * - [afterDate] 为 null 时返回第一个 READY 批次（仅首次使用：无 daily_learning 记录）
+     * - 否则返回 [generated_on] > [afterDate]（严格晚于已消费批次日期）且尚未被 [daily_learning] 引用的 READY 批次
+     *
+     * 批次按时间顺序消费：调用方应传入 max(ref_batch_date)，保证不回头分配历史 seed 批次，
+     * 避免用户读到旧内容且前置生成被"已有未来批次"跳过。
      */
     suspend fun findNextReadyBatch(difficulty: String, afterDate: String?): ArticleBatch?
 
@@ -45,6 +48,9 @@ interface ArticleRepository {
 
     /** 获取所有阅读记录中的最大 [refBatchDate]。为 null 表示尚无阅读记录。 */
     suspend fun getMaxRefBatchDate(): String?
+
+    /** 按 ID 获取批次（生成完成通知需要展示批次的生成日期与难度）。 */
+    suspend fun getBatchById(batchId: Long): ArticleBatch?
 
     /**
      * 将批次分配给今天的阅读，插入 daily_learning 记录。

@@ -45,10 +45,13 @@ interface DeveloperAlertSender {
     /**
      * 发送批次生成完成通知。
      * 批次所有文章生成成功时发送，作为心跳/状态确认。
+     * [batchGeneratedOn] / [batchDifficulty] 用于通知中展示批次日期与难度（可为 null，通知中显示 ?）。
      */
     suspend fun sendBatchReady(
         batchId: Long,
         articleCount: Int,
+        batchGeneratedOn: String?,
+        batchDifficulty: String?,
         context: ErrorContext
     )
 }

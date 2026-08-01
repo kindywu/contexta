@@ -18,7 +18,7 @@ import javax.inject.Singleton
  * 3. 修复孤儿文章（重置 GENERATING/TIMEOUT/FAILED → PENDING）
  * 4. 重新调度所有卡在 GENERATING 状态的 batch 的 Worker
  * 5. 检查今天是否已有 daily_learning 分配 → Ready
- * 6. 查找下一个可用的 READY 批次（未被 daily_learning 引用，匹配难度）
+ * 6. 查找 max(ref_batch_date) 之后的 READY 批次（严格晚于已消费日期，不回头分配 seed 旧批次）
  *    - 找到 → 分配给今天，触发下一批前置生成 → Ready
  *    - 未找到 → NeedsInitialBatch（调用方创建并触发生成）
  */
@@ -78,10 +78,14 @@ class StartupOrchestrationUseCase @Inject constructor(
             return StartupResult.Ready
         }
 
-        // 5. Find next READY batch for the user's difficulty
+        // 5. Find next READY batch for the user's difficulty.
+        //    只找已消费批次日期之后的批次（严格 >）：批次按时间顺序消费，不回头分配 seed 旧批次。
+        //    seed 历史批次（generated_on=03-29）在首次使用被消费后不再分配；
+        //    否则 TriggerNextBatchUseCase 会因"已有未来批次"跳过新批次生成。
+        val maxRefDate = articleRepository.getMaxRefBatchDate()
         val nextBatch = articleRepository.findNextReadyBatch(
             difficulty = settings.difficultyLevel,
-            afterDate = null // 获取第一个可用 READY 批次（不限制起始日期）
+            afterDate = maxRefDate
         )
 
         if (nextBatch != null && nextBatch.status == BatchStatus.READY) {

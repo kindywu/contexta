@@ -65,6 +65,9 @@ class ArticleRepositoryImpl @Inject constructor(
     override suspend fun getMaxRefBatchDate(): String? =
         dailyLearningDao.getMaxRefBatchDate()
 
+    override suspend fun getBatchById(batchId: Long): ArticleBatchModel? =
+        batchDao.getById(batchId)?.toModel()
+
     override suspend fun assignBatchForToday(batchId: Long, refBatchDate: String, dailyCount: Int): Boolean {
         val today = timeProvider.todayDateString()
         // Check if today already has a daily_learning record
