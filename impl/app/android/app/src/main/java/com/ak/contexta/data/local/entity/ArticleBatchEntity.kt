@@ -30,5 +30,7 @@ data class ArticleBatchEntity(
     @ColumnInfo(name = "blocked_reason")
     val blockedReason: String? = null,
     @ColumnInfo(name = "blocked_at")
-    val blockedAt: String? = null
+    val blockedAt: String? = null,
+    @ColumnInfo(name = "ready_notified_at")
+    val readyNotifiedAt: Long? = null // 批次完成飞书告警送达时间（Unix millis）；null = 未通知，启动时补发
 )

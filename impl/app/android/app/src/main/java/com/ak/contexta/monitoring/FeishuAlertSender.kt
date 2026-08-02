@@ -30,7 +30,7 @@ class FeishuAlertSender @Inject constructor(
 
     private val lastSentMap = mutableMapOf<String, Long>()
 
-    override suspend fun sendLlmFatalError(error: AppError.LlmFatal, context: ErrorContext) {
+    override suspend fun sendLlmFatalError(error: AppError.LlmFatal, context: ErrorContext): Boolean =
         sendError(
             dedupPrefix = "LLMFATAL",
             errorCode = error.code.name,
@@ -39,9 +39,8 @@ class FeishuAlertSender @Inject constructor(
             title = "🔴 Contexta LLM Fatal Error",
             templateColor = "red"
         )
-    }
 
-    override suspend fun sendStructuralError(error: AppError.Structural, context: ErrorContext) {
+    override suspend fun sendStructuralError(error: AppError.Structural, context: ErrorContext): Boolean =
         sendError(
             dedupPrefix = "STRUCTURAL",
             errorCode = error.code.name,
@@ -50,14 +49,13 @@ class FeishuAlertSender @Inject constructor(
             title = "⚠️ Contexta Structural Error",
             templateColor = "red"
         )
-    }
 
     override suspend fun sendArticleFailure(
         status: String,
         errorCode: String,
         errorMessage: String,
         context: ErrorContext
-    ) {
+    ): Boolean =
         // 5 分钟内同 batch + 同 errorCode 去重，避免刷屏
         sendError(
             dedupPrefix = "ARTICLE_${status}",
@@ -67,7 +65,6 @@ class FeishuAlertSender @Inject constructor(
             title = "🟡 Contexta Article $status",
             templateColor = "orange"
         )
-    }
 
     override suspend fun sendBatchReady(
         batchId: Long,
@@ -75,8 +72,8 @@ class FeishuAlertSender @Inject constructor(
         batchGeneratedOn: String?,
         batchDifficulty: String?,
         context: ErrorContext
-    ) {
-        // 批次完成通知不做去重——每个批次只发一次
+    ): Boolean =
+        // 批次完成通知不做去重——每个批次只发一次（重复补发由 ready_notified_at 幂等标记防住）
         sendSuccess(
             title = "🟢 Contexta Batch Ready",
             batchId = batchId,
@@ -85,7 +82,6 @@ class FeishuAlertSender @Inject constructor(
             batchDifficulty = batchDifficulty,
             context = context
         )
-    }
 
     private suspend fun sendSuccess(
         title: String,
@@ -94,17 +90,17 @@ class FeishuAlertSender @Inject constructor(
         batchGeneratedOn: String?,
         batchDifficulty: String?,
         context: ErrorContext
-    ) {
-        withContext(dispatchers.io) {
-            try {
-                val message = buildFeishuSuccessCard(
-                    title, batchId, articleCount, batchGeneratedOn, batchDifficulty, context
-                )
-                sendToFeishu(message)
-                Log.i(TAG, "Success alert sent: batch=$batchId, articles=$articleCount, generatedOn=$batchGeneratedOn, difficulty=$batchDifficulty")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to send success alert", e)
-            }
+    ): Boolean = withContext(dispatchers.io) {
+        try {
+            val message = buildFeishuSuccessCard(
+                title, batchId, articleCount, batchGeneratedOn, batchDifficulty, context
+            )
+            sendToFeishu(message)
+            Log.i(TAG, "Success alert sent: batch=$batchId, articles=$articleCount, generatedOn=$batchGeneratedOn, difficulty=$batchDifficulty")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send success alert", e)
+            false
         }
     }
 
@@ -115,21 +111,24 @@ class FeishuAlertSender @Inject constructor(
         context: ErrorContext,
         title: String,
         templateColor: String
-    ) {
+    ): Boolean {
         val dedupKey = "${dedupPrefix}_${errorCode}_${context.batchId}"
         val lastSent = lastSentMap[dedupKey]
         if (lastSent != null && timeProvider.nowMillis() - lastSent < DEDUP_WINDOW_MS) {
-            return
+            // 去重命中 = 该告警近期已发过，视为已通知
+            return true
         }
 
-        withContext(dispatchers.io) {
+        return withContext(dispatchers.io) {
             try {
                 val message = buildFeishuCardMessage(title, templateColor, errorCode, errorMessage, context)
                 sendToFeishu(message)
                 lastSentMap[dedupKey] = timeProvider.nowMillis()
                 Log.i(TAG, "Alert sent: $dedupKey")
+                true
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to send alert", e)
+                false
             }
         }
     }

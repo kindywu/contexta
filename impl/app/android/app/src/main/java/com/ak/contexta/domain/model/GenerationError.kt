@@ -7,7 +7,9 @@ package com.ak.contexta.domain.model
  * 用于 UI 判断是否可以重试；实体已删除时为 null。
  */
 data class GenerationError(
+    val id: Long, // generation_error_log 主键（补发告警后回写 notified_at 用）
     val entityId: Long,
+    val entityType: String = "ARTICLE", // "ARTICLE" | "BATCH"
     val errorCode: String,
     val errorMessage: String,
     val errorHelp: String?,

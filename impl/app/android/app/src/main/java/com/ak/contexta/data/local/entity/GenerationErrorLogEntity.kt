@@ -39,5 +39,7 @@ data class GenerationErrorLogEntity(
     @ColumnInfo(name = "retry_count")
     val retryCount: Int = 0, // 快照：错误发生时的重试次数
     @ColumnInfo(name = "created_at")
-    val createdAt: String = ContextaTypeConverters.currentDateTimeString()
+    val createdAt: String = ContextaTypeConverters.currentDateTimeString(),
+    @ColumnInfo(name = "notified_at")
+    val notifiedAt: Long? = null // 飞书告警送达时间（Unix millis）；null = 未通知，启动时补发
 )

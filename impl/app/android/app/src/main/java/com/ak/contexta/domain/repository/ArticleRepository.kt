@@ -93,12 +93,13 @@ interface ArticleRepository {
     /** Mark batch as READY */
     suspend fun markBatchReady(batchId: Long)
 
-    /** Mark batch as BLOCKED */
-    suspend fun markBatchBlocked(batchId: Long, reason: String, appVersionCode: Int)
+    /** Mark batch as BLOCKED. 返回写入的 BATCH 错误流水账 id（无错误详情时为 null）。 */
+    suspend fun markBatchBlocked(batchId: Long, reason: String, appVersionCode: Int): Long?
 
     /**
      * Mark article as FAILED or TIMEOUT.
      * 错误详情（errorCode/errorMessage/errorHelp）和 [retryCount] 快照写入 generation_error_log 流水账。
+     * 返回写入的错误流水账 id（无错误详情时为 null），用于告警送达后回写 notified_at。
      */
     suspend fun failArticle(
         articleId: Long,
@@ -107,15 +108,27 @@ interface ArticleRepository {
         errorMessage: String? = null,
         errorHelp: String? = null,
         retryCount: Int = 0
-    )
+    ): Long?
 
-    /** Mark article as FATAL. 错误详情和重试次数快照写入 generation_error_log 流水账。 */
+    /** Mark article as FATAL. 错误详情和重试次数快照写入 generation_error_log 流水账。返回流水账 id。 */
     suspend fun fatalArticle(
         articleId: Long,
         errorCode: String? = null,
         errorMessage: String? = null,
         retryCount: Int = 0
-    )
+    ): Long?
+
+    /** 回写错误告警的送达时间（幂等）。 */
+    suspend fun markErrorNotified(errorLogId: Long)
+
+    /** 回写批次完成通知的送达时间（幂等）。 */
+    suspend fun markBatchReadyNotified(batchId: Long)
+
+    /** 获取 [createdAfter]（ISO 时间字符串）之后创建且告警未送达的错误（启动补发用）。 */
+    suspend fun getUnnotifiedErrors(createdAfter: String): List<GenerationError>
+
+    /** 获取已 READY 但完成通知未送达的批次（启动补发用）。 */
+    suspend fun getReadyBatchesUnnotified(): List<ArticleBatch>
 
     /** Add reading seconds */
     suspend fun addReadSeconds(articleId: Long, deltaSeconds: Int)

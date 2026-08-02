@@ -66,11 +66,14 @@ interface ArticleBatchDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(batch: ArticleBatchEntity): Long
 
-    // CAS: only update if still PENDING
+    // CAS: only update if still PENDING or GENERATING.
+    // 认领 GENERATING 是「中断恢复」的关键：Worker 在生成中途被系统终止（进程冻结/Job 超时）后，
+    // 批次会停留在 GENERATING，重试的 Worker 若只认 PENDING 会直接返回，剩余文章成为永久孤儿。
+    // 放宽到 GENERATING 后，重试 Worker 可重新进入批次；单篇文章仍有 claimArticle CAS 保护，不会重复生成。
     @Query("""
         UPDATE article_batch
         SET status = 'GENERATING', last_updated_at = :now
-        WHERE id = :batchId AND status = 'PENDING'
+        WHERE id = :batchId AND status IN ('PENDING', 'GENERATING')
     """)
     suspend fun claimForGeneration(batchId: Long, now: String): Int
 
@@ -107,4 +110,19 @@ interface ArticleBatchDao {
         WHERE status = 'GENERATING'
     """)
     suspend fun resetAllGeneratingBatches()
+
+    /** 获取已 READY 但完成通知未送达的批次（启动时补发飞书通知）。 */
+    @Query("""
+        SELECT * FROM article_batch
+        WHERE status = 'READY' AND ready_notified_at IS NULL
+    """)
+    suspend fun getReadyUnnotified(): List<ArticleBatchEntity>
+
+    /** 回写批次完成通知的送达时间（幂等：只写一次）。 */
+    @Query("""
+        UPDATE article_batch
+        SET ready_notified_at = :at
+        WHERE id = :batchId AND ready_notified_at IS NULL
+    """)
+    suspend fun markReadyNotified(batchId: Long, at: Long)
 }
