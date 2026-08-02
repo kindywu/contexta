@@ -267,7 +267,10 @@ class FeishuAlertSender @Inject constructor(
         }
 
         val sign = generateSign(timestamp, secret)
-        val fullUrl = "${url}?timestamp=${timestamp}&sign=${sign}"
+        // ⚠️ base64 签名可能含 +（也可能含 /），拼进 URL query 必须 URL 编码：
+        // 飞书按 URL 标准把 + 解码为空格，未编码的签名会被破坏 → 19021 sign match fail
+        val encodedSign = java.net.URLEncoder.encode(sign, "UTF-8")
+        val fullUrl = "${url}?timestamp=${timestamp}&sign=${encodedSign}"
         Log.i(TAG, "Sending to Feishu: $url, timestamp=$timestamp, sign=${sign.take(8)}...")
 
         val connection = URL(fullUrl).openConnection() as HttpURLConnection
@@ -287,6 +290,22 @@ class FeishuAlertSender @Inject constructor(
         if (responseCode !in 200..299) {
             throw java.io.IOException("Feishu API returned $responseCode: $responseBody")
         }
+        // ⚠️ 飞书 Webhook 业务失败时 HTTP 仍返回 200，必须解析响应体的业务 code：
+        // code != 0（如 19021 签名失败 / 19001 参数错误）视为发送失败，抛异常
+        // → 调用方返回 false → 不回写 notified_at → 下次启动补发重试
+        val businessCode = parseBusinessCode(responseBody)
+        if (businessCode != null && businessCode != 0) {
+            throw java.io.IOException(
+                "Feishu business error code=$businessCode, body=$responseBody"
+            )
+        }
+    }
+
+    private fun parseBusinessCode(responseBody: String): Int? = try {
+        JSONObject(responseBody).optInt("code", -1).takeIf { it >= 0 }
+    } catch (e: Exception) {
+        // 非 JSON 响应体（如网络代理拦截页），无法解析业务码 → 交给 HTTP 状态码判断
+        null
     }
 
     /**
