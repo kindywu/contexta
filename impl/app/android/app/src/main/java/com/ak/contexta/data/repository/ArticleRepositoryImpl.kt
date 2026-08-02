@@ -7,6 +7,7 @@ import com.ak.contexta.data.local.dao.DailyLearningDao
 import com.ak.contexta.data.local.dao.GenerationErrorLogDao
 import com.ak.contexta.data.local.dao.GenerationErrorWithStatus
 import com.ak.contexta.data.local.dao.GenerationPipelineStatusDao
+import com.ak.contexta.data.local.ContextaDatabase
 import com.ak.contexta.data.local.entity.ArticleBatchEntity
 import com.ak.contexta.data.local.entity.ArticleEntity
 import com.ak.contexta.data.local.entity.ArticleParagraphEntity
@@ -21,6 +22,7 @@ import com.ak.contexta.domain.model.GenerationError
 import com.ak.contexta.domain.model.ArticleBatch as ArticleBatchModel
 import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.time.TimeProvider
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -28,6 +30,7 @@ import javax.inject.Singleton
 
 @Singleton
 class ArticleRepositoryImpl @Inject constructor(
+    private val database: ContextaDatabase,
     private val batchDao: ArticleBatchDao,
     private val articleDao: ArticleDao,
     private val paragraphDao: ArticleParagraphDao,
@@ -196,20 +199,25 @@ class ArticleRepositoryImpl @Inject constructor(
         retryCount: Int
     ): Long? {
         val now = timeProvider.nowDateTimeString()
-        articleDao.updateStatusWithRetryTime(articleId, status, now)
-        return if (errorCode != null || errorMessage != null) {
-            errorLogDao.insert(
-                GenerationErrorLogEntity(
-                    entityType = "ARTICLE",
-                    entityId = articleId,
-                    errorCode = errorCode ?: "UNKNOWN",
-                    errorMessage = errorMessage ?: "未知错误",
-                    errorHelp = errorHelp,
-                    retryCount = retryCount,
-                    createdAt = now
+        // 状态更新与错误日志写入必须在同一事务：
+        // 两条语句间进程被杀会导致状态/时间戳已变但 error_log 丢失
+        // （告警补发失效，且重试认领时无法从日志追溯失败原因）
+        return database.withTransaction {
+            articleDao.updateStatusWithRetryTime(articleId, status, now)
+            if (errorCode != null || errorMessage != null) {
+                errorLogDao.insert(
+                    GenerationErrorLogEntity(
+                        entityType = "ARTICLE",
+                        entityId = articleId,
+                        errorCode = errorCode ?: "UNKNOWN",
+                        errorMessage = errorMessage ?: "未知错误",
+                        errorHelp = errorHelp,
+                        retryCount = retryCount,
+                        createdAt = now
+                    )
                 )
-            )
-        } else null
+            } else null
+        }
     }
 
     override suspend fun fatalArticle(
@@ -219,19 +227,22 @@ class ArticleRepositoryImpl @Inject constructor(
         retryCount: Int
     ): Long? {
         val now = timeProvider.nowDateTimeString()
-        articleDao.updateStatusWithRetryTime(articleId, "FATAL", now)
-        return if (errorCode != null || errorMessage != null) {
-            errorLogDao.insert(
-                GenerationErrorLogEntity(
-                    entityType = "ARTICLE",
-                    entityId = articleId,
-                    errorCode = errorCode ?: "UNKNOWN",
-                    errorMessage = errorMessage ?: "未知错误",
-                    retryCount = retryCount,
-                    createdAt = now
+        // 与 failArticle 相同：状态与日志必须同事务写入，防止中间进程被杀导致日志丢失
+        return database.withTransaction {
+            articleDao.updateStatusWithRetryTime(articleId, "FATAL", now)
+            if (errorCode != null || errorMessage != null) {
+                errorLogDao.insert(
+                    GenerationErrorLogEntity(
+                        entityType = "ARTICLE",
+                        entityId = articleId,
+                        errorCode = errorCode ?: "UNKNOWN",
+                        errorMessage = errorMessage ?: "未知错误",
+                        retryCount = retryCount,
+                        createdAt = now
+                    )
                 )
-            )
-        } else null
+            } else null
+        }
     }
 
     override suspend fun markErrorNotified(errorLogId: Long) {
@@ -278,9 +289,13 @@ class ArticleRepositoryImpl @Inject constructor(
         // 同时重置 GENERATING 批次回 PENDING —— 使 Worker 可以重新 claim。
         // Worker 的 claimArticle() 有 CAS 保护（只认 PENDING/TIMEOUT/FAILED），
         // 即使 batch 仍在处理中，worker 会重新 claim，不会重复生成。
-        articleDao.resetAllGenerating()
-        articleDao.resetAllTimedOutAndFailed()
-        batchDao.resetAllGeneratingBatches()
+        // 三条重置语句在同一事务：防止部分重置（如文章已重置但批次未重置）
+        // 导致 worker 重新调度时状态不一致
+        database.withTransaction {
+            articleDao.resetAllGenerating()
+            articleDao.resetAllTimedOutAndFailed()
+            batchDao.resetAllGeneratingBatches()
+        }
     }
 
     override suspend fun getGeneratingBatches(): List<ArticleBatchModel> =

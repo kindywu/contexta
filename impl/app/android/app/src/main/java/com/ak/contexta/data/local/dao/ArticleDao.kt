@@ -28,10 +28,16 @@ interface ArticleDao {
     suspend fun insertAll(articles: List<ArticleEntity>): List<Long>
 
     // CAS: claim article for generation
+    // generation_started_at 语义 = 本次生成开始时间：
+    // - PENDING 认领 → 写入 now（新一轮生成开始）
+    // - TIMEOUT/FAILED 重试认领 → started_at 为空时补写 now（此前被 resetAllGenerating
+    //   清空或从未写入，不补会导致 SUCCESS 文章 started_at 为 NULL）；有值则保留
     @Query("""
         UPDATE article
         SET status = 'GENERATING',
-            generation_started_at = CASE WHEN status = 'PENDING' THEN :now ELSE generation_started_at END,
+            generation_started_at = CASE
+                WHEN status = 'PENDING' OR generation_started_at IS NULL THEN :now
+                ELSE generation_started_at END,
             last_retry_at = CASE WHEN status IN ('TIMEOUT', 'FAILED') THEN :now ELSE last_retry_at END
         WHERE id = :articleId AND status IN ('PENDING', 'TIMEOUT', 'FAILED')
     """)
