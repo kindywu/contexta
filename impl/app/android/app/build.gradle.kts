@@ -17,6 +17,10 @@ val deepSeekModel: String = localProperties?.getProperty("deepseek.model") ?: "d
 val deepSeekBaseUrl: String = localProperties?.getProperty("deepseek.baseUrl") ?: "https://api.deepseek.com"
 val feishuWebhookUrl: String = localProperties?.getProperty("feishu.webhookUrl") ?: ""
 val feishuSignSecret: String = localProperties?.getProperty("feishu.signSecret") ?: ""
+// LLM 调用超时（ms）：High 难度文章生成耗时更长，可在 local.properties 调大（llm.timeoutMs）
+val llmTimeoutMs: Long = (localProperties?.getProperty("llm.timeoutMs") ?: "120000").toLong()
+// LLM 可恢复错误重试次数（llm.maxRetries）
+val llmMaxRetries: Int = (localProperties?.getProperty("llm.maxRetries") ?: "3").toInt()
 
 android {
     namespace = "com.ak.contexta"
@@ -42,6 +46,8 @@ android {
         buildConfigField("String", "DEEPSEEK_BASE_URL", "\"${deepSeekBaseUrl}\"")
         buildConfigField("String", "FEISHU_WEBHOOK_URL", "\"${feishuWebhookUrl}\"")
         buildConfigField("String", "FEISHU_SIGN_SECRET", "\"${feishuSignSecret}\"")
+        buildConfigField("long", "LLM_TIMEOUT_MS", "${llmTimeoutMs}L")
+        buildConfigField("int", "LLM_MAX_RETRIES", "$llmMaxRetries")
 
         testOptions {
             unitTests {

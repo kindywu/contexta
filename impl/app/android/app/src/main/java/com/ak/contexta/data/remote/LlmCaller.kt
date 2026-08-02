@@ -25,8 +25,8 @@ class LlmCaller @Inject constructor(
 ) : LlmClient {
 
     companion object {
-        private const val MAX_RETRIES = 3
-        private const val GENERATION_TIMEOUT_MS = 120_000L // 2 minutes
+        // 可恢复错误重试次数，由构建配置提供（local.properties llm.maxRetries 可调）
+        private val MAX_RETRIES = BuildConfig.LLM_MAX_RETRIES
         private const val MAX_RETRY_AFTER_SECONDS = 30
     }
 

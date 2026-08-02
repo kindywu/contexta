@@ -39,7 +39,9 @@ object NetworkModule {
 
         return OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)
+            // okhttp 读超时必须 >= 协程级 LLM 超时（BuildConfig.LLM_TIMEOUT_MS）：
+            // 否则调大 llm.timeoutMs（High 难度耗时）时 okhttp 会先超时触发重试风暴
+            .readTimeout(BuildConfig.LLM_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
