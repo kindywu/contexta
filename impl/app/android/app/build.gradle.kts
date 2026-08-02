@@ -21,6 +21,8 @@ val feishuSignSecret: String = localProperties?.getProperty("feishu.signSecret")
 val llmTimeoutMs: Long = (localProperties?.getProperty("llm.timeoutMs") ?: "120000").toLong()
 // LLM 可恢复错误重试次数（llm.maxRetries）
 val llmMaxRetries: Int = (localProperties?.getProperty("llm.maxRetries") ?: "3").toInt()
+// 429 限流时 Retry-After 等待时间封顶（秒），防止服务器要求离谱长的等待（llm.maxRetryAfterSeconds）
+val llmMaxRetryAfterSeconds: Int = (localProperties?.getProperty("llm.maxRetryAfterSeconds") ?: "30").toInt()
 
 android {
     namespace = "com.ak.contexta"
@@ -48,6 +50,7 @@ android {
         buildConfigField("String", "FEISHU_SIGN_SECRET", "\"${feishuSignSecret}\"")
         buildConfigField("long", "LLM_TIMEOUT_MS", "${llmTimeoutMs}L")
         buildConfigField("int", "LLM_MAX_RETRIES", "$llmMaxRetries")
+        buildConfigField("int", "LLM_MAX_RETRY_AFTER_SECONDS", "$llmMaxRetryAfterSeconds")
 
         testOptions {
             unitTests {

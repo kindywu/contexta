@@ -27,7 +27,8 @@ class LlmCaller @Inject constructor(
     companion object {
         // 可恢复错误重试次数，由构建配置提供（local.properties llm.maxRetries 可调）
         private val MAX_RETRIES = BuildConfig.LLM_MAX_RETRIES
-        private const val MAX_RETRY_AFTER_SECONDS = 30
+        // 429 限流时 Retry-After 等待时间封顶（秒），防止服务器要求离谱长的等待
+        private val MAX_RETRY_AFTER_SECONDS = BuildConfig.LLM_MAX_RETRY_AFTER_SECONDS
     }
 
     /**
