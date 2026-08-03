@@ -21,31 +21,35 @@ interface DeveloperAlertSender {
     /**
      * 发送 LLM 不可恢复错误通知给开发者。
      * 用于 LlmFatal 错误：API Key 失效、LLM 账号欠费、存储空间不足等。
+     * @return true = 通知已发出（或被去重视为已处理）；false = 发送失败，调用方可回写/保留待补发标记
      */
-    suspend fun sendLlmFatalError(error: AppError.LlmFatal, context: ErrorContext)
+    suspend fun sendLlmFatalError(error: AppError.LlmFatal, context: ErrorContext): Boolean
 
     /**
      * 发送结构性错误通知给开发者。
      * 用于 Structural 错误（代码级 bug）。
+     * @return true = 通知已发出（或被去重视为已处理）；false = 发送失败
      */
-    suspend fun sendStructuralError(error: AppError.Structural, context: ErrorContext)
+    suspend fun sendStructuralError(error: AppError.Structural, context: ErrorContext): Boolean
 
     /**
      * 发送文章生成失败通知。
      * 用于 TIMEOUT / FAILED / FATAL 等非 SUCCESS 终态，
      * 帮助开发者发现 LLM 服务不稳定或超时问题。
+     * @return true = 通知已发出（或被去重视为已处理）；false = 发送失败
      */
     suspend fun sendArticleFailure(
         status: String,
         errorCode: String,
         errorMessage: String,
         context: ErrorContext
-    )
+    ): Boolean
 
     /**
      * 发送批次生成完成通知。
      * 批次所有文章生成成功时发送，作为心跳/状态确认。
      * [batchGeneratedOn] / [batchDifficulty] 用于通知中展示批次日期与难度（可为 null，通知中显示 ?）。
+     * @return true = 通知已发出；false = 发送失败
      */
     suspend fun sendBatchReady(
         batchId: Long,
@@ -53,5 +57,5 @@ interface DeveloperAlertSender {
         batchGeneratedOn: String?,
         batchDifficulty: String?,
         context: ErrorContext
-    )
+    ): Boolean
 }

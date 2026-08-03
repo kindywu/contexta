@@ -28,7 +28,8 @@ class StartupOrchestrationUseCase @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val timeProvider: TimeProvider,
     private val triggerNextBatch: TriggerNextBatchUseCase,
-    private val generationScheduler: BackgroundWorkScheduler
+    private val generationScheduler: BackgroundWorkScheduler,
+    private val resendPendingAlerts: ResendPendingAlertsUseCase
 ) {
     sealed class StartupResult {
         data object PipelineBlocked : StartupResult()
@@ -66,6 +67,11 @@ class StartupOrchestrationUseCase @Inject constructor(
                 generationScheduler.scheduleBatchGeneration(batch.id)
             }
         }
+
+        // 5.5 补发未送达的飞书告警（生成期间进程被终止时，实时告警可能丢失）
+        //     失败不影响启动主流程——下次启动还会再试
+        runCatching { resendPendingAlerts() }
+            .onFailure { Log.w("StartupOrch", "Resend pending alerts failed", it) }
 
         val today = timeProvider.todayDateString()
 

@@ -1,5 +1,7 @@
 package com.ak.contexta.domain
 
+import com.ak.contexta.BuildConfig
+
 /**
  * LLM 客户端接口，由 data 层实现。
  */
@@ -20,6 +22,6 @@ interface LlmClient {
     suspend fun call(
         systemPrompt: String,
         userPrompt: String,
-        timeoutMs: Long = 120_000L
+        timeoutMs: Long = BuildConfig.LLM_TIMEOUT_MS
     ): LlmResult
 }

@@ -23,6 +23,7 @@ class StartupOrchestrationUseCaseTest {
     private val timeProvider: TimeProvider = mockk()
     private val triggerNextBatch: TriggerNextBatchUseCase = mockk()
     private val generationScheduler: BackgroundWorkScheduler = mockk()
+    private val resendPendingAlerts: ResendPendingAlertsUseCase = mockk()
 
     private lateinit var useCase: StartupOrchestrationUseCase
 
@@ -39,7 +40,8 @@ class StartupOrchestrationUseCaseTest {
             settingsRepository = settingsRepository,
             timeProvider = timeProvider,
             triggerNextBatch = triggerNextBatch,
-            generationScheduler = generationScheduler
+            generationScheduler = generationScheduler,
+            resendPendingAlerts = resendPendingAlerts
         )
         coEvery { settingsRepository.getSettings() } returns settings
         coEvery { timeProvider.todayDateString() } returns "2026-08-01"
@@ -48,6 +50,7 @@ class StartupOrchestrationUseCaseTest {
         coEvery { articleRepository.reconcileOrphanArticles() } returns Unit
         coEvery { triggerNextBatch.invoke(any(), any()) } returns Unit
         coEvery { generationScheduler.scheduleBatchGeneration(any(), any()) } returns true
+        coEvery { resendPendingAlerts.invoke() } returns Unit
     }
 
     // ─── 修复核心：分配批次时传 maxRefDate，不回头选旧 seed 批次 ───────────
@@ -146,6 +149,35 @@ class StartupOrchestrationUseCaseTest {
         useCase(currentVersionCode = 1)
 
         coVerify(exactly = 1) { generationScheduler.scheduleBatchGeneration(6) }
+    }
+
+    // ─── 未送达告警补发 ─────────────────────────────────────────────────
+
+    @Test
+    fun `启动时补发未送达的飞书告警`() = runTest {
+        coEvery { articleRepository.getAssignedBatchForDate("2026-08-01") } returns null
+        coEvery { articleRepository.getMaxRefBatchDate() } returns "2026-07-31"
+        coEvery { articleRepository.findNextReadyBatch("LOW", "2026-07-31") } returns null
+
+        useCase(currentVersionCode = 1)
+
+        coVerify(exactly = 1) { resendPendingAlerts.invoke() }
+    }
+
+    @Test
+    fun `补发告警失败不影响启动主流程`() = runTest {
+        coEvery { resendPendingAlerts.invoke() } throws RuntimeException("webhook down")
+        coEvery { articleRepository.getAssignedBatchForDate("2026-08-01") } returns null
+        coEvery { articleRepository.getMaxRefBatchDate() } returns "2026-07-31"
+        coEvery { articleRepository.findNextReadyBatch("LOW", "2026-07-31") } returns null
+
+        val result = useCase(currentVersionCode = 1)
+
+        // 补发失败被 runCatching 吞掉，启动编排照常完成
+        assertEquals(
+            StartupOrchestrationUseCase.StartupResult.NeedsInitialBatch("LOW", 5),
+            result
+        )
     }
 
     // ─── 管道阻塞 ────────────────────────────────────────────────────────

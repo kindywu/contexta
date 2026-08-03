@@ -59,8 +59,8 @@ class GenerateArticlesUseCase @Inject constructor(
                 )
 
             } catch (e: LlmFatalException) {
-                articleRepository.fatalArticle(article.id, "LLM_FATAL", e.message, article.retryCount)
-                alertSender.sendLlmFatalError(
+                val errorLogId = articleRepository.fatalArticle(article.id, "LLM_FATAL", e.message, article.retryCount)
+                val sent = alertSender.sendLlmFatalError(
                     com.ak.contexta.domain.error.AppError.LlmFatal(
                         code = com.ak.contexta.domain.error.LlmFatalCode.AUTH_FAILED,
                         message = e.message ?: "Unknown",
@@ -68,25 +68,28 @@ class GenerateArticlesUseCase @Inject constructor(
                     ),
                     ErrorContext(batchId, article.id, appVersionCode ?: 0, timeProvider.nowMillis())
                 )
+                // 告警送达才回写 notified_at；进程被杀导致通知丢失时，启动补发会重发
+                if (sent) errorLogId?.let { articleRepository.markErrorNotified(it) }
                 continue
 
             } catch (e: LlmRecoverableExhaustedException) {
-                articleRepository.failArticle(
+                val errorLogId = articleRepository.failArticle(
                     article.id, "FAILED", "LLM_RECOVERABLE_EXHAUSTED", e.message,
                     retryCount = article.retryCount
                 )
-                alertSender.sendArticleFailure(
+                val sent = alertSender.sendArticleFailure(
                     status = "FAILED",
                     errorCode = "LLM_RECOVERABLE_EXHAUSTED",
                     errorMessage = e.message ?: "Unknown",
                     context = ErrorContext(batchId, article.id, appVersionCode ?: 0, timeProvider.nowMillis())
                 )
+                if (sent) errorLogId?.let { articleRepository.markErrorNotified(it) }
                 continue
 
             } catch (e: PipelineBlockingException) {
-                articleRepository.fatalArticle(article.id, "PIPELINE_BLOCKING", e.message, article.retryCount)
-                articleRepository.markBatchBlocked(batchId, e.message ?: "Unknown", appVersionCode ?: 0)
-                alertSender.sendStructuralError(
+                val articleErrorLogId = articleRepository.fatalArticle(article.id, "PIPELINE_BLOCKING", e.message, article.retryCount)
+                val batchErrorLogId = articleRepository.markBatchBlocked(batchId, e.message ?: "Unknown", appVersionCode ?: 0)
+                val sent = alertSender.sendStructuralError(
                     com.ak.contexta.domain.error.AppError.Structural(
                         code = com.ak.contexta.domain.error.StructuralCode.UNEXPECTED_ERROR,
                         message = e.message ?: "Unknown",
@@ -94,19 +97,24 @@ class GenerateArticlesUseCase @Inject constructor(
                     ),
                     ErrorContext(batchId, article.id, appVersionCode ?: 0, timeProvider.nowMillis())
                 )
+                if (sent) {
+                    articleErrorLogId?.let { articleRepository.markErrorNotified(it) }
+                    batchErrorLogId?.let { articleRepository.markErrorNotified(it) }
+                }
                 throw e
 
             } catch (e: Exception) {
-                articleRepository.failArticle(
+                val errorLogId = articleRepository.failArticle(
                     article.id, "TIMEOUT", "UNEXPECTED", e.message,
                     retryCount = article.retryCount
                 )
-                alertSender.sendArticleFailure(
+                val sent = alertSender.sendArticleFailure(
                     status = "TIMEOUT",
                     errorCode = "UNEXPECTED",
                     errorMessage = e.message ?: "Unknown",
                     context = ErrorContext(batchId, article.id, appVersionCode ?: 0, timeProvider.nowMillis())
                 )
+                if (sent) errorLogId?.let { articleRepository.markErrorNotified(it) }
                 continue
             }
         }
@@ -117,13 +125,15 @@ class GenerateArticlesUseCase @Inject constructor(
                 articleRepository.markBatchReady(batchId)
                 // 取批次信息（生成日期/难度），随完成通知一起展示
                 val batch = articleRepository.getBatchById(batchId)
-                alertSender.sendBatchReady(
+                val sent = alertSender.sendBatchReady(
                     batchId = batchId,
                     articleCount = articles.size,
                     batchGeneratedOn = batch?.generatedOn,
                     batchDifficulty = batch?.difficultyLevelSnapshot,
                     context = ErrorContext(batchId, null, appVersionCode ?: 0, timeProvider.nowMillis())
                 )
+                // 通知送达才回写 ready_notified_at；进程被杀导致通知丢失时，启动补发会重发
+                if (sent) articleRepository.markBatchReadyNotified(batchId)
             }
         }
     }

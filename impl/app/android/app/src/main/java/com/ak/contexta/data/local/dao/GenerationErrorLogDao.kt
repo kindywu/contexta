@@ -45,4 +45,20 @@ interface GenerationErrorLogDao {
         ORDER BY created_at DESC
     """)
     suspend fun getByEntity(entityType: String, entityId: Long): List<GenerationErrorLogEntity>
+
+    /** 获取 [createdAfter] 之后创建且告警未送达的错误（启动时补发飞书告警）。 */
+    @Query("""
+        SELECT * FROM generation_error_log
+        WHERE notified_at IS NULL AND created_at >= :createdAfter
+        ORDER BY created_at ASC
+    """)
+    suspend fun getUnnotified(createdAfter: String): List<GenerationErrorLogEntity>
+
+    /** 回写告警送达时间（幂等：只写一次，避免重复补发）。 */
+    @Query("""
+        UPDATE generation_error_log
+        SET notified_at = :at
+        WHERE id = :id AND notified_at IS NULL
+    """)
+    suspend fun markNotified(id: Long, at: Long)
 }
