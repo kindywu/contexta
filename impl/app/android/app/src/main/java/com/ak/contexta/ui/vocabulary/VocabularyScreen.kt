@@ -285,7 +285,7 @@ private fun VocabularyCard(
         // Word
         Text(
             text = word,
-            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 38.sp)
+            style = MaterialTheme.typography.headlineLarge.copy(fontSize = 30.sp)
         )
 
         if (phonetic != null) {
@@ -361,7 +361,7 @@ private fun SenseBlock(
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = englishDefinition,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 15.sp),
             color = Muted
         )
 
@@ -378,13 +378,13 @@ private fun SenseBlock(
                 Column {
                     Text(
                         text = example.sentenceEn,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = Ink
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = example.sentenceZh,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = Muted
                     )
                 }

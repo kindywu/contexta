@@ -292,8 +292,8 @@ sequenceDiagram
 1. **顶栏**：返回按钮 + 进度点（`N / M` 计数 + 圆点行，居中）+ 录入入口（`Add` 珊瑚图标 → AddWord）。
 2. **进度点**：左侧「N / M」计数（labelMedium MutedSoft）+ 圆点行——**当前位 = 16dp 宽珊瑚 pill（6dp 高），已完成 = 6dp Muted 40% 透明度圆点，未到 = 6dp Hairline 圆点**。
 3. **单词卡**（无卡片底，内容 Column 水平居中、`padding(horizontal = 24dp)`、内部可纵向滚动，底部 80dp 空位避开 FAB）：
-   ① 单词 38sp serif（`headlineLarge.copy(38sp)`）+ 音标 15sp 珊瑚（`PhoneticStyle.copy(15sp)`）+ 发音钮 36dp
-   ② **词义框（SenseBlock）**：按词性分框，每框 = SurfaceSoft 底、`Radius.Sm` 8dp 圆角、12dp 内边距——词性 `labelLarge` 珊瑚 + 中文义 `headlineSmall` Ink 同行；下方英文释义 `bodySmall` Muted；再下方 **`example` 标题**（`labelLarge` 珊瑚）+ 例句对（英文 `bodyMedium` Ink + 中文 `bodySmall` Muted）——**例句与翻译同一框内，无独立例句框/引文竖条**
+   ① 单词 30sp serif（`headlineLarge.copy(30sp)`）+ 音标 15sp 珊瑚（`PhoneticStyle.copy(15sp)`）+ 发音钮 36dp
+   ② **词义框（SenseBlock）**：按词性分框，每框 = SurfaceSoft 底、`Radius.Sm` 8dp 圆角、12dp 内边距——词性 `labelLarge` 珊瑚 + 中文义 `headlineSmall` Ink 同行；下方英文释义 `bodySmall.copy(15sp)` Muted；再下方 **`example` 标题**（`labelLarge` 珊瑚）+ 例句对（英文 `bodyLarge` Ink + 中文 `bodyMedium` Muted）——**例句与翻译同一框内，无独立例句框/引文竖条**（英文内容字号 13/14sp 加大至 15/16sp）
    ③ 掌握进度：已认识 `reviewStreak`/`masteryThreshold` 次（`labelMedium` MutedSoft）
 4. **滑动切卡**：内容区挂 `nestedScroll`（`CardSwitchNestedScroll`），内容在边界内正常滚动；**滚动到边界后继续 fling**——下甩（velocity ≤ -500px/s）→ `goNext()`，上甩（velocity ≥ 500px/s）→ `goPrevious()`；切卡不记判定。
 5. **FAB**：右下角 56dp 圆形珊瑚「✓」→ `markCorrect()`（标记认识，达阈值移出生词表，未达仅计数，随后 `advanceToNext()` 自动切下一词/进总结）。
