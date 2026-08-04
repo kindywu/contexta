@@ -4,6 +4,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 文章生成 expedited 工作的前台通知（Android 13+ 需声明；未授权时通知不可见但 FGS 照常运行） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- TTS engine discovery (Android 11+ package visibility) -->
     <queries>
         <intent>

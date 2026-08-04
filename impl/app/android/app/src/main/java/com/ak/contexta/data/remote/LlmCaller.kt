@@ -7,7 +7,9 @@ import com.ak.contexta.domain.LlmClient
 import com.ak.contexta.domain.LlmErrorClassifier
 import com.ak.contexta.domain.error.LlmFatalException
 import com.ak.contexta.domain.error.LlmRecoverableExhaustedException
+import com.ak.contexta.domain.error.LlmTimeoutException
 import com.ak.contexta.domain.error.PipelineBlockingException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
@@ -63,6 +65,11 @@ class LlmCaller @Inject constructor(
                 return@withTimeoutOrNull LlmClient.LlmResult(content = content, retryCount = retryCount)
 
             } catch (e: Exception) {
+                // 超时/取消异常立即传播：不能当作可恢复错误重试。
+                // TimeoutCancellationException 会被 withTimeoutOrNull 转为 null，
+                // 由调用方抛 LlmTimeoutException；外部取消（Worker 被取消）也应立即传播。
+                // 否则会幻影 retryCount++，且最后一次尝试超时会被误报为 RecoverableExhausted。
+                if (e is CancellationException) throw e
                 lastError = e
 
                 // Classify the error
@@ -115,9 +122,11 @@ class LlmCaller @Inject constructor(
 
         if (result != null) return result
 
-        // 超时 → 抛出普通 Exception（非 CancellationException），
-        // 让 GenerateArticlesUseCase 按 TIMEOUT 处理，且不取消协程
-        throw Exception("Timed out waiting for $timeoutMs ms")
+        // 超时 → 抛出 LlmTimeoutException（非 CancellationException），
+        // 让 GenerateArticlesUseCase 按 TIMEOUT / LLM_TIMEOUT 分类处理，
+        // 且不取消协程（与旧逻辑一致：避免同批次后续文章无法继续生成）。
+        // withTimeoutOrNull 超时已取消底层 OkHttp 调用，无连接泄漏。
+        throw LlmTimeoutException("Timed out waiting for $timeoutMs ms")
     }
 
     private fun extractHttpCode(e: Exception): Int? {

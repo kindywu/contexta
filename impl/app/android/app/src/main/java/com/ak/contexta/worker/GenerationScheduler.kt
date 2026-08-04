@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.work.BackoffPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import com.ak.contexta.domain.BackgroundWorkScheduler
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -34,6 +35,9 @@ class GenerationScheduler @Inject constructor(
     override fun scheduleBatchGeneration(batchId: Long, appVersionCode: Int): Boolean {
         Log.i(TAG, "Scheduling Worker for batch $batchId")
 
+        // expedited：以前台服务运行，避免应用转后台后被 MIUI 节流/停任务
+        // （曾导致 LLM 调用挂起 5 分钟超时、文章遗留 GENERATING）。
+        // 配额耗尽时降级为普通 work 而非抛异常。
         val workRequest = OneTimeWorkRequestBuilder<ArticleGenerationWorker>()
             .setInputData(ArticleGenerationWorker.buildInputData(batchId, appVersionCode))
             .setBackoffCriteria(
@@ -41,6 +45,7 @@ class GenerationScheduler @Inject constructor(
                 30,
                 TimeUnit.SECONDS
             )
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .addTag("batch_$batchId")
             .build()
 
