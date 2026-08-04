@@ -71,7 +71,7 @@ val ContextaTypography = Typography(
         fontSize = 14.sp,
         lineHeight = 20.sp
     ),
-    // body-md 16px — body text (reading text uses 1.7 lineHeight override)
+    // body-md 16px — body text（阅读页正文局部覆盖为 18sp / 30sp，见 ReadingScreen）
     bodyLarge = TextStyle(
         fontFamily = BodyFontFamily,
         fontWeight = FontWeight.Normal,

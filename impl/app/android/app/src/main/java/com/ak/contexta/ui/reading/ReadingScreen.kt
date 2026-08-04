@@ -283,6 +283,21 @@ private fun ReadingAppBar(
 /** 内联播放按钮在 AnnotatedString 中的占位标记（英文正文不会出现该字符串）。 */
 private const val INLINE_PLAY_PLACEHOLDER = "⟨play⟩"
 
+/**
+ * 单词匹配规则（与分词参考实现 findall 语义一致）：
+ * 兼容缩写（I'm、don't）与连字符复合词（state-of-the-art），首字符必须是字母，
+ * 因此孤立标点（-、'）不会误判为单词。
+ */
+private val WORD_REGEX = Regex("[A-Za-z]+(?:['-][A-Za-z]+)*")
+
+/**
+ * 在原文中查找所有单词的区间（[start, last]），单词间允许任意非单词字符（空格、标点、破折号）。
+ * 段落末尾不带空格直接跟标点的单词（如 "dreams."）也能完整提取——这是按空白切分 +
+ * 整 token 全量匹配方案做不到的（token 含标点导致整段被判为非单词、不可点击）。
+ */
+internal fun findWordRanges(text: String): List<IntRange> =
+    WORD_REGEX.findAll(text).map { it.range }.toList()
+
 @Composable
 private fun ReadingParagraph(
     englishText: String,
@@ -298,33 +313,39 @@ private fun ReadingParagraph(
     Column(modifier = Modifier.padding(bottom = 20.dp)) {
         // English text with clickable words + inline play icon at the end of the last line
         val annotatedString = buildAnnotatedString {
-            val words = englishText.split(Regex("(?<=\\s)|(?=\\s)"))
-            words.forEach { token ->
-                val isWord = token.matches(Regex("[A-Za-z'-]+"))
-                if (isWord) {
-                    val normalized = token.lowercase()
-                    val isVocab = normalized in vocabularyWords
-                    val link = LinkAnnotation.Clickable(
-                        tag = "word",
-                        styles = TextLinkStyles(style = SpanStyle(color = Ink))
-                    ) { onWordClick(normalized) }
-                    withLink(link) {
-                        withStyle(
-                            if (isVocab) SpanStyle(color = Ink, background = Color(0x2ECC785C))
-                            else SpanStyle(color = Ink)
-                        ) { append(token) }
-                    }
-                } else {
-                    append(token)
+            // 按单词区间切分：单词作为可点击链接，单词间的空白/标点原样保留
+            var cursor = 0
+            for (range in findWordRanges(englishText)) {
+                append(englishText.substring(cursor, range.first))
+                val word = englishText.substring(range)
+                val normalized = word.lowercase()
+                val isVocab = normalized in vocabularyWords
+                val link = LinkAnnotation.Clickable(
+                    tag = "word",
+                    styles = TextLinkStyles(style = SpanStyle(color = Ink))
+                ) { onWordClick(normalized) }
+                withLink(link) {
+                    withStyle(
+                        if (isVocab) SpanStyle(color = Ink, background = Color(0x2ECC785C))
+                        else SpanStyle(color = Ink)
+                    ) { append(word) }
                 }
+                cursor = range.last + 1
             }
+            // 最后一个单词之后的剩余文本（含段落末尾标点）
+            append(englishText.substring(cursor))
             // 不换行空格（U+00A0）：图标与最后一个单词整体换行，不单独甩到下一行
             append(" ")
             appendInlineContent(INLINE_PLAY_PLACEHOLDER, "🔊")
         }
         BasicText(
             text = annotatedString,
-            style = MaterialTheme.typography.bodyLarge.copy(color = Ink, lineHeight = 27.sp),
+            // 阅读正文：18sp（比全局 bodyLarge 16sp 大，阅读更舒适），行高保持 ~1.7 倍
+            style = MaterialTheme.typography.bodyLarge.copy(
+                color = Ink,
+                fontSize = 18.sp,
+                lineHeight = 30.sp
+            ),
             modifier = Modifier.fillMaxWidth(),
             inlineContent = mapOf(
                 INLINE_PLAY_PLACEHOLDER to InlineTextContent(
