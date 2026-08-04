@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -362,40 +361,32 @@ private fun SenseBlock(
         Spacer(modifier = Modifier.height(2.dp))
         Text(
             text = englishDefinition,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 15.sp),
             color = Muted
         )
 
-        // Examples with vertical bar
+        // Examples — titled section inside the same box as the translation
         if (examples.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            examples.forEachIndexed { index, example ->
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    // Quote bar
-                    Box(
-                        modifier = Modifier
-                            .width(2.dp)
-                            .height(IntrinsicSize.Min)
-                            .clip(RoundedCornerShape(1.dp))
-                            .background(Primary)
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = "example",
+                style = MaterialTheme.typography.labelLarge,
+                color = Primary
+            )
+            examples.forEach { example ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Column {
+                    Text(
+                        text = example.sentenceEn,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Ink
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            text = example.sentenceEn,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Ink
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = example.sentenceZh,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Muted
-                        )
-                    }
-                }
-                if (index < examples.lastIndex) {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = example.sentenceZh,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Muted
+                    )
                 }
             }
         }
