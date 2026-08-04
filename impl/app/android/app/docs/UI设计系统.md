@@ -98,7 +98,7 @@
 | `titleLarge` | 18sp | 500 | 25sp | 0 | Sans | 屏幕标题位（阶梯保留，当前页面未直接引用） |
 | `titleMedium` | 16sp | 500 | 22sp | 0 | Sans | 列表项/标签（设置行、InlineTabs、DayGroup、radio-card） |
 | `titleSmall` | 14sp | 500 | 20sp | 0 | Sans | 按钮文字（AppButton）、BottomNav 标签、语法卡片标题 |
-| `bodyLarge` | 16sp | 400 | 25sp | 0 | Sans | 正文；**阅读正文特例**：`lineHeight = 27sp`（约 1.7 倍行高） |
+| `bodyLarge` | 16sp | 400 | 25sp | 0 | Sans | 正文；**阅读正文特例**：`fontSize = 18sp, lineHeight = 30sp`（约 1.7 倍行高） |
 | `bodyMedium` | 14sp | 400 | 22sp | 0 | Sans | 辅助正文（Toast、设置行描述、例句） |
 | `bodySmall` | 13sp | 400 | 18sp | 0 | Sans | 说明、小字 |
 | `labelLarge` | 14sp | 500 | 20sp | 0 | Sans | 弹窗按钮文字（Settings 弹窗）、AddWord 词性标签 |
@@ -243,7 +243,7 @@ classDiagram
    - DIM：`graphicsLayer(alpha = 0.55f)` 淡化
    - BLURRED：`blur(4dp)` 模糊，点击段落揭示，**10 秒后自动重新模糊**
    - HIDDEN：不渲染译文
-4. **正文**（跟随滚动）：文章标题置顶——`displayMedium`（serif 28sp）Ink 色，下方 Hairline 1dp 分割线与正文区分；正文 16sp（bodyLarge）+ `lineHeight 27sp`（约 1.7 倍）；分词用 `LinkAnnotation.Clickable`（BasicText），点击词 → 查词 Modal；**生词高亮**：已在生词表的词加 `background = 0x2ECC785C`（珊瑚 18% 透明度底）。**正文末尾「标记已读」**（secondary 全宽，未读时显示）：点击 `markAsRead()` 置已读，按钮消失、顶栏出现「✓ 已读」；已读后正文末尾无按钮。**段落级内联播放按钮**：每段英文末尾 ` `（不换行空格）后跟 18dp 小图标，通过 `appendInlineContent` → `InlineTextContent(Placeholder(18.sp, 18.sp, Center))` 渲染在文本流内、随文本换行。默认 `VolumeUp` + `MutedSoft`（灰），该段播放中 `Stop` + `Primary`（珊瑚无背景）；点击 `playParagraph(index)`：空闲 → 朗读该段、置 `speakingParagraphIndex = index`；同段再点 → `ttsEngine.stop()` 停止（端到端：旧 utterance 的迟到回调被 `currentUtteranceId` 过滤不误清新状态）。
+4. **正文**（跟随滚动）：文章标题置顶——`displayMedium`（serif 28sp）Ink 色，下方 Hairline 1dp 分割线与正文区分；正文 18sp（bodyLarge 局部覆盖 fontSize + `lineHeight 30sp`，约 1.7 倍）；**分词**：`findWordRanges` 按 `[A-Za-z]+(?:['-][A-Za-z]+)*` 提取单词区间（兼容缩写 I'm、连字符复合词 state-of-the-art，忽略外围标点），单词用 `LinkAnnotation.Clickable`（BasicText）渲染为可点击链接，单词间空白/标点原样保留——段落末尾带标点的单词（如 "dreams."）同样可点击；点击词 → 查词 Modal；**生词高亮**：已在生词表的词加 `background = 0x2ECC785C`（珊瑚 18% 透明度底）。**正文末尾「标记已读」**（secondary 全宽，未读时显示）：点击 `markAsRead()` 置已读，按钮消失、顶栏出现「✓ 已读」；已读后正文末尾无按钮。**段落级内联播放按钮**：每段英文末尾 ` `（不换行空格）后跟 18dp 小图标，通过 `appendInlineContent` → `InlineTextContent(Placeholder(18.sp, 18.sp, Center))` 渲染在文本流内、随文本换行。默认 `VolumeUp` + `MutedSoft`（灰），该段播放中 `Stop` + `Primary`（珊瑚无背景）；点击 `playParagraph(index)`：空闲 → 朗读该段、置 `speakingParagraphIndex = index`；同段再点 → `ttsEngine.stop()` 停止（端到端：旧 utterance 的迟到回调被 `currentUtteranceId` 过滤不误清新状态）。
 5. **底部播放条**（**固定底栏，始终可见**——位于滚动正文 `weight(1f)` 容器下方，不随正文滚动；音乐播放器样式）：圆形 44dp Primary 播放按钮（`PlayArrow` ▶ / `Stop` ■ 按状态切换）+「朗读全文 / 正在朗读…」文字（bodyMedium Medium，播放中变 Primary）+ **语速胶囊**（0.5x/1x 切换，激活 = Primary 底 OnPrimary 字，未激活 = SurfaceSoft 底 MutedSoft 字，6dp 圆角）。点击 `toggleFullArticlePlayback()`：空闲 → 朗读全文、置 `isSpeakingFullArticle = true`；播放中 → `ttsEngine.stop()` 复位。**播放状态复位**（基于 `currentUtteranceId` 校验）：TTS 自然播完 / 手动停止 / 段落或单词朗读打断时，`setOnSpeakingFinished` 回调携带 `utteranceId`；仅当 `utteranceId == currentUtteranceId` 时清空 `isSpeakingFullArticle` 和 `speakingParagraphIndex`——旧 utterance 的迟到回调（快速切换播放时）被过滤不误清。
 6. **查词弹窗**（底部全宽 AppModal，`alignment = BottomCenter`）：右上 32dp X 关闭 → 词头 26sp serif + 发音钮 36dp 同行（词头左、发音钮右）→ 音标 13sp 珊瑚独占一行（无 maxLines，长音标自然折行）→ 加载态（20dp 珊瑚 spinner + 「正在查询…」）→ **词义分组**：按词性分组（组序 = 义项首次出现序，语境匹配义项优先；同词性义项合并为一组），每组 = 词性标签 `labelMedium` 珊瑚（仅组首显示一次）+ 英文解释 `bodySmall` Ink + 中文解释 `bodySmall` MutedSoft；内容超 75% 屏高时释义区滚动、按钮固定底部 → 全宽按钮：未加入 = 「加入生词表」（primary），已加入 = 「从生词表移除」（secondary）。**无例句、无独立中文释义行**（中文已在词义分组内）。
 7. **阅读计时**：进入未读文章即启动 120s 纯计时（15s tick 累计 + 达标 `tryMarkReadCompleted`），与 4 种译文模式、手动标记已读互不影响。
