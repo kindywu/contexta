@@ -5,6 +5,7 @@ import com.ak.contexta.domain.DeveloperAlertSender
 import com.ak.contexta.domain.LlmClient
 import com.ak.contexta.domain.error.LlmFatalException
 import com.ak.contexta.domain.error.LlmRecoverableExhaustedException
+import com.ak.contexta.domain.error.LlmTimeoutException
 import com.ak.contexta.domain.error.PipelineBlockingException
 import com.ak.contexta.domain.model.Article
 import com.ak.contexta.domain.model.ArticleStatus
@@ -104,10 +105,38 @@ class GenerateArticlesUseCaseTest {
     // ─── 失败路径：错误日志 + 告警 + 送达标记 ───────────────────────────
 
     @Test
-    fun `文章超时后写错误日志 告警送达则回写 notified_at`() = runTest {
+    fun `文章协程超时后按 LLM_TIMEOUT 分类写错误日志 告警送达则回写 notified_at`() = runTest {
         coEvery { articleRepository.getArticles(9) } returns listOf(article(42, ArticleStatus.PENDING))
         coEvery { articleRepository.claimArticle(42) } returns true
-        coEvery { llmClient.call(any(), any()) } throws RuntimeException("Timed out waiting for 120000 ms")
+        coEvery { llmClient.call(any(), any()) } throws LlmTimeoutException("Timed out waiting for 300000 ms")
+        coEvery { articleRepository.failArticle(42, "TIMEOUT", "LLM_TIMEOUT", any(), any(), any()) } returns 15L
+
+        useCase(9, 1)
+
+        coVerify(exactly = 1) {
+            alertSender.sendArticleFailure("TIMEOUT", "LLM_TIMEOUT", any(), any())
+        }
+        coVerify(exactly = 1) { articleRepository.markErrorNotified(15) }
+    }
+
+    @Test
+    fun `超时告警发送失败时不回写 notified_at 下次启动补发`() = runTest {
+        coEvery { articleRepository.getArticles(9) } returns listOf(article(42, ArticleStatus.PENDING))
+        coEvery { articleRepository.claimArticle(42) } returns true
+        coEvery { llmClient.call(any(), any()) } throws LlmTimeoutException("Timed out waiting for 300000 ms")
+        coEvery { articleRepository.failArticle(42, "TIMEOUT", "LLM_TIMEOUT", any(), any(), any()) } returns 15L
+        coEvery { alertSender.sendArticleFailure(any(), any(), any(), any()) } returns false
+
+        useCase(9, 1)
+
+        coVerify(exactly = 0) { articleRepository.markErrorNotified(15) }
+    }
+
+    @Test
+    fun `非超时的未知异常仍按 UNEXPECTED 分类`() = runTest {
+        coEvery { articleRepository.getArticles(9) } returns listOf(article(42, ArticleStatus.PENDING))
+        coEvery { articleRepository.claimArticle(42) } returns true
+        coEvery { llmClient.call(any(), any()) } throws IllegalStateException("weird bug")
         coEvery { articleRepository.failArticle(42, "TIMEOUT", "UNEXPECTED", any(), any(), any()) } returns 15L
 
         useCase(9, 1)
@@ -115,20 +144,6 @@ class GenerateArticlesUseCaseTest {
         coVerify(exactly = 1) {
             alertSender.sendArticleFailure("TIMEOUT", "UNEXPECTED", any(), any())
         }
-        coVerify(exactly = 1) { articleRepository.markErrorNotified(15) }
-    }
-
-    @Test
-    fun `告警发送失败时不回写 notified_at 下次启动补发`() = runTest {
-        coEvery { articleRepository.getArticles(9) } returns listOf(article(42, ArticleStatus.PENDING))
-        coEvery { articleRepository.claimArticle(42) } returns true
-        coEvery { llmClient.call(any(), any()) } throws RuntimeException("Timed out waiting for 120000 ms")
-        coEvery { articleRepository.failArticle(42, "TIMEOUT", "UNEXPECTED", any(), any(), any()) } returns 15L
-        coEvery { alertSender.sendArticleFailure(any(), any(), any(), any()) } returns false
-
-        useCase(9, 1)
-
-        coVerify(exactly = 0) { articleRepository.markErrorNotified(15) }
     }
 
     @Test

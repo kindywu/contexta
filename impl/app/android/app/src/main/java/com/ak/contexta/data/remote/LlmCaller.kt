@@ -7,6 +7,7 @@ import com.ak.contexta.domain.LlmClient
 import com.ak.contexta.domain.LlmErrorClassifier
 import com.ak.contexta.domain.error.LlmFatalException
 import com.ak.contexta.domain.error.LlmRecoverableExhaustedException
+import com.ak.contexta.domain.error.LlmTimeoutException
 import com.ak.contexta.domain.error.PipelineBlockingException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
@@ -115,9 +116,11 @@ class LlmCaller @Inject constructor(
 
         if (result != null) return result
 
-        // 超时 → 抛出普通 Exception（非 CancellationException），
-        // 让 GenerateArticlesUseCase 按 TIMEOUT 处理，且不取消协程
-        throw Exception("Timed out waiting for $timeoutMs ms")
+        // 超时 → 抛出 LlmTimeoutException（非 CancellationException），
+        // 让 GenerateArticlesUseCase 按 TIMEOUT / LLM_TIMEOUT 分类处理，
+        // 且不取消协程（与旧逻辑一致：避免同批次后续文章无法继续生成）。
+        // withTimeoutOrNull 超时已取消底层 OkHttp 调用，无连接泄漏。
+        throw LlmTimeoutException("Timed out waiting for $timeoutMs ms")
     }
 
     private fun extractHttpCode(e: Exception): Int? {

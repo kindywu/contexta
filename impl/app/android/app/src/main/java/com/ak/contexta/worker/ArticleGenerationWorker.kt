@@ -1,11 +1,17 @@
 package com.ak.contexta.worker
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.ak.contexta.R
 import com.ak.contexta.domain.error.PipelineBlockingException
 import com.ak.contexta.domain.repository.ArticleRepository
 import com.ak.contexta.domain.usecase.GenerateArticlesUseCase
@@ -30,10 +36,43 @@ class ArticleGenerationWorker @AssistedInject constructor(
         private const val KEY_BATCH_ID = "batchId"
         private const val KEY_APP_VERSION_CODE = "appVersionCode"
 
+        // expedited 工作的前台通知 id / channel
+        private const val FOREGROUND_NOTIFICATION_ID = 1001
+        private const val CHANNEL_ID = "article_generation"
+        private const val CHANNEL_NAME = "文章生成"
+
         fun buildInputData(batchId: Long, appVersionCode: Int = 0) = workDataOf(
             KEY_BATCH_ID to batchId,
             KEY_APP_VERSION_CODE to appVersionCode
         )
+    }
+
+    /**
+     * Expedited 工作的前台服务通知。
+     * 以 FGS 运行可避免应用转后台时被系统（MIUI 节流/停任务）干扰。
+     * 通知内容不含敏感信息，仅提示生成进行中。
+     */
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        val batchId = inputData.getLong(KEY_BATCH_ID, -1L)
+        val context = applicationContext
+
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager?.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_ID,
+                CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_LOW
+            )
+        )
+
+        val notification: Notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Contexta 正在生成文章")
+            .setContentText(if (batchId > 0) "批次 #$batchId 生成中…" else "生成中…")
+            .setOngoing(true)
+            .build()
+
+        return ForegroundInfo(FOREGROUND_NOTIFICATION_ID, notification)
     }
 
     override suspend fun doWork(): Result {

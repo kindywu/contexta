@@ -6,6 +6,7 @@ import com.ak.contexta.domain.ErrorContext
 import com.ak.contexta.domain.LlmClient
 import com.ak.contexta.domain.error.LlmFatalException
 import com.ak.contexta.domain.error.LlmRecoverableExhaustedException
+import com.ak.contexta.domain.error.LlmTimeoutException
 import com.ak.contexta.domain.error.PipelineBlockingException
 import com.ak.contexta.domain.generation.buildArticleSystemPrompt
 import com.ak.contexta.domain.generation.buildArticleUserPrompt
@@ -102,6 +103,22 @@ class GenerateArticlesUseCase @Inject constructor(
                     batchErrorLogId?.let { articleRepository.markErrorNotified(it) }
                 }
                 throw e
+
+            } catch (e: LlmTimeoutException) {
+                // 协程级超时：预期内的失败（网络挂起/后台节流），
+                // 单独分类为 LLM_TIMEOUT，区别于真正的 UNEXPECTED 代码级错误
+                val errorLogId = articleRepository.failArticle(
+                    article.id, "TIMEOUT", "LLM_TIMEOUT", e.message,
+                    retryCount = article.retryCount
+                )
+                val sent = alertSender.sendArticleFailure(
+                    status = "TIMEOUT",
+                    errorCode = "LLM_TIMEOUT",
+                    errorMessage = e.message ?: "Unknown",
+                    context = ErrorContext(batchId, article.id, appVersionCode ?: 0, timeProvider.nowMillis())
+                )
+                if (sent) errorLogId?.let { articleRepository.markErrorNotified(it) }
+                continue
 
             } catch (e: Exception) {
                 val errorLogId = articleRepository.failArticle(
