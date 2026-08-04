@@ -9,6 +9,7 @@ import com.ak.contexta.domain.error.LlmFatalException
 import com.ak.contexta.domain.error.LlmRecoverableExhaustedException
 import com.ak.contexta.domain.error.LlmTimeoutException
 import com.ak.contexta.domain.error.PipelineBlockingException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
@@ -64,6 +65,11 @@ class LlmCaller @Inject constructor(
                 return@withTimeoutOrNull LlmClient.LlmResult(content = content, retryCount = retryCount)
 
             } catch (e: Exception) {
+                // 超时/取消异常立即传播：不能当作可恢复错误重试。
+                // TimeoutCancellationException 会被 withTimeoutOrNull 转为 null，
+                // 由调用方抛 LlmTimeoutException；外部取消（Worker 被取消）也应立即传播。
+                // 否则会幻影 retryCount++，且最后一次尝试超时会被误报为 RecoverableExhausted。
+                if (e is CancellationException) throw e
                 lastError = e
 
                 // Classify the error
