@@ -31,12 +31,16 @@ class GenerateArticlesUseCase @Inject constructor(
 ) {
     /**
      * 为指定的批次生成所有文章。
+     *
+     * @return true 表示批次已终结（READY 或留 GENERATING 等待启动恢复），
+     *         false 表示仍存在未完成文章（GENERATING/TIMEOUT/FAILED），
+     *         调用方应重试（Worker 返回 Result.retry()）。
      */
-    suspend operator fun invoke(batchId: Long, appVersionCode: Int?) {
+    suspend operator fun invoke(batchId: Long, appVersionCode: Int?): Boolean {
         val articles = articleRepository.getArticles(batchId)
         if (articles.isEmpty()) {
             articleRepository.markBatchReady(batchId)
-            return
+            return true
         }
 
         for (article in articles) {
@@ -137,7 +141,10 @@ class GenerateArticlesUseCase @Inject constructor(
         }
 
         when {
-            articleRepository.hasFatalArticle(batchId) -> { /* leave as GENERATING */ }
+            articleRepository.hasFatalArticle(batchId) -> {
+                // FATAL 需要人工介入：留 GENERATING，启动恢复时重置重试
+                return true
+            }
             articleRepository.isBatchComplete(batchId) -> {
                 articleRepository.markBatchReady(batchId)
                 // 取批次信息（生成日期/难度），随完成通知一起展示
@@ -151,6 +158,13 @@ class GenerateArticlesUseCase @Inject constructor(
                 )
                 // 通知送达才回写 ready_notified_at；进程被杀导致通知丢失时，启动补发会重发
                 if (sent) articleRepository.markBatchReadyNotified(batchId)
+                return true
+            }
+            else -> {
+                // 仍存在未完成文章（GENERATING/TIMEOUT/FAILED）：
+                // 不标记 READY，返回 false 让 Worker 重试（runAttempt 上限内）。
+                // 之前缺此分支时批次会永远停在 GENERATING（Worker 已 SUCCESS 不再重试）。
+                return false
             }
         }
     }
