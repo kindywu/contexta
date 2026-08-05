@@ -93,9 +93,11 @@ class ArticleGenerationWorker @AssistedInject constructor(
         Log.i(TAG, "Batch $batchId claimed successfully")
 
         return try {
-            generateArticles(batchId, appVersionCode)
-            Log.i(TAG, "Batch $batchId processing completed")
-            Result.success()
+            val finished = generateArticles(batchId, appVersionCode)
+            Log.i(TAG, "Batch $batchId processing completed (finished=$finished)")
+            // 仍有未完成文章（GENERATING/TIMEOUT/FAILED）时返回 retry，
+            // 让 WorkManager 在 backoff 后重新调度 Worker 继续生成。
+            if (finished) Result.success() else Result.retry()
         } catch (e: PipelineBlockingException) {
             Log.e(TAG, "Structural error for batch $batchId: ${e.message}")
             Result.failure()

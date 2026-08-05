@@ -16,6 +16,8 @@ import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -79,11 +81,12 @@ class GenerateArticlesUseCaseTest {
         coEvery { articleRepository.markBatchReady(9) } returns Unit
         coEvery { articleRepository.getBatchById(9) } returns null
 
-        useCase(9, 1)
+        val result = useCase(9, 1)
 
         coVerify(exactly = 1) { articleRepository.markBatchReady(9) }
         coVerify(exactly = 1) { alertSender.sendBatchReady(9, 2, null, null, any()) }
         coVerify(exactly = 1) { articleRepository.markBatchReadyNotified(9) }
+        assertTrue(result)
     }
 
     @Test
@@ -97,9 +100,10 @@ class GenerateArticlesUseCaseTest {
         coEvery { articleRepository.getBatchById(9) } returns null
         coEvery { alertSender.sendBatchReady(any(), any(), any(), any(), any()) } returns false
 
-        useCase(9, 1)
+        val result = useCase(9, 1)
 
         coVerify(exactly = 0) { articleRepository.markBatchReadyNotified(9) }
+        assertTrue(result)
     }
 
     // ─── 失败路径：错误日志 + 告警 + 送达标记 ───────────────────────────
@@ -169,11 +173,39 @@ class GenerateArticlesUseCaseTest {
         coEvery { articleRepository.fatalArticle(50, "LLM_FATAL", any(), any()) } returns 17L
         coEvery { articleRepository.hasFatalArticle(9) } returns true
 
-        useCase(9, 1)
+        val result = useCase(9, 1)
 
         coVerify(exactly = 1) { alertSender.sendLlmFatalError(any(), any()) }
         coVerify(exactly = 1) { articleRepository.markErrorNotified(17) }
         coVerify(exactly = 0) { articleRepository.markBatchReady(9) }
+        // FATAL 需人工介入：返回 true 表示批次已终结（不再重试），留待启动恢复
+        assertTrue(result)
+    }
+
+    // ─── 未完成文章分支（回归：批次卡 GENERATING 修复） ─────────────────
+
+    @Test
+    fun `存在未完成文章时批次不 READY 且返回 false 触发 Worker 重试`() = runTest {
+        // 模拟批次 10 现场：3 篇 SUCCESS + 2 篇冻结遗留 GENERATING，
+        // 循环中 GENERATING 文章无法被认领（非 PENDING/TIMEOUT/FAILED），
+        // 循环后 isBatchComplete=false 且无 FATAL → 必须返回 false 让 Worker 重试
+        coEvery { articleRepository.getArticles(9) } returns listOf(
+            article(46, ArticleStatus.GENERATING),
+            article(47, ArticleStatus.GENERATING),
+            article(48, ArticleStatus.SUCCESS),
+            article(49, ArticleStatus.SUCCESS),
+            article(50, ArticleStatus.SUCCESS)
+        )
+        // GENERATING 文章本轮不被认领（CAS 认领的是 PENDING/TIMEOUT/FAILED，
+        // 重试的下一轮 Worker 才会在放宽后接管它们）
+        coEvery { articleRepository.claimArticle(any()) } returns false
+        coEvery { articleRepository.hasFatalArticle(9) } returns false
+        coEvery { articleRepository.isBatchComplete(9) } returns false
+
+        val result = useCase(9, 1)
+
+        coVerify(exactly = 0) { articleRepository.markBatchReady(9) }
+        assertFalse(result)
     }
 
     @Test

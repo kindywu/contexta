@@ -32,6 +32,10 @@ interface ArticleDao {
     // - PENDING 认领 → 写入 now（新一轮生成开始）
     // - TIMEOUT/FAILED 重试认领 → started_at 为空时补写 now（此前被 resetAllGenerating
     //   清空或从未写入，不补会导致 SUCCESS 文章 started_at 为 NULL）；有值则保留
+    // 认领 GENERATING 是「中断/未完成重试」的关键（与 claimBatch 对称）：
+    // - Worker 中途被系统终止（进程冻结/Job 超时）后文章停留在 GENERATING
+    // - GenerateArticlesUseCase 返回 false 触发 Result.retry() 后，重试的 Worker
+    //   若不认 GENERATING 会跳过这些文章，批次永远无法完成
     @Query("""
         UPDATE article
         SET status = 'GENERATING',
@@ -39,7 +43,7 @@ interface ArticleDao {
                 WHEN status = 'PENDING' OR generation_started_at IS NULL THEN :now
                 ELSE generation_started_at END,
             last_retry_at = CASE WHEN status IN ('TIMEOUT', 'FAILED') THEN :now ELSE last_retry_at END
-        WHERE id = :articleId AND status IN ('PENDING', 'TIMEOUT', 'FAILED')
+        WHERE id = :articleId AND status IN ('PENDING', 'TIMEOUT', 'FAILED', 'GENERATING')
     """)
     suspend fun claimForGeneration(articleId: Long, now: String): Int
 
