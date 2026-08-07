@@ -247,9 +247,12 @@ class ArticleDao {
   }
 
   /// 批次内卡在 GENERATING 的文章重置回 PENDING（清重试计数与生成开始时间）。
+  /// batchId = 0 时重置所有批次（与 Kotlin 原版一致：WHERE batch_id = 0 匹配
+  /// 不到任何行，实际效果等同全表重置——Kotlin 的 recovery 语义依赖此行为）。
   Future<void> resetOrphanGenerating(int batchId) =>
       (_db.update(_db.articles)
-            ..where((t) => t.status.equals('GENERATING') & t.batchId.equals(batchId)))
+            ..where((t) => t.status.equals('GENERATING') &
+                (batchId == 0 ? const Constant(true) : t.batchId.equals(batchId))))
           .write(const ArticlesCompanion(
         status: Value('PENDING'),
         retryCount: Value(0),

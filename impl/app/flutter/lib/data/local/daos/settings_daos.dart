@@ -22,6 +22,9 @@ class UserSettingsDao {
   Future<UserSettingsRow?> get() =>
       (_db.select(_db.userSettings)..where((t) => t.id.equals(1))).getSingleOrNull();
 
+  Stream<UserSettingsRow?> observe() =>
+      (_db.select(_db.userSettings)..where((t) => t.id.equals(1))).watchSingleOrNull();
+
   Future<void> upsert(UserSettingsCompanion settings) =>
       _db.into(_db.userSettings).insertOnConflictUpdate(settings);
 
@@ -110,22 +113,39 @@ class GenerationPipelineStatusDao {
   Future<void> upsert(GenerationPipelineStatusesCompanion status) =>
       _db.into(_db.generationPipelineStatuses).insertOnConflictUpdate(status);
 
-  Future<void> clearBlocked() => (_db.update(_db.generationPipelineStatuses)
-        ..where((t) => t.id.equals(1)))
-      .write(const GenerationPipelineStatusesCompanion(isBlocked: Value(false)));
+  Future<void> clearBlocked() {
+    // 与 setBlocked 对称：行不存在时先 upsert 单行再清除（避免 UPDATE 0 行）
+    return _ensureRow().then(
+        (_) => (_db.update(_db.generationPipelineStatuses)
+              ..where((t) => t.id.equals(1)))
+            .write(const GenerationPipelineStatusesCompanion(isBlocked: Value(false))));
+  }
 
   Future<void> setBlocked(
           {required String reason,
           required String now,
           required int appVersionCode}) =>
-      (_db.update(_db.generationPipelineStatuses)
-            ..where((t) => t.id.equals(1)))
-          .write(GenerationPipelineStatusesCompanion(
+      // 行不存在时先 upsert 单行（Kotlin 原版 UPDATE 0 行会导致开关永不生效，
+      // 本实现按意图修复：pipeline 阻塞必须全局生效）
+      _ensureRow().then(
+          (_) => (_db.update(_db.generationPipelineStatuses)
+                ..where((t) => t.id.equals(1)))
+              .write(GenerationPipelineStatusesCompanion(
         isBlocked: const Value(true),
         blockedReason: Value(reason),
         blockedAt: Value(now),
         blockedAppVersionCode: Value(appVersionCode),
-      ));
+      )));
+
+  Future<void> _ensureRow() async {
+    if (await get() != null) return;
+    await _db.into(_db.generationPipelineStatuses).insert(GenerationPipelineStatusesCompanion.insert(
+      isBlocked: false,
+      blockedReason: const Value(null),
+      blockedAt: const Value(null),
+      blockedAppVersionCode: const Value(null),
+    ));
+  }
 }
 
 /// daily_learning 表 DAO。
@@ -233,6 +253,10 @@ class LearningStatsSummaryDao {
   Future<LearningStatsSummaryRow?> get() => (_db.select(_db.learningStatsSummaries)
         ..where((t) => t.id.equals(1)))
       .getSingleOrNull();
+
+  Stream<LearningStatsSummaryRow?> observe() =>
+      (_db.select(_db.learningStatsSummaries)..where((t) => t.id.equals(1)))
+          .watchSingleOrNull();
 
   Future<void> upsert(LearningStatsSummariesCompanion stats) =>
       _db.into(_db.learningStatsSummaries).insertOnConflictUpdate(stats);
