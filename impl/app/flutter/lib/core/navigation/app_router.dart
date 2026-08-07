@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../ui/home/home_screen.dart';
 import 'app_shell.dart';
 import 'routes.dart';
 
@@ -29,7 +30,10 @@ GoRouter buildRouter() {
         routes: [
           GoRoute(
             path: Routes.home,
-            builder: (context, state) => placeholder('Home'),
+            builder: (context, state) => HomeScreen(
+              onArticleClick: (articleId) =>
+                  context.push(Routes.readingRoute(articleId)),
+            ),
           ),
           GoRoute(
             path: Routes.vocabulary,

@@ -2,7 +2,15 @@ import 'package:contexta/core/components/bottom_nav_bar.dart';
 import 'package:contexta/core/navigation/app_router.dart';
 import 'package:contexta/core/navigation/routes.dart';
 import 'package:contexta/core/theme/app_colors.dart';
+import 'package:contexta/di/providers.dart';
+import 'package:contexta/domain/model/generation_error.dart';
+import 'package:contexta/domain/model/user_settings.dart';
+import 'package:contexta/domain/repository/article_repository.dart';
+import 'package:contexta/domain/repository/settings_repository.dart';
+import 'package:contexta/domain/repository/stats_repository.dart';
+import 'package:contexta/ui/home/home_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
@@ -11,6 +19,33 @@ import 'package:go_router/go_router.dart';
 /// - 底栏显隐：home/reference/settings 显示，vocabulary/reading/add_word 不显示
 /// - tab 切换（context.go 等价 launchSingleTop）
 /// - reading 入栈可 pop 返回；onboarding → home 清栈
+///
+/// Home 页已接入真实实现（Task 22）：用空桩仓储避免触达真实数据库。
+
+class _FakeArticleRepo implements ArticleRepository {
+  @override
+  Future<bool> isPipelineBlocked() async => false;
+
+  @override
+  Stream<List<GenerationError>> observeGenerationErrors() =>
+      const Stream.empty();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => Future.value(null);
+}
+
+class _FakeSettingsRepo implements SettingsRepository {
+  @override
+  Stream<UserSettings?> observeSettings() => const Stream.empty();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => Future.value(null);
+}
+
+class _FakeStatsRepo implements StatsRepository {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => Future.value(null);
+}
 void main() {
   late GoRouter router;
 
@@ -19,7 +54,15 @@ void main() {
   });
 
   Future<void> pumpApp(WidgetTester tester) async {
-    await tester.pumpWidget(MaterialApp.router(routerConfig: router));
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        // HomeScreen 已接入（Task 22）：避免触达真实数据库 provider
+        articleRepositoryProvider.overrideWithValue(_FakeArticleRepo()),
+        settingsRepositoryProvider.overrideWithValue(_FakeSettingsRepo()),
+        statsRepositoryProvider.overrideWithValue(_FakeStatsRepo()),
+      ],
+      child: MaterialApp.router(routerConfig: router),
+    ));
     await tester.pumpAndSettle();
   }
 
@@ -47,7 +90,9 @@ void main() {
       await pumpApp(tester);
       await go(tester, Routes.location(Routes.home));
 
-      expect(find.text('Home — 待实现'), findsOneWidget);
+      // 真实 HomeScreen（Task 22 落地）：空桩仓储下落到空态
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.text('暂无文章'), findsOneWidget);
       expect(find.byType(BottomNavBar), findsOneWidget);
     });
 
@@ -120,7 +165,7 @@ void main() {
       router.pop();
       await tester.pumpAndSettle();
       expect(stackLocations(), ['/home']);
-      expect(find.text('Home — 待实现'), findsOneWidget);
+      expect(find.byType(HomeScreen), findsOneWidget);
     });
 
     testWidgets('onboarding → home 清栈（无 onboarding 残留）', (tester) async {
