@@ -14,6 +14,7 @@ import 'package:contexta/domain/repository/vocabulary_repository.dart';
 import 'package:contexta/domain/repository/word_repository.dart';
 import 'package:contexta/ui/home/home_screen.dart';
 import 'package:contexta/ui/reading/reading_screen.dart';
+import 'package:contexta/ui/settings/settings_screen.dart';
 import 'package:contexta/ui/vocabulary/vocabulary_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -141,7 +142,10 @@ void main() {
       await go(tester, Routes.location(Routes.reference));
       expect(find.byType(BottomNavBar), findsOneWidget);
 
+      // 真实 SettingsScreen（Task 26 落地）：空桩仓储 → 默认设置态
       await go(tester, Routes.location(Routes.settings));
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(find.text('学习设置'), findsOneWidget);
       expect(find.byType(BottomNavBar), findsOneWidget);
     });
 

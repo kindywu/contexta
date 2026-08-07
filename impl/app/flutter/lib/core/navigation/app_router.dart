@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../ui/home/home_screen.dart';
 import '../../ui/reading/reading_screen.dart';
+import '../../ui/settings/settings_screen.dart';
 import '../../ui/vocabulary/vocabulary_screen.dart';
 import 'app_shell.dart';
 import 'routes.dart';
@@ -50,7 +51,7 @@ GoRouter buildRouter() {
           ),
           GoRoute(
             path: Routes.settings,
-            builder: (context, state) => placeholder('Settings'),
+            builder: (context, state) => const SettingsScreen(),
           ),
         ],
       ),
