@@ -5,10 +5,13 @@ import 'package:contexta/core/theme/app_colors.dart';
 import 'package:contexta/di/providers.dart';
 import 'package:contexta/domain/model/generation_error.dart';
 import 'package:contexta/domain/model/user_settings.dart';
+import 'package:contexta/domain/model/vocab_word.dart';
 import 'package:contexta/domain/repository/article_repository.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/repository/stats_repository.dart';
+import 'package:contexta/domain/repository/vocabulary_repository.dart';
 import 'package:contexta/ui/home/home_screen.dart';
+import 'package:contexta/ui/reading/reading_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -46,6 +49,15 @@ class _FakeStatsRepo implements StatsRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
+
+/// Reading 页（Task 23 接入）需要生词集合；空桩不触达数据库。
+class _FakeVocabRepo implements VocabularyRepository {
+  @override
+  Future<List<VocabWord>> getActiveWords() async => const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => Future.value(null);
+}
 void main() {
   late GoRouter router;
 
@@ -60,6 +72,7 @@ void main() {
         articleRepositoryProvider.overrideWithValue(_FakeArticleRepo()),
         settingsRepositoryProvider.overrideWithValue(_FakeSettingsRepo()),
         statsRepositoryProvider.overrideWithValue(_FakeStatsRepo()),
+        vocabularyRepositoryProvider.overrideWithValue(_FakeVocabRepo()),
       ],
       child: MaterialApp.router(routerConfig: router),
     ));
@@ -117,7 +130,7 @@ void main() {
       await pumpApp(tester);
       await go(tester, Routes.readingRoute(42));
 
-      expect(find.text('Reading 42 — 待实现'), findsOneWidget);
+      expect(find.byType(ReadingScreen), findsOneWidget);
       expect(find.byType(BottomNavBar), findsNothing);
     });
 

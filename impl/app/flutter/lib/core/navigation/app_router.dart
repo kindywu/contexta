@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../ui/home/home_screen.dart';
+import '../../ui/reading/reading_screen.dart';
 import 'app_shell.dart';
 import 'routes.dart';
 
@@ -54,7 +55,12 @@ GoRouter buildRouter() {
         builder: (context, state) {
           final articleId =
               int.tryParse(state.pathParameters['articleId'] ?? '') ?? -1;
-          return placeholder('Reading $articleId');
+          return ReadingScreen(
+            articleId: articleId,
+            onBack: () => context.pop(),
+            // 查词弹窗 Task 24 接入
+            onWordClick: (_) {},
+          );
         },
       ),
       GoRoute(
