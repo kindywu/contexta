@@ -14,6 +14,7 @@ import '../data/repository/settings_repository_impl.dart';
 import '../data/repository/stats_repository_impl.dart';
 import '../data/repository/vocabulary_repository_impl.dart';
 import '../data/repository/word_repository_impl.dart';
+import '../data/tts/tts_engine_factory.dart';
 import '../domain/app_info_provider.dart';
 import '../domain/background_work_scheduler.dart';
 import '../domain/developer_alert_sender.dart';
@@ -24,6 +25,7 @@ import '../domain/repository/stats_repository.dart';
 import '../domain/repository/vocabulary_repository.dart';
 import '../domain/repository/word_repository.dart';
 import '../domain/time/time_provider.dart';
+import '../domain/tts/tts_engine.dart';
 import '../domain/usecase/activate_seed_batch_usecase.dart';
 import '../domain/usecase/add_word_usecase.dart';
 import '../domain/usecase/create_initial_batch_usecase.dart';
@@ -82,6 +84,14 @@ final deepSeekApiProvider = Provider<DeepSeekApi>((ref) {
 /// 统一 LLM 客户端（重试 + 三分类 + 总预算超时）。
 final llmClientProvider = Provider<LlmClient>((ref) {
   return LlmCaller(ref.watch(deepSeekApiProvider));
+});
+
+/// TTS 引擎（KittenTTS 默认，初始化失败自动回退系统 TTS；
+/// 对照 Kotlin TtsEngineImpl 的三重引擎链）。
+final ttsEngineProvider = FutureProvider<TtsEngine>((ref) {
+  return TtsEngineFactory(
+    kittenAssetBasePath: 'assets/kittentts_models',
+  ).create();
 });
 
 /// 词库仓储（LRU(50) + Semaphore(3)，单例：缓存与并发限制跨调用共享）。
