@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_config.dart';
 import '../core/time/iso8601.dart';
+import '../data/background/generation_scheduler.dart';
 import '../data/local/database_open.dart';
 import '../data/local/daos/article_daos.dart';
 import '../data/local/daos/settings_daos.dart';
@@ -60,11 +61,12 @@ final appInfoProvider = Provider<AppInfoProvider>(
   (ref) => _ProdAppInfoProvider(),
 );
 
-/// 后台生成调度器（Kotlin BackgroundWorkScheduler 对应物）。
-/// Task 18（后台 worker）接入真实实现；当前为占位，供 use case 编译与测试。
-final backgroundWorkSchedulerProvider = Provider<BackgroundWorkScheduler>(
-  (ref) => throw UnimplementedError('wired in Task 18'),
-);
+/// 后台生成调度器（Kotlin BackgroundWorkScheduler 对应物；
+/// 对照 Kotlin GenerationScheduler：workmanager 网关 + KEEP 策略 +
+/// 指数退避 + expedited 前台通知）。
+final backgroundWorkSchedulerProvider = Provider<BackgroundWorkScheduler>((ref) {
+  return GenerationScheduler(gateway: RealWorkmanagerGateway());
+});
 
 /// DeepSeek HTTP 客户端（dio；对照 Kotlin NetworkModule：连接 30s、
 /// 读超时 = LLM 超时 + 60s 宽限，协程级超时确定性先触发）。
