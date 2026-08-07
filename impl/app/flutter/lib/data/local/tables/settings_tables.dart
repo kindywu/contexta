@@ -151,8 +151,7 @@ class LearningStatsSummaries extends Table {
 /// 表 daily_learning（DailyLearningEntity.kt）
 ///
 /// learning_date 是 PRIMARY KEY，确保每天最多一条记录。
-/// ref_batch_id 外键 → article_batch.id，ON DELETE CASCADE（ArticleBatches 类
-/// 在本任务先行定义但未注册，Task 5 注册）。
+/// ref_batch_id 外键 → article_batch.id，ON DELETE CASCADE。
 @DataClassName('DailyLearningRow')
 @TableIndex(
   name: 'index_daily_learning_ref_batch_id',

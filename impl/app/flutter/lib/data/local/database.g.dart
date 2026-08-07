@@ -3433,6 +3433,1822 @@ class DailyLearningsCompanion extends UpdateCompanion<DailyLearningRow> {
   }
 }
 
+class $ArticlesTable extends Articles
+    with TableInfo<$ArticlesTable, ArticleRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ArticlesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _batchIdMeta = const VerificationMeta(
+    'batchId',
+  );
+  @override
+  late final GeneratedColumn<int> batchId = GeneratedColumn<int>(
+    'batch_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES article_batch (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _orderIndexMeta = const VerificationMeta(
+    'orderIndex',
+  );
+  @override
+  late final GeneratedColumn<int> orderIndex = GeneratedColumn<int>(
+    'order_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _contentCategoryMeta = const VerificationMeta(
+    'contentCategory',
+  );
+  @override
+  late final GeneratedColumn<String> contentCategory = GeneratedColumn<String>(
+    'content_category',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _generationStartedAtMeta =
+      const VerificationMeta('generationStartedAt');
+  @override
+  late final GeneratedColumn<String> generationStartedAt =
+      GeneratedColumn<String>(
+        'generation_started_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _generationCompletedAtMeta =
+      const VerificationMeta('generationCompletedAt');
+  @override
+  late final GeneratedColumn<String> generationCompletedAt =
+      GeneratedColumn<String>(
+        'generation_completed_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _retryCountMeta = const VerificationMeta(
+    'retryCount',
+  );
+  @override
+  late final GeneratedColumn<int> retryCount = GeneratedColumn<int>(
+    'retry_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _accumulatedReadSecondsMeta =
+      const VerificationMeta('accumulatedReadSeconds');
+  @override
+  late final GeneratedColumn<int> accumulatedReadSeconds = GeneratedColumn<int>(
+    'accumulated_read_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _readCompletedAtMeta = const VerificationMeta(
+    'readCompletedAt',
+  );
+  @override
+  late final GeneratedColumn<String> readCompletedAt = GeneratedColumn<String>(
+    'read_completed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastRetryAtMeta = const VerificationMeta(
+    'lastRetryAt',
+  );
+  @override
+  late final GeneratedColumn<String> lastRetryAt = GeneratedColumn<String>(
+    'last_retry_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _maxRetriesMeta = const VerificationMeta(
+    'maxRetries',
+  );
+  @override
+  late final GeneratedColumn<int> maxRetries = GeneratedColumn<int>(
+    'max_retries',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nextRetryAtMeta = const VerificationMeta(
+    'nextRetryAt',
+  );
+  @override
+  late final GeneratedColumn<String> nextRetryAt = GeneratedColumn<String>(
+    'next_retry_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    batchId,
+    orderIndex,
+    contentCategory,
+    title,
+    status,
+    generationStartedAt,
+    generationCompletedAt,
+    retryCount,
+    accumulatedReadSeconds,
+    readCompletedAt,
+    lastRetryAt,
+    maxRetries,
+    nextRetryAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'article';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ArticleRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('batch_id')) {
+      context.handle(
+        _batchIdMeta,
+        batchId.isAcceptableOrUnknown(data['batch_id']!, _batchIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_batchIdMeta);
+    }
+    if (data.containsKey('order_index')) {
+      context.handle(
+        _orderIndexMeta,
+        orderIndex.isAcceptableOrUnknown(data['order_index']!, _orderIndexMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_orderIndexMeta);
+    }
+    if (data.containsKey('content_category')) {
+      context.handle(
+        _contentCategoryMeta,
+        contentCategory.isAcceptableOrUnknown(
+          data['content_category']!,
+          _contentCategoryMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_contentCategoryMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_statusMeta);
+    }
+    if (data.containsKey('generation_started_at')) {
+      context.handle(
+        _generationStartedAtMeta,
+        generationStartedAt.isAcceptableOrUnknown(
+          data['generation_started_at']!,
+          _generationStartedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('generation_completed_at')) {
+      context.handle(
+        _generationCompletedAtMeta,
+        generationCompletedAt.isAcceptableOrUnknown(
+          data['generation_completed_at']!,
+          _generationCompletedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('retry_count')) {
+      context.handle(
+        _retryCountMeta,
+        retryCount.isAcceptableOrUnknown(data['retry_count']!, _retryCountMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_retryCountMeta);
+    }
+    if (data.containsKey('accumulated_read_seconds')) {
+      context.handle(
+        _accumulatedReadSecondsMeta,
+        accumulatedReadSeconds.isAcceptableOrUnknown(
+          data['accumulated_read_seconds']!,
+          _accumulatedReadSecondsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_accumulatedReadSecondsMeta);
+    }
+    if (data.containsKey('read_completed_at')) {
+      context.handle(
+        _readCompletedAtMeta,
+        readCompletedAt.isAcceptableOrUnknown(
+          data['read_completed_at']!,
+          _readCompletedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_retry_at')) {
+      context.handle(
+        _lastRetryAtMeta,
+        lastRetryAt.isAcceptableOrUnknown(
+          data['last_retry_at']!,
+          _lastRetryAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('max_retries')) {
+      context.handle(
+        _maxRetriesMeta,
+        maxRetries.isAcceptableOrUnknown(data['max_retries']!, _maxRetriesMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_maxRetriesMeta);
+    }
+    if (data.containsKey('next_retry_at')) {
+      context.handle(
+        _nextRetryAtMeta,
+        nextRetryAt.isAcceptableOrUnknown(
+          data['next_retry_at']!,
+          _nextRetryAtMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ArticleRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ArticleRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      batchId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}batch_id'],
+      )!,
+      orderIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}order_index'],
+      )!,
+      contentCategory: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content_category'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      ),
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      generationStartedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}generation_started_at'],
+      ),
+      generationCompletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}generation_completed_at'],
+      ),
+      retryCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}retry_count'],
+      )!,
+      accumulatedReadSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}accumulated_read_seconds'],
+      )!,
+      readCompletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}read_completed_at'],
+      ),
+      lastRetryAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_retry_at'],
+      ),
+      maxRetries: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}max_retries'],
+      )!,
+      nextRetryAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}next_retry_at'],
+      ),
+    );
+  }
+
+  @override
+  $ArticlesTable createAlias(String alias) {
+    return $ArticlesTable(attachedDatabase, alias);
+  }
+}
+
+class ArticleRow extends DataClass implements Insertable<ArticleRow> {
+  /// Room: @PrimaryKey(autoGenerate = true) val id: Long
+  final int id;
+
+  /// Room: ForeignKey(ArticleBatchEntity, parent = id, child = batch_id, onDelete = CASCADE)
+  final int batchId;
+  final int orderIndex;
+
+  /// 生成时的类别标识（TEXT，值由生成输入决定，无枚举约束）
+  final String contentCategory;
+
+  /// populated after generation succeeds
+  final String? title;
+
+  /// PENDING | GENERATING | SUCCESS | TIMEOUT | FAILED | FATAL
+  final String status;
+  final String? generationStartedAt;
+  final String? generationCompletedAt;
+  final int retryCount;
+  final int accumulatedReadSeconds;
+  final String? readCompletedAt;
+  final String? lastRetryAt;
+  final int maxRetries;
+  final String? nextRetryAt;
+  const ArticleRow({
+    required this.id,
+    required this.batchId,
+    required this.orderIndex,
+    required this.contentCategory,
+    this.title,
+    required this.status,
+    this.generationStartedAt,
+    this.generationCompletedAt,
+    required this.retryCount,
+    required this.accumulatedReadSeconds,
+    this.readCompletedAt,
+    this.lastRetryAt,
+    required this.maxRetries,
+    this.nextRetryAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['batch_id'] = Variable<int>(batchId);
+    map['order_index'] = Variable<int>(orderIndex);
+    map['content_category'] = Variable<String>(contentCategory);
+    if (!nullToAbsent || title != null) {
+      map['title'] = Variable<String>(title);
+    }
+    map['status'] = Variable<String>(status);
+    if (!nullToAbsent || generationStartedAt != null) {
+      map['generation_started_at'] = Variable<String>(generationStartedAt);
+    }
+    if (!nullToAbsent || generationCompletedAt != null) {
+      map['generation_completed_at'] = Variable<String>(generationCompletedAt);
+    }
+    map['retry_count'] = Variable<int>(retryCount);
+    map['accumulated_read_seconds'] = Variable<int>(accumulatedReadSeconds);
+    if (!nullToAbsent || readCompletedAt != null) {
+      map['read_completed_at'] = Variable<String>(readCompletedAt);
+    }
+    if (!nullToAbsent || lastRetryAt != null) {
+      map['last_retry_at'] = Variable<String>(lastRetryAt);
+    }
+    map['max_retries'] = Variable<int>(maxRetries);
+    if (!nullToAbsent || nextRetryAt != null) {
+      map['next_retry_at'] = Variable<String>(nextRetryAt);
+    }
+    return map;
+  }
+
+  ArticlesCompanion toCompanion(bool nullToAbsent) {
+    return ArticlesCompanion(
+      id: Value(id),
+      batchId: Value(batchId),
+      orderIndex: Value(orderIndex),
+      contentCategory: Value(contentCategory),
+      title: title == null && nullToAbsent
+          ? const Value.absent()
+          : Value(title),
+      status: Value(status),
+      generationStartedAt: generationStartedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(generationStartedAt),
+      generationCompletedAt: generationCompletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(generationCompletedAt),
+      retryCount: Value(retryCount),
+      accumulatedReadSeconds: Value(accumulatedReadSeconds),
+      readCompletedAt: readCompletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(readCompletedAt),
+      lastRetryAt: lastRetryAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastRetryAt),
+      maxRetries: Value(maxRetries),
+      nextRetryAt: nextRetryAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(nextRetryAt),
+    );
+  }
+
+  factory ArticleRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ArticleRow(
+      id: serializer.fromJson<int>(json['id']),
+      batchId: serializer.fromJson<int>(json['batchId']),
+      orderIndex: serializer.fromJson<int>(json['orderIndex']),
+      contentCategory: serializer.fromJson<String>(json['contentCategory']),
+      title: serializer.fromJson<String?>(json['title']),
+      status: serializer.fromJson<String>(json['status']),
+      generationStartedAt: serializer.fromJson<String?>(
+        json['generationStartedAt'],
+      ),
+      generationCompletedAt: serializer.fromJson<String?>(
+        json['generationCompletedAt'],
+      ),
+      retryCount: serializer.fromJson<int>(json['retryCount']),
+      accumulatedReadSeconds: serializer.fromJson<int>(
+        json['accumulatedReadSeconds'],
+      ),
+      readCompletedAt: serializer.fromJson<String?>(json['readCompletedAt']),
+      lastRetryAt: serializer.fromJson<String?>(json['lastRetryAt']),
+      maxRetries: serializer.fromJson<int>(json['maxRetries']),
+      nextRetryAt: serializer.fromJson<String?>(json['nextRetryAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'batchId': serializer.toJson<int>(batchId),
+      'orderIndex': serializer.toJson<int>(orderIndex),
+      'contentCategory': serializer.toJson<String>(contentCategory),
+      'title': serializer.toJson<String?>(title),
+      'status': serializer.toJson<String>(status),
+      'generationStartedAt': serializer.toJson<String?>(generationStartedAt),
+      'generationCompletedAt': serializer.toJson<String?>(
+        generationCompletedAt,
+      ),
+      'retryCount': serializer.toJson<int>(retryCount),
+      'accumulatedReadSeconds': serializer.toJson<int>(accumulatedReadSeconds),
+      'readCompletedAt': serializer.toJson<String?>(readCompletedAt),
+      'lastRetryAt': serializer.toJson<String?>(lastRetryAt),
+      'maxRetries': serializer.toJson<int>(maxRetries),
+      'nextRetryAt': serializer.toJson<String?>(nextRetryAt),
+    };
+  }
+
+  ArticleRow copyWith({
+    int? id,
+    int? batchId,
+    int? orderIndex,
+    String? contentCategory,
+    Value<String?> title = const Value.absent(),
+    String? status,
+    Value<String?> generationStartedAt = const Value.absent(),
+    Value<String?> generationCompletedAt = const Value.absent(),
+    int? retryCount,
+    int? accumulatedReadSeconds,
+    Value<String?> readCompletedAt = const Value.absent(),
+    Value<String?> lastRetryAt = const Value.absent(),
+    int? maxRetries,
+    Value<String?> nextRetryAt = const Value.absent(),
+  }) => ArticleRow(
+    id: id ?? this.id,
+    batchId: batchId ?? this.batchId,
+    orderIndex: orderIndex ?? this.orderIndex,
+    contentCategory: contentCategory ?? this.contentCategory,
+    title: title.present ? title.value : this.title,
+    status: status ?? this.status,
+    generationStartedAt: generationStartedAt.present
+        ? generationStartedAt.value
+        : this.generationStartedAt,
+    generationCompletedAt: generationCompletedAt.present
+        ? generationCompletedAt.value
+        : this.generationCompletedAt,
+    retryCount: retryCount ?? this.retryCount,
+    accumulatedReadSeconds:
+        accumulatedReadSeconds ?? this.accumulatedReadSeconds,
+    readCompletedAt: readCompletedAt.present
+        ? readCompletedAt.value
+        : this.readCompletedAt,
+    lastRetryAt: lastRetryAt.present ? lastRetryAt.value : this.lastRetryAt,
+    maxRetries: maxRetries ?? this.maxRetries,
+    nextRetryAt: nextRetryAt.present ? nextRetryAt.value : this.nextRetryAt,
+  );
+  ArticleRow copyWithCompanion(ArticlesCompanion data) {
+    return ArticleRow(
+      id: data.id.present ? data.id.value : this.id,
+      batchId: data.batchId.present ? data.batchId.value : this.batchId,
+      orderIndex: data.orderIndex.present
+          ? data.orderIndex.value
+          : this.orderIndex,
+      contentCategory: data.contentCategory.present
+          ? data.contentCategory.value
+          : this.contentCategory,
+      title: data.title.present ? data.title.value : this.title,
+      status: data.status.present ? data.status.value : this.status,
+      generationStartedAt: data.generationStartedAt.present
+          ? data.generationStartedAt.value
+          : this.generationStartedAt,
+      generationCompletedAt: data.generationCompletedAt.present
+          ? data.generationCompletedAt.value
+          : this.generationCompletedAt,
+      retryCount: data.retryCount.present
+          ? data.retryCount.value
+          : this.retryCount,
+      accumulatedReadSeconds: data.accumulatedReadSeconds.present
+          ? data.accumulatedReadSeconds.value
+          : this.accumulatedReadSeconds,
+      readCompletedAt: data.readCompletedAt.present
+          ? data.readCompletedAt.value
+          : this.readCompletedAt,
+      lastRetryAt: data.lastRetryAt.present
+          ? data.lastRetryAt.value
+          : this.lastRetryAt,
+      maxRetries: data.maxRetries.present
+          ? data.maxRetries.value
+          : this.maxRetries,
+      nextRetryAt: data.nextRetryAt.present
+          ? data.nextRetryAt.value
+          : this.nextRetryAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ArticleRow(')
+          ..write('id: $id, ')
+          ..write('batchId: $batchId, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('contentCategory: $contentCategory, ')
+          ..write('title: $title, ')
+          ..write('status: $status, ')
+          ..write('generationStartedAt: $generationStartedAt, ')
+          ..write('generationCompletedAt: $generationCompletedAt, ')
+          ..write('retryCount: $retryCount, ')
+          ..write('accumulatedReadSeconds: $accumulatedReadSeconds, ')
+          ..write('readCompletedAt: $readCompletedAt, ')
+          ..write('lastRetryAt: $lastRetryAt, ')
+          ..write('maxRetries: $maxRetries, ')
+          ..write('nextRetryAt: $nextRetryAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    batchId,
+    orderIndex,
+    contentCategory,
+    title,
+    status,
+    generationStartedAt,
+    generationCompletedAt,
+    retryCount,
+    accumulatedReadSeconds,
+    readCompletedAt,
+    lastRetryAt,
+    maxRetries,
+    nextRetryAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ArticleRow &&
+          other.id == this.id &&
+          other.batchId == this.batchId &&
+          other.orderIndex == this.orderIndex &&
+          other.contentCategory == this.contentCategory &&
+          other.title == this.title &&
+          other.status == this.status &&
+          other.generationStartedAt == this.generationStartedAt &&
+          other.generationCompletedAt == this.generationCompletedAt &&
+          other.retryCount == this.retryCount &&
+          other.accumulatedReadSeconds == this.accumulatedReadSeconds &&
+          other.readCompletedAt == this.readCompletedAt &&
+          other.lastRetryAt == this.lastRetryAt &&
+          other.maxRetries == this.maxRetries &&
+          other.nextRetryAt == this.nextRetryAt);
+}
+
+class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
+  final Value<int> id;
+  final Value<int> batchId;
+  final Value<int> orderIndex;
+  final Value<String> contentCategory;
+  final Value<String?> title;
+  final Value<String> status;
+  final Value<String?> generationStartedAt;
+  final Value<String?> generationCompletedAt;
+  final Value<int> retryCount;
+  final Value<int> accumulatedReadSeconds;
+  final Value<String?> readCompletedAt;
+  final Value<String?> lastRetryAt;
+  final Value<int> maxRetries;
+  final Value<String?> nextRetryAt;
+  const ArticlesCompanion({
+    this.id = const Value.absent(),
+    this.batchId = const Value.absent(),
+    this.orderIndex = const Value.absent(),
+    this.contentCategory = const Value.absent(),
+    this.title = const Value.absent(),
+    this.status = const Value.absent(),
+    this.generationStartedAt = const Value.absent(),
+    this.generationCompletedAt = const Value.absent(),
+    this.retryCount = const Value.absent(),
+    this.accumulatedReadSeconds = const Value.absent(),
+    this.readCompletedAt = const Value.absent(),
+    this.lastRetryAt = const Value.absent(),
+    this.maxRetries = const Value.absent(),
+    this.nextRetryAt = const Value.absent(),
+  });
+  ArticlesCompanion.insert({
+    this.id = const Value.absent(),
+    required int batchId,
+    required int orderIndex,
+    required String contentCategory,
+    this.title = const Value.absent(),
+    required String status,
+    this.generationStartedAt = const Value.absent(),
+    this.generationCompletedAt = const Value.absent(),
+    required int retryCount,
+    required int accumulatedReadSeconds,
+    this.readCompletedAt = const Value.absent(),
+    this.lastRetryAt = const Value.absent(),
+    required int maxRetries,
+    this.nextRetryAt = const Value.absent(),
+  }) : batchId = Value(batchId),
+       orderIndex = Value(orderIndex),
+       contentCategory = Value(contentCategory),
+       status = Value(status),
+       retryCount = Value(retryCount),
+       accumulatedReadSeconds = Value(accumulatedReadSeconds),
+       maxRetries = Value(maxRetries);
+  static Insertable<ArticleRow> custom({
+    Expression<int>? id,
+    Expression<int>? batchId,
+    Expression<int>? orderIndex,
+    Expression<String>? contentCategory,
+    Expression<String>? title,
+    Expression<String>? status,
+    Expression<String>? generationStartedAt,
+    Expression<String>? generationCompletedAt,
+    Expression<int>? retryCount,
+    Expression<int>? accumulatedReadSeconds,
+    Expression<String>? readCompletedAt,
+    Expression<String>? lastRetryAt,
+    Expression<int>? maxRetries,
+    Expression<String>? nextRetryAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (batchId != null) 'batch_id': batchId,
+      if (orderIndex != null) 'order_index': orderIndex,
+      if (contentCategory != null) 'content_category': contentCategory,
+      if (title != null) 'title': title,
+      if (status != null) 'status': status,
+      if (generationStartedAt != null)
+        'generation_started_at': generationStartedAt,
+      if (generationCompletedAt != null)
+        'generation_completed_at': generationCompletedAt,
+      if (retryCount != null) 'retry_count': retryCount,
+      if (accumulatedReadSeconds != null)
+        'accumulated_read_seconds': accumulatedReadSeconds,
+      if (readCompletedAt != null) 'read_completed_at': readCompletedAt,
+      if (lastRetryAt != null) 'last_retry_at': lastRetryAt,
+      if (maxRetries != null) 'max_retries': maxRetries,
+      if (nextRetryAt != null) 'next_retry_at': nextRetryAt,
+    });
+  }
+
+  ArticlesCompanion copyWith({
+    Value<int>? id,
+    Value<int>? batchId,
+    Value<int>? orderIndex,
+    Value<String>? contentCategory,
+    Value<String?>? title,
+    Value<String>? status,
+    Value<String?>? generationStartedAt,
+    Value<String?>? generationCompletedAt,
+    Value<int>? retryCount,
+    Value<int>? accumulatedReadSeconds,
+    Value<String?>? readCompletedAt,
+    Value<String?>? lastRetryAt,
+    Value<int>? maxRetries,
+    Value<String?>? nextRetryAt,
+  }) {
+    return ArticlesCompanion(
+      id: id ?? this.id,
+      batchId: batchId ?? this.batchId,
+      orderIndex: orderIndex ?? this.orderIndex,
+      contentCategory: contentCategory ?? this.contentCategory,
+      title: title ?? this.title,
+      status: status ?? this.status,
+      generationStartedAt: generationStartedAt ?? this.generationStartedAt,
+      generationCompletedAt:
+          generationCompletedAt ?? this.generationCompletedAt,
+      retryCount: retryCount ?? this.retryCount,
+      accumulatedReadSeconds:
+          accumulatedReadSeconds ?? this.accumulatedReadSeconds,
+      readCompletedAt: readCompletedAt ?? this.readCompletedAt,
+      lastRetryAt: lastRetryAt ?? this.lastRetryAt,
+      maxRetries: maxRetries ?? this.maxRetries,
+      nextRetryAt: nextRetryAt ?? this.nextRetryAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (batchId.present) {
+      map['batch_id'] = Variable<int>(batchId.value);
+    }
+    if (orderIndex.present) {
+      map['order_index'] = Variable<int>(orderIndex.value);
+    }
+    if (contentCategory.present) {
+      map['content_category'] = Variable<String>(contentCategory.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (generationStartedAt.present) {
+      map['generation_started_at'] = Variable<String>(
+        generationStartedAt.value,
+      );
+    }
+    if (generationCompletedAt.present) {
+      map['generation_completed_at'] = Variable<String>(
+        generationCompletedAt.value,
+      );
+    }
+    if (retryCount.present) {
+      map['retry_count'] = Variable<int>(retryCount.value);
+    }
+    if (accumulatedReadSeconds.present) {
+      map['accumulated_read_seconds'] = Variable<int>(
+        accumulatedReadSeconds.value,
+      );
+    }
+    if (readCompletedAt.present) {
+      map['read_completed_at'] = Variable<String>(readCompletedAt.value);
+    }
+    if (lastRetryAt.present) {
+      map['last_retry_at'] = Variable<String>(lastRetryAt.value);
+    }
+    if (maxRetries.present) {
+      map['max_retries'] = Variable<int>(maxRetries.value);
+    }
+    if (nextRetryAt.present) {
+      map['next_retry_at'] = Variable<String>(nextRetryAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ArticlesCompanion(')
+          ..write('id: $id, ')
+          ..write('batchId: $batchId, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('contentCategory: $contentCategory, ')
+          ..write('title: $title, ')
+          ..write('status: $status, ')
+          ..write('generationStartedAt: $generationStartedAt, ')
+          ..write('generationCompletedAt: $generationCompletedAt, ')
+          ..write('retryCount: $retryCount, ')
+          ..write('accumulatedReadSeconds: $accumulatedReadSeconds, ')
+          ..write('readCompletedAt: $readCompletedAt, ')
+          ..write('lastRetryAt: $lastRetryAt, ')
+          ..write('maxRetries: $maxRetries, ')
+          ..write('nextRetryAt: $nextRetryAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ArticleParagraphsTable extends ArticleParagraphs
+    with TableInfo<$ArticleParagraphsTable, ArticleParagraphRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ArticleParagraphsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _articleIdMeta = const VerificationMeta(
+    'articleId',
+  );
+  @override
+  late final GeneratedColumn<int> articleId = GeneratedColumn<int>(
+    'article_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES article (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _orderIndexMeta = const VerificationMeta(
+    'orderIndex',
+  );
+  @override
+  late final GeneratedColumn<int> orderIndex = GeneratedColumn<int>(
+    'order_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _englishTextMeta = const VerificationMeta(
+    'englishText',
+  );
+  @override
+  late final GeneratedColumn<String> englishText = GeneratedColumn<String>(
+    'english_text',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _chineseTranslationMeta =
+      const VerificationMeta('chineseTranslation');
+  @override
+  late final GeneratedColumn<String> chineseTranslation =
+      GeneratedColumn<String>(
+        'chinese_translation',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    articleId,
+    orderIndex,
+    englishText,
+    chineseTranslation,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'article_paragraph';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ArticleParagraphRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('article_id')) {
+      context.handle(
+        _articleIdMeta,
+        articleId.isAcceptableOrUnknown(data['article_id']!, _articleIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_articleIdMeta);
+    }
+    if (data.containsKey('order_index')) {
+      context.handle(
+        _orderIndexMeta,
+        orderIndex.isAcceptableOrUnknown(data['order_index']!, _orderIndexMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_orderIndexMeta);
+    }
+    if (data.containsKey('english_text')) {
+      context.handle(
+        _englishTextMeta,
+        englishText.isAcceptableOrUnknown(
+          data['english_text']!,
+          _englishTextMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_englishTextMeta);
+    }
+    if (data.containsKey('chinese_translation')) {
+      context.handle(
+        _chineseTranslationMeta,
+        chineseTranslation.isAcceptableOrUnknown(
+          data['chinese_translation']!,
+          _chineseTranslationMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_chineseTranslationMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ArticleParagraphRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ArticleParagraphRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      articleId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}article_id'],
+      )!,
+      orderIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}order_index'],
+      )!,
+      englishText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}english_text'],
+      )!,
+      chineseTranslation: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}chinese_translation'],
+      )!,
+    );
+  }
+
+  @override
+  $ArticleParagraphsTable createAlias(String alias) {
+    return $ArticleParagraphsTable(attachedDatabase, alias);
+  }
+}
+
+class ArticleParagraphRow extends DataClass
+    implements Insertable<ArticleParagraphRow> {
+  /// Room: @PrimaryKey(autoGenerate = true) val id: Long
+  final int id;
+
+  /// Room: ForeignKey(ArticleEntity, parent = id, child = article_id, onDelete = CASCADE)
+  final int articleId;
+  final int orderIndex;
+  final String englishText;
+  final String chineseTranslation;
+  const ArticleParagraphRow({
+    required this.id,
+    required this.articleId,
+    required this.orderIndex,
+    required this.englishText,
+    required this.chineseTranslation,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['article_id'] = Variable<int>(articleId);
+    map['order_index'] = Variable<int>(orderIndex);
+    map['english_text'] = Variable<String>(englishText);
+    map['chinese_translation'] = Variable<String>(chineseTranslation);
+    return map;
+  }
+
+  ArticleParagraphsCompanion toCompanion(bool nullToAbsent) {
+    return ArticleParagraphsCompanion(
+      id: Value(id),
+      articleId: Value(articleId),
+      orderIndex: Value(orderIndex),
+      englishText: Value(englishText),
+      chineseTranslation: Value(chineseTranslation),
+    );
+  }
+
+  factory ArticleParagraphRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ArticleParagraphRow(
+      id: serializer.fromJson<int>(json['id']),
+      articleId: serializer.fromJson<int>(json['articleId']),
+      orderIndex: serializer.fromJson<int>(json['orderIndex']),
+      englishText: serializer.fromJson<String>(json['englishText']),
+      chineseTranslation: serializer.fromJson<String>(
+        json['chineseTranslation'],
+      ),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'articleId': serializer.toJson<int>(articleId),
+      'orderIndex': serializer.toJson<int>(orderIndex),
+      'englishText': serializer.toJson<String>(englishText),
+      'chineseTranslation': serializer.toJson<String>(chineseTranslation),
+    };
+  }
+
+  ArticleParagraphRow copyWith({
+    int? id,
+    int? articleId,
+    int? orderIndex,
+    String? englishText,
+    String? chineseTranslation,
+  }) => ArticleParagraphRow(
+    id: id ?? this.id,
+    articleId: articleId ?? this.articleId,
+    orderIndex: orderIndex ?? this.orderIndex,
+    englishText: englishText ?? this.englishText,
+    chineseTranslation: chineseTranslation ?? this.chineseTranslation,
+  );
+  ArticleParagraphRow copyWithCompanion(ArticleParagraphsCompanion data) {
+    return ArticleParagraphRow(
+      id: data.id.present ? data.id.value : this.id,
+      articleId: data.articleId.present ? data.articleId.value : this.articleId,
+      orderIndex: data.orderIndex.present
+          ? data.orderIndex.value
+          : this.orderIndex,
+      englishText: data.englishText.present
+          ? data.englishText.value
+          : this.englishText,
+      chineseTranslation: data.chineseTranslation.present
+          ? data.chineseTranslation.value
+          : this.chineseTranslation,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ArticleParagraphRow(')
+          ..write('id: $id, ')
+          ..write('articleId: $articleId, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('englishText: $englishText, ')
+          ..write('chineseTranslation: $chineseTranslation')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, articleId, orderIndex, englishText, chineseTranslation);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ArticleParagraphRow &&
+          other.id == this.id &&
+          other.articleId == this.articleId &&
+          other.orderIndex == this.orderIndex &&
+          other.englishText == this.englishText &&
+          other.chineseTranslation == this.chineseTranslation);
+}
+
+class ArticleParagraphsCompanion extends UpdateCompanion<ArticleParagraphRow> {
+  final Value<int> id;
+  final Value<int> articleId;
+  final Value<int> orderIndex;
+  final Value<String> englishText;
+  final Value<String> chineseTranslation;
+  const ArticleParagraphsCompanion({
+    this.id = const Value.absent(),
+    this.articleId = const Value.absent(),
+    this.orderIndex = const Value.absent(),
+    this.englishText = const Value.absent(),
+    this.chineseTranslation = const Value.absent(),
+  });
+  ArticleParagraphsCompanion.insert({
+    this.id = const Value.absent(),
+    required int articleId,
+    required int orderIndex,
+    required String englishText,
+    required String chineseTranslation,
+  }) : articleId = Value(articleId),
+       orderIndex = Value(orderIndex),
+       englishText = Value(englishText),
+       chineseTranslation = Value(chineseTranslation);
+  static Insertable<ArticleParagraphRow> custom({
+    Expression<int>? id,
+    Expression<int>? articleId,
+    Expression<int>? orderIndex,
+    Expression<String>? englishText,
+    Expression<String>? chineseTranslation,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (articleId != null) 'article_id': articleId,
+      if (orderIndex != null) 'order_index': orderIndex,
+      if (englishText != null) 'english_text': englishText,
+      if (chineseTranslation != null) 'chinese_translation': chineseTranslation,
+    });
+  }
+
+  ArticleParagraphsCompanion copyWith({
+    Value<int>? id,
+    Value<int>? articleId,
+    Value<int>? orderIndex,
+    Value<String>? englishText,
+    Value<String>? chineseTranslation,
+  }) {
+    return ArticleParagraphsCompanion(
+      id: id ?? this.id,
+      articleId: articleId ?? this.articleId,
+      orderIndex: orderIndex ?? this.orderIndex,
+      englishText: englishText ?? this.englishText,
+      chineseTranslation: chineseTranslation ?? this.chineseTranslation,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (articleId.present) {
+      map['article_id'] = Variable<int>(articleId.value);
+    }
+    if (orderIndex.present) {
+      map['order_index'] = Variable<int>(orderIndex.value);
+    }
+    if (englishText.present) {
+      map['english_text'] = Variable<String>(englishText.value);
+    }
+    if (chineseTranslation.present) {
+      map['chinese_translation'] = Variable<String>(chineseTranslation.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ArticleParagraphsCompanion(')
+          ..write('id: $id, ')
+          ..write('articleId: $articleId, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('englishText: $englishText, ')
+          ..write('chineseTranslation: $chineseTranslation')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $GenerationErrorLogsTable extends GenerationErrorLogs
+    with TableInfo<$GenerationErrorLogsTable, GenerationErrorLogRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $GenerationErrorLogsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _entityTypeMeta = const VerificationMeta(
+    'entityType',
+  );
+  @override
+  late final GeneratedColumn<String> entityType = GeneratedColumn<String>(
+    'entity_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityIdMeta = const VerificationMeta(
+    'entityId',
+  );
+  @override
+  late final GeneratedColumn<int> entityId = GeneratedColumn<int>(
+    'entity_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _errorCodeMeta = const VerificationMeta(
+    'errorCode',
+  );
+  @override
+  late final GeneratedColumn<String> errorCode = GeneratedColumn<String>(
+    'error_code',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _errorMessageMeta = const VerificationMeta(
+    'errorMessage',
+  );
+  @override
+  late final GeneratedColumn<String> errorMessage = GeneratedColumn<String>(
+    'error_message',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _errorHelpMeta = const VerificationMeta(
+    'errorHelp',
+  );
+  @override
+  late final GeneratedColumn<String> errorHelp = GeneratedColumn<String>(
+    'error_help',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _retryCountMeta = const VerificationMeta(
+    'retryCount',
+  );
+  @override
+  late final GeneratedColumn<int> retryCount = GeneratedColumn<int>(
+    'retry_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<String> createdAt = GeneratedColumn<String>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _notifiedAtMeta = const VerificationMeta(
+    'notifiedAt',
+  );
+  @override
+  late final GeneratedColumn<int> notifiedAt = GeneratedColumn<int>(
+    'notified_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    entityType,
+    entityId,
+    errorCode,
+    errorMessage,
+    errorHelp,
+    retryCount,
+    createdAt,
+    notifiedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'generation_error_log';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<GenerationErrorLogRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('entity_type')) {
+      context.handle(
+        _entityTypeMeta,
+        entityType.isAcceptableOrUnknown(data['entity_type']!, _entityTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityTypeMeta);
+    }
+    if (data.containsKey('entity_id')) {
+      context.handle(
+        _entityIdMeta,
+        entityId.isAcceptableOrUnknown(data['entity_id']!, _entityIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityIdMeta);
+    }
+    if (data.containsKey('error_code')) {
+      context.handle(
+        _errorCodeMeta,
+        errorCode.isAcceptableOrUnknown(data['error_code']!, _errorCodeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_errorCodeMeta);
+    }
+    if (data.containsKey('error_message')) {
+      context.handle(
+        _errorMessageMeta,
+        errorMessage.isAcceptableOrUnknown(
+          data['error_message']!,
+          _errorMessageMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_errorMessageMeta);
+    }
+    if (data.containsKey('error_help')) {
+      context.handle(
+        _errorHelpMeta,
+        errorHelp.isAcceptableOrUnknown(data['error_help']!, _errorHelpMeta),
+      );
+    }
+    if (data.containsKey('retry_count')) {
+      context.handle(
+        _retryCountMeta,
+        retryCount.isAcceptableOrUnknown(data['retry_count']!, _retryCountMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_retryCountMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('notified_at')) {
+      context.handle(
+        _notifiedAtMeta,
+        notifiedAt.isAcceptableOrUnknown(data['notified_at']!, _notifiedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  GenerationErrorLogRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return GenerationErrorLogRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      entityType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_type'],
+      )!,
+      entityId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}entity_id'],
+      )!,
+      errorCode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}error_code'],
+      )!,
+      errorMessage: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}error_message'],
+      )!,
+      errorHelp: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}error_help'],
+      ),
+      retryCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}retry_count'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}created_at'],
+      )!,
+      notifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}notified_at'],
+      ),
+    );
+  }
+
+  @override
+  $GenerationErrorLogsTable createAlias(String alias) {
+    return $GenerationErrorLogsTable(attachedDatabase, alias);
+  }
+}
+
+class GenerationErrorLogRow extends DataClass
+    implements Insertable<GenerationErrorLogRow> {
+  /// Room: @PrimaryKey(autoGenerate = true) val id: Long
+  final int id;
+
+  /// "BATCH" | "ARTICLE"
+  final String entityType;
+  final int entityId;
+  final String errorCode;
+  final String errorMessage;
+  final String? errorHelp;
+
+  /// 快照：错误发生时的重试次数
+  final int retryCount;
+  final String createdAt;
+
+  /// 飞书告警送达时间（Unix millis）；null = 未通知，启动时补发
+  final int? notifiedAt;
+  const GenerationErrorLogRow({
+    required this.id,
+    required this.entityType,
+    required this.entityId,
+    required this.errorCode,
+    required this.errorMessage,
+    this.errorHelp,
+    required this.retryCount,
+    required this.createdAt,
+    this.notifiedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['entity_type'] = Variable<String>(entityType);
+    map['entity_id'] = Variable<int>(entityId);
+    map['error_code'] = Variable<String>(errorCode);
+    map['error_message'] = Variable<String>(errorMessage);
+    if (!nullToAbsent || errorHelp != null) {
+      map['error_help'] = Variable<String>(errorHelp);
+    }
+    map['retry_count'] = Variable<int>(retryCount);
+    map['created_at'] = Variable<String>(createdAt);
+    if (!nullToAbsent || notifiedAt != null) {
+      map['notified_at'] = Variable<int>(notifiedAt);
+    }
+    return map;
+  }
+
+  GenerationErrorLogsCompanion toCompanion(bool nullToAbsent) {
+    return GenerationErrorLogsCompanion(
+      id: Value(id),
+      entityType: Value(entityType),
+      entityId: Value(entityId),
+      errorCode: Value(errorCode),
+      errorMessage: Value(errorMessage),
+      errorHelp: errorHelp == null && nullToAbsent
+          ? const Value.absent()
+          : Value(errorHelp),
+      retryCount: Value(retryCount),
+      createdAt: Value(createdAt),
+      notifiedAt: notifiedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(notifiedAt),
+    );
+  }
+
+  factory GenerationErrorLogRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return GenerationErrorLogRow(
+      id: serializer.fromJson<int>(json['id']),
+      entityType: serializer.fromJson<String>(json['entityType']),
+      entityId: serializer.fromJson<int>(json['entityId']),
+      errorCode: serializer.fromJson<String>(json['errorCode']),
+      errorMessage: serializer.fromJson<String>(json['errorMessage']),
+      errorHelp: serializer.fromJson<String?>(json['errorHelp']),
+      retryCount: serializer.fromJson<int>(json['retryCount']),
+      createdAt: serializer.fromJson<String>(json['createdAt']),
+      notifiedAt: serializer.fromJson<int?>(json['notifiedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'entityType': serializer.toJson<String>(entityType),
+      'entityId': serializer.toJson<int>(entityId),
+      'errorCode': serializer.toJson<String>(errorCode),
+      'errorMessage': serializer.toJson<String>(errorMessage),
+      'errorHelp': serializer.toJson<String?>(errorHelp),
+      'retryCount': serializer.toJson<int>(retryCount),
+      'createdAt': serializer.toJson<String>(createdAt),
+      'notifiedAt': serializer.toJson<int?>(notifiedAt),
+    };
+  }
+
+  GenerationErrorLogRow copyWith({
+    int? id,
+    String? entityType,
+    int? entityId,
+    String? errorCode,
+    String? errorMessage,
+    Value<String?> errorHelp = const Value.absent(),
+    int? retryCount,
+    String? createdAt,
+    Value<int?> notifiedAt = const Value.absent(),
+  }) => GenerationErrorLogRow(
+    id: id ?? this.id,
+    entityType: entityType ?? this.entityType,
+    entityId: entityId ?? this.entityId,
+    errorCode: errorCode ?? this.errorCode,
+    errorMessage: errorMessage ?? this.errorMessage,
+    errorHelp: errorHelp.present ? errorHelp.value : this.errorHelp,
+    retryCount: retryCount ?? this.retryCount,
+    createdAt: createdAt ?? this.createdAt,
+    notifiedAt: notifiedAt.present ? notifiedAt.value : this.notifiedAt,
+  );
+  GenerationErrorLogRow copyWithCompanion(GenerationErrorLogsCompanion data) {
+    return GenerationErrorLogRow(
+      id: data.id.present ? data.id.value : this.id,
+      entityType: data.entityType.present
+          ? data.entityType.value
+          : this.entityType,
+      entityId: data.entityId.present ? data.entityId.value : this.entityId,
+      errorCode: data.errorCode.present ? data.errorCode.value : this.errorCode,
+      errorMessage: data.errorMessage.present
+          ? data.errorMessage.value
+          : this.errorMessage,
+      errorHelp: data.errorHelp.present ? data.errorHelp.value : this.errorHelp,
+      retryCount: data.retryCount.present
+          ? data.retryCount.value
+          : this.retryCount,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      notifiedAt: data.notifiedAt.present
+          ? data.notifiedAt.value
+          : this.notifiedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GenerationErrorLogRow(')
+          ..write('id: $id, ')
+          ..write('entityType: $entityType, ')
+          ..write('entityId: $entityId, ')
+          ..write('errorCode: $errorCode, ')
+          ..write('errorMessage: $errorMessage, ')
+          ..write('errorHelp: $errorHelp, ')
+          ..write('retryCount: $retryCount, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('notifiedAt: $notifiedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    entityType,
+    entityId,
+    errorCode,
+    errorMessage,
+    errorHelp,
+    retryCount,
+    createdAt,
+    notifiedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is GenerationErrorLogRow &&
+          other.id == this.id &&
+          other.entityType == this.entityType &&
+          other.entityId == this.entityId &&
+          other.errorCode == this.errorCode &&
+          other.errorMessage == this.errorMessage &&
+          other.errorHelp == this.errorHelp &&
+          other.retryCount == this.retryCount &&
+          other.createdAt == this.createdAt &&
+          other.notifiedAt == this.notifiedAt);
+}
+
+class GenerationErrorLogsCompanion
+    extends UpdateCompanion<GenerationErrorLogRow> {
+  final Value<int> id;
+  final Value<String> entityType;
+  final Value<int> entityId;
+  final Value<String> errorCode;
+  final Value<String> errorMessage;
+  final Value<String?> errorHelp;
+  final Value<int> retryCount;
+  final Value<String> createdAt;
+  final Value<int?> notifiedAt;
+  const GenerationErrorLogsCompanion({
+    this.id = const Value.absent(),
+    this.entityType = const Value.absent(),
+    this.entityId = const Value.absent(),
+    this.errorCode = const Value.absent(),
+    this.errorMessage = const Value.absent(),
+    this.errorHelp = const Value.absent(),
+    this.retryCount = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.notifiedAt = const Value.absent(),
+  });
+  GenerationErrorLogsCompanion.insert({
+    this.id = const Value.absent(),
+    required String entityType,
+    required int entityId,
+    required String errorCode,
+    required String errorMessage,
+    this.errorHelp = const Value.absent(),
+    required int retryCount,
+    required String createdAt,
+    this.notifiedAt = const Value.absent(),
+  }) : entityType = Value(entityType),
+       entityId = Value(entityId),
+       errorCode = Value(errorCode),
+       errorMessage = Value(errorMessage),
+       retryCount = Value(retryCount),
+       createdAt = Value(createdAt);
+  static Insertable<GenerationErrorLogRow> custom({
+    Expression<int>? id,
+    Expression<String>? entityType,
+    Expression<int>? entityId,
+    Expression<String>? errorCode,
+    Expression<String>? errorMessage,
+    Expression<String>? errorHelp,
+    Expression<int>? retryCount,
+    Expression<String>? createdAt,
+    Expression<int>? notifiedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (entityType != null) 'entity_type': entityType,
+      if (entityId != null) 'entity_id': entityId,
+      if (errorCode != null) 'error_code': errorCode,
+      if (errorMessage != null) 'error_message': errorMessage,
+      if (errorHelp != null) 'error_help': errorHelp,
+      if (retryCount != null) 'retry_count': retryCount,
+      if (createdAt != null) 'created_at': createdAt,
+      if (notifiedAt != null) 'notified_at': notifiedAt,
+    });
+  }
+
+  GenerationErrorLogsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? entityType,
+    Value<int>? entityId,
+    Value<String>? errorCode,
+    Value<String>? errorMessage,
+    Value<String?>? errorHelp,
+    Value<int>? retryCount,
+    Value<String>? createdAt,
+    Value<int?>? notifiedAt,
+  }) {
+    return GenerationErrorLogsCompanion(
+      id: id ?? this.id,
+      entityType: entityType ?? this.entityType,
+      entityId: entityId ?? this.entityId,
+      errorCode: errorCode ?? this.errorCode,
+      errorMessage: errorMessage ?? this.errorMessage,
+      errorHelp: errorHelp ?? this.errorHelp,
+      retryCount: retryCount ?? this.retryCount,
+      createdAt: createdAt ?? this.createdAt,
+      notifiedAt: notifiedAt ?? this.notifiedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (entityType.present) {
+      map['entity_type'] = Variable<String>(entityType.value);
+    }
+    if (entityId.present) {
+      map['entity_id'] = Variable<int>(entityId.value);
+    }
+    if (errorCode.present) {
+      map['error_code'] = Variable<String>(errorCode.value);
+    }
+    if (errorMessage.present) {
+      map['error_message'] = Variable<String>(errorMessage.value);
+    }
+    if (errorHelp.present) {
+      map['error_help'] = Variable<String>(errorHelp.value);
+    }
+    if (retryCount.present) {
+      map['retry_count'] = Variable<int>(retryCount.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<String>(createdAt.value);
+    }
+    if (notifiedAt.present) {
+      map['notified_at'] = Variable<int>(notifiedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('GenerationErrorLogsCompanion(')
+          ..write('id: $id, ')
+          ..write('entityType: $entityType, ')
+          ..write('entityId: $entityId, ')
+          ..write('errorCode: $errorCode, ')
+          ..write('errorMessage: $errorMessage, ')
+          ..write('errorHelp: $errorHelp, ')
+          ..write('retryCount: $retryCount, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('notifiedAt: $notifiedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3450,9 +5266,42 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $LearningStatsSummariesTable(this);
   late final $ArticleBatchesTable articleBatches = $ArticleBatchesTable(this);
   late final $DailyLearningsTable dailyLearnings = $DailyLearningsTable(this);
+  late final $ArticlesTable articles = $ArticlesTable(this);
+  late final $ArticleParagraphsTable articleParagraphs =
+      $ArticleParagraphsTable(this);
+  late final $GenerationErrorLogsTable generationErrorLogs =
+      $GenerationErrorLogsTable(this);
   late final Index indexDailyLearningRefBatchId = Index(
     'index_daily_learning_ref_batch_id',
     'CREATE INDEX index_daily_learning_ref_batch_id ON daily_learning (ref_batch_id)',
+  );
+  late final Index indexArticleBatchGeneratedOn = Index(
+    'index_article_batch_generated_on',
+    'CREATE INDEX index_article_batch_generated_on ON article_batch (generated_on)',
+  );
+  late final Index indexArticleBatchDifficultyLevelSnapshotGeneratedOn = Index(
+    'index_article_batch_difficulty_level_snapshot_generated_on',
+    'CREATE UNIQUE INDEX index_article_batch_difficulty_level_snapshot_generated_on ON article_batch (difficulty_level_snapshot, generated_on)',
+  );
+  late final Index indexArticleBatchId = Index(
+    'index_article_batch_id',
+    'CREATE INDEX index_article_batch_id ON article (batch_id)',
+  );
+  late final Index indexArticleParagraphArticleId = Index(
+    'index_article_paragraph_article_id',
+    'CREATE INDEX index_article_paragraph_article_id ON article_paragraph (article_id)',
+  );
+  late final Index indexArticleParagraphArticleIdOrderIndex = Index(
+    'index_article_paragraph_article_id_order_index',
+    'CREATE UNIQUE INDEX index_article_paragraph_article_id_order_index ON article_paragraph (article_id, order_index)',
+  );
+  late final Index indexGenerationErrorLogEntityTypeEntityId = Index(
+    'index_generation_error_log_entity_type_entity_id',
+    'CREATE INDEX index_generation_error_log_entity_type_entity_id ON generation_error_log (entity_type, entity_id)',
+  );
+  late final Index indexGenerationErrorLogCreatedAt = Index(
+    'index_generation_error_log_created_at',
+    'CREATE INDEX index_generation_error_log_created_at ON generation_error_log (created_at)',
   );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
@@ -3467,7 +5316,17 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     learningStatsSummaries,
     articleBatches,
     dailyLearnings,
+    articles,
+    articleParagraphs,
+    generationErrorLogs,
     indexDailyLearningRefBatchId,
+    indexArticleBatchGeneratedOn,
+    indexArticleBatchDifficultyLevelSnapshotGeneratedOn,
+    indexArticleBatchId,
+    indexArticleParagraphArticleId,
+    indexArticleParagraphArticleIdOrderIndex,
+    indexGenerationErrorLogEntityTypeEntityId,
+    indexGenerationErrorLogCreatedAt,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -3477,6 +5336,20 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('daily_learning', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'article_batch',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('article', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'article',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('article_paragraph', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -4906,6 +6779,24 @@ final class $$ArticleBatchesTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<$ArticlesTable, List<ArticleRow>>
+  _articlesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.articles,
+    aliasName: 'article_batch__id__article__batch_id',
+  );
+
+  $$ArticlesTableProcessedTableManager get articlesRefs {
+    final manager = $$ArticlesTableTableManager(
+      $_db,
+      $_db.articles,
+    ).filter((f) => f.batchId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_articlesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$ArticleBatchesTableFilterComposer
@@ -4973,6 +6864,31 @@ class $$ArticleBatchesTableFilterComposer
           }) => $$DailyLearningsTableFilterComposer(
             $db: $db,
             $table: $db.dailyLearnings,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> articlesRefs(
+    Expression<bool> Function($$ArticlesTableFilterComposer f) f,
+  ) {
+    final $$ArticlesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.articles,
+      getReferencedColumn: (t) => t.batchId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ArticlesTableFilterComposer(
+            $db: $db,
+            $table: $db.articles,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -5100,6 +7016,31 @@ class $$ArticleBatchesTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> articlesRefs<T extends Object>(
+    Expression<T> Function($$ArticlesTableAnnotationComposer a) f,
+  ) {
+    final $$ArticlesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.articles,
+      getReferencedColumn: (t) => t.batchId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ArticlesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.articles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$ArticleBatchesTableTableManager
@@ -5115,7 +7056,7 @@ class $$ArticleBatchesTableTableManager
           $$ArticleBatchesTableUpdateCompanionBuilder,
           (ArticleBatchRow, $$ArticleBatchesTableReferences),
           ArticleBatchRow,
-          PrefetchHooks Function({bool dailyLearningsRefs})
+          PrefetchHooks Function({bool dailyLearningsRefs, bool articlesRefs})
         > {
   $$ArticleBatchesTableTableManager(
     _$AppDatabase db,
@@ -5178,38 +7119,63 @@ class $$ArticleBatchesTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({dailyLearningsRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [
-                if (dailyLearningsRefs) db.dailyLearnings,
-              ],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (dailyLearningsRefs)
-                    await $_getPrefetchedData<
-                      ArticleBatchRow,
-                      $ArticleBatchesTable,
-                      DailyLearningRow
-                    >(
-                      currentTable: table,
-                      referencedTable: $$ArticleBatchesTableReferences
-                          ._dailyLearningsRefsTable(db),
-                      managerFromTypedResult: (p0) =>
-                          $$ArticleBatchesTableReferences(
-                            db,
-                            table,
-                            p0,
-                          ).dailyLearningsRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where((e) => e.refBatchId == item.id),
-                      typedResults: items,
-                    ),
-                ];
+          prefetchHooksCallback:
+              ({dailyLearningsRefs = false, articlesRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (dailyLearningsRefs) db.dailyLearnings,
+                    if (articlesRefs) db.articles,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (dailyLearningsRefs)
+                        await $_getPrefetchedData<
+                          ArticleBatchRow,
+                          $ArticleBatchesTable,
+                          DailyLearningRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$ArticleBatchesTableReferences
+                              ._dailyLearningsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$ArticleBatchesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).dailyLearningsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.refBatchId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (articlesRefs)
+                        await $_getPrefetchedData<
+                          ArticleBatchRow,
+                          $ArticleBatchesTable,
+                          ArticleRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$ArticleBatchesTableReferences
+                              ._articlesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$ArticleBatchesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).articlesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.batchId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -5226,7 +7192,7 @@ typedef $$ArticleBatchesTableProcessedTableManager =
       $$ArticleBatchesTableUpdateCompanionBuilder,
       (ArticleBatchRow, $$ArticleBatchesTableReferences),
       ArticleBatchRow,
-      PrefetchHooks Function({bool dailyLearningsRefs})
+      PrefetchHooks Function({bool dailyLearningsRefs, bool articlesRefs})
     >;
 typedef $$DailyLearningsTableCreateCompanionBuilder =
     DailyLearningsCompanion Function({
@@ -5541,6 +7507,1232 @@ typedef $$DailyLearningsTableProcessedTableManager =
       DailyLearningRow,
       PrefetchHooks Function({bool refBatchId})
     >;
+typedef $$ArticlesTableCreateCompanionBuilder =
+    ArticlesCompanion Function({
+      Value<int> id,
+      required int batchId,
+      required int orderIndex,
+      required String contentCategory,
+      Value<String?> title,
+      required String status,
+      Value<String?> generationStartedAt,
+      Value<String?> generationCompletedAt,
+      required int retryCount,
+      required int accumulatedReadSeconds,
+      Value<String?> readCompletedAt,
+      Value<String?> lastRetryAt,
+      required int maxRetries,
+      Value<String?> nextRetryAt,
+    });
+typedef $$ArticlesTableUpdateCompanionBuilder =
+    ArticlesCompanion Function({
+      Value<int> id,
+      Value<int> batchId,
+      Value<int> orderIndex,
+      Value<String> contentCategory,
+      Value<String?> title,
+      Value<String> status,
+      Value<String?> generationStartedAt,
+      Value<String?> generationCompletedAt,
+      Value<int> retryCount,
+      Value<int> accumulatedReadSeconds,
+      Value<String?> readCompletedAt,
+      Value<String?> lastRetryAt,
+      Value<int> maxRetries,
+      Value<String?> nextRetryAt,
+    });
+
+final class $$ArticlesTableReferences
+    extends BaseReferences<_$AppDatabase, $ArticlesTable, ArticleRow> {
+  $$ArticlesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $ArticleBatchesTable _batchIdTable(_$AppDatabase db) =>
+      db.articleBatches.createAlias('article__batch_id__article_batch__id');
+
+  $$ArticleBatchesTableProcessedTableManager get batchId {
+    final $_column = $_itemColumn<int>('batch_id')!;
+
+    final manager = $$ArticleBatchesTableTableManager(
+      $_db,
+      $_db.articleBatches,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_batchIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static MultiTypedResultKey<$ArticleParagraphsTable, List<ArticleParagraphRow>>
+  _articleParagraphsRefsTable(_$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.articleParagraphs,
+        aliasName: 'article__id__article_paragraph__article_id',
+      );
+
+  $$ArticleParagraphsTableProcessedTableManager get articleParagraphsRefs {
+    final manager = $$ArticleParagraphsTableTableManager(
+      $_db,
+      $_db.articleParagraphs,
+    ).filter((f) => f.articleId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _articleParagraphsRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$ArticlesTableFilterComposer
+    extends Composer<_$AppDatabase, $ArticlesTable> {
+  $$ArticlesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get contentCategory => $composableBuilder(
+    column: $table.contentCategory,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get generationStartedAt => $composableBuilder(
+    column: $table.generationStartedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get generationCompletedAt => $composableBuilder(
+    column: $table.generationCompletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get retryCount => $composableBuilder(
+    column: $table.retryCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get accumulatedReadSeconds => $composableBuilder(
+    column: $table.accumulatedReadSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get readCompletedAt => $composableBuilder(
+    column: $table.readCompletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastRetryAt => $composableBuilder(
+    column: $table.lastRetryAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get maxRetries => $composableBuilder(
+    column: $table.maxRetries,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get nextRetryAt => $composableBuilder(
+    column: $table.nextRetryAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$ArticleBatchesTableFilterComposer get batchId {
+    final $$ArticleBatchesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.batchId,
+      referencedTable: $db.articleBatches,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ArticleBatchesTableFilterComposer(
+            $db: $db,
+            $table: $db.articleBatches,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<bool> articleParagraphsRefs(
+    Expression<bool> Function($$ArticleParagraphsTableFilterComposer f) f,
+  ) {
+    final $$ArticleParagraphsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.articleParagraphs,
+      getReferencedColumn: (t) => t.articleId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ArticleParagraphsTableFilterComposer(
+            $db: $db,
+            $table: $db.articleParagraphs,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$ArticlesTableOrderingComposer
+    extends Composer<_$AppDatabase, $ArticlesTable> {
+  $$ArticlesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get contentCategory => $composableBuilder(
+    column: $table.contentCategory,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get generationStartedAt => $composableBuilder(
+    column: $table.generationStartedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get generationCompletedAt => $composableBuilder(
+    column: $table.generationCompletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get retryCount => $composableBuilder(
+    column: $table.retryCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get accumulatedReadSeconds => $composableBuilder(
+    column: $table.accumulatedReadSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get readCompletedAt => $composableBuilder(
+    column: $table.readCompletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastRetryAt => $composableBuilder(
+    column: $table.lastRetryAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get maxRetries => $composableBuilder(
+    column: $table.maxRetries,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get nextRetryAt => $composableBuilder(
+    column: $table.nextRetryAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$ArticleBatchesTableOrderingComposer get batchId {
+    final $$ArticleBatchesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.batchId,
+      referencedTable: $db.articleBatches,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ArticleBatchesTableOrderingComposer(
+            $db: $db,
+            $table: $db.articleBatches,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ArticlesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ArticlesTable> {
+  $$ArticlesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get contentCategory => $composableBuilder(
+    column: $table.contentCategory,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<String> get generationStartedAt => $composableBuilder(
+    column: $table.generationStartedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get generationCompletedAt => $composableBuilder(
+    column: $table.generationCompletedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get retryCount => $composableBuilder(
+    column: $table.retryCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get accumulatedReadSeconds => $composableBuilder(
+    column: $table.accumulatedReadSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get readCompletedAt => $composableBuilder(
+    column: $table.readCompletedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get lastRetryAt => $composableBuilder(
+    column: $table.lastRetryAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get maxRetries => $composableBuilder(
+    column: $table.maxRetries,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get nextRetryAt => $composableBuilder(
+    column: $table.nextRetryAt,
+    builder: (column) => column,
+  );
+
+  $$ArticleBatchesTableAnnotationComposer get batchId {
+    final $$ArticleBatchesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.batchId,
+      referencedTable: $db.articleBatches,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ArticleBatchesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.articleBatches,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<T> articleParagraphsRefs<T extends Object>(
+    Expression<T> Function($$ArticleParagraphsTableAnnotationComposer a) f,
+  ) {
+    final $$ArticleParagraphsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.id,
+          referencedTable: $db.articleParagraphs,
+          getReferencedColumn: (t) => t.articleId,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$ArticleParagraphsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.articleParagraphs,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
+}
+
+class $$ArticlesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ArticlesTable,
+          ArticleRow,
+          $$ArticlesTableFilterComposer,
+          $$ArticlesTableOrderingComposer,
+          $$ArticlesTableAnnotationComposer,
+          $$ArticlesTableCreateCompanionBuilder,
+          $$ArticlesTableUpdateCompanionBuilder,
+          (ArticleRow, $$ArticlesTableReferences),
+          ArticleRow,
+          PrefetchHooks Function({bool batchId, bool articleParagraphsRefs})
+        > {
+  $$ArticlesTableTableManager(_$AppDatabase db, $ArticlesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ArticlesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ArticlesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ArticlesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> batchId = const Value.absent(),
+                Value<int> orderIndex = const Value.absent(),
+                Value<String> contentCategory = const Value.absent(),
+                Value<String?> title = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<String?> generationStartedAt = const Value.absent(),
+                Value<String?> generationCompletedAt = const Value.absent(),
+                Value<int> retryCount = const Value.absent(),
+                Value<int> accumulatedReadSeconds = const Value.absent(),
+                Value<String?> readCompletedAt = const Value.absent(),
+                Value<String?> lastRetryAt = const Value.absent(),
+                Value<int> maxRetries = const Value.absent(),
+                Value<String?> nextRetryAt = const Value.absent(),
+              }) => ArticlesCompanion(
+                id: id,
+                batchId: batchId,
+                orderIndex: orderIndex,
+                contentCategory: contentCategory,
+                title: title,
+                status: status,
+                generationStartedAt: generationStartedAt,
+                generationCompletedAt: generationCompletedAt,
+                retryCount: retryCount,
+                accumulatedReadSeconds: accumulatedReadSeconds,
+                readCompletedAt: readCompletedAt,
+                lastRetryAt: lastRetryAt,
+                maxRetries: maxRetries,
+                nextRetryAt: nextRetryAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int batchId,
+                required int orderIndex,
+                required String contentCategory,
+                Value<String?> title = const Value.absent(),
+                required String status,
+                Value<String?> generationStartedAt = const Value.absent(),
+                Value<String?> generationCompletedAt = const Value.absent(),
+                required int retryCount,
+                required int accumulatedReadSeconds,
+                Value<String?> readCompletedAt = const Value.absent(),
+                Value<String?> lastRetryAt = const Value.absent(),
+                required int maxRetries,
+                Value<String?> nextRetryAt = const Value.absent(),
+              }) => ArticlesCompanion.insert(
+                id: id,
+                batchId: batchId,
+                orderIndex: orderIndex,
+                contentCategory: contentCategory,
+                title: title,
+                status: status,
+                generationStartedAt: generationStartedAt,
+                generationCompletedAt: generationCompletedAt,
+                retryCount: retryCount,
+                accumulatedReadSeconds: accumulatedReadSeconds,
+                readCompletedAt: readCompletedAt,
+                lastRetryAt: lastRetryAt,
+                maxRetries: maxRetries,
+                nextRetryAt: nextRetryAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$ArticlesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback:
+              ({batchId = false, articleParagraphsRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (articleParagraphsRefs) db.articleParagraphs,
+                  ],
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (batchId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.batchId,
+                                    referencedTable: $$ArticlesTableReferences
+                                        ._batchIdTable(db),
+                                    referencedColumn: $$ArticlesTableReferences
+                                        ._batchIdTable(db)
+                                        .id,
+                                  )
+                                  as T;
+                        }
+
+                        return state;
+                      },
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (articleParagraphsRefs)
+                        await $_getPrefetchedData<
+                          ArticleRow,
+                          $ArticlesTable,
+                          ArticleParagraphRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$ArticlesTableReferences
+                              ._articleParagraphsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$ArticlesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).articleParagraphsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.articleId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
+              },
+        ),
+      );
+}
+
+typedef $$ArticlesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ArticlesTable,
+      ArticleRow,
+      $$ArticlesTableFilterComposer,
+      $$ArticlesTableOrderingComposer,
+      $$ArticlesTableAnnotationComposer,
+      $$ArticlesTableCreateCompanionBuilder,
+      $$ArticlesTableUpdateCompanionBuilder,
+      (ArticleRow, $$ArticlesTableReferences),
+      ArticleRow,
+      PrefetchHooks Function({bool batchId, bool articleParagraphsRefs})
+    >;
+typedef $$ArticleParagraphsTableCreateCompanionBuilder =
+    ArticleParagraphsCompanion Function({
+      Value<int> id,
+      required int articleId,
+      required int orderIndex,
+      required String englishText,
+      required String chineseTranslation,
+    });
+typedef $$ArticleParagraphsTableUpdateCompanionBuilder =
+    ArticleParagraphsCompanion Function({
+      Value<int> id,
+      Value<int> articleId,
+      Value<int> orderIndex,
+      Value<String> englishText,
+      Value<String> chineseTranslation,
+    });
+
+final class $$ArticleParagraphsTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $ArticleParagraphsTable,
+          ArticleParagraphRow
+        > {
+  $$ArticleParagraphsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $ArticlesTable _articleIdTable(_$AppDatabase db) =>
+      db.articles.createAlias('article_paragraph__article_id__article__id');
+
+  $$ArticlesTableProcessedTableManager get articleId {
+    final $_column = $_itemColumn<int>('article_id')!;
+
+    final manager = $$ArticlesTableTableManager(
+      $_db,
+      $_db.articles,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_articleIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$ArticleParagraphsTableFilterComposer
+    extends Composer<_$AppDatabase, $ArticleParagraphsTable> {
+  $$ArticleParagraphsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get englishText => $composableBuilder(
+    column: $table.englishText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get chineseTranslation => $composableBuilder(
+    column: $table.chineseTranslation,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$ArticlesTableFilterComposer get articleId {
+    final $$ArticlesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.articleId,
+      referencedTable: $db.articles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ArticlesTableFilterComposer(
+            $db: $db,
+            $table: $db.articles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ArticleParagraphsTableOrderingComposer
+    extends Composer<_$AppDatabase, $ArticleParagraphsTable> {
+  $$ArticleParagraphsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get englishText => $composableBuilder(
+    column: $table.englishText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get chineseTranslation => $composableBuilder(
+    column: $table.chineseTranslation,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$ArticlesTableOrderingComposer get articleId {
+    final $$ArticlesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.articleId,
+      referencedTable: $db.articles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ArticlesTableOrderingComposer(
+            $db: $db,
+            $table: $db.articles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ArticleParagraphsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ArticleParagraphsTable> {
+  $$ArticleParagraphsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get englishText => $composableBuilder(
+    column: $table.englishText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get chineseTranslation => $composableBuilder(
+    column: $table.chineseTranslation,
+    builder: (column) => column,
+  );
+
+  $$ArticlesTableAnnotationComposer get articleId {
+    final $$ArticlesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.articleId,
+      referencedTable: $db.articles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ArticlesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.articles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ArticleParagraphsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ArticleParagraphsTable,
+          ArticleParagraphRow,
+          $$ArticleParagraphsTableFilterComposer,
+          $$ArticleParagraphsTableOrderingComposer,
+          $$ArticleParagraphsTableAnnotationComposer,
+          $$ArticleParagraphsTableCreateCompanionBuilder,
+          $$ArticleParagraphsTableUpdateCompanionBuilder,
+          (ArticleParagraphRow, $$ArticleParagraphsTableReferences),
+          ArticleParagraphRow,
+          PrefetchHooks Function({bool articleId})
+        > {
+  $$ArticleParagraphsTableTableManager(
+    _$AppDatabase db,
+    $ArticleParagraphsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ArticleParagraphsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ArticleParagraphsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ArticleParagraphsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> articleId = const Value.absent(),
+                Value<int> orderIndex = const Value.absent(),
+                Value<String> englishText = const Value.absent(),
+                Value<String> chineseTranslation = const Value.absent(),
+              }) => ArticleParagraphsCompanion(
+                id: id,
+                articleId: articleId,
+                orderIndex: orderIndex,
+                englishText: englishText,
+                chineseTranslation: chineseTranslation,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int articleId,
+                required int orderIndex,
+                required String englishText,
+                required String chineseTranslation,
+              }) => ArticleParagraphsCompanion.insert(
+                id: id,
+                articleId: articleId,
+                orderIndex: orderIndex,
+                englishText: englishText,
+                chineseTranslation: chineseTranslation,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$ArticleParagraphsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({articleId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (articleId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.articleId,
+                                referencedTable:
+                                    $$ArticleParagraphsTableReferences
+                                        ._articleIdTable(db),
+                                referencedColumn:
+                                    $$ArticleParagraphsTableReferences
+                                        ._articleIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$ArticleParagraphsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ArticleParagraphsTable,
+      ArticleParagraphRow,
+      $$ArticleParagraphsTableFilterComposer,
+      $$ArticleParagraphsTableOrderingComposer,
+      $$ArticleParagraphsTableAnnotationComposer,
+      $$ArticleParagraphsTableCreateCompanionBuilder,
+      $$ArticleParagraphsTableUpdateCompanionBuilder,
+      (ArticleParagraphRow, $$ArticleParagraphsTableReferences),
+      ArticleParagraphRow,
+      PrefetchHooks Function({bool articleId})
+    >;
+typedef $$GenerationErrorLogsTableCreateCompanionBuilder =
+    GenerationErrorLogsCompanion Function({
+      Value<int> id,
+      required String entityType,
+      required int entityId,
+      required String errorCode,
+      required String errorMessage,
+      Value<String?> errorHelp,
+      required int retryCount,
+      required String createdAt,
+      Value<int?> notifiedAt,
+    });
+typedef $$GenerationErrorLogsTableUpdateCompanionBuilder =
+    GenerationErrorLogsCompanion Function({
+      Value<int> id,
+      Value<String> entityType,
+      Value<int> entityId,
+      Value<String> errorCode,
+      Value<String> errorMessage,
+      Value<String?> errorHelp,
+      Value<int> retryCount,
+      Value<String> createdAt,
+      Value<int?> notifiedAt,
+    });
+
+class $$GenerationErrorLogsTableFilterComposer
+    extends Composer<_$AppDatabase, $GenerationErrorLogsTable> {
+  $$GenerationErrorLogsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get errorCode => $composableBuilder(
+    column: $table.errorCode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get errorMessage => $composableBuilder(
+    column: $table.errorMessage,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get errorHelp => $composableBuilder(
+    column: $table.errorHelp,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get retryCount => $composableBuilder(
+    column: $table.retryCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get notifiedAt => $composableBuilder(
+    column: $table.notifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$GenerationErrorLogsTableOrderingComposer
+    extends Composer<_$AppDatabase, $GenerationErrorLogsTable> {
+  $$GenerationErrorLogsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get errorCode => $composableBuilder(
+    column: $table.errorCode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get errorMessage => $composableBuilder(
+    column: $table.errorMessage,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get errorHelp => $composableBuilder(
+    column: $table.errorHelp,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get retryCount => $composableBuilder(
+    column: $table.retryCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get notifiedAt => $composableBuilder(
+    column: $table.notifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$GenerationErrorLogsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $GenerationErrorLogsTable> {
+  $$GenerationErrorLogsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get entityId =>
+      $composableBuilder(column: $table.entityId, builder: (column) => column);
+
+  GeneratedColumn<String> get errorCode =>
+      $composableBuilder(column: $table.errorCode, builder: (column) => column);
+
+  GeneratedColumn<String> get errorMessage => $composableBuilder(
+    column: $table.errorMessage,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get errorHelp =>
+      $composableBuilder(column: $table.errorHelp, builder: (column) => column);
+
+  GeneratedColumn<int> get retryCount => $composableBuilder(
+    column: $table.retryCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get notifiedAt => $composableBuilder(
+    column: $table.notifiedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$GenerationErrorLogsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $GenerationErrorLogsTable,
+          GenerationErrorLogRow,
+          $$GenerationErrorLogsTableFilterComposer,
+          $$GenerationErrorLogsTableOrderingComposer,
+          $$GenerationErrorLogsTableAnnotationComposer,
+          $$GenerationErrorLogsTableCreateCompanionBuilder,
+          $$GenerationErrorLogsTableUpdateCompanionBuilder,
+          (
+            GenerationErrorLogRow,
+            BaseReferences<
+              _$AppDatabase,
+              $GenerationErrorLogsTable,
+              GenerationErrorLogRow
+            >,
+          ),
+          GenerationErrorLogRow,
+          PrefetchHooks Function()
+        > {
+  $$GenerationErrorLogsTableTableManager(
+    _$AppDatabase db,
+    $GenerationErrorLogsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$GenerationErrorLogsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$GenerationErrorLogsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$GenerationErrorLogsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> entityType = const Value.absent(),
+                Value<int> entityId = const Value.absent(),
+                Value<String> errorCode = const Value.absent(),
+                Value<String> errorMessage = const Value.absent(),
+                Value<String?> errorHelp = const Value.absent(),
+                Value<int> retryCount = const Value.absent(),
+                Value<String> createdAt = const Value.absent(),
+                Value<int?> notifiedAt = const Value.absent(),
+              }) => GenerationErrorLogsCompanion(
+                id: id,
+                entityType: entityType,
+                entityId: entityId,
+                errorCode: errorCode,
+                errorMessage: errorMessage,
+                errorHelp: errorHelp,
+                retryCount: retryCount,
+                createdAt: createdAt,
+                notifiedAt: notifiedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String entityType,
+                required int entityId,
+                required String errorCode,
+                required String errorMessage,
+                Value<String?> errorHelp = const Value.absent(),
+                required int retryCount,
+                required String createdAt,
+                Value<int?> notifiedAt = const Value.absent(),
+              }) => GenerationErrorLogsCompanion.insert(
+                id: id,
+                entityType: entityType,
+                entityId: entityId,
+                errorCode: errorCode,
+                errorMessage: errorMessage,
+                errorHelp: errorHelp,
+                retryCount: retryCount,
+                createdAt: createdAt,
+                notifiedAt: notifiedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$GenerationErrorLogsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $GenerationErrorLogsTable,
+      GenerationErrorLogRow,
+      $$GenerationErrorLogsTableFilterComposer,
+      $$GenerationErrorLogsTableOrderingComposer,
+      $$GenerationErrorLogsTableAnnotationComposer,
+      $$GenerationErrorLogsTableCreateCompanionBuilder,
+      $$GenerationErrorLogsTableUpdateCompanionBuilder,
+      (
+        GenerationErrorLogRow,
+        BaseReferences<
+          _$AppDatabase,
+          $GenerationErrorLogsTable,
+          GenerationErrorLogRow
+        >,
+      ),
+      GenerationErrorLogRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -5568,4 +8760,10 @@ class $AppDatabaseManager {
       $$ArticleBatchesTableTableManager(_db, _db.articleBatches);
   $$DailyLearningsTableTableManager get dailyLearnings =>
       $$DailyLearningsTableTableManager(_db, _db.dailyLearnings);
+  $$ArticlesTableTableManager get articles =>
+      $$ArticlesTableTableManager(_db, _db.articles);
+  $$ArticleParagraphsTableTableManager get articleParagraphs =>
+      $$ArticleParagraphsTableTableManager(_db, _db.articleParagraphs);
+  $$GenerationErrorLogsTableTableManager get generationErrorLogs =>
+      $$GenerationErrorLogsTableTableManager(_db, _db.generationErrorLogs);
 }

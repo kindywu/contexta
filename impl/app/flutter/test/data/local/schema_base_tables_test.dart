@@ -173,17 +173,16 @@ void main() {
       expect(idx!.read<int>('unique'), 0);
     });
 
-    test('注册 7 张基础表 + article_batch（FK 引用自动包含，其余表留待后续任务）', () async {
+    test('注册 8 张基础表（article_batch 由 FK 引用自动包含，本任务显式注册）', () async {
       final rows = await db.customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
       ).get();
       final names = {for (final r in rows) r.read<String>('name')};
-      // drift 2.34 代码生成：daily_learning 的 references 使 ArticleBatches
-      // 自动包含进 schema（drift_dev 警告 "will be included in this database"）。
-      // 该表类未在 @DriftDatabase.tables 中注册，Task 5 显式注册并补剩余表。
+      // 文章表组（article / article_paragraph / generation_error_log）由
+      // schema_article_tables_test.dart 的注册表集合测试断言完整集合。
       expect(
         names,
-        {
+        containsAll({
           'user_settings',
           'config_change_log',
           'schema_migration_log',
@@ -192,7 +191,7 @@ void main() {
           'learning_stats_summary',
           'daily_learning',
           'article_batch',
-        },
+        }),
       );
     });
   });
