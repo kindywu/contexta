@@ -1,20 +1,37 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/config/app_config.dart';
 import '../core/time/iso8601.dart';
 import '../data/local/database_open.dart';
 import '../data/local/daos/article_daos.dart';
 import '../data/local/daos/settings_daos.dart';
 import '../data/local/daos/word_daos.dart';
+import '../data/remote/deepseek_api.dart';
+import '../data/remote/llm_caller.dart';
 import '../data/repository/article_repository_impl.dart';
 import '../data/repository/settings_repository_impl.dart';
 import '../data/repository/stats_repository_impl.dart';
 import '../data/repository/vocabulary_repository_impl.dart';
 import '../data/repository/word_repository_impl.dart';
+import '../domain/app_info_provider.dart';
+import '../domain/background_work_scheduler.dart';
+import '../domain/developer_alert_sender.dart';
+import '../domain/llm_client.dart';
 import '../domain/repository/article_repository.dart';
 import '../domain/repository/settings_repository.dart';
 import '../domain/repository/stats_repository.dart';
 import '../domain/repository/vocabulary_repository.dart';
 import '../domain/repository/word_repository.dart';
+import '../domain/time/time_provider.dart';
+import '../domain/usecase/activate_seed_batch_usecase.dart';
+import '../domain/usecase/add_word_usecase.dart';
+import '../domain/usecase/create_initial_batch_usecase.dart';
+import '../domain/usecase/generate_articles_usecase.dart';
+import '../domain/usecase/get_home_articles_usecase.dart';
+import '../domain/usecase/resend_pending_alerts_usecase.dart';
+import '../domain/usecase/startup_orchestration_usecase.dart';
+import '../domain/usecase/trigger_next_batch_usecase.dart';
 import '../data/local/database.dart';
 
 /// 数据库（生产路径：打开时 onCreate 建表 + 种子写入）。
@@ -29,6 +46,43 @@ final nowIsoProvider = Provider<String Function()>((ref) => () => isoOffsetDateT
 
 /// 日期注入：yyyy-MM-dd（与 Kotlin Converter.currentDateString 对齐）。
 final todayProvider = Provider<String Function()>((ref) => () => isoLocalDate(DateTime.now()));
+
+/// 时间抽象（Kotlin TimeProvider 对应物）。
+final timeProvider = Provider<TimeProvider>(
+  (ref) => _ProdTimeProvider(),
+);
+
+/// 应用信息（版本号/型号；Kotlin AppInfoProvider 对应物）。
+final appInfoProvider = Provider<AppInfoProvider>(
+  (ref) => _ProdAppInfoProvider(),
+);
+
+/// 后台生成调度器（Kotlin BackgroundWorkScheduler 对应物）。
+/// Task 18（后台 worker）接入真实实现；当前为占位，供 use case 编译与测试。
+final backgroundWorkSchedulerProvider = Provider<BackgroundWorkScheduler>(
+  (ref) => throw UnimplementedError('wired in Task 18'),
+);
+
+/// DeepSeek HTTP 客户端（dio；对照 Kotlin NetworkModule：连接 30s、
+/// 读超时 = LLM 超时 + 60s 宽限，协程级超时确定性先触发）。
+final deepSeekApiProvider = Provider<DeepSeekApi>((ref) {
+  final dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 30),
+      // 读超时 = 协程级 LLM 超时 + 60s 宽限（Kotlin READ_TIMEOUT_GRACE_MS）：
+      // 若 <= 协程超时，dio 会先超时触发重试风暴；若相等则竞态；
+      // 大于时 LlmCaller 的预算超时确定性胜出
+      receiveTimeout: Duration(milliseconds: AppConfig.llmTimeoutMs + 60000),
+      sendTimeout: const Duration(seconds: 30),
+    ),
+  );
+  return DioDeepSeekApi(dio);
+});
+
+/// 统一 LLM 客户端（重试 + 三分类 + 总预算超时）。
+final llmClientProvider = Provider<LlmClient>((ref) {
+  return LlmCaller(ref.watch(deepSeekApiProvider));
+});
 
 /// 词库仓储（LRU(50) + Semaphore(3)，单例：缓存与并发限制跨调用共享）。
 final wordRepositoryProvider = Provider<WordRepository>((ref) {
@@ -79,3 +133,100 @@ final statsRepositoryProvider = Provider<StatsRepository>((ref) {
     ref.watch(todayProvider),
   );
 });
+
+// ─── Use cases ─────────────────────────────────────────────────────────
+
+final triggerNextBatchUseCaseProvider = Provider<TriggerNextBatchUseCase>((ref) {
+  return TriggerNextBatchUseCase(
+    articleRepository: ref.watch(articleRepositoryProvider),
+    generationScheduler: ref.watch(backgroundWorkSchedulerProvider),
+    timeProvider: ref.watch(timeProvider),
+  );
+});
+
+final activateSeedBatchUseCaseProvider = Provider<ActivateSeedBatchUseCase>((ref) {
+  return ActivateSeedBatchUseCase(
+    articleRepository: ref.watch(articleRepositoryProvider),
+    timeProvider: ref.watch(timeProvider),
+  );
+});
+
+final createInitialBatchUseCaseProvider = Provider<CreateInitialBatchUseCase>((ref) {
+  return CreateInitialBatchUseCase(
+    articleRepository: ref.watch(articleRepositoryProvider),
+    triggerNextBatch: ref.watch(triggerNextBatchUseCaseProvider),
+    timeProvider: ref.watch(timeProvider),
+  );
+});
+
+final generateArticlesUseCaseProvider = Provider<GenerateArticlesUseCase>((ref) {
+  return GenerateArticlesUseCase(
+    articleRepository: ref.watch(articleRepositoryProvider),
+    llmClient: ref.watch(llmClientProvider),
+    timeProvider: ref.watch(timeProvider),
+    appInfo: ref.watch(appInfoProvider),
+    alertSender: ref.watch(developerAlertSenderProvider),
+  );
+});
+
+final getHomeArticlesUseCaseProvider = Provider<GetHomeArticlesUseCase>((ref) {
+  return GetHomeArticlesUseCase();
+});
+
+final resendPendingAlertsUseCaseProvider = Provider<ResendPendingAlertsUseCase>((ref) {
+  return ResendPendingAlertsUseCase(
+    articleRepository: ref.watch(articleRepositoryProvider),
+    alertSender: ref.watch(developerAlertSenderProvider),
+    timeProvider: ref.watch(timeProvider),
+    appInfo: ref.watch(appInfoProvider),
+  );
+});
+
+final startupOrchestrationUseCaseProvider = Provider<StartupOrchestrationUseCase>((ref) {
+  return StartupOrchestrationUseCase(
+    articleRepository: ref.watch(articleRepositoryProvider),
+    settingsRepository: ref.watch(settingsRepositoryProvider),
+    timeProvider: ref.watch(timeProvider),
+    triggerNextBatch: ref.watch(triggerNextBatchUseCaseProvider),
+    generationScheduler: ref.watch(backgroundWorkSchedulerProvider),
+    resendPendingAlerts: ref.watch(resendPendingAlertsUseCaseProvider),
+  );
+});
+
+final addWordUseCaseProvider = Provider<AddWordUseCase>((ref) {
+  return AddWordUseCase(
+    wordRepository: ref.watch(wordRepositoryProvider),
+    vocabularyRepository: ref.watch(vocabularyRepositoryProvider),
+    statsRepository: ref.watch(statsRepositoryProvider),
+    llmClient: ref.watch(llmClientProvider),
+  );
+});
+
+/// 开发告警发送器（飞书 webhook）。Task 17 接入真实实现。
+final developerAlertSenderProvider = Provider<DeveloperAlertSender>(
+  (ref) => throw UnimplementedError('wired in Task 17'),
+);
+
+// ─── 生产实现（AppInfoProvider / TimeProvider） ────────────────────────
+
+class _ProdTimeProvider implements TimeProvider {
+  @override
+  int nowMillis() => DateTime.now().millisecondsSinceEpoch;
+
+  @override
+  String nowDateTimeString() => isoOffsetDateTime(DateTime.now());
+
+  @override
+  String todayDateString() => isoLocalDate(DateTime.now());
+}
+
+class _ProdAppInfoProvider implements AppInfoProvider {
+  @override
+  int get versionCode => 1;
+
+  @override
+  String get versionName => '1.0';
+
+  @override
+  String get deviceModel => 'unknown';
+}
