@@ -1,20 +1,26 @@
 import 'dart:async';
 
+import 'package:contexta/domain/llm_client.dart';
 import 'package:contexta/domain/model/article.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/model/vocab_word.dart';
+import 'package:contexta/domain/model/word_detail.dart';
 import 'package:contexta/domain/repository/article_repository.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/repository/stats_repository.dart';
 import 'package:contexta/domain/repository/vocabulary_repository.dart';
+import 'package:contexta/domain/repository/word_repository.dart';
 import 'package:contexta/domain/tts/tts_engine.dart';
 import 'package:contexta/ui/reading/reading_controller.dart';
 import 'package:contexta/ui/reading/translation_visibility.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Reading 页 controller 测试（Task 23：正文/译文/计时；播放状态机归 Task 24）。
-/// 对照 Kotlin ReadingViewModelTest 的正文/计时部分。
+/// Reading 页 controller 测试（Task 23：正文/译文/计时；Task 24：播放
+/// 状态机 + 查词弹窗 + 生词本）。对照 Kotlin ReadingViewModelTest。
+///
+/// TTS 契约（tts_engine.dart）：controller 传 UI 显示语速（1x / 0.75x），
+/// 引擎内部经 TtsSpeedMapper 映射为实际速率——测试断言 speak 收到显示语速。
 
 class _FakeArticleRepo implements ArticleRepository {
   _FakeArticleRepo({
@@ -76,6 +82,7 @@ class _FakeSettingsRepo implements SettingsRepository {
 
 class _FakeStatsRepo implements StatsRepository {
   int recordCount = 0;
+  int wordAddedCount = 0;
 
   @override
   Future<void> recordReadingActivity({int secondsSpent = 0}) async {
@@ -83,13 +90,19 @@ class _FakeStatsRepo implements StatsRepository {
   }
 
   @override
+  Future<void> recordWordAdded() async {
+    wordAddedCount++;
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
 
-/// 记录 speak/stop 调用 + 可触发完成回调的 TTS 桩（Task 24 会移植完整状态机）。
+/// 记录 speak/stop 调用 + 可触发完成回调的 TTS 桩（Task 24 移植完整状态机）。
 class _RecordingTts implements TtsEngine {
   bool available = true;
   final List<String> spoken = [];
+  final List<double> speeds = [];
   int stopCount = 0;
   void Function(String? utteranceId)? onFinished;
   int _counter = 0;
@@ -104,6 +117,7 @@ class _RecordingTts implements TtsEngine {
   String? speak(String text, {double speed = 1.0}) {
     if (!available) return null;
     spoken.add(text);
+    speeds.add(speed);
     _lastId = 'ctx-${_counter++}';
     return _lastId;
   }
@@ -126,6 +140,110 @@ class _RecordingTts implements TtsEngine {
     onFinished = callback;
   }
 }
+
+/// 可配置查词结果的词库仓储桩（Task 24）。
+class _FakeWordRepo implements WordRepository {
+  _FakeWordRepo({
+    this.onLookupWord,
+    this.onSaveLlmResult,
+    this.onInvalidateCache,
+  });
+
+  final Future<WordDetail?> Function(
+      String spelling, Future<WordDetail?> Function(String) llmFallback)?
+      onLookupWord;
+  final Future<WordDetail> Function(
+      String spelling, String? phonetic, List<WordSense> senses)?
+      onSaveLlmResult;
+  final Future<void> Function(String spelling)? onInvalidateCache;
+
+  @override
+  Future<WordDetail?> lookupWord(
+          String spelling, Future<WordDetail?> Function(String) llmFallback) =>
+      onLookupWord?.call(spelling, llmFallback) ?? Future.value(null);
+
+  @override
+  Future<WordDetail> saveLlmResult(
+    String spellingDisplay,
+    String? phoneticIpa,
+    List<WordSense> senses, {
+    String? normalized,
+  }) =>
+      onSaveLlmResult?.call(spellingDisplay, phoneticIpa, senses) ??
+      Future.value(_detail(spellingDisplay, phoneticIpa, senses));
+
+  @override
+  Future<void> invalidateCache(String spelling) async {
+    await onInvalidateCache?.call(spelling);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => Future.value(null);
+
+  static WordDetail _detail(
+          String spelling, String? phonetic, List<WordSense> senses) =>
+      WordDetail(
+        wordId: 7,
+        spellingDisplay: spelling,
+        phoneticIpa: phonetic,
+        primarySense: senses.isEmpty ? null : senses.first,
+        allSenses: senses,
+        isInVocabulary: false,
+        vocabularyEntryId: null,
+      );
+}
+
+/// 可配置 LLM 响应的客户端桩（Task 24）。
+class _FakeLlmClient implements LlmClient {
+  _FakeLlmClient({this.onCall});
+
+  final Future<LlmResult> Function(String system, String user)? onCall;
+
+  @override
+  Future<LlmResult> call(
+    String systemPrompt,
+    String userPrompt, {
+    int? timeoutMs,
+  }) async =>
+      onCall?.call(systemPrompt, userPrompt) ??
+      LlmResult(content: '<spelling>nope</spelling>', retryCount: 0);
+}
+
+/// 词库详情夹具。
+WordDetail detailOf({
+  int wordId = 10,
+  String spelling = 'hello',
+  String? phonetic = '/həˈləʊ/',
+  List<WordSense> senses = const [],
+  bool isInVocabulary = false,
+  int? vocabularyEntryId,
+}) =>
+    WordDetail(
+      wordId: wordId,
+      spellingDisplay: spelling,
+      phoneticIpa: phonetic,
+      primarySense: senses.isEmpty ? null : senses.first,
+      allSenses: senses,
+      isInVocabulary: isInVocabulary,
+      vocabularyEntryId: vocabularyEntryId,
+    );
+
+/// 义项夹具。
+WordSense senseOf({
+  int id = 0,
+  int orderIndex = 0,
+  String partOfSpeech = 'interj.',
+  String chineseMeaning = '你好',
+  String englishDefinition = 'Used as a greeting.',
+}) =>
+    WordSense(
+      id: id,
+      orderIndex: orderIndex,
+      partOfSpeech: partOfSpeech,
+      chineseMeaning: chineseMeaning,
+      englishDefinition: englishDefinition,
+      examples: const [],
+    );
 
 Article makeArticle({
   int id = 1,
@@ -157,8 +275,21 @@ void main() {
   late _FakeArticleRepo articleRepo;
   late _FakeSettingsRepo settingsRepo;
   late _FakeStatsRepo statsRepo;
+  late _FakeWordRepo wordRepo;
+  late _FakeLlmClient llmClient;
+  late _VocabRepo vocabRepo;
   late _RecordingTts tts;
   late ReadingController controller;
+
+  ReadingController makeController() => ReadingController(
+        articleRepository: articleRepo,
+        settingsRepository: settingsRepo,
+        statsRepository: statsRepo,
+        wordRepository: wordRepo,
+        llmClient: llmClient,
+        vocabularyRepository: vocabRepo,
+        ttsEngineFuture: Future.value(tts),
+      );
 
   setUp(() {
     articleRepo = _FakeArticleRepo(
@@ -166,14 +297,11 @@ void main() {
     );
     settingsRepo = _FakeSettingsRepo();
     statsRepo = _FakeStatsRepo();
+    wordRepo = _FakeWordRepo();
+    llmClient = _FakeLlmClient();
+    vocabRepo = _VocabRepo();
     tts = _RecordingTts();
-    controller = ReadingController(
-      articleRepository: articleRepo,
-      settingsRepository: settingsRepo,
-      statsRepository: statsRepo,
-      vocabularyRepository: _VocabRepo(),
-      ttsEngineFuture: Future.value(tts),
-    );
+    controller = makeController();
   });
 
   tearDown(() {
@@ -202,26 +330,14 @@ void main() {
         settings: const UserSettings(
             isOnboarded: true, translationDisplayMode: 'BOGUS'),
       );
-      controller = ReadingController(
-        articleRepository: articleRepo,
-        settingsRepository: settingsRepo,
-        statsRepository: statsRepo,
-        vocabularyRepository: _VocabRepo(),
-        ttsEngineFuture: Future.value(tts),
-      );
+      controller = makeController();
       await controller.loadArticle(1);
       expect(controller.state.translationMode, TranslationMode.full);
     });
 
     test('文章未找到 → error', () async {
       articleRepo = _FakeArticleRepo(onGetArticle: (_) async => null);
-      controller = ReadingController(
-        articleRepository: articleRepo,
-        settingsRepository: settingsRepo,
-        statsRepository: statsRepo,
-        vocabularyRepository: _VocabRepo(),
-        ttsEngineFuture: Future.value(tts),
-      );
+      controller = makeController();
       await controller.loadArticle(999);
       expect(controller.state.isLoading, isFalse);
       expect(controller.state.error, '文章未找到');
@@ -232,13 +348,7 @@ void main() {
         onGetArticle: (_) async => makeArticle(
             readCompletedAt: '2026-01-01T00:00:00Z', paragraphs: _paragraphs),
       );
-      controller = ReadingController(
-        articleRepository: articleRepo,
-        settingsRepository: settingsRepo,
-        statsRepository: statsRepo,
-        vocabularyRepository: _VocabRepo(),
-        ttsEngineFuture: Future.value(tts),
-      );
+      controller = makeController();
       await controller.loadArticle(1);
       expect(controller.state.isReadCompleted, isTrue);
 
@@ -265,13 +375,7 @@ void main() {
           },
           onTryMarkReadCompleted: (id) async {},
         );
-        controller = ReadingController(
-          articleRepository: articleRepo,
-          settingsRepository: settingsRepo,
-          statsRepository: statsRepo,
-          vocabularyRepository: _VocabRepo(),
-          ttsEngineFuture: Future.value(tts),
-        );
+        controller = makeController();
         // loadArticle 的异步完成依赖 microtask；elapse 前同步推进一帧
         unawaited(controller.loadArticle(1));
         async.flushMicrotasks();
@@ -291,13 +395,7 @@ void main() {
         onGetArticle: (_) async => makeArticle(paragraphs: _paragraphs),
         onForceMarkReadCompleted: (id) async => forced = true,
       );
-      controller = ReadingController(
-        articleRepository: articleRepo,
-        settingsRepository: settingsRepo,
-        statsRepository: statsRepo,
-        vocabularyRepository: _VocabRepo(),
-        ttsEngineFuture: Future.value(tts),
-      );
+      controller = makeController();
       await controller.loadArticle(1);
       await controller.markAsRead();
 
@@ -312,13 +410,7 @@ void main() {
         settings: const UserSettings(isOnboarded: true),
         onUpdateTranslationMode: (mode) async {},
       );
-      controller = ReadingController(
-        articleRepository: articleRepo,
-        settingsRepository: settingsRepo,
-        statsRepository: statsRepo,
-        vocabularyRepository: _VocabRepo(),
-        ttsEngineFuture: Future.value(tts),
-      );
+      controller = makeController();
       await controller.loadArticle(1);
       expect(controller.state.translationMode, TranslationMode.full);
 
@@ -349,12 +441,352 @@ void main() {
       expect(controller.state.speakingParagraphIndex, isNull);
     });
   });
+
+  group('播放状态机（Task 24）', () {
+    test('段落播放传入显示语速（引擎内部映射实际速率）', () async {
+      await controller.loadArticle(1);
+      controller.toggleTtsSpeed(); // 0.75x
+      controller.playParagraph(0);
+
+      expect(tts.speeds, [0.75]);
+      expect(controller.state.speakingParagraphIndex, 0);
+    });
+
+    test('自然完成回调清除朗读状态', () async {
+      await controller.loadArticle(1);
+      controller.playParagraph(0);
+      tts.finishUtterance('ctx-0');
+
+      expect(controller.state.isSpeakingFullArticle, isFalse);
+      expect(controller.state.speakingParagraphIndex, isNull);
+    });
+
+    test('stop 触发完成回调 → 状态清除', () async {
+      await controller.loadArticle(1);
+      controller.playParagraph(0);
+      controller.playParagraph(0); // 同段再点 → stop
+
+      expect(tts.stopCount, 1);
+      expect(controller.state.speakingParagraphIndex, isNull);
+    });
+
+    test('迟到的旧 utterance 完成回调不清当前新状态（防串扰）', () async {
+      await controller.loadArticle(1);
+      controller.playParagraph(0); // ctx-0
+      controller.playParagraph(1); // ctx-1（打断）
+
+      tts.finishUtterance('ctx-0'); // 迟到的旧回调
+      expect(controller.state.speakingParagraphIndex, 1);
+
+      tts.finishUtterance('ctx-1'); // 当前 utterance 完成
+      expect(controller.state.speakingParagraphIndex, isNull);
+    });
+
+    test('段落播放打断全文朗读', () async {
+      await controller.loadArticle(1);
+      await controller.startFullArticlePlayback();
+      expect(controller.state.isSpeakingFullArticle, isTrue);
+
+      controller.playParagraph(0);
+      expect(controller.state.isSpeakingFullArticle, isFalse);
+      expect(controller.state.speakingParagraphIndex, 0);
+    });
+
+    test('播放全文后段落索引清空', () async {
+      await controller.loadArticle(1);
+      controller.playParagraph(0);
+      await controller.startFullArticlePlayback();
+
+      expect(controller.state.speakingParagraphIndex, isNull);
+      expect(controller.state.isSpeakingFullArticle, isTrue);
+    });
+
+    test('toggleFullArticlePlayback 朗读中 → 停止', () async {
+      await controller.loadArticle(1);
+      await controller.startFullArticlePlayback();
+      controller.toggleFullArticlePlayback();
+
+      expect(tts.stopCount, 1);
+      expect(controller.state.isSpeakingFullArticle, isFalse);
+    });
+
+    test('全文内容 = 各段落英文拼接', () async {
+      await controller.loadArticle(1);
+      await controller.startFullArticlePlayback();
+      expect(tts.spoken, ['Hello world. Second paragraph.']);
+    });
+
+    test('TTS 不可用：段落播放 → Snackbar + openTtsSettings', () async {
+      tts.available = false;
+      await controller.loadArticle(1);
+      controller.playParagraph(0);
+
+      expect(controller.state.snackbarMessage, ReadingController.ttsErrorMessage);
+      expect(controller.state.openTtsSettings, isTrue);
+      expect(controller.state.speakingParagraphIndex, isNull);
+    });
+
+    test('TTS 不可用：全文朗读 → Snackbar + openTtsSettings', () async {
+      tts.available = false;
+      await controller.loadArticle(1);
+      controller.toggleFullArticlePlayback();
+
+      expect(controller.state.snackbarMessage, ReadingController.ttsErrorMessage);
+      expect(controller.state.openTtsSettings, isTrue);
+    });
+
+    test('TTS 不可用：自动朗读静默跳过（无 Snackbar）', () async {
+      tts.available = false;
+      settingsRepo = _FakeSettingsRepo(
+        settings: const UserSettings(
+            isOnboarded: true, autoPlayAudio: true),
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+
+      expect(tts.spoken, isEmpty);
+      expect(controller.state.snackbarMessage, isNull);
+      expect(controller.state.isSpeakingFullArticle, isFalse);
+    });
+
+    test('clearSnackbar 复位 Snackbar + openTtsSettings', () async {
+      tts.available = false;
+      await controller.loadArticle(1);
+      controller.playParagraph(0);
+      controller.clearSnackbar();
+
+      expect(controller.state.snackbarMessage, isNull);
+      expect(controller.state.openTtsSettings, isFalse);
+    });
+
+    test('语速 1x ↔ 0.75x 切换', () async {
+      await controller.loadArticle(1);
+      expect(controller.state.ttsSpeed, 1.0);
+
+      controller.toggleTtsSpeed();
+      expect(controller.state.ttsSpeed, 0.75);
+
+      controller.toggleTtsSpeed();
+      expect(controller.state.ttsSpeed, 1.0);
+    });
+
+    test('自动朗读：设置开启进入文章自动播全文', () async {
+      settingsRepo = _FakeSettingsRepo(
+        settings: const UserSettings(
+            isOnboarded: true, autoPlayAudio: true),
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+
+      expect(tts.spoken, ['Hello world. Second paragraph.']);
+      expect(controller.state.isSpeakingFullArticle, isTrue);
+    });
+  });
+
+  group('查词弹窗（Task 24）', () {
+    test('showWordSheet 立即显示 loading，查词成功后回填', () async {
+      wordRepo = _FakeWordRepo(
+        onLookupWord: (spelling, _) async => detailOf(
+          spelling: 'Hello',
+          senses: [senseOf()],
+        ),
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+
+      controller.showWordSheet('hello');
+      expect(controller.state.isWordSheetVisible, isTrue);
+      expect(controller.state.wordSheetData?.isLoading, isTrue);
+
+      await Future<void>.delayed(Duration.zero); // 等 _lookupWord 完成
+      final data = controller.state.wordSheetData!;
+      expect(data.isLoading, isFalse);
+      expect(data.word, 'Hello');
+      expect(data.phonetic, '/həˈləʊ/');
+      expect(data.senses, hasLength(1));
+      expect(data.senses.first.partOfSpeech, 'interj.');
+      expect(data.isInVocabulary, isFalse);
+    });
+
+    test('查词失败降级：仅词头，无义项', () async {
+      wordRepo = _FakeWordRepo(onLookupWord: (_, _) async => null);
+      controller = makeController();
+      await controller.loadArticle(1);
+
+      controller.showWordSheet('unknown');
+      await Future<void>.delayed(Duration.zero);
+
+      final data = controller.state.wordSheetData!;
+      expect(data.isLoading, isFalse);
+      expect(data.word, 'unknown');
+      expect(data.senses, isEmpty);
+      expect(data.phonetic, isNull);
+    });
+
+    test('词库未命中时走 LLM fallback 并落库回填', () async {
+      var llmCalled = false;
+      var saved = false;
+      llmClient = _FakeLlmClient(
+        onCall: (system, user) async {
+          llmCalled = true;
+          expect(system, isNotEmpty);
+          expect(user, contains('hello'));
+          return const LlmResult(
+            content: '<spelling>hello</spelling>'
+                '<phonetic>/həˈləʊ/</phonetic>'
+                '<sense><partOfSpeech>interj.</partOfSpeech>'
+                '<chineseMeaning>你好</chineseMeaning>'
+                '<englishDefinition>Greeting.</englishDefinition>'
+                '</sense>',
+            retryCount: 0,
+          );
+        },
+      );
+      wordRepo = _FakeWordRepo(
+        onLookupWord: (spelling, llmFallback) => llmFallback(spelling),
+        onSaveLlmResult: (spelling, phonetic, senses) async {
+          saved = true;
+          return detailOf(
+            wordId: 42,
+            spelling: spelling,
+            phonetic: phonetic,
+            senses: senses,
+          );
+        },
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+
+      controller.showWordSheet('hello');
+      await Future<void>.delayed(Duration.zero);
+
+      expect(llmCalled, isTrue);
+      expect(saved, isTrue);
+      final data = controller.state.wordSheetData!;
+      expect(data.word, 'hello');
+      expect(data.wordId, 42);
+    });
+
+    test('同词性义项相邻排列（组序 = 首次出现序）', () async {
+      wordRepo = _FakeWordRepo(
+        onLookupWord: (spelling, _) async => detailOf(
+          senses: [
+            senseOf(id: 1, partOfSpeech: 'n.', chineseMeaning: '名词义1'),
+            senseOf(id: 2, partOfSpeech: 'v.', chineseMeaning: '动词义1'),
+            senseOf(id: 3, partOfSpeech: 'n.', chineseMeaning: '名词义2'),
+          ],
+        ),
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+
+      controller.showWordSheet('run');
+      await Future<void>.delayed(Duration.zero);
+
+      // Kotlin LinkedHashMap 分组：同词性义项相邻，组序 = 词性首次出现序
+      final senses = controller.state.wordSheetData!.senses;
+      expect(senses.map((s) => s.partOfSpeech).toList(), ['n.', 'n.', 'v.']);
+      expect(senses.map((s) => s.chineseMeaning).toList(),
+          ['名词义1', '名词义2', '动词义1']);
+    });
+
+    test('hideWordSheet 关闭弹窗并清空数据', () async {
+      await controller.loadArticle(1);
+      controller.showWordSheet('hello');
+      await Future<void>.delayed(Duration.zero);
+
+      controller.hideWordSheet();
+      expect(controller.state.isWordSheetVisible, isFalse);
+      expect(controller.state.wordSheetData, isNull);
+    });
+  });
+
+  group('生词本（Task 24）', () {
+    test('addToVocabulary 更新弹窗数据 + 正文高亮集合（即时生效）', () async {
+      var added = false;
+      var cacheInvalidated = <String>[];
+      wordRepo = _FakeWordRepo(
+        onLookupWord: (spelling, _) async => detailOf(wordId: 10),
+        onInvalidateCache: (spelling) async => cacheInvalidated.add(spelling),
+      );
+      vocabRepo = _VocabRepo(
+        onAddWord: (wordId) async {
+          added = true;
+          expect(wordId, 10);
+          return 99;
+        },
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+      controller.showWordSheet('hello');
+      await Future<void>.delayed(Duration.zero);
+
+      await controller.addToVocabulary();
+
+      expect(added, isTrue);
+      expect(statsRepo.wordAddedCount, 1);
+      expect(cacheInvalidated, ['hello']);
+      final data = controller.state.wordSheetData!;
+      expect(data.isInVocabulary, isTrue);
+      expect(data.vocabularyEntryId, 99);
+      expect(controller.state.vocabularyWords, contains('hello'));
+    });
+
+    test('removeFromVocabulary 解除高亮', () async {
+      var removed = false;
+      var cacheInvalidated = <String>[];
+      wordRepo = _FakeWordRepo(
+        onLookupWord: (spelling, _) async => detailOf(
+          wordId: 10,
+          isInVocabulary: true,
+          vocabularyEntryId: 99,
+        ),
+        onInvalidateCache: (spelling) async => cacheInvalidated.add(spelling),
+      );
+      vocabRepo = _VocabRepo(
+        onRemoveWord: (entryId) async {
+          removed = true;
+          expect(entryId, 99);
+        },
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+      controller.showWordSheet('hello');
+      await Future<void>.delayed(Duration.zero);
+
+      await controller.removeFromVocabulary();
+
+      expect(removed, isTrue);
+      expect(cacheInvalidated, ['hello']);
+      final data = controller.state.wordSheetData!;
+      expect(data.isInVocabulary, isFalse);
+      expect(data.vocabularyEntryId, isNull);
+      expect(controller.state.vocabularyWords, isNot(contains('hello')));
+    });
+  });
 }
 
-/// getActiveWords 空桩（生词高亮在 UI 层，Task 23 无生词断言）。
+/// 生词仓储桩（Task 24 扩展：可配置 addWord/removeWord）。
 class _VocabRepo implements VocabularyRepository {
+  _VocabRepo({
+    this.onAddWord,
+    this.onRemoveWord,
+  });
+
+  final Future<int?> Function(int wordId)? onAddWord;
+  final Future<void> Function(int entryId)? onRemoveWord;
+
   @override
   Future<List<VocabWord>> getActiveWords() async => const [];
+
+  @override
+  Future<int?> addWord(int wordId) async =>
+      onAddWord?.call(wordId) ?? Future.value(null);
+
+  @override
+  Future<void> removeWord(int entryId, {String reason = 'MANUAL_REMOVAL'}) async {
+    await onRemoveWord?.call(entryId);
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);

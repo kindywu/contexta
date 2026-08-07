@@ -58,8 +58,6 @@ GoRouter buildRouter() {
           return ReadingScreen(
             articleId: articleId,
             onBack: () => context.pop(),
-            // 查词弹窗 Task 24 接入
-            onWordClick: (_) {},
           );
         },
       ),

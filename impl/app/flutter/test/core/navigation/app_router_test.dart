@@ -6,10 +6,12 @@ import 'package:contexta/di/providers.dart';
 import 'package:contexta/domain/model/generation_error.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/model/vocab_word.dart';
+import 'package:contexta/domain/llm_client.dart';
 import 'package:contexta/domain/repository/article_repository.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/repository/stats_repository.dart';
 import 'package:contexta/domain/repository/vocabulary_repository.dart';
+import 'package:contexta/domain/repository/word_repository.dart';
 import 'package:contexta/ui/home/home_screen.dart';
 import 'package:contexta/ui/reading/reading_screen.dart';
 import 'package:flutter/material.dart';
@@ -58,6 +60,17 @@ class _FakeVocabRepo implements VocabularyRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
+
+/// Reading 页（Task 24 查词弹窗）新增词库 + LLM 依赖；空桩不触达数据库。
+class _FakeWordRepo implements WordRepository {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => Future.value(null);
+}
+
+class _FakeLlmClient implements LlmClient {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => Future.value(null);
+}
 void main() {
   late GoRouter router;
 
@@ -73,6 +86,9 @@ void main() {
         settingsRepositoryProvider.overrideWithValue(_FakeSettingsRepo()),
         statsRepositoryProvider.overrideWithValue(_FakeStatsRepo()),
         vocabularyRepositoryProvider.overrideWithValue(_FakeVocabRepo()),
+        // Reading 查词（Task 24）：词库 + LLM 空桩
+        wordRepositoryProvider.overrideWithValue(_FakeWordRepo()),
+        llmClientProvider.overrideWithValue(_FakeLlmClient()),
       ],
       child: MaterialApp.router(routerConfig: router),
     ));
