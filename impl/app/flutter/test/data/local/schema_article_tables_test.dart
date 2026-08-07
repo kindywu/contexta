@@ -210,12 +210,11 @@ void main() {
       expect(map['index_generation_error_log_created_at'], 0);
     });
 
-    test('注册表集合：8 张既有 + 本任务 3 张新表', () async {
+    test('注册表集合：11 张既有 + 词库表组 4 张（Task 6 后共 15 张）', () async {
       final rows = await db.customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
       ).get();
       final names = {for (final r in rows) r.read<String>('name')};
-      // Task 5 后共 11 张；Task 6 追加词库表组（3 张 → 14 张）。
       expect(
         names,
         {
@@ -230,6 +229,10 @@ void main() {
           'article',
           'article_paragraph',
           'generation_error_log',
+          'word',
+          'word_sense',
+          'example_sentence',
+          'vocabulary_entry',
         },
       );
     });

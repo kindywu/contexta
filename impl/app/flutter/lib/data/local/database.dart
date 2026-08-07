@@ -2,14 +2,14 @@ import 'package:drift/drift.dart';
 
 import 'tables/article_tables.dart'; // 文章表组 4 张
 import 'tables/settings_tables.dart';
+import 'tables/word_tables.dart'; // 词库表组 4 张
 
 part 'database.g.dart';
 
 /// Contexta 主数据库（drift 侧）。
 ///
 /// 表结构逐列对照 Android Room schema（Task 8 用真机旧库逐列比对验证）。
-/// 本任务注册基础表组 7 张 + 文章表组 4 张（ArticleBatches 曾因 daily_learning
-/// 外键引用被自动包含进 schema，本任务显式注册后其索引才真正生成）。
+/// 已注册 15 张表：基础表组 7 张 + 文章表组 4 张 + 词库表组 4 张。
 @DriftDatabase(
   tables: [
     UserSettings,
@@ -23,6 +23,10 @@ part 'database.g.dart';
     Articles,
     ArticleParagraphs,
     GenerationErrorLogs,
+    Words,
+    WordSenses,
+    ExampleSentences,
+    VocabularyEntries,
   ],
 )
 class AppDatabase extends _$AppDatabase {

@@ -5249,6 +5249,1732 @@ class GenerationErrorLogsCompanion
   }
 }
 
+class $WordsTable extends Words with TableInfo<$WordsTable, WordRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $WordsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _spellingNormalizedMeta =
+      const VerificationMeta('spellingNormalized');
+  @override
+  late final GeneratedColumn<String> spellingNormalized =
+      GeneratedColumn<String>(
+        'spelling_normalized',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _spellingDisplayMeta = const VerificationMeta(
+    'spellingDisplay',
+  );
+  @override
+  late final GeneratedColumn<String> spellingDisplay = GeneratedColumn<String>(
+    'spelling_display',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _phoneticIpaMeta = const VerificationMeta(
+    'phoneticIpa',
+  );
+  @override
+  late final GeneratedColumn<String> phoneticIpa = GeneratedColumn<String>(
+    'phonetic_ipa',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    spellingNormalized,
+    spellingDisplay,
+    phoneticIpa,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'word';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<WordRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('spelling_normalized')) {
+      context.handle(
+        _spellingNormalizedMeta,
+        spellingNormalized.isAcceptableOrUnknown(
+          data['spelling_normalized']!,
+          _spellingNormalizedMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_spellingNormalizedMeta);
+    }
+    if (data.containsKey('spelling_display')) {
+      context.handle(
+        _spellingDisplayMeta,
+        spellingDisplay.isAcceptableOrUnknown(
+          data['spelling_display']!,
+          _spellingDisplayMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_spellingDisplayMeta);
+    }
+    if (data.containsKey('phonetic_ipa')) {
+      context.handle(
+        _phoneticIpaMeta,
+        phoneticIpa.isAcceptableOrUnknown(
+          data['phonetic_ipa']!,
+          _phoneticIpaMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  WordRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return WordRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      spellingNormalized: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}spelling_normalized'],
+      )!,
+      spellingDisplay: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}spelling_display'],
+      )!,
+      phoneticIpa: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}phonetic_ipa'],
+      ),
+    );
+  }
+
+  @override
+  $WordsTable createAlias(String alias) {
+    return $WordsTable(attachedDatabase, alias);
+  }
+}
+
+class WordRow extends DataClass implements Insertable<WordRow> {
+  /// Room: @PrimaryKey(autoGenerate = true) val id: Long
+  final int id;
+
+  /// lowercase + trimmed, used for lookup, never displayed
+  final String spellingNormalized;
+
+  /// canonical form displayed to user
+  final String spellingDisplay;
+  final String? phoneticIpa;
+  const WordRow({
+    required this.id,
+    required this.spellingNormalized,
+    required this.spellingDisplay,
+    this.phoneticIpa,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['spelling_normalized'] = Variable<String>(spellingNormalized);
+    map['spelling_display'] = Variable<String>(spellingDisplay);
+    if (!nullToAbsent || phoneticIpa != null) {
+      map['phonetic_ipa'] = Variable<String>(phoneticIpa);
+    }
+    return map;
+  }
+
+  WordsCompanion toCompanion(bool nullToAbsent) {
+    return WordsCompanion(
+      id: Value(id),
+      spellingNormalized: Value(spellingNormalized),
+      spellingDisplay: Value(spellingDisplay),
+      phoneticIpa: phoneticIpa == null && nullToAbsent
+          ? const Value.absent()
+          : Value(phoneticIpa),
+    );
+  }
+
+  factory WordRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return WordRow(
+      id: serializer.fromJson<int>(json['id']),
+      spellingNormalized: serializer.fromJson<String>(
+        json['spellingNormalized'],
+      ),
+      spellingDisplay: serializer.fromJson<String>(json['spellingDisplay']),
+      phoneticIpa: serializer.fromJson<String?>(json['phoneticIpa']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'spellingNormalized': serializer.toJson<String>(spellingNormalized),
+      'spellingDisplay': serializer.toJson<String>(spellingDisplay),
+      'phoneticIpa': serializer.toJson<String?>(phoneticIpa),
+    };
+  }
+
+  WordRow copyWith({
+    int? id,
+    String? spellingNormalized,
+    String? spellingDisplay,
+    Value<String?> phoneticIpa = const Value.absent(),
+  }) => WordRow(
+    id: id ?? this.id,
+    spellingNormalized: spellingNormalized ?? this.spellingNormalized,
+    spellingDisplay: spellingDisplay ?? this.spellingDisplay,
+    phoneticIpa: phoneticIpa.present ? phoneticIpa.value : this.phoneticIpa,
+  );
+  WordRow copyWithCompanion(WordsCompanion data) {
+    return WordRow(
+      id: data.id.present ? data.id.value : this.id,
+      spellingNormalized: data.spellingNormalized.present
+          ? data.spellingNormalized.value
+          : this.spellingNormalized,
+      spellingDisplay: data.spellingDisplay.present
+          ? data.spellingDisplay.value
+          : this.spellingDisplay,
+      phoneticIpa: data.phoneticIpa.present
+          ? data.phoneticIpa.value
+          : this.phoneticIpa,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WordRow(')
+          ..write('id: $id, ')
+          ..write('spellingNormalized: $spellingNormalized, ')
+          ..write('spellingDisplay: $spellingDisplay, ')
+          ..write('phoneticIpa: $phoneticIpa')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, spellingNormalized, spellingDisplay, phoneticIpa);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is WordRow &&
+          other.id == this.id &&
+          other.spellingNormalized == this.spellingNormalized &&
+          other.spellingDisplay == this.spellingDisplay &&
+          other.phoneticIpa == this.phoneticIpa);
+}
+
+class WordsCompanion extends UpdateCompanion<WordRow> {
+  final Value<int> id;
+  final Value<String> spellingNormalized;
+  final Value<String> spellingDisplay;
+  final Value<String?> phoneticIpa;
+  const WordsCompanion({
+    this.id = const Value.absent(),
+    this.spellingNormalized = const Value.absent(),
+    this.spellingDisplay = const Value.absent(),
+    this.phoneticIpa = const Value.absent(),
+  });
+  WordsCompanion.insert({
+    this.id = const Value.absent(),
+    required String spellingNormalized,
+    required String spellingDisplay,
+    this.phoneticIpa = const Value.absent(),
+  }) : spellingNormalized = Value(spellingNormalized),
+       spellingDisplay = Value(spellingDisplay);
+  static Insertable<WordRow> custom({
+    Expression<int>? id,
+    Expression<String>? spellingNormalized,
+    Expression<String>? spellingDisplay,
+    Expression<String>? phoneticIpa,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (spellingNormalized != null) 'spelling_normalized': spellingNormalized,
+      if (spellingDisplay != null) 'spelling_display': spellingDisplay,
+      if (phoneticIpa != null) 'phonetic_ipa': phoneticIpa,
+    });
+  }
+
+  WordsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? spellingNormalized,
+    Value<String>? spellingDisplay,
+    Value<String?>? phoneticIpa,
+  }) {
+    return WordsCompanion(
+      id: id ?? this.id,
+      spellingNormalized: spellingNormalized ?? this.spellingNormalized,
+      spellingDisplay: spellingDisplay ?? this.spellingDisplay,
+      phoneticIpa: phoneticIpa ?? this.phoneticIpa,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (spellingNormalized.present) {
+      map['spelling_normalized'] = Variable<String>(spellingNormalized.value);
+    }
+    if (spellingDisplay.present) {
+      map['spelling_display'] = Variable<String>(spellingDisplay.value);
+    }
+    if (phoneticIpa.present) {
+      map['phonetic_ipa'] = Variable<String>(phoneticIpa.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WordsCompanion(')
+          ..write('id: $id, ')
+          ..write('spellingNormalized: $spellingNormalized, ')
+          ..write('spellingDisplay: $spellingDisplay, ')
+          ..write('phoneticIpa: $phoneticIpa')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $WordSensesTable extends WordSenses
+    with TableInfo<$WordSensesTable, WordSenseRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $WordSensesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _wordIdMeta = const VerificationMeta('wordId');
+  @override
+  late final GeneratedColumn<int> wordId = GeneratedColumn<int>(
+    'word_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES word (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _orderIndexMeta = const VerificationMeta(
+    'orderIndex',
+  );
+  @override
+  late final GeneratedColumn<int> orderIndex = GeneratedColumn<int>(
+    'order_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _partOfSpeechMeta = const VerificationMeta(
+    'partOfSpeech',
+  );
+  @override
+  late final GeneratedColumn<String> partOfSpeech = GeneratedColumn<String>(
+    'part_of_speech',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _chineseMeaningMeta = const VerificationMeta(
+    'chineseMeaning',
+  );
+  @override
+  late final GeneratedColumn<String> chineseMeaning = GeneratedColumn<String>(
+    'chinese_meaning',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _englishDefinitionMeta = const VerificationMeta(
+    'englishDefinition',
+  );
+  @override
+  late final GeneratedColumn<String> englishDefinition =
+      GeneratedColumn<String>(
+        'english_definition',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    wordId,
+    orderIndex,
+    partOfSpeech,
+    chineseMeaning,
+    englishDefinition,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'word_sense';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<WordSenseRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('word_id')) {
+      context.handle(
+        _wordIdMeta,
+        wordId.isAcceptableOrUnknown(data['word_id']!, _wordIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_wordIdMeta);
+    }
+    if (data.containsKey('order_index')) {
+      context.handle(
+        _orderIndexMeta,
+        orderIndex.isAcceptableOrUnknown(data['order_index']!, _orderIndexMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_orderIndexMeta);
+    }
+    if (data.containsKey('part_of_speech')) {
+      context.handle(
+        _partOfSpeechMeta,
+        partOfSpeech.isAcceptableOrUnknown(
+          data['part_of_speech']!,
+          _partOfSpeechMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_partOfSpeechMeta);
+    }
+    if (data.containsKey('chinese_meaning')) {
+      context.handle(
+        _chineseMeaningMeta,
+        chineseMeaning.isAcceptableOrUnknown(
+          data['chinese_meaning']!,
+          _chineseMeaningMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_chineseMeaningMeta);
+    }
+    if (data.containsKey('english_definition')) {
+      context.handle(
+        _englishDefinitionMeta,
+        englishDefinition.isAcceptableOrUnknown(
+          data['english_definition']!,
+          _englishDefinitionMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_englishDefinitionMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  WordSenseRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return WordSenseRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      wordId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}word_id'],
+      )!,
+      orderIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}order_index'],
+      )!,
+      partOfSpeech: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}part_of_speech'],
+      )!,
+      chineseMeaning: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}chinese_meaning'],
+      )!,
+      englishDefinition: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}english_definition'],
+      )!,
+    );
+  }
+
+  @override
+  $WordSensesTable createAlias(String alias) {
+    return $WordSensesTable(attachedDatabase, alias);
+  }
+}
+
+class WordSenseRow extends DataClass implements Insertable<WordSenseRow> {
+  /// Room: @PrimaryKey(autoGenerate = true) val id: Long
+  final int id;
+
+  /// Room: ForeignKey(WordEntity, parent = id, child = word_id, onDelete = CASCADE)
+  final int wordId;
+
+  /// display order, context-matching sense first (0)
+  final int orderIndex;
+
+  /// e.g. "n.", "v."
+  final String partOfSpeech;
+  final String chineseMeaning;
+  final String englishDefinition;
+  const WordSenseRow({
+    required this.id,
+    required this.wordId,
+    required this.orderIndex,
+    required this.partOfSpeech,
+    required this.chineseMeaning,
+    required this.englishDefinition,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['word_id'] = Variable<int>(wordId);
+    map['order_index'] = Variable<int>(orderIndex);
+    map['part_of_speech'] = Variable<String>(partOfSpeech);
+    map['chinese_meaning'] = Variable<String>(chineseMeaning);
+    map['english_definition'] = Variable<String>(englishDefinition);
+    return map;
+  }
+
+  WordSensesCompanion toCompanion(bool nullToAbsent) {
+    return WordSensesCompanion(
+      id: Value(id),
+      wordId: Value(wordId),
+      orderIndex: Value(orderIndex),
+      partOfSpeech: Value(partOfSpeech),
+      chineseMeaning: Value(chineseMeaning),
+      englishDefinition: Value(englishDefinition),
+    );
+  }
+
+  factory WordSenseRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return WordSenseRow(
+      id: serializer.fromJson<int>(json['id']),
+      wordId: serializer.fromJson<int>(json['wordId']),
+      orderIndex: serializer.fromJson<int>(json['orderIndex']),
+      partOfSpeech: serializer.fromJson<String>(json['partOfSpeech']),
+      chineseMeaning: serializer.fromJson<String>(json['chineseMeaning']),
+      englishDefinition: serializer.fromJson<String>(json['englishDefinition']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'wordId': serializer.toJson<int>(wordId),
+      'orderIndex': serializer.toJson<int>(orderIndex),
+      'partOfSpeech': serializer.toJson<String>(partOfSpeech),
+      'chineseMeaning': serializer.toJson<String>(chineseMeaning),
+      'englishDefinition': serializer.toJson<String>(englishDefinition),
+    };
+  }
+
+  WordSenseRow copyWith({
+    int? id,
+    int? wordId,
+    int? orderIndex,
+    String? partOfSpeech,
+    String? chineseMeaning,
+    String? englishDefinition,
+  }) => WordSenseRow(
+    id: id ?? this.id,
+    wordId: wordId ?? this.wordId,
+    orderIndex: orderIndex ?? this.orderIndex,
+    partOfSpeech: partOfSpeech ?? this.partOfSpeech,
+    chineseMeaning: chineseMeaning ?? this.chineseMeaning,
+    englishDefinition: englishDefinition ?? this.englishDefinition,
+  );
+  WordSenseRow copyWithCompanion(WordSensesCompanion data) {
+    return WordSenseRow(
+      id: data.id.present ? data.id.value : this.id,
+      wordId: data.wordId.present ? data.wordId.value : this.wordId,
+      orderIndex: data.orderIndex.present
+          ? data.orderIndex.value
+          : this.orderIndex,
+      partOfSpeech: data.partOfSpeech.present
+          ? data.partOfSpeech.value
+          : this.partOfSpeech,
+      chineseMeaning: data.chineseMeaning.present
+          ? data.chineseMeaning.value
+          : this.chineseMeaning,
+      englishDefinition: data.englishDefinition.present
+          ? data.englishDefinition.value
+          : this.englishDefinition,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WordSenseRow(')
+          ..write('id: $id, ')
+          ..write('wordId: $wordId, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('partOfSpeech: $partOfSpeech, ')
+          ..write('chineseMeaning: $chineseMeaning, ')
+          ..write('englishDefinition: $englishDefinition')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    wordId,
+    orderIndex,
+    partOfSpeech,
+    chineseMeaning,
+    englishDefinition,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is WordSenseRow &&
+          other.id == this.id &&
+          other.wordId == this.wordId &&
+          other.orderIndex == this.orderIndex &&
+          other.partOfSpeech == this.partOfSpeech &&
+          other.chineseMeaning == this.chineseMeaning &&
+          other.englishDefinition == this.englishDefinition);
+}
+
+class WordSensesCompanion extends UpdateCompanion<WordSenseRow> {
+  final Value<int> id;
+  final Value<int> wordId;
+  final Value<int> orderIndex;
+  final Value<String> partOfSpeech;
+  final Value<String> chineseMeaning;
+  final Value<String> englishDefinition;
+  const WordSensesCompanion({
+    this.id = const Value.absent(),
+    this.wordId = const Value.absent(),
+    this.orderIndex = const Value.absent(),
+    this.partOfSpeech = const Value.absent(),
+    this.chineseMeaning = const Value.absent(),
+    this.englishDefinition = const Value.absent(),
+  });
+  WordSensesCompanion.insert({
+    this.id = const Value.absent(),
+    required int wordId,
+    required int orderIndex,
+    required String partOfSpeech,
+    required String chineseMeaning,
+    required String englishDefinition,
+  }) : wordId = Value(wordId),
+       orderIndex = Value(orderIndex),
+       partOfSpeech = Value(partOfSpeech),
+       chineseMeaning = Value(chineseMeaning),
+       englishDefinition = Value(englishDefinition);
+  static Insertable<WordSenseRow> custom({
+    Expression<int>? id,
+    Expression<int>? wordId,
+    Expression<int>? orderIndex,
+    Expression<String>? partOfSpeech,
+    Expression<String>? chineseMeaning,
+    Expression<String>? englishDefinition,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (wordId != null) 'word_id': wordId,
+      if (orderIndex != null) 'order_index': orderIndex,
+      if (partOfSpeech != null) 'part_of_speech': partOfSpeech,
+      if (chineseMeaning != null) 'chinese_meaning': chineseMeaning,
+      if (englishDefinition != null) 'english_definition': englishDefinition,
+    });
+  }
+
+  WordSensesCompanion copyWith({
+    Value<int>? id,
+    Value<int>? wordId,
+    Value<int>? orderIndex,
+    Value<String>? partOfSpeech,
+    Value<String>? chineseMeaning,
+    Value<String>? englishDefinition,
+  }) {
+    return WordSensesCompanion(
+      id: id ?? this.id,
+      wordId: wordId ?? this.wordId,
+      orderIndex: orderIndex ?? this.orderIndex,
+      partOfSpeech: partOfSpeech ?? this.partOfSpeech,
+      chineseMeaning: chineseMeaning ?? this.chineseMeaning,
+      englishDefinition: englishDefinition ?? this.englishDefinition,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (wordId.present) {
+      map['word_id'] = Variable<int>(wordId.value);
+    }
+    if (orderIndex.present) {
+      map['order_index'] = Variable<int>(orderIndex.value);
+    }
+    if (partOfSpeech.present) {
+      map['part_of_speech'] = Variable<String>(partOfSpeech.value);
+    }
+    if (chineseMeaning.present) {
+      map['chinese_meaning'] = Variable<String>(chineseMeaning.value);
+    }
+    if (englishDefinition.present) {
+      map['english_definition'] = Variable<String>(englishDefinition.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WordSensesCompanion(')
+          ..write('id: $id, ')
+          ..write('wordId: $wordId, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('partOfSpeech: $partOfSpeech, ')
+          ..write('chineseMeaning: $chineseMeaning, ')
+          ..write('englishDefinition: $englishDefinition')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ExampleSentencesTable extends ExampleSentences
+    with TableInfo<$ExampleSentencesTable, ExampleSentenceRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ExampleSentencesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _wordSenseIdMeta = const VerificationMeta(
+    'wordSenseId',
+  );
+  @override
+  late final GeneratedColumn<int> wordSenseId = GeneratedColumn<int>(
+    'word_sense_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES word_sense (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _orderIndexMeta = const VerificationMeta(
+    'orderIndex',
+  );
+  @override
+  late final GeneratedColumn<int> orderIndex = GeneratedColumn<int>(
+    'order_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sentenceEnMeta = const VerificationMeta(
+    'sentenceEn',
+  );
+  @override
+  late final GeneratedColumn<String> sentenceEn = GeneratedColumn<String>(
+    'sentence_en',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sentenceZhMeta = const VerificationMeta(
+    'sentenceZh',
+  );
+  @override
+  late final GeneratedColumn<String> sentenceZh = GeneratedColumn<String>(
+    'sentence_zh',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isPrimaryMeta = const VerificationMeta(
+    'isPrimary',
+  );
+  @override
+  late final GeneratedColumn<bool> isPrimary = GeneratedColumn<bool>(
+    'is_primary',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_primary" IN (0, 1))',
+    ),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    wordSenseId,
+    orderIndex,
+    sentenceEn,
+    sentenceZh,
+    isPrimary,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'example_sentence';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ExampleSentenceRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('word_sense_id')) {
+      context.handle(
+        _wordSenseIdMeta,
+        wordSenseId.isAcceptableOrUnknown(
+          data['word_sense_id']!,
+          _wordSenseIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_wordSenseIdMeta);
+    }
+    if (data.containsKey('order_index')) {
+      context.handle(
+        _orderIndexMeta,
+        orderIndex.isAcceptableOrUnknown(data['order_index']!, _orderIndexMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_orderIndexMeta);
+    }
+    if (data.containsKey('sentence_en')) {
+      context.handle(
+        _sentenceEnMeta,
+        sentenceEn.isAcceptableOrUnknown(data['sentence_en']!, _sentenceEnMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sentenceEnMeta);
+    }
+    if (data.containsKey('sentence_zh')) {
+      context.handle(
+        _sentenceZhMeta,
+        sentenceZh.isAcceptableOrUnknown(data['sentence_zh']!, _sentenceZhMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sentenceZhMeta);
+    }
+    if (data.containsKey('is_primary')) {
+      context.handle(
+        _isPrimaryMeta,
+        isPrimary.isAcceptableOrUnknown(data['is_primary']!, _isPrimaryMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_isPrimaryMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  ExampleSentenceRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ExampleSentenceRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      wordSenseId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}word_sense_id'],
+      )!,
+      orderIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}order_index'],
+      )!,
+      sentenceEn: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sentence_en'],
+      )!,
+      sentenceZh: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sentence_zh'],
+      )!,
+      isPrimary: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_primary'],
+      )!,
+    );
+  }
+
+  @override
+  $ExampleSentencesTable createAlias(String alias) {
+    return $ExampleSentencesTable(attachedDatabase, alias);
+  }
+}
+
+class ExampleSentenceRow extends DataClass
+    implements Insertable<ExampleSentenceRow> {
+  /// Room: @PrimaryKey(autoGenerate = true) val id: Long
+  final int id;
+
+  /// Room: ForeignKey(WordSenseEntity, parent = id, child = word_sense_id, onDelete = CASCADE)
+  final int wordSenseId;
+  final int orderIndex;
+  final String sentenceEn;
+  final String sentenceZh;
+
+  /// true = context-matching example from the original article
+  final bool isPrimary;
+  const ExampleSentenceRow({
+    required this.id,
+    required this.wordSenseId,
+    required this.orderIndex,
+    required this.sentenceEn,
+    required this.sentenceZh,
+    required this.isPrimary,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['word_sense_id'] = Variable<int>(wordSenseId);
+    map['order_index'] = Variable<int>(orderIndex);
+    map['sentence_en'] = Variable<String>(sentenceEn);
+    map['sentence_zh'] = Variable<String>(sentenceZh);
+    map['is_primary'] = Variable<bool>(isPrimary);
+    return map;
+  }
+
+  ExampleSentencesCompanion toCompanion(bool nullToAbsent) {
+    return ExampleSentencesCompanion(
+      id: Value(id),
+      wordSenseId: Value(wordSenseId),
+      orderIndex: Value(orderIndex),
+      sentenceEn: Value(sentenceEn),
+      sentenceZh: Value(sentenceZh),
+      isPrimary: Value(isPrimary),
+    );
+  }
+
+  factory ExampleSentenceRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ExampleSentenceRow(
+      id: serializer.fromJson<int>(json['id']),
+      wordSenseId: serializer.fromJson<int>(json['wordSenseId']),
+      orderIndex: serializer.fromJson<int>(json['orderIndex']),
+      sentenceEn: serializer.fromJson<String>(json['sentenceEn']),
+      sentenceZh: serializer.fromJson<String>(json['sentenceZh']),
+      isPrimary: serializer.fromJson<bool>(json['isPrimary']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'wordSenseId': serializer.toJson<int>(wordSenseId),
+      'orderIndex': serializer.toJson<int>(orderIndex),
+      'sentenceEn': serializer.toJson<String>(sentenceEn),
+      'sentenceZh': serializer.toJson<String>(sentenceZh),
+      'isPrimary': serializer.toJson<bool>(isPrimary),
+    };
+  }
+
+  ExampleSentenceRow copyWith({
+    int? id,
+    int? wordSenseId,
+    int? orderIndex,
+    String? sentenceEn,
+    String? sentenceZh,
+    bool? isPrimary,
+  }) => ExampleSentenceRow(
+    id: id ?? this.id,
+    wordSenseId: wordSenseId ?? this.wordSenseId,
+    orderIndex: orderIndex ?? this.orderIndex,
+    sentenceEn: sentenceEn ?? this.sentenceEn,
+    sentenceZh: sentenceZh ?? this.sentenceZh,
+    isPrimary: isPrimary ?? this.isPrimary,
+  );
+  ExampleSentenceRow copyWithCompanion(ExampleSentencesCompanion data) {
+    return ExampleSentenceRow(
+      id: data.id.present ? data.id.value : this.id,
+      wordSenseId: data.wordSenseId.present
+          ? data.wordSenseId.value
+          : this.wordSenseId,
+      orderIndex: data.orderIndex.present
+          ? data.orderIndex.value
+          : this.orderIndex,
+      sentenceEn: data.sentenceEn.present
+          ? data.sentenceEn.value
+          : this.sentenceEn,
+      sentenceZh: data.sentenceZh.present
+          ? data.sentenceZh.value
+          : this.sentenceZh,
+      isPrimary: data.isPrimary.present ? data.isPrimary.value : this.isPrimary,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExampleSentenceRow(')
+          ..write('id: $id, ')
+          ..write('wordSenseId: $wordSenseId, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('sentenceEn: $sentenceEn, ')
+          ..write('sentenceZh: $sentenceZh, ')
+          ..write('isPrimary: $isPrimary')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    wordSenseId,
+    orderIndex,
+    sentenceEn,
+    sentenceZh,
+    isPrimary,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExampleSentenceRow &&
+          other.id == this.id &&
+          other.wordSenseId == this.wordSenseId &&
+          other.orderIndex == this.orderIndex &&
+          other.sentenceEn == this.sentenceEn &&
+          other.sentenceZh == this.sentenceZh &&
+          other.isPrimary == this.isPrimary);
+}
+
+class ExampleSentencesCompanion extends UpdateCompanion<ExampleSentenceRow> {
+  final Value<int> id;
+  final Value<int> wordSenseId;
+  final Value<int> orderIndex;
+  final Value<String> sentenceEn;
+  final Value<String> sentenceZh;
+  final Value<bool> isPrimary;
+  const ExampleSentencesCompanion({
+    this.id = const Value.absent(),
+    this.wordSenseId = const Value.absent(),
+    this.orderIndex = const Value.absent(),
+    this.sentenceEn = const Value.absent(),
+    this.sentenceZh = const Value.absent(),
+    this.isPrimary = const Value.absent(),
+  });
+  ExampleSentencesCompanion.insert({
+    this.id = const Value.absent(),
+    required int wordSenseId,
+    required int orderIndex,
+    required String sentenceEn,
+    required String sentenceZh,
+    required bool isPrimary,
+  }) : wordSenseId = Value(wordSenseId),
+       orderIndex = Value(orderIndex),
+       sentenceEn = Value(sentenceEn),
+       sentenceZh = Value(sentenceZh),
+       isPrimary = Value(isPrimary);
+  static Insertable<ExampleSentenceRow> custom({
+    Expression<int>? id,
+    Expression<int>? wordSenseId,
+    Expression<int>? orderIndex,
+    Expression<String>? sentenceEn,
+    Expression<String>? sentenceZh,
+    Expression<bool>? isPrimary,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (wordSenseId != null) 'word_sense_id': wordSenseId,
+      if (orderIndex != null) 'order_index': orderIndex,
+      if (sentenceEn != null) 'sentence_en': sentenceEn,
+      if (sentenceZh != null) 'sentence_zh': sentenceZh,
+      if (isPrimary != null) 'is_primary': isPrimary,
+    });
+  }
+
+  ExampleSentencesCompanion copyWith({
+    Value<int>? id,
+    Value<int>? wordSenseId,
+    Value<int>? orderIndex,
+    Value<String>? sentenceEn,
+    Value<String>? sentenceZh,
+    Value<bool>? isPrimary,
+  }) {
+    return ExampleSentencesCompanion(
+      id: id ?? this.id,
+      wordSenseId: wordSenseId ?? this.wordSenseId,
+      orderIndex: orderIndex ?? this.orderIndex,
+      sentenceEn: sentenceEn ?? this.sentenceEn,
+      sentenceZh: sentenceZh ?? this.sentenceZh,
+      isPrimary: isPrimary ?? this.isPrimary,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (wordSenseId.present) {
+      map['word_sense_id'] = Variable<int>(wordSenseId.value);
+    }
+    if (orderIndex.present) {
+      map['order_index'] = Variable<int>(orderIndex.value);
+    }
+    if (sentenceEn.present) {
+      map['sentence_en'] = Variable<String>(sentenceEn.value);
+    }
+    if (sentenceZh.present) {
+      map['sentence_zh'] = Variable<String>(sentenceZh.value);
+    }
+    if (isPrimary.present) {
+      map['is_primary'] = Variable<bool>(isPrimary.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExampleSentencesCompanion(')
+          ..write('id: $id, ')
+          ..write('wordSenseId: $wordSenseId, ')
+          ..write('orderIndex: $orderIndex, ')
+          ..write('sentenceEn: $sentenceEn, ')
+          ..write('sentenceZh: $sentenceZh, ')
+          ..write('isPrimary: $isPrimary')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $VocabularyEntriesTable extends VocabularyEntries
+    with TableInfo<$VocabularyEntriesTable, VocabularyEntryRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VocabularyEntriesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _wordIdMeta = const VerificationMeta('wordId');
+  @override
+  late final GeneratedColumn<int> wordId = GeneratedColumn<int>(
+    'word_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES word (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _instanceNumberMeta = const VerificationMeta(
+    'instanceNumber',
+  );
+  @override
+  late final GeneratedColumn<int> instanceNumber = GeneratedColumn<int>(
+    'instance_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _correctReviewStreakMeta =
+      const VerificationMeta('correctReviewStreak');
+  @override
+  late final GeneratedColumn<int> correctReviewStreak = GeneratedColumn<int>(
+    'correct_review_streak',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _masteredAtMeta = const VerificationMeta(
+    'masteredAt',
+  );
+  @override
+  late final GeneratedColumn<String> masteredAt = GeneratedColumn<String>(
+    'mastered_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<String> deletedAt = GeneratedColumn<String>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _deletedReasonMeta = const VerificationMeta(
+    'deletedReason',
+  );
+  @override
+  late final GeneratedColumn<String> deletedReason = GeneratedColumn<String>(
+    'deleted_reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    wordId,
+    instanceNumber,
+    status,
+    correctReviewStreak,
+    masteredAt,
+    deletedAt,
+    deletedReason,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'vocabulary_entry';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<VocabularyEntryRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('word_id')) {
+      context.handle(
+        _wordIdMeta,
+        wordId.isAcceptableOrUnknown(data['word_id']!, _wordIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_wordIdMeta);
+    }
+    if (data.containsKey('instance_number')) {
+      context.handle(
+        _instanceNumberMeta,
+        instanceNumber.isAcceptableOrUnknown(
+          data['instance_number']!,
+          _instanceNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_instanceNumberMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_statusMeta);
+    }
+    if (data.containsKey('correct_review_streak')) {
+      context.handle(
+        _correctReviewStreakMeta,
+        correctReviewStreak.isAcceptableOrUnknown(
+          data['correct_review_streak']!,
+          _correctReviewStreakMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_correctReviewStreakMeta);
+    }
+    if (data.containsKey('mastered_at')) {
+      context.handle(
+        _masteredAtMeta,
+        masteredAt.isAcceptableOrUnknown(data['mastered_at']!, _masteredAtMeta),
+      );
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    if (data.containsKey('deleted_reason')) {
+      context.handle(
+        _deletedReasonMeta,
+        deletedReason.isAcceptableOrUnknown(
+          data['deleted_reason']!,
+          _deletedReasonMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  VocabularyEntryRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VocabularyEntryRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      wordId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}word_id'],
+      )!,
+      instanceNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}instance_number'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      correctReviewStreak: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}correct_review_streak'],
+      )!,
+      masteredAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mastered_at'],
+      ),
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}deleted_at'],
+      ),
+      deletedReason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}deleted_reason'],
+      ),
+    );
+  }
+
+  @override
+  $VocabularyEntriesTable createAlias(String alias) {
+    return $VocabularyEntriesTable(attachedDatabase, alias);
+  }
+}
+
+class VocabularyEntryRow extends DataClass
+    implements Insertable<VocabularyEntryRow> {
+  /// Room: @PrimaryKey(autoGenerate = true) val id: Long
+  final int id;
+
+  /// Room: ForeignKey(WordEntity, parent = id, child = word_id, onDelete = CASCADE)
+  final int wordId;
+
+  /// increments each time the same word is re-added
+  final int instanceNumber;
+
+  /// NEW | LEARNING | MASTERED
+  final String status;
+  final int correctReviewStreak;
+  final String? masteredAt;
+
+  /// soft delete
+  final String? deletedAt;
+
+  /// "MANUAL_REMOVAL" | "MASTERED"
+  final String? deletedReason;
+  const VocabularyEntryRow({
+    required this.id,
+    required this.wordId,
+    required this.instanceNumber,
+    required this.status,
+    required this.correctReviewStreak,
+    this.masteredAt,
+    this.deletedAt,
+    this.deletedReason,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['word_id'] = Variable<int>(wordId);
+    map['instance_number'] = Variable<int>(instanceNumber);
+    map['status'] = Variable<String>(status);
+    map['correct_review_streak'] = Variable<int>(correctReviewStreak);
+    if (!nullToAbsent || masteredAt != null) {
+      map['mastered_at'] = Variable<String>(masteredAt);
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<String>(deletedAt);
+    }
+    if (!nullToAbsent || deletedReason != null) {
+      map['deleted_reason'] = Variable<String>(deletedReason);
+    }
+    return map;
+  }
+
+  VocabularyEntriesCompanion toCompanion(bool nullToAbsent) {
+    return VocabularyEntriesCompanion(
+      id: Value(id),
+      wordId: Value(wordId),
+      instanceNumber: Value(instanceNumber),
+      status: Value(status),
+      correctReviewStreak: Value(correctReviewStreak),
+      masteredAt: masteredAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(masteredAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+      deletedReason: deletedReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedReason),
+    );
+  }
+
+  factory VocabularyEntryRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VocabularyEntryRow(
+      id: serializer.fromJson<int>(json['id']),
+      wordId: serializer.fromJson<int>(json['wordId']),
+      instanceNumber: serializer.fromJson<int>(json['instanceNumber']),
+      status: serializer.fromJson<String>(json['status']),
+      correctReviewStreak: serializer.fromJson<int>(
+        json['correctReviewStreak'],
+      ),
+      masteredAt: serializer.fromJson<String?>(json['masteredAt']),
+      deletedAt: serializer.fromJson<String?>(json['deletedAt']),
+      deletedReason: serializer.fromJson<String?>(json['deletedReason']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'wordId': serializer.toJson<int>(wordId),
+      'instanceNumber': serializer.toJson<int>(instanceNumber),
+      'status': serializer.toJson<String>(status),
+      'correctReviewStreak': serializer.toJson<int>(correctReviewStreak),
+      'masteredAt': serializer.toJson<String?>(masteredAt),
+      'deletedAt': serializer.toJson<String?>(deletedAt),
+      'deletedReason': serializer.toJson<String?>(deletedReason),
+    };
+  }
+
+  VocabularyEntryRow copyWith({
+    int? id,
+    int? wordId,
+    int? instanceNumber,
+    String? status,
+    int? correctReviewStreak,
+    Value<String?> masteredAt = const Value.absent(),
+    Value<String?> deletedAt = const Value.absent(),
+    Value<String?> deletedReason = const Value.absent(),
+  }) => VocabularyEntryRow(
+    id: id ?? this.id,
+    wordId: wordId ?? this.wordId,
+    instanceNumber: instanceNumber ?? this.instanceNumber,
+    status: status ?? this.status,
+    correctReviewStreak: correctReviewStreak ?? this.correctReviewStreak,
+    masteredAt: masteredAt.present ? masteredAt.value : this.masteredAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    deletedReason: deletedReason.present
+        ? deletedReason.value
+        : this.deletedReason,
+  );
+  VocabularyEntryRow copyWithCompanion(VocabularyEntriesCompanion data) {
+    return VocabularyEntryRow(
+      id: data.id.present ? data.id.value : this.id,
+      wordId: data.wordId.present ? data.wordId.value : this.wordId,
+      instanceNumber: data.instanceNumber.present
+          ? data.instanceNumber.value
+          : this.instanceNumber,
+      status: data.status.present ? data.status.value : this.status,
+      correctReviewStreak: data.correctReviewStreak.present
+          ? data.correctReviewStreak.value
+          : this.correctReviewStreak,
+      masteredAt: data.masteredAt.present
+          ? data.masteredAt.value
+          : this.masteredAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      deletedReason: data.deletedReason.present
+          ? data.deletedReason.value
+          : this.deletedReason,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VocabularyEntryRow(')
+          ..write('id: $id, ')
+          ..write('wordId: $wordId, ')
+          ..write('instanceNumber: $instanceNumber, ')
+          ..write('status: $status, ')
+          ..write('correctReviewStreak: $correctReviewStreak, ')
+          ..write('masteredAt: $masteredAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('deletedReason: $deletedReason')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    wordId,
+    instanceNumber,
+    status,
+    correctReviewStreak,
+    masteredAt,
+    deletedAt,
+    deletedReason,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VocabularyEntryRow &&
+          other.id == this.id &&
+          other.wordId == this.wordId &&
+          other.instanceNumber == this.instanceNumber &&
+          other.status == this.status &&
+          other.correctReviewStreak == this.correctReviewStreak &&
+          other.masteredAt == this.masteredAt &&
+          other.deletedAt == this.deletedAt &&
+          other.deletedReason == this.deletedReason);
+}
+
+class VocabularyEntriesCompanion extends UpdateCompanion<VocabularyEntryRow> {
+  final Value<int> id;
+  final Value<int> wordId;
+  final Value<int> instanceNumber;
+  final Value<String> status;
+  final Value<int> correctReviewStreak;
+  final Value<String?> masteredAt;
+  final Value<String?> deletedAt;
+  final Value<String?> deletedReason;
+  const VocabularyEntriesCompanion({
+    this.id = const Value.absent(),
+    this.wordId = const Value.absent(),
+    this.instanceNumber = const Value.absent(),
+    this.status = const Value.absent(),
+    this.correctReviewStreak = const Value.absent(),
+    this.masteredAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.deletedReason = const Value.absent(),
+  });
+  VocabularyEntriesCompanion.insert({
+    this.id = const Value.absent(),
+    required int wordId,
+    required int instanceNumber,
+    required String status,
+    required int correctReviewStreak,
+    this.masteredAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.deletedReason = const Value.absent(),
+  }) : wordId = Value(wordId),
+       instanceNumber = Value(instanceNumber),
+       status = Value(status),
+       correctReviewStreak = Value(correctReviewStreak);
+  static Insertable<VocabularyEntryRow> custom({
+    Expression<int>? id,
+    Expression<int>? wordId,
+    Expression<int>? instanceNumber,
+    Expression<String>? status,
+    Expression<int>? correctReviewStreak,
+    Expression<String>? masteredAt,
+    Expression<String>? deletedAt,
+    Expression<String>? deletedReason,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (wordId != null) 'word_id': wordId,
+      if (instanceNumber != null) 'instance_number': instanceNumber,
+      if (status != null) 'status': status,
+      if (correctReviewStreak != null)
+        'correct_review_streak': correctReviewStreak,
+      if (masteredAt != null) 'mastered_at': masteredAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (deletedReason != null) 'deleted_reason': deletedReason,
+    });
+  }
+
+  VocabularyEntriesCompanion copyWith({
+    Value<int>? id,
+    Value<int>? wordId,
+    Value<int>? instanceNumber,
+    Value<String>? status,
+    Value<int>? correctReviewStreak,
+    Value<String?>? masteredAt,
+    Value<String?>? deletedAt,
+    Value<String?>? deletedReason,
+  }) {
+    return VocabularyEntriesCompanion(
+      id: id ?? this.id,
+      wordId: wordId ?? this.wordId,
+      instanceNumber: instanceNumber ?? this.instanceNumber,
+      status: status ?? this.status,
+      correctReviewStreak: correctReviewStreak ?? this.correctReviewStreak,
+      masteredAt: masteredAt ?? this.masteredAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      deletedReason: deletedReason ?? this.deletedReason,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (wordId.present) {
+      map['word_id'] = Variable<int>(wordId.value);
+    }
+    if (instanceNumber.present) {
+      map['instance_number'] = Variable<int>(instanceNumber.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (correctReviewStreak.present) {
+      map['correct_review_streak'] = Variable<int>(correctReviewStreak.value);
+    }
+    if (masteredAt.present) {
+      map['mastered_at'] = Variable<String>(masteredAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<String>(deletedAt.value);
+    }
+    if (deletedReason.present) {
+      map['deleted_reason'] = Variable<String>(deletedReason.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VocabularyEntriesCompanion(')
+          ..write('id: $id, ')
+          ..write('wordId: $wordId, ')
+          ..write('instanceNumber: $instanceNumber, ')
+          ..write('status: $status, ')
+          ..write('correctReviewStreak: $correctReviewStreak, ')
+          ..write('masteredAt: $masteredAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('deletedReason: $deletedReason')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -5271,6 +6997,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
       $ArticleParagraphsTable(this);
   late final $GenerationErrorLogsTable generationErrorLogs =
       $GenerationErrorLogsTable(this);
+  late final $WordsTable words = $WordsTable(this);
+  late final $WordSensesTable wordSenses = $WordSensesTable(this);
+  late final $ExampleSentencesTable exampleSentences = $ExampleSentencesTable(
+    this,
+  );
+  late final $VocabularyEntriesTable vocabularyEntries =
+      $VocabularyEntriesTable(this);
   late final Index indexDailyLearningRefBatchId = Index(
     'index_daily_learning_ref_batch_id',
     'CREATE INDEX index_daily_learning_ref_batch_id ON daily_learning (ref_batch_id)',
@@ -5303,6 +7036,22 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'index_generation_error_log_created_at',
     'CREATE INDEX index_generation_error_log_created_at ON generation_error_log (created_at)',
   );
+  late final Index indexWordSpellingNormalized = Index(
+    'index_word_spelling_normalized',
+    'CREATE UNIQUE INDEX index_word_spelling_normalized ON word (spelling_normalized)',
+  );
+  late final Index indexWordSenseWordId = Index(
+    'index_word_sense_word_id',
+    'CREATE INDEX index_word_sense_word_id ON word_sense (word_id)',
+  );
+  late final Index indexExampleSentenceWordSenseId = Index(
+    'index_example_sentence_word_sense_id',
+    'CREATE INDEX index_example_sentence_word_sense_id ON example_sentence (word_sense_id)',
+  );
+  late final Index indexVocabularyEntryWordId = Index(
+    'index_vocabulary_entry_word_id',
+    'CREATE INDEX index_vocabulary_entry_word_id ON vocabulary_entry (word_id)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -5319,6 +7068,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     articles,
     articleParagraphs,
     generationErrorLogs,
+    words,
+    wordSenses,
+    exampleSentences,
+    vocabularyEntries,
     indexDailyLearningRefBatchId,
     indexArticleBatchGeneratedOn,
     indexArticleBatchDifficultyLevelSnapshotGeneratedOn,
@@ -5327,6 +7080,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     indexArticleParagraphArticleIdOrderIndex,
     indexGenerationErrorLogEntityTypeEntityId,
     indexGenerationErrorLogCreatedAt,
+    indexWordSpellingNormalized,
+    indexWordSenseWordId,
+    indexExampleSentenceWordSenseId,
+    indexVocabularyEntryWordId,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -5350,6 +7107,27 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('article_paragraph', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'word',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('word_sense', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'word_sense',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('example_sentence', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'word',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('vocabulary_entry', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -8733,6 +10511,1562 @@ typedef $$GenerationErrorLogsTableProcessedTableManager =
       GenerationErrorLogRow,
       PrefetchHooks Function()
     >;
+typedef $$WordsTableCreateCompanionBuilder =
+    WordsCompanion Function({
+      Value<int> id,
+      required String spellingNormalized,
+      required String spellingDisplay,
+      Value<String?> phoneticIpa,
+    });
+typedef $$WordsTableUpdateCompanionBuilder =
+    WordsCompanion Function({
+      Value<int> id,
+      Value<String> spellingNormalized,
+      Value<String> spellingDisplay,
+      Value<String?> phoneticIpa,
+    });
+
+final class $$WordsTableReferences
+    extends BaseReferences<_$AppDatabase, $WordsTable, WordRow> {
+  $$WordsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$WordSensesTable, List<WordSenseRow>>
+  _wordSensesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.wordSenses,
+    aliasName: 'word__id__word_sense__word_id',
+  );
+
+  $$WordSensesTableProcessedTableManager get wordSensesRefs {
+    final manager = $$WordSensesTableTableManager(
+      $_db,
+      $_db.wordSenses,
+    ).filter((f) => f.wordId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_wordSensesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$VocabularyEntriesTable, List<VocabularyEntryRow>>
+  _vocabularyEntriesRefsTable(_$AppDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.vocabularyEntries,
+        aliasName: 'word__id__vocabulary_entry__word_id',
+      );
+
+  $$VocabularyEntriesTableProcessedTableManager get vocabularyEntriesRefs {
+    final manager = $$VocabularyEntriesTableTableManager(
+      $_db,
+      $_db.vocabularyEntries,
+    ).filter((f) => f.wordId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _vocabularyEntriesRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$WordsTableFilterComposer extends Composer<_$AppDatabase, $WordsTable> {
+  $$WordsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get spellingNormalized => $composableBuilder(
+    column: $table.spellingNormalized,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get spellingDisplay => $composableBuilder(
+    column: $table.spellingDisplay,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get phoneticIpa => $composableBuilder(
+    column: $table.phoneticIpa,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  Expression<bool> wordSensesRefs(
+    Expression<bool> Function($$WordSensesTableFilterComposer f) f,
+  ) {
+    final $$WordSensesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.wordSenses,
+      getReferencedColumn: (t) => t.wordId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordSensesTableFilterComposer(
+            $db: $db,
+            $table: $db.wordSenses,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> vocabularyEntriesRefs(
+    Expression<bool> Function($$VocabularyEntriesTableFilterComposer f) f,
+  ) {
+    final $$VocabularyEntriesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.vocabularyEntries,
+      getReferencedColumn: (t) => t.wordId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VocabularyEntriesTableFilterComposer(
+            $db: $db,
+            $table: $db.vocabularyEntries,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$WordsTableOrderingComposer
+    extends Composer<_$AppDatabase, $WordsTable> {
+  $$WordsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get spellingNormalized => $composableBuilder(
+    column: $table.spellingNormalized,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get spellingDisplay => $composableBuilder(
+    column: $table.spellingDisplay,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get phoneticIpa => $composableBuilder(
+    column: $table.phoneticIpa,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$WordsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $WordsTable> {
+  $$WordsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get spellingNormalized => $composableBuilder(
+    column: $table.spellingNormalized,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get spellingDisplay => $composableBuilder(
+    column: $table.spellingDisplay,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get phoneticIpa => $composableBuilder(
+    column: $table.phoneticIpa,
+    builder: (column) => column,
+  );
+
+  Expression<T> wordSensesRefs<T extends Object>(
+    Expression<T> Function($$WordSensesTableAnnotationComposer a) f,
+  ) {
+    final $$WordSensesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.wordSenses,
+      getReferencedColumn: (t) => t.wordId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordSensesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.wordSenses,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> vocabularyEntriesRefs<T extends Object>(
+    Expression<T> Function($$VocabularyEntriesTableAnnotationComposer a) f,
+  ) {
+    final $$VocabularyEntriesTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.id,
+          referencedTable: $db.vocabularyEntries,
+          getReferencedColumn: (t) => t.wordId,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$VocabularyEntriesTableAnnotationComposer(
+                $db: $db,
+                $table: $db.vocabularyEntries,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
+}
+
+class $$WordsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $WordsTable,
+          WordRow,
+          $$WordsTableFilterComposer,
+          $$WordsTableOrderingComposer,
+          $$WordsTableAnnotationComposer,
+          $$WordsTableCreateCompanionBuilder,
+          $$WordsTableUpdateCompanionBuilder,
+          (WordRow, $$WordsTableReferences),
+          WordRow,
+          PrefetchHooks Function({
+            bool wordSensesRefs,
+            bool vocabularyEntriesRefs,
+          })
+        > {
+  $$WordsTableTableManager(_$AppDatabase db, $WordsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$WordsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$WordsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$WordsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> spellingNormalized = const Value.absent(),
+                Value<String> spellingDisplay = const Value.absent(),
+                Value<String?> phoneticIpa = const Value.absent(),
+              }) => WordsCompanion(
+                id: id,
+                spellingNormalized: spellingNormalized,
+                spellingDisplay: spellingDisplay,
+                phoneticIpa: phoneticIpa,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String spellingNormalized,
+                required String spellingDisplay,
+                Value<String?> phoneticIpa = const Value.absent(),
+              }) => WordsCompanion.insert(
+                id: id,
+                spellingNormalized: spellingNormalized,
+                spellingDisplay: spellingDisplay,
+                phoneticIpa: phoneticIpa,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) =>
+                    (e.readTable(table), $$WordsTableReferences(db, table, e)),
+              )
+              .toList(),
+          prefetchHooksCallback:
+              ({wordSensesRefs = false, vocabularyEntriesRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (wordSensesRefs) db.wordSenses,
+                    if (vocabularyEntriesRefs) db.vocabularyEntries,
+                  ],
+                  addJoins: null,
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (wordSensesRefs)
+                        await $_getPrefetchedData<
+                          WordRow,
+                          $WordsTable,
+                          WordSenseRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$WordsTableReferences
+                              ._wordSensesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$WordsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).wordSensesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.wordId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                      if (vocabularyEntriesRefs)
+                        await $_getPrefetchedData<
+                          WordRow,
+                          $WordsTable,
+                          VocabularyEntryRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$WordsTableReferences
+                              ._vocabularyEntriesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$WordsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).vocabularyEntriesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.wordId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
+              },
+        ),
+      );
+}
+
+typedef $$WordsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $WordsTable,
+      WordRow,
+      $$WordsTableFilterComposer,
+      $$WordsTableOrderingComposer,
+      $$WordsTableAnnotationComposer,
+      $$WordsTableCreateCompanionBuilder,
+      $$WordsTableUpdateCompanionBuilder,
+      (WordRow, $$WordsTableReferences),
+      WordRow,
+      PrefetchHooks Function({bool wordSensesRefs, bool vocabularyEntriesRefs})
+    >;
+typedef $$WordSensesTableCreateCompanionBuilder =
+    WordSensesCompanion Function({
+      Value<int> id,
+      required int wordId,
+      required int orderIndex,
+      required String partOfSpeech,
+      required String chineseMeaning,
+      required String englishDefinition,
+    });
+typedef $$WordSensesTableUpdateCompanionBuilder =
+    WordSensesCompanion Function({
+      Value<int> id,
+      Value<int> wordId,
+      Value<int> orderIndex,
+      Value<String> partOfSpeech,
+      Value<String> chineseMeaning,
+      Value<String> englishDefinition,
+    });
+
+final class $$WordSensesTableReferences
+    extends BaseReferences<_$AppDatabase, $WordSensesTable, WordSenseRow> {
+  $$WordSensesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $WordsTable _wordIdTable(_$AppDatabase db) =>
+      db.words.createAlias('word_sense__word_id__word__id');
+
+  $$WordsTableProcessedTableManager get wordId {
+    final $_column = $_itemColumn<int>('word_id')!;
+
+    final manager = $$WordsTableTableManager(
+      $_db,
+      $_db.words,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_wordIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static MultiTypedResultKey<$ExampleSentencesTable, List<ExampleSentenceRow>>
+  _exampleSentencesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.exampleSentences,
+    aliasName: 'word_sense__id__example_sentence__word_sense_id',
+  );
+
+  $$ExampleSentencesTableProcessedTableManager get exampleSentencesRefs {
+    final manager = $$ExampleSentencesTableTableManager(
+      $_db,
+      $_db.exampleSentences,
+    ).filter((f) => f.wordSenseId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _exampleSentencesRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$WordSensesTableFilterComposer
+    extends Composer<_$AppDatabase, $WordSensesTable> {
+  $$WordSensesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get partOfSpeech => $composableBuilder(
+    column: $table.partOfSpeech,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get chineseMeaning => $composableBuilder(
+    column: $table.chineseMeaning,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get englishDefinition => $composableBuilder(
+    column: $table.englishDefinition,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$WordsTableFilterComposer get wordId {
+    final $$WordsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableFilterComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<bool> exampleSentencesRefs(
+    Expression<bool> Function($$ExampleSentencesTableFilterComposer f) f,
+  ) {
+    final $$ExampleSentencesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.exampleSentences,
+      getReferencedColumn: (t) => t.wordSenseId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ExampleSentencesTableFilterComposer(
+            $db: $db,
+            $table: $db.exampleSentences,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$WordSensesTableOrderingComposer
+    extends Composer<_$AppDatabase, $WordSensesTable> {
+  $$WordSensesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get partOfSpeech => $composableBuilder(
+    column: $table.partOfSpeech,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get chineseMeaning => $composableBuilder(
+    column: $table.chineseMeaning,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get englishDefinition => $composableBuilder(
+    column: $table.englishDefinition,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$WordsTableOrderingComposer get wordId {
+    final $$WordsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableOrderingComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$WordSensesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $WordSensesTable> {
+  $$WordSensesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get partOfSpeech => $composableBuilder(
+    column: $table.partOfSpeech,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get chineseMeaning => $composableBuilder(
+    column: $table.chineseMeaning,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get englishDefinition => $composableBuilder(
+    column: $table.englishDefinition,
+    builder: (column) => column,
+  );
+
+  $$WordsTableAnnotationComposer get wordId {
+    final $$WordsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  Expression<T> exampleSentencesRefs<T extends Object>(
+    Expression<T> Function($$ExampleSentencesTableAnnotationComposer a) f,
+  ) {
+    final $$ExampleSentencesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.exampleSentences,
+      getReferencedColumn: (t) => t.wordSenseId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ExampleSentencesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.exampleSentences,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$WordSensesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $WordSensesTable,
+          WordSenseRow,
+          $$WordSensesTableFilterComposer,
+          $$WordSensesTableOrderingComposer,
+          $$WordSensesTableAnnotationComposer,
+          $$WordSensesTableCreateCompanionBuilder,
+          $$WordSensesTableUpdateCompanionBuilder,
+          (WordSenseRow, $$WordSensesTableReferences),
+          WordSenseRow,
+          PrefetchHooks Function({bool wordId, bool exampleSentencesRefs})
+        > {
+  $$WordSensesTableTableManager(_$AppDatabase db, $WordSensesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$WordSensesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$WordSensesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$WordSensesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> wordId = const Value.absent(),
+                Value<int> orderIndex = const Value.absent(),
+                Value<String> partOfSpeech = const Value.absent(),
+                Value<String> chineseMeaning = const Value.absent(),
+                Value<String> englishDefinition = const Value.absent(),
+              }) => WordSensesCompanion(
+                id: id,
+                wordId: wordId,
+                orderIndex: orderIndex,
+                partOfSpeech: partOfSpeech,
+                chineseMeaning: chineseMeaning,
+                englishDefinition: englishDefinition,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int wordId,
+                required int orderIndex,
+                required String partOfSpeech,
+                required String chineseMeaning,
+                required String englishDefinition,
+              }) => WordSensesCompanion.insert(
+                id: id,
+                wordId: wordId,
+                orderIndex: orderIndex,
+                partOfSpeech: partOfSpeech,
+                chineseMeaning: chineseMeaning,
+                englishDefinition: englishDefinition,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$WordSensesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback:
+              ({wordId = false, exampleSentencesRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [
+                    if (exampleSentencesRefs) db.exampleSentences,
+                  ],
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (wordId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.wordId,
+                                    referencedTable: $$WordSensesTableReferences
+                                        ._wordIdTable(db),
+                                    referencedColumn:
+                                        $$WordSensesTableReferences
+                                            ._wordIdTable(db)
+                                            .id,
+                                  )
+                                  as T;
+                        }
+
+                        return state;
+                      },
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (exampleSentencesRefs)
+                        await $_getPrefetchedData<
+                          WordSenseRow,
+                          $WordSensesTable,
+                          ExampleSentenceRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$WordSensesTableReferences
+                              ._exampleSentencesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$WordSensesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).exampleSentencesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.wordSenseId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
+              },
+        ),
+      );
+}
+
+typedef $$WordSensesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $WordSensesTable,
+      WordSenseRow,
+      $$WordSensesTableFilterComposer,
+      $$WordSensesTableOrderingComposer,
+      $$WordSensesTableAnnotationComposer,
+      $$WordSensesTableCreateCompanionBuilder,
+      $$WordSensesTableUpdateCompanionBuilder,
+      (WordSenseRow, $$WordSensesTableReferences),
+      WordSenseRow,
+      PrefetchHooks Function({bool wordId, bool exampleSentencesRefs})
+    >;
+typedef $$ExampleSentencesTableCreateCompanionBuilder =
+    ExampleSentencesCompanion Function({
+      Value<int> id,
+      required int wordSenseId,
+      required int orderIndex,
+      required String sentenceEn,
+      required String sentenceZh,
+      required bool isPrimary,
+    });
+typedef $$ExampleSentencesTableUpdateCompanionBuilder =
+    ExampleSentencesCompanion Function({
+      Value<int> id,
+      Value<int> wordSenseId,
+      Value<int> orderIndex,
+      Value<String> sentenceEn,
+      Value<String> sentenceZh,
+      Value<bool> isPrimary,
+    });
+
+final class $$ExampleSentencesTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $ExampleSentencesTable,
+          ExampleSentenceRow
+        > {
+  $$ExampleSentencesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $WordSensesTable _wordSenseIdTable(_$AppDatabase db) => db.wordSenses
+      .createAlias('example_sentence__word_sense_id__word_sense__id');
+
+  $$WordSensesTableProcessedTableManager get wordSenseId {
+    final $_column = $_itemColumn<int>('word_sense_id')!;
+
+    final manager = $$WordSensesTableTableManager(
+      $_db,
+      $_db.wordSenses,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_wordSenseIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$ExampleSentencesTableFilterComposer
+    extends Composer<_$AppDatabase, $ExampleSentencesTable> {
+  $$ExampleSentencesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sentenceEn => $composableBuilder(
+    column: $table.sentenceEn,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sentenceZh => $composableBuilder(
+    column: $table.sentenceZh,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isPrimary => $composableBuilder(
+    column: $table.isPrimary,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$WordSensesTableFilterComposer get wordSenseId {
+    final $$WordSensesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordSenseId,
+      referencedTable: $db.wordSenses,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordSensesTableFilterComposer(
+            $db: $db,
+            $table: $db.wordSenses,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ExampleSentencesTableOrderingComposer
+    extends Composer<_$AppDatabase, $ExampleSentencesTable> {
+  $$ExampleSentencesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sentenceEn => $composableBuilder(
+    column: $table.sentenceEn,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sentenceZh => $composableBuilder(
+    column: $table.sentenceZh,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isPrimary => $composableBuilder(
+    column: $table.isPrimary,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$WordSensesTableOrderingComposer get wordSenseId {
+    final $$WordSensesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordSenseId,
+      referencedTable: $db.wordSenses,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordSensesTableOrderingComposer(
+            $db: $db,
+            $table: $db.wordSenses,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ExampleSentencesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ExampleSentencesTable> {
+  $$ExampleSentencesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get orderIndex => $composableBuilder(
+    column: $table.orderIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sentenceEn => $composableBuilder(
+    column: $table.sentenceEn,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sentenceZh => $composableBuilder(
+    column: $table.sentenceZh,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isPrimary =>
+      $composableBuilder(column: $table.isPrimary, builder: (column) => column);
+
+  $$WordSensesTableAnnotationComposer get wordSenseId {
+    final $$WordSensesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordSenseId,
+      referencedTable: $db.wordSenses,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordSensesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.wordSenses,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$ExampleSentencesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ExampleSentencesTable,
+          ExampleSentenceRow,
+          $$ExampleSentencesTableFilterComposer,
+          $$ExampleSentencesTableOrderingComposer,
+          $$ExampleSentencesTableAnnotationComposer,
+          $$ExampleSentencesTableCreateCompanionBuilder,
+          $$ExampleSentencesTableUpdateCompanionBuilder,
+          (ExampleSentenceRow, $$ExampleSentencesTableReferences),
+          ExampleSentenceRow,
+          PrefetchHooks Function({bool wordSenseId})
+        > {
+  $$ExampleSentencesTableTableManager(
+    _$AppDatabase db,
+    $ExampleSentencesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ExampleSentencesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ExampleSentencesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ExampleSentencesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> wordSenseId = const Value.absent(),
+                Value<int> orderIndex = const Value.absent(),
+                Value<String> sentenceEn = const Value.absent(),
+                Value<String> sentenceZh = const Value.absent(),
+                Value<bool> isPrimary = const Value.absent(),
+              }) => ExampleSentencesCompanion(
+                id: id,
+                wordSenseId: wordSenseId,
+                orderIndex: orderIndex,
+                sentenceEn: sentenceEn,
+                sentenceZh: sentenceZh,
+                isPrimary: isPrimary,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int wordSenseId,
+                required int orderIndex,
+                required String sentenceEn,
+                required String sentenceZh,
+                required bool isPrimary,
+              }) => ExampleSentencesCompanion.insert(
+                id: id,
+                wordSenseId: wordSenseId,
+                orderIndex: orderIndex,
+                sentenceEn: sentenceEn,
+                sentenceZh: sentenceZh,
+                isPrimary: isPrimary,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$ExampleSentencesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({wordSenseId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (wordSenseId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.wordSenseId,
+                                referencedTable:
+                                    $$ExampleSentencesTableReferences
+                                        ._wordSenseIdTable(db),
+                                referencedColumn:
+                                    $$ExampleSentencesTableReferences
+                                        ._wordSenseIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$ExampleSentencesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ExampleSentencesTable,
+      ExampleSentenceRow,
+      $$ExampleSentencesTableFilterComposer,
+      $$ExampleSentencesTableOrderingComposer,
+      $$ExampleSentencesTableAnnotationComposer,
+      $$ExampleSentencesTableCreateCompanionBuilder,
+      $$ExampleSentencesTableUpdateCompanionBuilder,
+      (ExampleSentenceRow, $$ExampleSentencesTableReferences),
+      ExampleSentenceRow,
+      PrefetchHooks Function({bool wordSenseId})
+    >;
+typedef $$VocabularyEntriesTableCreateCompanionBuilder =
+    VocabularyEntriesCompanion Function({
+      Value<int> id,
+      required int wordId,
+      required int instanceNumber,
+      required String status,
+      required int correctReviewStreak,
+      Value<String?> masteredAt,
+      Value<String?> deletedAt,
+      Value<String?> deletedReason,
+    });
+typedef $$VocabularyEntriesTableUpdateCompanionBuilder =
+    VocabularyEntriesCompanion Function({
+      Value<int> id,
+      Value<int> wordId,
+      Value<int> instanceNumber,
+      Value<String> status,
+      Value<int> correctReviewStreak,
+      Value<String?> masteredAt,
+      Value<String?> deletedAt,
+      Value<String?> deletedReason,
+    });
+
+final class $$VocabularyEntriesTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $VocabularyEntriesTable,
+          VocabularyEntryRow
+        > {
+  $$VocabularyEntriesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $WordsTable _wordIdTable(_$AppDatabase db) =>
+      db.words.createAlias('vocabulary_entry__word_id__word__id');
+
+  $$WordsTableProcessedTableManager get wordId {
+    final $_column = $_itemColumn<int>('word_id')!;
+
+    final manager = $$WordsTableTableManager(
+      $_db,
+      $_db.words,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_wordIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$VocabularyEntriesTableFilterComposer
+    extends Composer<_$AppDatabase, $VocabularyEntriesTable> {
+  $$VocabularyEntriesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get instanceNumber => $composableBuilder(
+    column: $table.instanceNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get correctReviewStreak => $composableBuilder(
+    column: $table.correctReviewStreak,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get masteredAt => $composableBuilder(
+    column: $table.masteredAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deletedReason => $composableBuilder(
+    column: $table.deletedReason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$WordsTableFilterComposer get wordId {
+    final $$WordsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableFilterComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VocabularyEntriesTableOrderingComposer
+    extends Composer<_$AppDatabase, $VocabularyEntriesTable> {
+  $$VocabularyEntriesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get instanceNumber => $composableBuilder(
+    column: $table.instanceNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get correctReviewStreak => $composableBuilder(
+    column: $table.correctReviewStreak,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get masteredAt => $composableBuilder(
+    column: $table.masteredAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deletedReason => $composableBuilder(
+    column: $table.deletedReason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$WordsTableOrderingComposer get wordId {
+    final $$WordsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableOrderingComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VocabularyEntriesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $VocabularyEntriesTable> {
+  $$VocabularyEntriesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get instanceNumber => $composableBuilder(
+    column: $table.instanceNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get correctReviewStreak => $composableBuilder(
+    column: $table.correctReviewStreak,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get masteredAt => $composableBuilder(
+    column: $table.masteredAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get deletedReason => $composableBuilder(
+    column: $table.deletedReason,
+    builder: (column) => column,
+  );
+
+  $$WordsTableAnnotationComposer get wordId {
+    final $$WordsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.wordId,
+      referencedTable: $db.words,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WordsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.words,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VocabularyEntriesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $VocabularyEntriesTable,
+          VocabularyEntryRow,
+          $$VocabularyEntriesTableFilterComposer,
+          $$VocabularyEntriesTableOrderingComposer,
+          $$VocabularyEntriesTableAnnotationComposer,
+          $$VocabularyEntriesTableCreateCompanionBuilder,
+          $$VocabularyEntriesTableUpdateCompanionBuilder,
+          (VocabularyEntryRow, $$VocabularyEntriesTableReferences),
+          VocabularyEntryRow,
+          PrefetchHooks Function({bool wordId})
+        > {
+  $$VocabularyEntriesTableTableManager(
+    _$AppDatabase db,
+    $VocabularyEntriesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VocabularyEntriesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$VocabularyEntriesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$VocabularyEntriesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> wordId = const Value.absent(),
+                Value<int> instanceNumber = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<int> correctReviewStreak = const Value.absent(),
+                Value<String?> masteredAt = const Value.absent(),
+                Value<String?> deletedAt = const Value.absent(),
+                Value<String?> deletedReason = const Value.absent(),
+              }) => VocabularyEntriesCompanion(
+                id: id,
+                wordId: wordId,
+                instanceNumber: instanceNumber,
+                status: status,
+                correctReviewStreak: correctReviewStreak,
+                masteredAt: masteredAt,
+                deletedAt: deletedAt,
+                deletedReason: deletedReason,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int wordId,
+                required int instanceNumber,
+                required String status,
+                required int correctReviewStreak,
+                Value<String?> masteredAt = const Value.absent(),
+                Value<String?> deletedAt = const Value.absent(),
+                Value<String?> deletedReason = const Value.absent(),
+              }) => VocabularyEntriesCompanion.insert(
+                id: id,
+                wordId: wordId,
+                instanceNumber: instanceNumber,
+                status: status,
+                correctReviewStreak: correctReviewStreak,
+                masteredAt: masteredAt,
+                deletedAt: deletedAt,
+                deletedReason: deletedReason,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$VocabularyEntriesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({wordId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (wordId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.wordId,
+                                referencedTable:
+                                    $$VocabularyEntriesTableReferences
+                                        ._wordIdTable(db),
+                                referencedColumn:
+                                    $$VocabularyEntriesTableReferences
+                                        ._wordIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$VocabularyEntriesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $VocabularyEntriesTable,
+      VocabularyEntryRow,
+      $$VocabularyEntriesTableFilterComposer,
+      $$VocabularyEntriesTableOrderingComposer,
+      $$VocabularyEntriesTableAnnotationComposer,
+      $$VocabularyEntriesTableCreateCompanionBuilder,
+      $$VocabularyEntriesTableUpdateCompanionBuilder,
+      (VocabularyEntryRow, $$VocabularyEntriesTableReferences),
+      VocabularyEntryRow,
+      PrefetchHooks Function({bool wordId})
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -8766,4 +12100,12 @@ class $AppDatabaseManager {
       $$ArticleParagraphsTableTableManager(_db, _db.articleParagraphs);
   $$GenerationErrorLogsTableTableManager get generationErrorLogs =>
       $$GenerationErrorLogsTableTableManager(_db, _db.generationErrorLogs);
+  $$WordsTableTableManager get words =>
+      $$WordsTableTableManager(_db, _db.words);
+  $$WordSensesTableTableManager get wordSenses =>
+      $$WordSensesTableTableManager(_db, _db.wordSenses);
+  $$ExampleSentencesTableTableManager get exampleSentences =>
+      $$ExampleSentencesTableTableManager(_db, _db.exampleSentences);
+  $$VocabularyEntriesTableTableManager get vocabularyEntries =>
+      $$VocabularyEntriesTableTableManager(_db, _db.vocabularyEntries);
 }
