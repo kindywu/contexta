@@ -30,6 +30,14 @@ dev_dependencies:
   build_runner: ^2.15.1
   test: ^1.31.0
 
+# drift_dev 2.34.0 的代码使用 sqlparser 的 DartPlaceholder.when（^0.44.0 约束内
+# 的最后版本 0.44.5 有该方法）；意外作为补丁发布的 0.44.6（实为 0.45.0 代码，
+# 改 sealed class 并移除 when）会让 build_runner 编译失败。新 drift_dev（≥2.34.1）
+# 要求 analyzer ^13，与当前 Flutter SDK 的 flutter_test/test 链（analyzer <13）
+# 冲突。故固定 sqlparser 0.44.5。
+dependency_overrides:
+  sqlparser: 0.44.5
+
 flutter:
   uses-material-design: true
   assets:
