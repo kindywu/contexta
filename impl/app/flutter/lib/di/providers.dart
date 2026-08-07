@@ -35,6 +35,7 @@ import '../domain/usecase/resend_pending_alerts_usecase.dart';
 import '../domain/usecase/startup_orchestration_usecase.dart';
 import '../domain/usecase/trigger_next_batch_usecase.dart';
 import '../data/local/database.dart';
+import '../data/monitoring/feishu_alert_sender.dart';
 
 /// 数据库（生产路径：打开时 onCreate 建表 + 种子写入）。
 final databaseProvider = FutureProvider<AppDatabase>((ref) async {
@@ -212,10 +213,15 @@ final addWordUseCaseProvider = Provider<AddWordUseCase>((ref) {
   );
 });
 
-/// 开发告警发送器（飞书 webhook）。Task 17 接入真实实现。
-final developerAlertSenderProvider = Provider<DeveloperAlertSender>(
-  (ref) => throw UnimplementedError('wired in Task 17'),
-);
+/// 开发告警发送器（飞书 webhook；对照 Kotlin DomainModule 绑定
+/// FeishuAlertSender → DeveloperAlertSender）。
+final developerAlertSenderProvider = Provider<DeveloperAlertSender>((ref) {
+  return FeishuAlertSender(
+    timeProvider: ref.watch(timeProvider),
+    webhookUrl: AppConfig.feishuWebhookUrl,
+    signSecret: AppConfig.feishuSignSecret,
+  );
+});
 
 // ─── 生产实现（AppInfoProvider / TimeProvider） ────────────────────────
 
