@@ -29,6 +29,8 @@ dev_dependencies:
   drift_dev: ^2.34.0
   build_runner: ^2.15.1
   test: ^1.31.0
+  # 测试直连 SQLite 读基线（打开 drift 前的原始状态快照）；生产代码不用
+  sqlite3: ^3.5.1
 
 # drift_dev 2.34.0 的代码使用 sqlparser 的 DartPlaceholder.when（^0.44.0 约束内
 # 的最后版本 0.44.5 有该方法）；意外作为补丁发布的 0.44.6（实为 0.45.0 代码，
