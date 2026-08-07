@@ -1,3 +1,10 @@
 # 原型参考资源（本地数据库等），不提交
 ref/
 .idea/
+
+# 真机数据库备份（迁移用），不提交
+.backup/
+
+.superpowers
+
+docs/.superpowers
