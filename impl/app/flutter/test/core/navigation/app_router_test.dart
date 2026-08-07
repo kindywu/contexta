@@ -14,6 +14,7 @@ import 'package:contexta/domain/repository/vocabulary_repository.dart';
 import 'package:contexta/domain/repository/word_repository.dart';
 import 'package:contexta/ui/home/home_screen.dart';
 import 'package:contexta/ui/reading/reading_screen.dart';
+import 'package:contexta/ui/vocabulary/vocabulary_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -129,7 +130,9 @@ void main() {
       await pumpApp(tester);
       await go(tester, Routes.location(Routes.vocabulary));
 
-      expect(find.text('Vocabulary — 待实现'), findsOneWidget);
+      // 真实 VocabularyScreen（Task 25 落地）：空词表 → 空态
+      expect(find.byType(VocabularyScreen), findsOneWidget);
+      expect(find.text('生词表为空'), findsOneWidget);
       expect(find.byType(BottomNavBar), findsNothing);
     });
 

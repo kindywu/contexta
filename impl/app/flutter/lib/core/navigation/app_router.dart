@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../ui/home/home_screen.dart';
 import '../../ui/reading/reading_screen.dart';
+import '../../ui/vocabulary/vocabulary_screen.dart';
 import 'app_shell.dart';
 import 'routes.dart';
 
@@ -38,7 +39,10 @@ GoRouter buildRouter() {
           ),
           GoRoute(
             path: Routes.vocabulary,
-            builder: (context, state) => placeholder('Vocabulary'),
+            builder: (context, state) => VocabularyScreen(
+              onBack: () => context.pop(),
+              onAddWord: () => context.push(Routes.addWord),
+            ),
           ),
           GoRoute(
             path: Routes.reference,
