@@ -12,6 +12,7 @@ import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/repository/stats_repository.dart';
 import 'package:contexta/domain/repository/vocabulary_repository.dart';
 import 'package:contexta/domain/repository/word_repository.dart';
+import 'package:contexta/ui/addword/add_word_screen.dart';
 import 'package:contexta/ui/home/home_screen.dart';
 import 'package:contexta/ui/reading/reading_screen.dart';
 import 'package:contexta/ui/settings/settings_screen.dart';
@@ -161,7 +162,10 @@ void main() {
       await pumpApp(tester);
       await go(tester, Routes.location(Routes.addWord));
 
-      expect(find.text('AddWord — 待实现'), findsOneWidget);
+      // 真实 AddWordScreen（Task 27 落地）：输入态初始渲染
+      expect(find.byType(AddWordScreen), findsOneWidget);
+      expect(find.text('录入单词'), findsOneWidget);
+      expect(find.text('生成释义并加入生词库'), findsOneWidget);
       expect(find.byType(BottomNavBar), findsNothing);
     });
   });

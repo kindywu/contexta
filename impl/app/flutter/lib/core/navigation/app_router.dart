@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../ui/addword/add_word_screen.dart';
 import '../../ui/home/home_screen.dart';
 import '../../ui/reading/reading_screen.dart';
 import '../../ui/settings/settings_screen.dart';
@@ -68,7 +69,8 @@ GoRouter buildRouter() {
       ),
       GoRoute(
         path: Routes.addWord,
-        builder: (context, state) => placeholder('AddWord'),
+        builder: (context, state) =>
+            AddWordScreen(onBack: () => context.pop()),
       ),
     ],
   );
