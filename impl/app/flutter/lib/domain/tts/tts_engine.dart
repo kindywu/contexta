@@ -24,9 +24,8 @@ abstract interface class TtsEngine {
 
 /// UI 显示语速 → 引擎实际语速的映射（对照 Kotlin ReadingViewModel.actualSpeechRate）。
 ///
-/// UI 标签只需 1x/0.75x；系统 TTS 用更慢的自然语速：
-/// "0.75x" → 0.45f（极慢，利于学习），"1x" → 0.70f（慢于系统默认）。
-/// KittenTTS 语速语义与系统不同，不走此映射（设计文档：实现时验证）。
+/// UI 标签 1x/0.75x 直接透传给引擎（1→1、0.75→0.75），不缩放；
+/// KittenTTS 语速语义与系统不同，不走此映射。
 abstract interface class TtsSpeedMapper {
   double actualRate(double displaySpeed);
 }
@@ -35,6 +34,5 @@ class SystemTtsSpeedMapper implements TtsSpeedMapper {
   const SystemTtsSpeedMapper();
 
   @override
-  double actualRate(double displaySpeed) =>
-      displaySpeed < 0.8 ? 0.45 : 0.70;
+  double actualRate(double displaySpeed) => displaySpeed;
 }

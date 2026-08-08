@@ -20,7 +20,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 状态机 + 查词弹窗 + 生词本）。对照 Kotlin ReadingViewModelTest。
 ///
 /// TTS 契约（tts_engine.dart）：controller 传 UI 显示语速（1x / 0.75x），
-/// 引擎内部经 TtsSpeedMapper 映射为实际速率——测试断言 speak 收到显示语速。
+/// 引擎内部经 TtsSpeedMapper 映射为实际速率（显示语速直接透传）——测试断言
+/// speak 收到显示语速。
 
 class _FakeArticleRepo implements ArticleRepository {
   _FakeArticleRepo({
@@ -422,6 +423,42 @@ void main() {
       expect(controller.state.translationMode, TranslationMode.hidden);
       controller.cycleTranslationMode();
       expect(controller.state.translationMode, TranslationMode.full);
+    });
+
+    test('BLURRED 点击揭示译文，10 秒后自动重新模糊', () {
+      fakeAsync((async) {
+        unawaited(controller.loadArticle(1));
+        async.flushMicrotasks();
+        controller.cycleTranslationMode();
+        controller.cycleTranslationMode(); // → BLURRED
+
+        controller.revealTranslation(0);
+        expect(controller.state.revealedParagraphs, {0});
+
+        // 10 秒后自动重新模糊（对照 Kotlin delay(10_000L)）
+        async.elapse(const Duration(seconds: 10));
+        expect(controller.state.revealedParagraphs, isEmpty);
+      });
+    });
+
+    test('BLURRED 重复点击揭示不重复计时，切换模式/加载新文章重置揭示', () async {
+      await controller.loadArticle(1);
+      controller.cycleTranslationMode();
+      controller.cycleTranslationMode(); // → BLURRED
+
+      controller.revealTranslation(0);
+      controller.revealTranslation(1);
+      expect(controller.state.revealedParagraphs, {0, 1});
+
+      // 切换模式清空揭示状态（对照 Kotlin cycleTranslationMode）
+      controller.cycleTranslationMode();
+      expect(controller.state.revealedParagraphs, isEmpty);
+
+      controller.revealTranslation(0);
+      controller.cycleTranslationMode();
+      controller.cycleTranslationMode(); // 回到 BLURRED
+      await controller.loadArticle(1);
+      expect(controller.state.revealedParagraphs, isEmpty);
     });
   });
 

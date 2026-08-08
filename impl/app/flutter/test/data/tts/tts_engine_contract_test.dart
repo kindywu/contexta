@@ -79,9 +79,9 @@ void main() {
   group('TtsSpeedMapper', () {
     const mapper = SystemTtsSpeedMapper();
 
-    test('1x → 0.70，0.75x → 0.45（对照 Kotlin actualSpeechRate）', () {
-      expect(mapper.actualRate(1.0), 0.70);
-      expect(mapper.actualRate(0.75), 0.45);
+    test('1x → 1.0，0.75x → 0.75（显示语速直接透传）', () {
+      expect(mapper.actualRate(1.0), 1.0);
+      expect(mapper.actualRate(0.75), 0.75);
     });
   });
 }

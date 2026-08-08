@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// - 引擎候选依次尝试，第一个初始化成功的保留
 /// - speak 返回 "ctx-N"，失败返回 null
 /// - completion/error/cancel handler → onSpeakingFinished
-/// - 语速：1x→0.70、0.75x→0.45（SystemTtsSpeedMapper）
+/// - 语速：显示语速直接透传（1x→1.0、0.75x→0.75，SystemTtsSpeedMapper）
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -71,7 +71,7 @@ void main() {
 
       expect(id1, 'ctx-0');
       expect(id2, 'ctx-1');
-      expect(tts.speechRates, [0.70, 0.45]);
+      expect(tts.speechRates, [1.0, 0.75]);
       expect(tts.spokenTexts, ['hello', 'world']);
     });
 

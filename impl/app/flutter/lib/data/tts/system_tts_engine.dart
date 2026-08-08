@@ -8,7 +8,8 @@ import '../../domain/tts/tts_engine.dart';
 /// 3. 系统默认引擎
 ///
 /// 初始化成功的第一个引擎被保留。HyperOS 上默认构造器可能发现不了内置引擎，
-/// 显式包名逐个尝试（记忆：hyperos-tts-fix）。
+/// 显式包名逐个尝试（记忆：hyperos-tts-fix）。语速由 [SystemTtsSpeedMapper]
+/// 决定：显示语速直接透传（1x→1.0、0.75x→0.75）。
 class SystemTtsEngine implements TtsEngine {
   SystemTtsEngine({
     FlutterTts? tts,

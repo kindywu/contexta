@@ -677,13 +677,20 @@ class _ReadingParagraphState extends State<_ReadingParagraph> {
             ),
           TranslationMode.blurred => Padding(
               padding: const EdgeInsets.only(bottom: 4),
-              child: ImageFiltered(
-                imageFilter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                child: _TranslationText(
-                  text: widget.chineseTranslation,
-                  onTap: widget.onTranslationClick,
-                ),
-              ),
+              // 点击揭示：isRevealed 时显示明文，否则模糊（对照 Kotlin
+              // ReadingScreen 的 BLURRED 分支 if (isRevealed) 拆解）
+              child: widget.isRevealed
+                  ? _TranslationText(
+                      text: widget.chineseTranslation,
+                      onTap: widget.onTranslationClick,
+                    )
+                  : ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                      child: _TranslationText(
+                        text: widget.chineseTranslation,
+                        onTap: widget.onTranslationClick,
+                      ),
+                    ),
             ),
           TranslationMode.hidden => const SizedBox.shrink(),
         },

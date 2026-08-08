@@ -264,4 +264,38 @@ void main() {
       expect(find.text('Hello'), findsNothing);
     });
   });
+
+  group('译文模糊揭示', () {
+    Future<void> pumpBlurred(WidgetTester tester) async {
+      await pumpScreen(tester);
+      // FULL → DIM → BLURRED
+      await tester.tap(find.text('完全显示'));
+      await tester.pump();
+      await tester.tap(find.text('淡化'));
+      await tester.pump();
+    }
+
+    testWidgets('BLURRED 模式译文模糊；点击揭示后显示明文', (tester) async {
+      await pumpBlurred(tester);
+      expect(find.byType(ImageFiltered), findsOneWidget);
+
+      await tester.tap(find.text('你好世界。'));
+      await tester.pump();
+
+      expect(find.byType(ImageFiltered), findsNothing);
+      expect(find.text('你好世界。'), findsOneWidget);
+    });
+
+    testWidgets('揭示 10 秒后自动重新模糊', (tester) async {
+      await pumpBlurred(tester);
+
+      await tester.tap(find.text('你好世界。'));
+      await tester.pump();
+      expect(find.byType(ImageFiltered), findsNothing);
+
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump();
+      expect(find.byType(ImageFiltered), findsOneWidget);
+    });
+  });
 }
