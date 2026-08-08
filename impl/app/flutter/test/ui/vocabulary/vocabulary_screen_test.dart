@@ -98,6 +98,22 @@ WordSense sense({
       ],
     );
 
+/// 内容超长的词（词头必然被滚出屏幕）。
+VocabWord longWord(int entryId, String spelling) => vocabWord(
+      entryId: entryId,
+      spelling: spelling,
+      senses: [
+        for (var i = 0; i < 30; i++)
+          sense(
+            partOfSpeech: 'n.$i',
+            chineseMeaning: '义项 $i',
+            englishDefinition:
+                'A very long definition number $i that keeps going '
+                'and going and going and going and going.',
+          ),
+      ],
+    );
+
 void main() {
   late _FakeSettingsRepo settingsRepo;
   late _FakeVocabRepo vocabRepo;
@@ -231,6 +247,34 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('alpha'), findsOneWidget);
       expect(find.text('复习完成！'), findsNothing);
+    });
+  });
+
+  group('切词滚动位置', () {
+    testWidgets('长词滚到底后切下一个词 → 新词内容回到顶部', (tester) async {
+      // 两个词内容都超长；若不重置滚动位置，词2 会延续词1 的滚动 offset，
+      // 词头被顶出屏幕
+      vocabRepo.words = [
+        longWord(1, 'antidisestablishmentarianism'),
+        longWord(2, 'beta'),
+      ];
+      await pumpScreen(tester);
+
+      // 词1 滚到底（offset > 0 即为滚出状态）
+      final scrollable = tester.widget<SingleChildScrollView>(
+          find.byType(SingleChildScrollView));
+      scrollable.controller!.jumpTo(scrollable.controller!.position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      expect(scrollable.controller!.offset, greaterThan(0));
+
+      // 点 ✓ 切到词2
+      await tester.tap(find.byIcon(Icons.check));
+      await tester.pumpAndSettle();
+
+      // 词2 滚动位置重置在顶部（词头可见）——修复的核心行为契约
+      final after = tester.widget<SingleChildScrollView>(
+          find.byType(SingleChildScrollView));
+      expect(after.controller!.offset, 0);
     });
   });
 

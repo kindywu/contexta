@@ -35,7 +35,14 @@ class VocabularyScreen extends ConsumerStatefulWidget {
 }
 
 class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
-  final ScrollController _scrollController = ScrollController();
+  /// keepScrollOffset: false——词卡 ScrollPosition 卸载重挂（如 ✓ → 总结 →
+  /// 再来一轮）时始终从 0 开始，不恢复上次滚动位置（对照 Kotlin
+  /// `rememberScrollState()`，每个单词天然从顶开始）。
+  final ScrollController _scrollController =
+      ScrollController(keepScrollOffset: false);
+
+  /// 当前展示的单词 entryId（检测切词）。
+  int? _currentEntryId;
 
   @override
   void dispose() {
@@ -47,6 +54,19 @@ class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(vocabularyControllerProvider);
     final controller = ref.read(vocabularyControllerProvider.notifier);
+
+    // 切词（词内容变化）时重置滚动位置到顶部——对照 Kotlin
+    // `rememberScrollState()`（每个单词独立滚动状态，天然从顶开始）。
+    // 不重置会导致上一个长词滚到底后，新词延续旧 offset，词头被顶出屏幕。
+    // jumpTo 不会派发 overscroll 通知，不会触发边界切词。
+    final entryId = state.currentWord?.entryId;
+    if (entryId != null && entryId != _currentEntryId) {
+      _currentEntryId = entryId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        _scrollController.jumpTo(0);
+      });
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
