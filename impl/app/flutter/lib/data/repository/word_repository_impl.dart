@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
+import 'package:flutter/foundation.dart';
 
 import '../../data/local/database.dart';
 import '../../data/local/daos/word_daos.dart';
@@ -38,23 +39,32 @@ class WordRepositoryImpl implements WordRepository {
       String spelling, Future<WordDetail?> Function(String) llmFallback) {
     return _lookupSemaphore.withPermit(() async {
       final normalized = WordRepository.normalize(spelling);
+      debugPrint('[WordRepo] lookupWord "$normalized"');
 
       // 1. LRU 缓存
       final cached = _lruCache[normalized];
-      if (cached != null) return cached;
+      if (cached != null) {
+        debugPrint('[WordRepo] LRU HIT "$normalized"');
+        return cached;
+      }
 
       // 2. 本地 DB
       final existing = await _wordDao.getByNormalized(normalized);
       if (existing != null) {
+        debugPrint('[WordRepo] DB HIT "$normalized" id=${existing.id}');
         final detail = await _buildWordDetail(existing);
         _lruCache[normalized] = detail;
         return detail;
       }
+      debugPrint('[WordRepo] DB MISS "$normalized" → LLM fallback');
 
       // 3. LLM fallback（外部提供调用）；成功后落库回填
       final detail = await llmFallback(spelling);
       if (detail != null) {
+        debugPrint('[WordRepo] LLM fallback OK "$normalized" wordId=${detail.wordId}');
         _lruCache[normalized] = detail;
+      } else {
+        debugPrint('[WordRepo] LLM fallback returned null "$normalized"');
       }
       return detail;
     });

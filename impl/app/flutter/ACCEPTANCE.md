@@ -5,8 +5,12 @@
 
 ## 0. 环境
 
-- [ ] 设备已连接（`adb devices`）
-- [ ] Debug APK 构建成功（`flutter build apk --debug`）
+- [x] 设备已连接（`adb devices`）
+- [x] Debug APK 构建成功（`flutter build apk --debug`）
+- [x] 构建期配置注入：`android/local.properties`（gitignore，不入库）的
+  `deepseek.apiKey` / `deepseek.model` / `deepseek.baseUrl` 在打包时经
+  Gradle 以 `--dart-define` 语义注入 `AppConfig`（镜像 Android 原版
+  `BuildConfig`，见 `android/app/build.gradle.kts`）
 
 ## 1. 覆盖安装（数据库兼容）
 

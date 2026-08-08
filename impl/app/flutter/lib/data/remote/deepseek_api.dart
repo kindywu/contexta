@@ -18,7 +18,11 @@ abstract class DeepSeekApi {
 class DioDeepSeekApi implements DeepSeekApi {
   DioDeepSeekApi(this._dio, {this.baseUrl = AppConfig.deepSeekBaseUrl}) {
     if (_dio.options.baseUrl.isEmpty) {
-      _dio.options.baseUrl = baseUrl;
+      // 必须保证 baseUrl 以 / 结尾：dio 拼接 path 时不做补斜杠，
+      // 否则 https://api.deepseek.com + v1/chat/completions →
+      // https://api.deepseek.comv1/...（主机名被污染，DNS 解析失败）。
+      // Kotlin 侧默认值带尾斜杠（NetworkModule.kt），此处兜底统一。
+      _dio.options.baseUrl = baseUrl.endsWith('/') ? baseUrl : '$baseUrl/';
     }
   }
 

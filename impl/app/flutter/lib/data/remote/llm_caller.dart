@@ -1,6 +1,8 @@
 import 'dart:async';
 
-import 'package:dio/dio.dart';import '../../core/config/app_config.dart';
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+import '../../core/config/app_config.dart';
 import '../../domain/error/llm_exceptions.dart';
 import '../../domain/error/pipeline_blocking_exception.dart';
 import '../../domain/llm_client.dart';
@@ -85,6 +87,7 @@ class LlmCaller implements LlmClient {
     int timeoutMs,
     int retryCount,
   ) async {
+    debugPrint('[LlmCaller] attempt #${retryCount + 1}: POST chat/completions model=${AppConfig.deepSeekModel} baseUrl=${AppConfig.deepSeekBaseUrl} keyLen=${AppConfig.deepSeekApiKey.length}');
     try {
       final response = await _api
           .chatCompletion(
@@ -99,6 +102,7 @@ class LlmCaller implements LlmClient {
           )
           .timeout(Duration(milliseconds: timeoutMs));
       final content = response.choices.firstOrNull?.message.content;
+      debugPrint('[LlmCaller] attempt #${retryCount + 1}: response OK contentLen=${content?.length} choices=${response.choices.length}');
       if (content == null) {
         // Kotlin: 空 choices 抛 IllegalStateException("Empty response from LLM")，
         // 无 HTTP code → 分类为可恢复 → 重试
@@ -106,6 +110,7 @@ class LlmCaller implements LlmClient {
       }
       return content;
     } on TimeoutException {
+      debugPrint('[LlmCaller] attempt #${retryCount + 1}: TIMEOUT after ${timeoutMs}ms');
       rethrow;
     } catch (e) {
       // 取消信号立即传播：不能当作可恢复错误重试（Kotlin: CancellationException）
@@ -114,6 +119,7 @@ class LlmCaller implements LlmClient {
       }
       final httpCode = _extractHttpCode(e);
       final classified = LlmErrorClassifier.classify(httpCode, e);
+      debugPrint('[LlmCaller] attempt #${retryCount + 1} FAILED httpCode=$httpCode classified=${classified.runtimeType} err=$e');
       switch (classified) {
         case StructuralError():
           throw PipelineBlockingException(

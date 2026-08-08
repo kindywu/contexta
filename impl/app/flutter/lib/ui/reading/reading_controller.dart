@@ -615,7 +615,8 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     WordDetail? detail;
     try {
       detail = await _wordRepository.lookupWord(normalized, _llmFallback);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[ReadingCtrl] _lookupWord ERROR: $e');
       detail = null;
     }
     if (_disposed) return;
@@ -647,18 +648,28 @@ class ReadingController extends StateNotifier<ReadingUiState> {
 
   /// LLM 兜底查词：DeepSeek 生成 → 解析 → 落库回填（返回带 DB ID 的详情）。
   Future<WordDetail?> _llmFallback(String rawWord) async {
-    final result = await _llmClient.call(
-      await buildWordLookupSystemPrompt(),
-      buildWordLookupUserPrompt(rawWord),
-    );
-    final parsed = parseWordLlmResponse(result.content);
-    if (parsed == null) return null;
-    return _wordRepository.saveLlmResult(
-      parsed.spellingDisplay,
-      parsed.phoneticIpa,
-      parsed.allSenses,
-      normalized: WordRepository.normalize(parsed.spellingDisplay),
-    );
+    debugPrint('[ReadingCtrl] _llmFallback: calling LLM for "$rawWord"');
+    try {
+      final result = await _llmClient.call(
+        await buildWordLookupSystemPrompt(),
+        buildWordLookupUserPrompt(rawWord),
+      );
+      debugPrint('[ReadingCtrl] _llmFallback: LLM content len=${result.content.length} retries=${result.retryCount}');
+      final parsed = parseWordLlmResponse(result.content);
+      if (parsed == null) {
+        debugPrint('[ReadingCtrl] _llmFallback: PARSE FAILED. content head: ${result.content.substring(0, result.content.length > 200 ? 200 : result.content.length)}');
+        return null;
+      }
+      return _wordRepository.saveLlmResult(
+        parsed.spellingDisplay,
+        parsed.phoneticIpa,
+        parsed.allSenses,
+        normalized: WordRepository.normalize(parsed.spellingDisplay),
+      );
+    } catch (e) {
+      debugPrint('[ReadingCtrl] _llmFallback ERROR: $e');
+      return null;
+    }
   }
 
   /// 按词性分组（组序 = 义项首次出现序，保留语境匹配义项优先），
