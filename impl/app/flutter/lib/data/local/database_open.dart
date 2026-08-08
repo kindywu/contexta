@@ -35,6 +35,12 @@ Future<AppDatabase> buildAppDatabase({String? overridePath}) async {
         await writeSeedIfNeeded(db);
       },
       beforeOpen: (details) async {
+        // 对照 Kotlin Room 默认：WAL 模式（多连接并发读写安全）+ foreign_keys
+        // 开启。drift 默认不设 busy_timeout，两个后台 worker + UI 同时写库时
+        // 会抛 SqliteException(5) database is locked（真机实测：批次 12/13
+        // 双 worker 并发时发生）。WAL + busy_timeout 5s 对齐 Room 行为。
+        await db.customStatement('PRAGMA journal_mode = WAL');
+        await db.customStatement('PRAGMA busy_timeout = 5000');
         await db.customStatement('PRAGMA foreign_keys = ON');
       },
     ),

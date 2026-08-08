@@ -128,6 +128,9 @@ abstract interface class ArticleRepository {
   /// 所有 GENERATING 批次（启动恢复用）。
   Future<List<ArticleBatch>> getGeneratingBatches();
 
+  /// 所有 PENDING 批次（启动恢复：worker 调度失败遗留的批次重新入队）。
+  Future<List<ArticleBatch>> getPendingBatches();
+
   /// 观察每篇文章的最新生成错误（joined article status）。
   Stream<List<GenerationError>> observeGenerationErrors();
 

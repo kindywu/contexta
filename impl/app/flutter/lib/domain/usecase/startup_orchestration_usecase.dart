@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../background_work_scheduler.dart';
 import '../model/article_batch.dart';
 import '../repository/article_repository.dart';
@@ -76,6 +78,9 @@ class StartupOrchestrationUseCase {
 
     // 3. 先查询卡在 GENERATING 的 batch（reconciliation 会重置它们）
     final stuckBatches = await _articleRepository.getGeneratingBatches();
+    // Flutter 特有：worker 调度失败时批次可能永久卡在 PENDING（Kotlin 版
+    // worker 入队总是成功）。启动时一并重新调度，KEEP 策略保证不重复。
+    final pendingBatches = await _articleRepository.getPendingBatches();
 
     // 4. Reconcile orphan GENERATING/TIMEOUT/FAILED articles + reset GENERATING batches
     await _articleRepository.reconcileOrphanArticles();
@@ -83,7 +88,8 @@ class StartupOrchestrationUseCase {
     // 5. 重新调度之前卡死的 batch：
     //    reconcileOrphanArticles 已将孤儿文章和 batch 重置为 PENDING，
     //    这里重新 enqueue Worker 让它们重新被认领生成。
-    for (final batch in stuckBatches) {
+    for (final batch in [...stuckBatches, ...pendingBatches]) {
+      debugPrint('[StartupOrch] re-scheduling batch ${batch.id} (status=${batch.status})');
       await _generationScheduler.scheduleBatchGeneration(batch.id);
     }
 

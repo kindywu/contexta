@@ -130,6 +130,13 @@ class ArticleBatchDao {
       (_db.select(_db.articleBatches)..where((t) => t.status.equals('GENERATING')))
           .get();
 
+  /// 所有 PENDING 批次（启动恢复：Flutter 特有——worker 调度失败时批次
+  /// 会永久卡在 PENDING（Kotlin 版 worker 入队总是成功，无此问题），
+  /// 启动时一并重新调度，KEEP 策略保证不重复生成）。
+  Future<List<ArticleBatchRow>> getPendingBatches() =>
+      (_db.select(_db.articleBatches)..where((t) => t.status.equals('PENDING')))
+          .get();
+
   /// 所有 GENERATING 批次重置为 PENDING（启动恢复）。
   Future<void> resetAllGeneratingBatches() =>
       (_db.update(_db.articleBatches)..where((t) => t.status.equals('GENERATING')))

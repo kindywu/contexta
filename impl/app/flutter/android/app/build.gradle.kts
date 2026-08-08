@@ -21,6 +21,8 @@ plugins.withId("dev.flutter.flutter-gradle-plugin") {
         "DEEPSEEK_API_KEY" to (props.getProperty("deepseek.apiKey") ?: ""),
         "DEEPSEEK_MODEL" to (props.getProperty("deepseek.model") ?: ""),
         "DEEPSEEK_BASE_URL" to (props.getProperty("deepseek.baseUrl") ?: ""),
+        "FEISHU_WEBHOOK_URL" to (props.getProperty("feishu.webhookUrl") ?: ""),
+        "FEISHU_SIGN_SECRET" to (props.getProperty("feishu.signSecret") ?: ""),
     ).filter { it.second.isNotBlank() }
 
     fun String.b64(): String = Base64.getEncoder().encodeToString(toByteArray(Charsets.UTF_8))

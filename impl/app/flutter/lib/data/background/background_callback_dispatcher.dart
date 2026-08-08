@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -14,7 +15,9 @@ import 'generation_scheduler.dart';
 /// entry point 发现它，不能被 tree-shake 掉）。
 @pragma('vm:entry-point')
 void backgroundCallbackDispatcher() {
+  debugPrint('[WorkerDispatcher] backgroundCallbackDispatcher ENTER');
   Workmanager().executeTask((taskName, inputData) async {
+    debugPrint('[WorkerDispatcher] executeTask taskName=$taskName inputData=$inputData');
     if (taskName != GenerationScheduler.taskName) {
       stderr.writeln('backgroundCallbackDispatcher: unknown task: $taskName');
       return true;
@@ -30,7 +33,12 @@ void backgroundCallbackDispatcher() {
         generateArticles:
             container.read(generateArticlesUseCaseProvider),
       );
-      return await handler.run(inputData);
+      final result = await handler.run(inputData);
+      debugPrint('[WorkerDispatcher] handler result=$result');
+      return result;
+    } catch (e) {
+      debugPrint('[WorkerDispatcher] ERROR: $e');
+      rethrow;
     } finally {
       // 关闭数据库连接，避免后台 isolate 泄漏句柄
       await container

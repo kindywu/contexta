@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../../domain/background_work_scheduler.dart';
@@ -121,6 +122,13 @@ class GenerationScheduler implements BackgroundWorkScheduler {
   Future<bool> scheduleBatchGeneration(int batchId,
       {int appVersionCode = 0}) async {
     final uniqueName = '$uniqueWorkPrefix$batchId';
+    debugPrint('[GenerationScheduler] scheduleBatchGeneration batch=$batchId uniqueName=$uniqueName');
+    // 不用 expedited：workmanager_android 0.10.6 在 expedited=true 时硬检查
+    // FOREGROUND_SERVICE_SHORT_SERVICE 权限（checkPermission），而 Android 15+
+    // 系统已移除该权限（HyperOS 真机 pm grant 报 Unknown permission），
+    // checkPermission 恒 DENIED → 抛 PlatformException → 调度失败 →
+    // worker 从未入队 → 批次永远卡 PENDING（原 Android 版同为 expedited
+    // 但用 WorkManager 原生 API 无此检查；Flutter 插件层有）。
     await _gateway.registerOneOffTask(
       GenerationTaskSpec(
         uniqueName: uniqueName,
@@ -130,10 +138,11 @@ class GenerationScheduler implements BackgroundWorkScheduler {
           'appVersionCode': appVersionCode,
         },
         tag: 'batch_$batchId',
-        expedited: true,
-        foregroundServiceConfig: foregroundConfig(batchId),
+        // expedited: true 曾导致调度崩溃（见上）；改为普通任务
+        expedited: false,
       ),
     );
+    debugPrint('[GenerationScheduler] registered batch=$batchId');
     return true;
   }
 

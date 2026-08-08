@@ -333,6 +333,12 @@ class ArticleRepositoryImpl implements ArticleRepository {
   }
 
   @override
+  Future<List<ArticleBatch>> getPendingBatches() async {
+    final rows = await _batchDao.getPendingBatches();
+    return rows.map((r) => r.toModel()).toList();
+  }
+
+  @override
   Stream<List<Article>> observeArticles(int batchId) =>
       _articleDao.watchByBatch(batchId).map((rows) => rows.map((r) => r.toModel()).toList());
 

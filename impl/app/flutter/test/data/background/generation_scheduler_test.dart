@@ -4,7 +4,10 @@ import 'package:workmanager/workmanager.dart';
 
 /// GenerationScheduler 测试（对照 Kotlin GenerationSchedulerTest 语义）：
 /// - uniqueWorkName = `article_generation_batch_<id>` + KEEP 策略 + 指数退避 30s
-/// - tag = `batch_<id>`；expedited + 前台通知（channel 文章生成/标题/正文/1001）
+/// - tag = `batch_<id>`
+/// - 不用 expedited：workmanager_android 0.10.6 在 expedited=true 时硬检查
+///   FOREGROUND_SERVICE_SHORT_SERVICE 权限（Android 15+ 系统已移除该权限），
+///   checkPermission 恒 DENIED → 抛异常 → 调度失败 → 批次永久卡 PENDING
 /// - cancelBatchGeneration → cancelByUniqueName；cancelAllGeneration →
 ///   cancelByTag("article_generation")
 void main() {
@@ -17,7 +20,7 @@ void main() {
   });
 
   group('scheduleBatchGeneration', () {
-    test('注册一次性任务：uniqueName/taskName/inputData/tag/expedited', () async {
+    test('注册一次性任务：uniqueName/taskName/inputData/tag', () async {
       final ok = await scheduler.scheduleBatchGeneration(6);
 
       expect(ok, isTrue);
@@ -27,7 +30,7 @@ void main() {
       expect(spec.taskName, 'articleGeneration');
       expect(spec.inputData, {'batchId': 6, 'appVersionCode': 0});
       expect(spec.tag, 'batch_6');
-      expect(spec.expedited, isTrue);
+      expect(spec.expedited, isFalse);
     });
 
     test('KEEP 策略 + 指数退避 30s（Kotlin ExistingWorkPolicy.KEEP / '
@@ -41,18 +44,13 @@ void main() {
       expect(spec.outOfQuotaPolicy, OutOfQuotaPolicy.runAsNonExpeditedWorkRequest);
     });
 
-    test('前台服务通知：channel 文章生成 + 标题/正文/notificationId + '
-        'shortService 类型', () async {
+    test('不用 expedited 且不携带 FGS 配置（避免 SHORT_SERVICE 权限检查崩溃）',
+        () async {
       await scheduler.scheduleBatchGeneration(6);
 
-      final config = gateway.registered.single.foregroundServiceConfig;
-      expect(config, isNotNull);
-      expect(config!.notificationChannelId, 'article_generation');
-      expect(config.notificationChannelName, '文章生成');
-      expect(config.notificationTitle, 'Contexta 正在生成文章');
-      expect(config.notificationText, '批次 #6 生成中…');
-      expect(config.notificationId, 1001);
-      expect(config.foregroundServiceType, ForegroundServiceType.shortService);
+      final spec = gateway.registered.single;
+      expect(spec.expedited, isFalse);
+      expect(spec.foregroundServiceConfig, isNull);
     });
 
     test('batchId 缺失/非法时通知正文用 "生成中…"（Kotlin getForegroundInfo '

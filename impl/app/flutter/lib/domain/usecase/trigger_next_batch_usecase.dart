@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../background_work_scheduler.dart';
 import '../repository/article_repository.dart';
 import '../time/time_provider.dart';
@@ -53,17 +55,20 @@ class TriggerNextBatchUseCase {
   Future<void> call(String difficulty, int dailyCount) async {
     final today = _timeProvider.todayDateString();
     final maxRefDate = await _articleRepository.getMaxRefBatchDate() ?? today;
+    debugPrint('[TriggerNextBatch] call: difficulty=$difficulty dailyCount=$dailyCount today=$today maxRefDate=$maxRefDate');
 
     // 1. 检查是否有 generated_on > max(ref_batch_date) 且 difficulty=当前难度的 READY 批次
     //    忽略旧 seed 数据（generated_on 远早于 maxRefDate，不满足 > 条件）
     final unassigned =
         await _articleRepository.getUnassignedReadyBatches(difficulty, maxRefDate);
+    debugPrint('[TriggerNextBatch] unassigned READY batches: ${unassigned.length}');
     if (unassigned.isNotEmpty) return; // 已有比已分配批次更新的可用批次
 
     // 2. 检查今天是否已为该难度创建过批次（PENDING/GENERATING/READY）。
     //    避免在一天内产生多个同难度批次。
     final existing =
         await _articleRepository.getBatchByDifficultyAndDate(difficulty, today);
+    debugPrint('[TriggerNextBatch] batch for $difficulty/$today: ${existing?.id}');
     if (existing != null) return; // 今天已为该难度创建过批次，Worker 继续
 
     // 3. 没有可用的，创建新批次并调度 Worker
@@ -71,8 +76,11 @@ class TriggerNextBatchUseCase {
       difficulty,
       generatedOn: today,
     );
+    debugPrint('[TriggerNextBatch] created batch $batchId');
     await _articleRepository.createArticles(batchId, pickCategories(difficulty));
+    debugPrint('[TriggerNextBatch] scheduling Worker for batch $batchId');
     await _generationScheduler.scheduleBatchGeneration(batchId);
+    debugPrint('[TriggerNextBatch] Worker scheduled for batch $batchId');
   }
 
   /// Round-robin category selection from the difficulty group.

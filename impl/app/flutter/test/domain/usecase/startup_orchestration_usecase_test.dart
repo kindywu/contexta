@@ -34,6 +34,11 @@ class FakeArticleRepository implements ArticleRepository {
   @override
   Future<List<ArticleBatch>> getGeneratingBatches() async => generatingBatches;
 
+  List<ArticleBatch> pendingBatches = [];
+
+  @override
+  Future<List<ArticleBatch>> getPendingBatches() async => pendingBatches;
+
   @override
   Future<void> reconcileOrphanArticles() async {}
 
@@ -364,6 +369,21 @@ void main() {
     await useCase(1);
 
     expect(scheduler.scheduled, [6]);
+  });
+
+  test('PENDING 批次（worker 调度失败遗留）也被重新调度', () async {
+    // Flutter 特有：worker 调度失败时批次永久卡 PENDING（Kotlin 版
+    // worker 入队总是成功，无此问题），启动时一并重新入队。
+    repo.pendingBatches = [_batch(7, BatchStatus.pending)];
+    repo.generatingBatches = [_batch(8, BatchStatus.generating)];
+    repo.todayBatch = null;
+    repo.maxRefDate = '2026-07-31';
+    repo.nextBatch = null;
+
+    await useCase(1);
+
+    // 先重调度 GENERATING（stuck），再重调度 PENDING
+    expect(scheduler.scheduled, [8, 7]);
   });
 
   // ─── 未送达告警补发 ─────────────────────────────────────────────────
