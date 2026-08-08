@@ -15,6 +15,7 @@ import 'package:contexta/domain/repository/word_repository.dart';
 import 'package:contexta/ui/addword/add_word_screen.dart';
 import 'package:contexta/ui/home/home_screen.dart';
 import 'package:contexta/ui/reading/reading_screen.dart';
+import 'package:contexta/ui/reference/reference_screen.dart';
 import 'package:contexta/ui/settings/settings_screen.dart';
 import 'package:contexta/ui/vocabulary/vocabulary_screen.dart';
 import 'package:flutter/material.dart';
@@ -141,6 +142,10 @@ void main() {
     testWidgets('reference / settings 显示底栏', (tester) async {
       await pumpApp(tester);
       await go(tester, Routes.location(Routes.reference));
+
+      // 真实 ReferenceScreen（Task 28 落地）：字母表 tab 初始渲染
+      expect(find.byType(ReferenceScreen), findsOneWidget);
+      expect(find.text('字母表'), findsOneWidget);
       expect(find.byType(BottomNavBar), findsOneWidget);
 
       // 真实 SettingsScreen（Task 26 落地）：空桩仓储 → 默认设置态
@@ -178,7 +183,7 @@ void main() {
       await tester.tap(find.text('参考'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Reference — 待实现'), findsOneWidget);
+      expect(find.byType(ReferenceScreen), findsOneWidget);
       expect(find.byType(BottomNavBar), findsOneWidget);
       // 选中 tab 文字 Primary，未选中 Muted
       expect(

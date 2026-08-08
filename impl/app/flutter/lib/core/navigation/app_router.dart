@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../ui/addword/add_word_screen.dart';
 import '../../ui/home/home_screen.dart';
 import '../../ui/reading/reading_screen.dart';
+import '../../ui/reference/reference_screen.dart';
 import '../../ui/settings/settings_screen.dart';
 import '../../ui/vocabulary/vocabulary_screen.dart';
 import 'app_shell.dart';
@@ -48,7 +49,7 @@ GoRouter buildRouter() {
           ),
           GoRoute(
             path: Routes.reference,
-            builder: (context, state) => placeholder('Reference'),
+            builder: (context, state) => const ReferenceScreen(),
           ),
           GoRoute(
             path: Routes.settings,

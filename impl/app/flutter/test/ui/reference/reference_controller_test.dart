@@ -1,0 +1,52 @@
+import 'package:contexta/domain/tts/tts_engine.dart';
+import 'package:contexta/ui/reference/reference_controller.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+/// Reference 页 controller 测试（对照 Kotlin ReferenceViewModel）：
+/// - speak 转发到 TTS 引擎
+/// - 引擎初始化失败时静默（不抛出）
+
+class _RecordingTts implements TtsEngine {
+  final List<String> spoken = [];
+
+  @override
+  bool isAvailable() => true;
+
+  @override
+  String? unavailabilityReason() => null;
+
+  @override
+  String? speak(String text, {double speed = 1.0}) {
+    spoken.add(text);
+    return 'ctx-1';
+  }
+
+  @override
+  void stop() {}
+
+  @override
+  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
+}
+
+void main() {
+  test('speak 转发文本到引擎', () async {
+    final tts = _RecordingTts();
+    final controller = ReferenceController(
+      ttsEngineFuture: Future.value(tts),
+    );
+
+    await controller.speak('A. Apple');
+
+    expect(tts.spoken, ['A. Apple']);
+  });
+
+  test('引擎初始化失败 → 静默跳过不抛出', () async {
+    final controller = ReferenceController(
+      ttsEngineFuture: Future.error(StateError('engine init failed')),
+    );
+
+    await controller.speak('hello');
+
+    expect(true, isTrue); // 到达此处即未抛出
+  });
+}
