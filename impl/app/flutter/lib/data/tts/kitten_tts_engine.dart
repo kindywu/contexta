@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:kittentts/kittentts_flutter.dart' as kit;
@@ -28,15 +27,11 @@ class KittenTtsEngine implements TtsEngine {
   final Directory? _modelBaseOverride;
   final TtsCacheManager? cache;
 
-  /// 底层 KittenTTS 引擎（init 后 set，pregenerateParagraphs 需直接访问）。
-  kit.KittenTTS? _rawEngine;
-
   KittenTtsSession? _session;
   String? _failureReason;
   void Function(String? utteranceId)? _onSpeakingFinished;
   void Function(String? utteranceId, int done, int total)? _onProgress;
   int _utteranceCounter = 0;
-  bool _pregenCancelled = false;
 
   @override
   bool isAvailable() => _session != null;
@@ -46,8 +41,7 @@ class KittenTtsEngine implements TtsEngine {
 
   @override
   String? speak(String text, {double speed = 1.0}) {
-    debugPrint('[KittenTTS.engine] speak: _session=$_session _rawEngine=$_rawEngine textLen=${text.length}');
-    _cancelPregen();
+    debugPrint('[KittenTTS.engine] speak: _session=$_session textLen=${text.length}');
     final session = _session;
     if (session == null) {
       debugPrint('[KittenTTS.engine] speak: session is null, returning null');
@@ -67,7 +61,6 @@ class KittenTtsEngine implements TtsEngine {
     required String text,
     required double speed,
   }) async {
-    _cancelPregen();
     final session = _session;
     if (session == null) {
       debugPrint('[KittenTTS.engine] speakParagraph: session null');
@@ -100,7 +93,6 @@ class KittenTtsEngine implements TtsEngine {
     required List<int> paragraphIds,
     required double speed,
   }) async {
-    _cancelPregen();
     final session = _session;
     if (session == null) {
       debugPrint('[KittenTTS.engine] speakParagraphs: session null');
@@ -117,9 +109,34 @@ class KittenTtsEngine implements TtsEngine {
     return id;
   }
 
+  /// 全文朗读：标题 + 正文段落，单 utterance 内无缝衔接播放。
+  ///
+  /// 双 worker 流水线（生成 worker 推入队列 / 播放 worker 顺序消费，见
+  /// [KittenTtsSession.speakFullArticle]）。进度只计正文段落；全部播完
+  /// 触发 finish 回调。返回 utteranceId；失败返回 null。
+  Future<String?> speakFullArticle({
+    String? title,
+    required List<({int id, String text})> paragraphs,
+    required double speed,
+  }) async {
+    final session = _session;
+    if (session == null) {
+      debugPrint('[KittenTTS.engine] speakFullArticle: session null');
+      return null;
+    }
+    final id = 'ktk-${_utteranceCounter++}';
+    debugPrint('[KittenTTS.engine] speakFullArticle: title="${title ?? ""}" paras=${paragraphs.length} id=$id');
+    session.speakFullArticle(
+      title: title,
+      paragraphs: paragraphs,
+      speed: speed,
+      utteranceId: id,
+    );
+    return id;
+  }
+
   /// 播放本地 WAV 文件（缓存命中时）。
   Future<bool> playFile(String filePath) async {
-    _cancelPregen();
     final session = _session;
     if (session == null) return false;
     final id = 'ktk-${_utteranceCounter++}';
@@ -131,7 +148,6 @@ class KittenTtsEngine implements TtsEngine {
   /// 返回 utteranceId 表示全部缓存命中且开始播放，null 表示缓存缺失需 fallback。
   Future<String?> playCachedParagraphs(List<int> paragraphIds, double speed) async {
     debugPrint('[KittenTTS.engine] playCachedParagraphs: ids=$paragraphIds speed=$speed');
-    _cancelPregen();
     final session = _session;
     if (session == null) {
       debugPrint('[KittenTTS.engine] playCachedParagraphs: session null');
@@ -157,67 +173,23 @@ class KittenTtsEngine implements TtsEngine {
 
   /// 后台并发预生成所有段落音频并写入缓存。
   ///
-  /// [Future.wait] 并发发起所有段落的生成（方法通道串行排队，Dart 层
-  /// phonemize/tokenize 重叠），比顺序生成快。跳过已缓存的段落。
-  /// 用户点击播放时 [_pregenCancelled] 中断剩余写入。
+  /// 委托给 session（持有引擎与缓存）；引擎空闲时调用（播放结束后），
+  /// 不抢占播放；被 stop/新播放打断。
   Future<void> pregenerateParagraphs({
     required List<({int paragraphId, String text})> paragraphs,
     required double speed,
   }) async {
-    final cm = cache;
-    if (cm == null) return;
-    final engine = _rawEngine;
-    if (engine == null) return;
-
-    _pregenCancelled = false;
-
-    // 先筛出需要生成的段落（避免无谓并发）
-    final toGenerate = <({int paragraphId, String text})>[];
-    for (final p in paragraphs) {
-      if (_pregenCancelled) break;
-      final needs = await cm.needsGenerate(p.paragraphId, speed);
-      if (needs) toGenerate.add(p);
-    }
-    debugPrint('[KittenTTS] pregen: ${toGenerate.length}/${paragraphs.length} need generation');
-
-    // 并发生成（限流：一次最多 3 段并发，避免内存峰值）
-    for (var i = 0; i < toGenerate.length; i += 3) {
-      if (_pregenCancelled) {
-        debugPrint('[KittenTTS] pregen: cancelled');
-        break;
-      }
-      final batch = toGenerate.sublist(
-        i,
-        i + 3 > toGenerate.length ? toGenerate.length : i + 3,
-      );
-      await Future.wait(batch.map((p) async {
-        if (_pregenCancelled) return;
-        try {
-          debugPrint('[KittenTTS] pregen: paragraph ${p.paragraphId} (batch ${i ~/ 3 + 1})');
-          final result = await engine.generate(p.text, speed: speed);
-          if (_pregenCancelled) return;
-          final wav = result.wavData();
-          await cm.writeParagraph(
-            paragraphId: p.paragraphId,
-            speed: speed,
-            wavData: wav,
-          );
-          debugPrint('[KittenTTS] pregen: paragraph ${p.paragraphId} OK (${wav.length}B)');
-        } catch (e) {
-          debugPrint('[KittenTTS] pregen: paragraph ${p.paragraphId} FAILED: $e');
-        }
-      }));
-    }
+    final session = _session;
+    if (session == null) return;
+    await session.pregenerateParagraphs(
+      paragraphs: paragraphs,
+      speed: speed,
+    );
   }
 
   @override
   void stop() {
-    _cancelPregen();
     _session?.stop();
-  }
-
-  void _cancelPregen() {
-    _pregenCancelled = true;
   }
 
   @override
@@ -240,27 +212,11 @@ class KittenTtsEngine implements TtsEngine {
         basePathOverride: _modelBaseOverride,
       );
 
-      final engine = await kit.KittenTTS.create(
-        config: kit.KittenTTSConfig(
-          model: kit.model.micro,
-          defaultVoice: kit.voice.bella,
-          modelFiles: kit.KittenTTSModelFiles(
-            onnxPath: '${dir.path}/kitten_tts_micro_v0_8.onnx',
-            voicesPath: '${dir.path}/voices.npz',
-          ),
-          phonemizer: kit.CEPhonemizer(allowRuleBasedFallback: true),
-          analytics: false,
-        ),
-      );
-      _rawEngine = engine;
-
-      final player = AudioPlayer();
-      await player.setReleaseMode(ReleaseMode.stop);
-
-      final session = KittenTtsPluginSession(
-        engine: engine,
-        player: player,
-        cache: cache,
+      // 经注入的 factory 创建会话（生产 = KittenTtsPluginSession.create，
+      // 测试注入 fake session；不直接调插件，保证测试可运行）
+      final session = await factory(
+        onnxPath: '${dir.path}/kitten_tts_micro_v0_8.onnx',
+        voicesPath: '${dir.path}/voices.npz',
       );
       session.setFinishListener((id) => _onSpeakingFinished?.call(id));
       session.setProgressListener((id, done, total) =>

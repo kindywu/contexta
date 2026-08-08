@@ -248,6 +248,7 @@ WordSense senseOf({
 
 Article makeArticle({
   int id = 1,
+  String title = 'Test',
   String? readCompletedAt,
   List<ArticleParagraph> paragraphs = const [],
 }) =>
@@ -256,7 +257,7 @@ Article makeArticle({
       batchId: 1,
       orderIndex: 0,
       contentCategory: 'NEWS',
-      title: 'Test',
+      title: title,
       status: ArticleStatus.success,
       generationStartedAt: null,
       generationCompletedAt: '2026-08-07T12:00:00+08:00',
@@ -527,6 +528,8 @@ void main() {
       controller.playParagraph(0);
       expect(controller.state.isSpeakingFullArticle, isFalse);
       expect(controller.state.speakingParagraphIndex, 0);
+      // 系统 TTS 路径：标题 + 正文拼接为一整段朗读
+      expect(tts.spoken, ['Test Hello world. Second paragraph.', 'Hello world.']);
     });
 
     test('播放全文后段落索引清空', () async {
@@ -547,10 +550,30 @@ void main() {
       expect(controller.state.isSpeakingFullArticle, isFalse);
     });
 
-    test('全文内容 = 各段落英文拼接', () async {
+    test('全文内容 = 标题 + 各段落英文拼接', () async {
       await controller.loadArticle(1);
       await controller.startFullArticlePlayback();
+
+      // 系统 TTS 路径：标题 + 正文拼接为一整段朗读
+      expect(tts.spoken, ['Test Hello world. Second paragraph.']);
+      expect(controller.state.isSpeakingFullArticle, isTrue);
+    });
+
+    test('无标题文章 → 跳过标题直接朗读正文', () async {
+      articleRepo = _FakeArticleRepo(
+        onGetArticle: (_) async => makeArticle(
+          title: '',
+          paragraphs: _paragraphs,
+        ),
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+
+      await controller.startFullArticlePlayback();
+
+      // 无标题 → 不读标题，直接正文拼接
       expect(tts.spoken, ['Hello world. Second paragraph.']);
+      expect(controller.state.isSpeakingFullArticle, isTrue);
     });
 
     test('TTS 不可用：段落播放 → Snackbar + openTtsSettings', () async {
@@ -595,7 +618,7 @@ void main() {
       ready.complete(tts);
       await Future<void>.delayed(Duration.zero);
       expect(controller.state.isSpeakingFullArticle, isTrue);
-      expect(tts.spoken, ['Hello world. Second paragraph.']);
+      expect(tts.spoken, ['Test Hello world. Second paragraph.']);
     });
 
     test('引擎初始化中：段落播放等待就绪后朗读（不误报不可用）', () async {
@@ -680,7 +703,7 @@ void main() {
       expect(controller.state.ttsSpeed, 1.0);
     });
 
-    test('自动朗读：设置开启进入文章自动播全文', () async {
+    test('自动朗读：设置开启进入文章自动播全文（含标题）', () async {
       settingsRepo = _FakeSettingsRepo(
         settings: const UserSettings(
             isOnboarded: true, autoPlayAudio: true),
@@ -688,7 +711,8 @@ void main() {
       controller = makeController();
       await controller.loadArticle(1);
 
-      expect(tts.spoken, ['Hello world. Second paragraph.']);
+      // 自动朗读同样包含标题（系统 TTS 拼接）
+      expect(tts.spoken, ['Test Hello world. Second paragraph.']);
       expect(controller.state.isSpeakingFullArticle, isTrue);
     });
   });

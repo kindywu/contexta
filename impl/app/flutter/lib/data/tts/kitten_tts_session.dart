@@ -27,6 +27,19 @@ abstract interface class KittenTtsSession {
     required String utteranceId,
   });
 
+  /// 全文朗读：标题 + 正文段落，单个 utterance 内无缝衔接播放。
+  ///
+  /// 双 worker 流水线：生成 worker 把每段 WAV 推入待播队列（缓存命中直接
+  /// 推文件路径，未命中生成 + 写缓存），播放 worker 按序消费播放——播放
+  /// 等待生成，生成无需等待，按段落依次执行。[title] 可为空跳过。
+  /// 进度只计正文段落（done/total）；全部播完调用 finishListener。
+  Future<void> speakFullArticle({
+    String? title,
+    required List<({int id, String text})> paragraphs,
+    required double speed,
+    required String utteranceId,
+  });
+
   /// 播放本地 WAV 文件路径（缓存命中时）。
   /// 返回 true 表示文件存在并开始播放，false 表示文件不存在。
   Future<bool> playFile(String filePath, {required String utteranceId});
@@ -44,6 +57,14 @@ abstract interface class KittenTtsSession {
   /// 注册生成进度回调（已生成句子数 / 总句子数），长文本流式生成时上报。
   void setProgressListener(
       void Function(String utteranceId, int done, int total)? listener);
+
+  /// 后台预生成段落音频并写入缓存（跳过已缓存段落）。
+  ///
+  /// 引擎空闲时调用（播放结束后），不抢占播放。被 stop/新播放打断。
+  Future<void> pregenerateParagraphs({
+    required List<({int paragraphId, String text})> paragraphs,
+    required double speed,
+  });
 
   Future<void> dispose();
 }
@@ -242,6 +263,142 @@ class KittenTtsPluginSession implements KittenTtsSession {
     }
   }
 
+  /// 全文朗读：标题 + 正文段落，单个 utterance 内无缝衔接播放。
+  ///
+  /// 双 worker 流水线（对照需求：一个线程生成、一个线程播放，播放等待
+  /// 生成，生成无需等待，按段落依次执行）：
+  /// - 生成 worker：逐段查缓存 → 命中推文件路径 / 未命中生成 + 写缓存后推
+  ///   WAV；标题在最前。用 [StreamController] 推送，播放侧顺序消费。
+  /// - 播放 worker：依次播放队列项；标题播完立即衔接段落，无缝隙。
+  /// - 进度只计正文段落 (done/total)；全部播完调用 finishListener。
+  @override
+  Future<void> speakFullArticle({
+    String? title,
+    required List<({int id, String text})> paragraphs,
+    required double speed,
+    required String utteranceId,
+  }) async {
+    debugPrint('[KittenTTS] speakFullArticle: title="${title ?? ""}" paras=${paragraphs.length} id=$utteranceId');
+    await _stopCurrent();
+    _currentUtteranceId = utteranceId;
+
+    final controller = StreamController<_QueuedAudio>.broadcast();
+    final generationDone = Completer<void>();
+
+    // 播放 worker：顺序消费队列，播完自动切换下一项（标题→段落无缝）
+    final playback = _playQueued(controller.stream, utteranceId, generationDone);
+
+    // 生成 worker：标题 → 逐段（查缓存/生成+写缓存），推入队列
+    final generation = _generateFullArticle(
+      controller: controller,
+      title: title,
+      paragraphs: paragraphs,
+      speed: speed,
+      utteranceId: utteranceId,
+    );
+    generationDone.complete(generation);
+    // 生成 worker 推完全部后关闭流（播放 worker 播完最后一项结束）
+    await generation;
+    await controller.close();
+    await playback;
+
+    if (_currentUtteranceId == utteranceId) {
+      _currentUtteranceId = null;
+      _finishListener?.call(utteranceId);
+    }
+  }
+
+  /// 生成 worker：标题 + 逐段音频推入待播队列。
+  Future<void> _generateFullArticle({
+    required StreamController<_QueuedAudio> controller,
+    required String? title,
+    required List<({int id, String text})> paragraphs,
+    required double speed,
+    required String utteranceId,
+  }) async {
+    final cm = cache;
+    try {
+      if (title != null && title.isNotEmpty) {
+        if (_currentUtteranceId != utteranceId) return;
+        debugPrint('[KittenTTS] fullArticle: generating title');
+        final result = await _engine.generate(title, speed: speed);
+        if (_currentUtteranceId != utteranceId) return;
+        controller.add(_QueuedAudio.wav(result.wavData(), isTitle: true));
+      }
+
+      final total = paragraphs.length;
+      final progressListener = _progressListener;
+      for (var i = 0; i < total; i++) {
+        if (_currentUtteranceId != utteranceId) return;
+        final para = paragraphs[i];
+
+        String? cachedPath;
+        if (cm != null && para.id > 0) {
+          cachedPath = await cm.lookupParagraph(para.id, speed);
+        }
+
+        if (cachedPath != null) {
+          debugPrint('[KittenTTS] fullArticle: para ${i + 1}/$total cache HIT');
+          controller.add(_QueuedAudio.file(cachedPath));
+        } else {
+          debugPrint('[KittenTTS] fullArticle: para ${i + 1}/$total gen');
+          final result = await _engine.generate(para.text, speed: speed);
+          if (_currentUtteranceId != utteranceId) return;
+
+          final wav = result.wavData();
+          if (cm != null && para.id > 0) {
+            try {
+              await cm.writeParagraph(
+                paragraphId: para.id,
+                speed: speed,
+                wavData: wav,
+              );
+            } catch (e) {
+              debugPrint('[KittenTTS] fullArticle cache write FAILED: $e');
+            }
+          }
+          controller.add(_QueuedAudio.wav(wav));
+        }
+
+        // 进度：已推入播放队列的段落数 / 总段落数（标题不计入）
+        if (progressListener != null) {
+          debugPrint('[KittenTTS] fullArticle progress: ${i + 1}/$total');
+          progressListener(utteranceId, i + 1, total);
+        }
+      }
+      debugPrint('[KittenTTS] fullArticle: generation done');
+    } catch (e) {
+      debugPrint('[KittenTTS] fullArticle generate ERROR: $e');
+    } finally {
+      await controller.close();
+    }
+  }
+
+  /// 播放 worker：依次播放 [items]；全部播完（或被打断）完成 [done]。
+  Future<void> _playQueued(
+    Stream<_QueuedAudio> items,
+    String utteranceId,
+    Completer<void> done,
+  ) async {
+    try {
+      await for (final item in items) {
+        if (_currentUtteranceId != utteranceId) return;
+        debugPrint('[KittenTTS] fullArticle play: ${item.isTitle ? "title" : "para"}');
+        if (item.bytes != null) {
+          await _playWav(item.bytes!, utteranceId);
+        } else if (item.filePath != null) {
+          final file = File(item.filePath!);
+          if (await file.exists()) {
+            await _playFileSource(file.openRead(), utteranceId);
+          }
+        }
+      }
+      debugPrint('[KittenTTS] fullArticle: playback done');
+    } finally {
+      if (!done.isCompleted) done.complete();
+    }
+  }
+
   /// 后台并发预取段落 [startIndex..end]，跳过已缓存；播放期间引擎空闲，
   /// 用 native 串行锁排队生成，写完缓存即可。被 stop/新 utterance 打断。
   Future<void> _prefetchRemaining(
@@ -408,6 +565,11 @@ class KittenTtsPluginSession implements KittenTtsSession {
     debugPrint('[KittenTTS] generated OK, wavSize=${result.wavData().length}');
     if (_currentUtteranceId != utteranceId) return;
     await _playWav(result.wavData(), utteranceId);
+    // 成功播完 → 通知完成（stop/打断时由 _stopCurrent 触发，此处只补成功路径）
+    if (_currentUtteranceId == utteranceId) {
+      _currentUtteranceId = null;
+      _finishListener?.call(utteranceId);
+    }
   }
 
   /// 长文本流式生成 + 播放。
@@ -530,6 +692,50 @@ class KittenTtsPluginSession implements KittenTtsSession {
   }
 
   @override
+  Future<void> pregenerateParagraphs({
+    required List<({int paragraphId, String text})> paragraphs,
+    required double speed,
+  }) async {
+    final cm = cache;
+    if (cm == null) return;
+
+    // 先筛出需要生成的段落（避免无谓并发）
+    final toGenerate = <({int paragraphId, String text})>[];
+    for (final p in paragraphs) {
+      if (_currentUtteranceId != null) return; // 新播放打断预生成
+      final needs = await cm.needsGenerate(p.paragraphId, speed);
+      if (needs) toGenerate.add(p);
+    }
+    debugPrint('[KittenTTS] pregen: ${toGenerate.length}/${paragraphs.length} need generation');
+
+    // 并发生成（限流：一次最多 3 段并发，避免内存峰值）
+    for (var i = 0; i < toGenerate.length; i += 3) {
+      if (_currentUtteranceId != null) return;
+      final batch = toGenerate.sublist(
+        i,
+        i + 3 > toGenerate.length ? toGenerate.length : i + 3,
+      );
+      await Future.wait(batch.map((p) async {
+        if (_currentUtteranceId != null) return;
+        try {
+          debugPrint('[KittenTTS] pregen: paragraph ${p.paragraphId} (batch ${i ~/ 3 + 1})');
+          final result = await _engine.generate(p.text, speed: speed);
+          if (_currentUtteranceId != null) return;
+          final wav = result.wavData();
+          await cm.writeParagraph(
+            paragraphId: p.paragraphId,
+            speed: speed,
+            wavData: wav,
+          );
+          debugPrint('[KittenTTS] pregen: paragraph ${p.paragraphId} OK (${wav.length}B)');
+        } catch (e) {
+          debugPrint('[KittenTTS] pregen: paragraph ${p.paragraphId} FAILED: $e');
+        }
+      }));
+    }
+  }
+
+  @override
   Future<void> dispose() async {
     await _streamSub?.cancel();
     await _completeSub?.cancel();
@@ -543,4 +749,20 @@ class KittenSpeedMapper {
   const KittenSpeedMapper();
 
   double actualRate(double displaySpeed) => displaySpeed.clamp(0.5, 2.0);
+}
+
+/// 全文朗读待播队列项：WAV 字节 或 缓存文件路径（二选一）。
+class _QueuedAudio {
+  _QueuedAudio.wav(Uint8List bytes, {this.isTitle = false})
+      : bytes = bytes,
+        filePath = null;
+
+  _QueuedAudio.file(String path)
+      : bytes = null,
+        filePath = path,
+        isTitle = false;
+
+  final Uint8List? bytes;
+  final String? filePath;
+  final bool isTitle;
 }

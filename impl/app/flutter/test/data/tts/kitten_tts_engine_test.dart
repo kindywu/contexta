@@ -12,6 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// - 不可用 → speak 返回 null 且不初始化 session
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('init 成功后 isAvailable 为 true，speak 返回 ktk-N id', () async {
     final engine = _engine();
     await engine.init();
@@ -111,6 +113,28 @@ class _FakeSession implements KittenTtsSession {
   }
 
   @override
+  Future<void> speakFullArticle({
+    String? title,
+    required List<({int id, String text})> paragraphs,
+    required double speed,
+    required String utteranceId,
+  }) async {}
+
+  @override
+  Future<void> speakParagraphs(
+    List<String> texts, {
+    required List<int> paragraphIds,
+    required double speed,
+    required String utteranceId,
+  }) async {}
+
+  @override
+  Future<bool> playFile(String filePath, {required String utteranceId}) async => true;
+
+  @override
+  Future<void> playFiles(List<String> filePaths, {required String utteranceId}) async {}
+
+  @override
   Future<void> stop() async {
     stopCount++;
   }
@@ -123,6 +147,16 @@ class _FakeSession implements KittenTtsSession {
   void simulateFinished(String id) {
     _finishListener?.call(id);
   }
+
+  @override
+  void setProgressListener(
+      void Function(String utteranceId, int done, int total)? listener) {}
+
+  @override
+  Future<void> pregenerateParagraphs({
+    required List<({int paragraphId, String text})> paragraphs,
+    required double speed,
+  }) async {}
 
   @override
   Future<void> dispose() async {}

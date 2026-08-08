@@ -77,10 +77,42 @@ class _OkSession implements KittenTtsSession {
   }) async {}
 
   @override
+  Future<void> speakFullArticle({
+    String? title,
+    required List<({int id, String text})> paragraphs,
+    required double speed,
+    required String utteranceId,
+  }) async {}
+
+  @override
+  Future<void> speakParagraphs(
+    List<String> texts, {
+    required List<int> paragraphIds,
+    required double speed,
+    required String utteranceId,
+  }) async {}
+
+  @override
+  Future<bool> playFile(String filePath, {required String utteranceId}) async => true;
+
+  @override
+  Future<void> playFiles(List<String> filePaths, {required String utteranceId}) async {}
+
+  @override
   Future<void> stop() async {}
 
   @override
   void setFinishListener(void Function(String utteranceId)? listener) {}
+
+  @override
+  void setProgressListener(
+      void Function(String utteranceId, int done, int total)? listener) {}
+
+  @override
+  Future<void> pregenerateParagraphs({
+    required List<({int paragraphId, String text})> paragraphs,
+    required double speed,
+  }) async {}
 
   @override
   Future<void> dispose() async {}

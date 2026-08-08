@@ -485,6 +485,11 @@ class ReadingController extends StateNotifier<ReadingUiState> {
 
   /// 开始全文朗读（手动播放与自动朗读共用）。TTS 不可用时静默返回 false，
   /// 不弹提示（引擎初始化中则等待就绪）。
+  ///
+  /// 标题与正文单 utterance 无缝衔接：
+  /// - KittenTTS：经 [KittenTtsEngine.speakFullArticle] 双 worker 流水线，
+  ///   标题在前，逐段生成→播放，进度只计正文段落。
+  /// - 系统 TTS：拼接「标题 + 正文」一段朗读。
   Future<bool> startFullArticlePlayback() async {
     debugPrint('[ReadingCtrl] startFullArticlePlayback ENTER');
     var engine = _ttsEngine;
@@ -505,40 +510,39 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       return false;
     }
 
-    // 优先走缓存路径：段落文件全部命中则直接顺序播放 WAV
-    final paragraphIds = state.paragraphs.map((p) => p.id).toList();
-    debugPrint('[ReadingCtrl] paragraphIds=$paragraphIds engine is KittenTtsEngine=${engine is KittenTtsEngine}');
-    if (engine is KittenTtsEngine) {
-      debugPrint('[ReadingCtrl] trying cached paragraphs...');
-      final cachedId = await engine.playCachedParagraphs(paragraphIds, state.ttsSpeed);
-      debugPrint('[ReadingCtrl] cachedId=$cachedId');
-      if (cachedId != null) {
-        _currentUtteranceId = cachedId;
-        debugPrint('[ReadingCtrl] CACHED PATH SUCCESS cachedId=$cachedId');
-        return true;
-      }
-    }
+    final title = state.title;
+    final hasTitle = title != null && title.isNotEmpty;
 
-    // 缓存未全命中 → 按段落逐段生成 + 播放（每段完成写缓存 + 上报进度）
-    debugPrint('[ReadingCtrl] cache miss, speaking paragraph-by-paragraph');
+    // KittenTTS：标题 + 正文单 utterance 无缝衔接（双 worker 流水线）
     if (engine is KittenTtsEngine) {
-      final id = await engine.speakParagraphs(
-        texts: [for (final p in state.paragraphs) p.englishText],
-        paragraphIds: paragraphIds,
+      final id = await engine.speakFullArticle(
+        title: hasTitle ? title : null,
+        paragraphs: [
+          for (final p in state.paragraphs)
+            (id: p.id, text: p.englishText),
+        ],
         speed: state.ttsSpeed,
       );
-      debugPrint('[ReadingCtrl] speakParagraphs returned: $id');
+      debugPrint('[ReadingCtrl] speakFullArticle returned: $id');
       if (id == null) {
-        debugPrint('[ReadingCtrl] speakParagraphs returned null');
+        debugPrint('[ReadingCtrl] speakFullArticle returned null');
         return false;
       }
       _currentUtteranceId = id;
-      debugPrint('[ReadingCtrl] PARAGRAPH PATH SUCCESS id=$id');
+      state = state.copyWith(
+        isSpeakingFullArticle: true,
+        speakingParagraphIndex: null,
+      );
+      debugPrint('[ReadingCtrl] KITTEN FULLARTICLE PATH SUCCESS id=$id');
       return true;
     }
 
-    // 非 KittenTTS 引擎（系统 TTS 等）：拼接全文走统一接口
-    final fullText = state.paragraphs.map((p) => p.englishText).join(' ');
+    // 系统 TTS 等：拼接全文（含标题）走统一接口
+    final parts = <String>[
+      if (title != null && title.isNotEmpty) title,
+      for (final p in state.paragraphs) p.englishText,
+    ];
+    final fullText = parts.join(' ');
     debugPrint('[ReadingCtrl] speaking full text: len=${fullText.length} speed=${state.ttsSpeed}');
     final id = engine.speak(fullText, speed: state.ttsSpeed);
     debugPrint('[ReadingCtrl] engine.speak returned: $id');
