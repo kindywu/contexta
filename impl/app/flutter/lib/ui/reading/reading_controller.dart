@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di/providers.dart';
@@ -13,8 +14,8 @@ import '../../domain/repository/stats_repository.dart';
 import '../../domain/repository/vocabulary_repository.dart';
 import '../../domain/repository/word_repository.dart';
 import '../../domain/tts/tts_engine.dart';
+import '../../data/tts/kitten_tts_engine.dart';
 import 'translation_visibility.dart';
-
 /// Reading 页 UI 状态（对照 Kotlin ReadingUiState）。
 class ReadingUiState {
   const ReadingUiState({
@@ -32,6 +33,8 @@ class ReadingUiState {
     this.ttsSpeed = 1.0,
     this.isReadCompleted = false,
     this.isSpeakingFullArticle = false,
+    this.speechProgress,
+    this.speechTotalParagraphs,
     this.speakingParagraphIndex,
   });
 
@@ -64,6 +67,12 @@ class ReadingUiState {
   /// 全文朗读中。
   final bool isSpeakingFullArticle;
 
+  /// 全文朗读段落进度（已完成段落数，null = 未知/不使用）。
+  final double? speechProgress;
+
+  /// 全文朗读总段落数（配合 speechProgress 显示「第 N/M 段」）。
+  final int? speechTotalParagraphs;
+
   /// 正在朗读的段落索引（null = 无）。
   final int? speakingParagraphIndex;
 
@@ -84,6 +93,8 @@ class ReadingUiState {
     double? ttsSpeed,
     bool? isReadCompleted,
     bool? isSpeakingFullArticle,
+    Object? speechProgress = _unset,
+    Object? speechTotalParagraphs = _unset,
     int? speakingParagraphIndex,
   }) =>
       ReadingUiState(
@@ -105,6 +116,12 @@ class ReadingUiState {
         ttsSpeed: ttsSpeed ?? this.ttsSpeed,
         isReadCompleted: isReadCompleted ?? this.isReadCompleted,
         isSpeakingFullArticle: isSpeakingFullArticle ?? this.isSpeakingFullArticle,
+        speechProgress: identical(speechProgress, _unset)
+            ? this.speechProgress
+            : speechProgress as double?,
+        speechTotalParagraphs: identical(speechTotalParagraphs, _unset)
+            ? this.speechTotalParagraphs
+            : speechTotalParagraphs as int?,
         speakingParagraphIndex: speakingParagraphIndex,
       );
 }
@@ -205,6 +222,9 @@ class ReadingController extends StateNotifier<ReadingUiState> {
 
   TtsEngine? _ttsEngine;
 
+  /// 防止全文朗读启动期间重复点击。
+  bool _startingPlayback = false;
+
   int _articleId = -1;
   Timer? _readTimer;
   String? _currentUtteranceId;
@@ -226,10 +246,29 @@ class ReadingController extends StateNotifier<ReadingUiState> {
           state = state.copyWith(
             isSpeakingFullArticle: false,
             speakingParagraphIndex: null,
+            speechProgress: null,
+            speechTotalParagraphs: null,
           );
+          // 播放结束后预生成剩余段落缓存（引擎空闲，不抢占播放）
+          _pregenerateParagraphs(state.paragraphs);
         }
       }
     });
+    debugPrint('[ReadingCtrl] _onTtsReady: isKitten=${engine is KittenTtsEngine} runtimeType=${engine.runtimeType}');
+    if (engine is KittenTtsEngine) {
+      engine.setOnProgress((utteranceId, done, total) {
+        if (utteranceId == _currentUtteranceId && !_disposed) {
+          debugPrint('[ReadingCtrl] progress: $done/$total');
+          // 段落进度：done/total 是已完成段落数；total<=0 时未知（流式路径）
+          if (total > 0) {
+            state = state.copyWith(
+              speechProgress: done.toDouble(),
+              speechTotalParagraphs: total,
+            );
+          }
+        }
+      });
+    }
   }
 
   /// 进入页面加载文章（对照 Kotlin loadArticle）。
@@ -293,6 +332,19 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     });
   }
 
+  /// 后台预生成段落 TTS 缓存（引擎空闲时调用，不抢占播放）。
+  void _pregenerateParagraphs(List<ArticleParagraph> paragraphs) {
+    final engine = _ttsEngine;
+    if (engine is! KittenTtsEngine) return;
+    unawaited(engine.pregenerateParagraphs(
+      paragraphs: [
+        for (final p in paragraphs)
+          (paragraphId: p.id, text: p.englishText),
+      ],
+      speed: state.ttsSpeed,
+    ));
+  }
+
   /// 手动标记已读（绕过 120s 阈值）。
   Future<void> markAsRead() async {
     await _articleRepository.forceMarkReadCompleted(_articleId);
@@ -328,18 +380,41 @@ class ReadingController extends StateNotifier<ReadingUiState> {
   // ─── 播放（段落 / 全文 / 单词） ────────────────────────────────
 
   /// 朗读段落；再次点击正在朗读的段落停止。
-  void playParagraph(int index) {
-    final engine = _ttsEngine;
+  ///
+  /// 引擎尚未初始化（KittenTTS 模型解压/下载中）时等待就绪后再朗读，
+  /// 对齐 Kotlin 注入即就绪的 TTS 引擎语义；就绪后仍不可用才提示。
+  Future<void> playParagraph(int index) async {
+    debugPrint('[ReadingCtrl] playParagraph index=$index');
     if (state.speakingParagraphIndex == index) {
-      engine?.stop();
+      _ttsEngine?.stop();
       return;
     }
-    if (engine == null || !engine.isAvailable()) {
+    var engine = _ttsEngine;
+    if (engine == null) {
+      try {
+        engine = await _ttsEngineFuture;
+      } catch (_) {
+        return;
+      }
+      if (_disposed) return;
+    }
+    if (!engine.isAvailable()) {
       _unavailableTts();
       return;
     }
-    final text = state.paragraphs[index].englishText;
-    final id = engine.speak(text, speed: state.ttsSpeed);
+    // 优先缓存：命中直接播文件；未命中生成 + 写缓存
+    String? id;
+    if (engine is KittenTtsEngine) {
+      final p = state.paragraphs[index];
+      id = await engine.speakParagraph(
+        paragraphId: p.id,
+        text: p.englishText,
+        speed: state.ttsSpeed,
+      );
+    } else {
+      id = engine.speak(state.paragraphs[index].englishText,
+          speed: state.ttsSpeed);
+    }
     if (id != null) {
       _currentUtteranceId = id;
       state = state.copyWith(
@@ -350,54 +425,149 @@ class ReadingController extends StateNotifier<ReadingUiState> {
   }
 
   /// 全文朗读开关：朗读中 → 停止；空闲 → 开始（TTS 不可用弹提示）。
-  void toggleFullArticlePlayback() {
+  ///
+  /// 引擎未就绪时等待就绪后开始（对齐 startFullArticlePlayback 与 Kotlin
+  /// 注入即就绪的语义），避免 KittenTTS 首次初始化窗口误报不可用。
+  Future<void> toggleFullArticlePlayback() async {
+    debugPrint('[ReadingCtrl] toggleFullArticlePlayback isSpeaking=${state.isSpeakingFullArticle} starting=$_startingPlayback _ttsEngine=$_ttsEngine paragraphs=${state.paragraphs.length}');
+
     if (state.isSpeakingFullArticle) {
       _ttsEngine?.stop();
-      state = state.copyWith(isSpeakingFullArticle: false);
+      _startingPlayback = false;
+      state = state.copyWith(
+        isSpeakingFullArticle: false,
+        speechProgress: null,
+        speechTotalParagraphs: null,
+      );
       return;
     }
-    final engine = _ttsEngine;
-    if (engine == null || !engine.isAvailable()) {
+    // 启动中防重复点击
+    if (_startingPlayback) {
+      debugPrint('[ReadingCtrl] toggleFullArticlePlayback: already starting, skip');
+      return;
+    }
+
+    // 点击瞬间立即设播放中 → 按钮立即变成暂停图标
+    _startingPlayback = true;
+    state = state.copyWith(isSpeakingFullArticle: true);
+    debugPrint('[ReadingCtrl] toggleFullArticlePlayback: immediate state → speaking');
+
+    var engine = _ttsEngine;
+    if (engine == null) {
+      debugPrint('[ReadingCtrl] engine null, waiting _ttsEngineFuture...');
+      try {
+        engine = await _ttsEngineFuture;
+        debugPrint('[ReadingCtrl] engine future resolved: $engine');
+      } catch (e) {
+        debugPrint('[ReadingCtrl] engine future failed: $e');
+        _startingPlayback = false;
+        state = state.copyWith(isSpeakingFullArticle: false);
+        return;
+      }
+      if (_disposed) { _startingPlayback = false; return; }
+    }
+    if (!engine.isAvailable()) {
+      debugPrint('[ReadingCtrl] engine not available! reason=${engine.unavailabilityReason()}');
+      _startingPlayback = false;
+      state = state.copyWith(isSpeakingFullArticle: false);
       _unavailableTts();
       return;
     }
-    unawaited(startFullArticlePlayback());
+    final ok = await startFullArticlePlayback();
+    if (!ok) {
+      // 播放失败 → 回滚按钮状态
+      _startingPlayback = false;
+      state = state.copyWith(isSpeakingFullArticle: false);
+    } else {
+      _startingPlayback = false;
+    }
   }
 
   /// 开始全文朗读（手动播放与自动朗读共用）。TTS 不可用时静默返回 false，
   /// 不弹提示（引擎初始化中则等待就绪）。
   Future<bool> startFullArticlePlayback() async {
+    debugPrint('[ReadingCtrl] startFullArticlePlayback ENTER');
     var engine = _ttsEngine;
+    debugPrint('[ReadingCtrl] startFullArticlePlayback: _ttsEngine=$engine isAvailable=${engine?.isAvailable()}');
     if (engine == null) {
+      debugPrint('[ReadingCtrl] engine null, waiting _ttsEngineFuture');
       try {
         engine = await _ttsEngineFuture;
-      } catch (_) {
+        debugPrint('[ReadingCtrl] engine future resolved: $engine');
+      } catch (e) {
+        debugPrint('[ReadingCtrl] _ttsEngineFuture threw: $e');
         return false;
       }
       if (_disposed) return false;
     }
-    if (!engine.isAvailable()) return false;
+    if (!engine.isAvailable()) {
+      debugPrint('[ReadingCtrl] engine not available! reason=${engine.unavailabilityReason()}');
+      return false;
+    }
+
+    // 优先走缓存路径：段落文件全部命中则直接顺序播放 WAV
+    final paragraphIds = state.paragraphs.map((p) => p.id).toList();
+    debugPrint('[ReadingCtrl] paragraphIds=$paragraphIds engine is KittenTtsEngine=${engine is KittenTtsEngine}');
+    if (engine is KittenTtsEngine) {
+      debugPrint('[ReadingCtrl] trying cached paragraphs...');
+      final cachedId = await engine.playCachedParagraphs(paragraphIds, state.ttsSpeed);
+      debugPrint('[ReadingCtrl] cachedId=$cachedId');
+      if (cachedId != null) {
+        _currentUtteranceId = cachedId;
+        debugPrint('[ReadingCtrl] CACHED PATH SUCCESS cachedId=$cachedId');
+        return true;
+      }
+    }
+
+    // 缓存未全命中 → 按段落逐段生成 + 播放（每段完成写缓存 + 上报进度）
+    debugPrint('[ReadingCtrl] cache miss, speaking paragraph-by-paragraph');
+    if (engine is KittenTtsEngine) {
+      final id = await engine.speakParagraphs(
+        texts: [for (final p in state.paragraphs) p.englishText],
+        paragraphIds: paragraphIds,
+        speed: state.ttsSpeed,
+      );
+      debugPrint('[ReadingCtrl] speakParagraphs returned: $id');
+      if (id == null) {
+        debugPrint('[ReadingCtrl] speakParagraphs returned null');
+        return false;
+      }
+      _currentUtteranceId = id;
+      debugPrint('[ReadingCtrl] PARAGRAPH PATH SUCCESS id=$id');
+      return true;
+    }
+
+    // 非 KittenTTS 引擎（系统 TTS 等）：拼接全文走统一接口
     final fullText = state.paragraphs.map((p) => p.englishText).join(' ');
+    debugPrint('[ReadingCtrl] speaking full text: len=${fullText.length} speed=${state.ttsSpeed}');
     final id = engine.speak(fullText, speed: state.ttsSpeed);
-    if (id == null) return false;
+    debugPrint('[ReadingCtrl] engine.speak returned: $id');
+    if (id == null) {
+      debugPrint('[ReadingCtrl] engine.speak returned null');
+      return false;
+    }
     _currentUtteranceId = id;
     state = state.copyWith(
       isSpeakingFullArticle: true,
       speakingParagraphIndex: null,
     );
+    debugPrint('[ReadingCtrl] FALLBACK PATH SUCCESS id=$id');
     return true;
   }
 
   /// 朗读查词弹窗中的单词（打断段落/全文播放）。
   void playWordPronunciation() {
     final word = state.wordSheetData?.word;
+    debugPrint('[ReadingCtrl] playWordPronunciation word="$word"');
     if (word == null) return;
     final engine = _ttsEngine;
+    debugPrint('[ReadingCtrl] playWordPronunciation engine=$engine available=${engine?.isAvailable()}');
     if (engine == null || !engine.isAvailable()) {
       _unavailableTts();
       return;
     }
     final id = engine.speak(word, speed: state.ttsSpeed);
+    debugPrint('[ReadingCtrl] playWordPronunciation speak returned id=$id');
     if (id != null) {
       _currentUtteranceId = id;
       state = state.copyWith(

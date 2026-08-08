@@ -1,11 +1,13 @@
 import 'dart:io';
 
 import '../../domain/tts/tts_engine.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
 import 'kitten_tts_engine.dart';
 import 'kitten_tts_session.dart';
 import 'system_tts_engine.dart';
+import 'tts_cache_manager.dart';
 
 /// flutter_tts 实例工厂（测试注入 fake）。
 typedef FlutterTtsFactory = dynamic Function();
@@ -20,6 +22,7 @@ class TtsEngineFactory {
     this._kittenFactory,
     this._systemFactory,
     this._modelBaseOverride,
+    this.cache,
   });
 
   /// KittenTTS 模型 assets 目录（assets/kittentts_models 的绝对路径）。
@@ -28,11 +31,14 @@ class TtsEngineFactory {
   final KittenTtsFactory? _kittenFactory;
   final FlutterTtsFactory? _systemFactory;
   final Directory? _modelBaseOverride;
+  final TtsCacheManager? cache;
 
   /// 创建 TTS 引擎：先尝试 KittenTTS，失败自动回退系统 TTS。
   Future<TtsEngine> create() async {
+    debugPrint('[TtsFactory] creating TTS engine...');
     final kitten = _createKittenEngine();
     await kitten.init();
+    debugPrint('[TtsFactory] KittenTTS init done, available=${kitten.isAvailable()} reason=${kitten.unavailabilityReason()}');
     if (kitten.isAvailable()) return kitten;
 
     final system = _createSystemEngine();
@@ -45,6 +51,7 @@ class TtsEngineFactory {
       assetBasePath: kittenAssetBasePath,
       factory: _kittenFactory ?? KittenTtsPluginSession.create,
       modelBaseOverride: _modelBaseOverride,
+      cache: cache,
     );
   }
 

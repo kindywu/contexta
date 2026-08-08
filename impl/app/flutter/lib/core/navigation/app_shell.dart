@@ -31,7 +31,9 @@ class AppShell extends StatelessWidget {
         .firstOrNull;
 
     return Scaffold(
-      body: child,
+      // SafeArea：灵动岛（挖孔）/手势条区域留安全边距（对照 Kotlin
+      // enableEdgeToEdge + Scaffold 默认消费 systemBars insets）
+      body: SafeArea(child: child),
       bottomNavigationBar: showBottomBar && currentTab != null
           ? BottomNavBar(
               selectedTab: currentTab,

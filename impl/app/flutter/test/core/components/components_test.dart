@@ -158,8 +158,8 @@ void main() {
         ),
       )));
 
-      // 面板中心（面板水平居中、顶部贴 0）→ 不应关闭
-      await tester.tapAt(const Offset(400, 124));
+      // 面板中心（居中模式下 (200,300) = panel 中心）→ 不应关闭
+      await tester.tapAt(const Offset(200, 300));
       expect(dismissed, isFalse);
     });
 

@@ -113,8 +113,11 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Stack(
-        children: [
+      // SafeArea：灵动岛（挖孔）/手势条区域留安全边距（对照 Kotlin
+      // enableEdgeToEdge + Scaffold 默认消费 systemBars insets）
+      body: SafeArea(
+        child: Stack(
+          children: [
           Column(
             children: [
               // 3dp 珊瑚滚动进度条（宽 = 滚动比例）
@@ -209,6 +212,8 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
               _ReadingPlayerBar(
                 isSpeaking: state.isSpeakingFullArticle,
                 ttsSpeed: state.ttsSpeed,
+                speechProgress: state.speechProgress,
+                speechTotalParagraphs: state.speechTotalParagraphs,
                 onTogglePlayback: () => ref
                     .read(readingControllerProvider(widget.articleId).notifier)
                     .toggleFullArticlePlayback(),
@@ -252,6 +257,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -343,12 +349,16 @@ class _ReadingPlayerBar extends StatelessWidget {
   const _ReadingPlayerBar({
     required this.isSpeaking,
     required this.ttsSpeed,
+    required this.speechProgress,
+    required this.speechTotalParagraphs,
     required this.onTogglePlayback,
     required this.onToggleTtsSpeed,
   });
 
   final bool isSpeaking;
   final double ttsSpeed;
+  final double? speechProgress;
+  final int? speechTotalParagraphs;
   final VoidCallback onTogglePlayback;
   final VoidCallback onToggleTtsSpeed;
 
@@ -369,7 +379,10 @@ class _ReadingPlayerBar extends StatelessWidget {
             shape: const CircleBorder(),
             child: InkWell(
               customBorder: const CircleBorder(),
-              onTap: onTogglePlayback,
+              onTap: () {
+                debugPrint('[UI] _ReadingPlayerBar onTap PLAY/STOP');
+                onTogglePlayback();
+              },
               child: SizedBox(
                 width: 44,
                 height: 44,
@@ -382,13 +395,22 @@ class _ReadingPlayerBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          Text(
-            isSpeaking ? '正在朗读…' : '朗读全文',
-            style: AppType.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w500,
-              color: isSpeaking ? AppColors.primary : AppColors.bodyText,
+          if (speechProgress != null && speechTotalParagraphs != null)
+            Text(
+              '生成中 ${speechProgress!.toStringAsFixed(0)}/${speechTotalParagraphs} 段',
+              style: AppType.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+                color: AppColors.primary,
+              ),
+            )
+          else
+            Text(
+              isSpeaking ? '正在朗读…' : '朗读全文',
+              style: AppType.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+                color: isSpeaking ? AppColors.primary : AppColors.bodyText,
+              ),
             ),
-          ),
           const Spacer(),
           // 语速胶囊（选中态 Primary 底 OnPrimary 文字）
           Material(

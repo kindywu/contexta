@@ -74,18 +74,21 @@ enum ArticleStatus {
 
 /// 文章段落（对齐 Kotlin ArticleParagraph）。
 class ArticleParagraph {
+  /// DB 主键（来自 article_paragraph.id），0 表示未持久化或测试数据。
+  final int id;
   final int orderIndex;
   final String englishText;
   final String chineseTranslation;
 
   const ArticleParagraph({
+    this.id = 0,
     required this.orderIndex,
     required this.englishText,
     required this.chineseTranslation,
   });
 
   @override
-  String toString() => 'ArticleParagraph(orderIndex=$orderIndex, '
+  String toString() => 'ArticleParagraph(id=$id, orderIndex=$orderIndex, '
       'englishText=$englishText, chineseTranslation=$chineseTranslation)';
 }
 

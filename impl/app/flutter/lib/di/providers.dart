@@ -15,6 +15,7 @@ import '../data/repository/settings_repository_impl.dart';
 import '../data/repository/stats_repository_impl.dart';
 import '../data/repository/vocabulary_repository_impl.dart';
 import '../data/repository/word_repository_impl.dart';
+import '../data/tts/tts_cache_manager.dart';
 import '../data/tts/tts_engine_factory.dart';
 import '../domain/app_info_provider.dart';
 import '../domain/background_work_scheduler.dart';
@@ -89,11 +90,18 @@ final llmClientProvider = Provider<LlmClient>((ref) {
   return LlmCaller(ref.watch(deepSeekApiProvider));
 });
 
+/// TTS 缓存管理器（段落级 WAV 缓存 + FIFO 淘汰 50MB）。
+final ttsCacheManagerProvider = Provider<TtsCacheManager>((ref) {
+  final db = ref.watch(databaseProvider).requireValue;
+  return TtsCacheManager(db: db);
+});
+
 /// TTS 引擎（KittenTTS 默认，初始化失败自动回退系统 TTS；
 /// 对照 Kotlin TtsEngineImpl 的三重引擎链）。
 final ttsEngineProvider = FutureProvider<TtsEngine>((ref) {
   return TtsEngineFactory(
     kittenAssetBasePath: 'assets/kittentts_models',
+    cache: ref.watch(ttsCacheManagerProvider),
   ).create();
 });
 

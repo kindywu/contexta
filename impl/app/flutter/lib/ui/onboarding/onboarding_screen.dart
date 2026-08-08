@@ -5,18 +5,59 @@ import '../../core/components/app_button.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
+import '../../di/providers.dart';
 import 'onboarding_controller.dart';
 
 /// Onboarding 引导页（对照 Kotlin OnboardingScreen.kt）：
 /// 3 步向导（水平 → 每日篇数 → 确认），底部进度点 + 上一步/下一步按钮。
-class OnboardingScreen extends ConsumerWidget {
+/// 已引导用户自动跳过（对照 Kotlin LaunchedEffect isAlreadyOnboarded）。
+class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key, this.onComplete});
 
   /// 完成引导后的跳转回调（由路由层注入：context.go('/home')）。
   final VoidCallback? onComplete;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
+}
+
+class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
+  bool _checkedOnboarded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 已引导用户自动跳首页——延迟到数据库就绪后检查（对照 Kotlin LaunchedEffect）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _checkedOnboarded) return;
+      _checkedOnboarded = true;
+      _checkAlreadyOnboarded();
+    });
+  }
+
+  Future<void> _checkAlreadyOnboarded() async {
+    // 等待数据库就绪（databaseProvider 是 FutureProvider，hasValue=true 表示就绪）
+    final dbAsync = ref.read(databaseProvider);
+    if (!dbAsync.hasValue) return;
+    if (!mounted) return;
+    final onboarded = await ref
+        .read(onboardingControllerProvider.notifier)
+        .isAlreadyOnboarded();
+    if (!mounted) return;
+    if (onboarded) widget.onComplete?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 等待数据库就绪——若未就绪先建库，避免 downstream providers
+    // 在 AsyncLoading 上调用 .requireValue 抛 StateError
+    final dbAsync = ref.watch(databaseProvider);
+    if (!dbAsync.hasValue) {
+      return const Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      );
+    }
     final state = ref.watch(onboardingControllerProvider);
 
     return Scaffold(
@@ -41,30 +82,40 @@ class OnboardingScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 32),
 
-            // 步骤内容
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: switch (state.currentStep) {
-                  1 => _Step1Level(
-                      selectedLevel: state.selectedLevel,
-                      onSelectLevel: ref
-                          .read(onboardingControllerProvider.notifier)
-                          .selectLevel,
-                    ),
-                  2 => _Step2DailyCount(
-                      selectedDailyCount: state.selectedDailyCount,
-                      onSelectCount: ref
-                          .read(onboardingControllerProvider.notifier)
-                          .selectDailyCount,
-                    ),
-                  _ => _Step3Confirmation(
+            // 步骤内容（第 1-2 步可滚动，第 3 步居中全屏）
+            if (state.currentStep < 3)
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: switch (state.currentStep) {
+                    1 => _Step1Level(
+                        selectedLevel: state.selectedLevel,
+                        onSelectLevel: ref
+                            .read(onboardingControllerProvider.notifier)
+                            .selectLevel,
+                      ),
+                    2 => _Step2DailyCount(
+                        selectedDailyCount: state.selectedDailyCount,
+                        onSelectCount: ref
+                            .read(onboardingControllerProvider.notifier)
+                            .selectDailyCount,
+                      ),
+                    _ => const SizedBox.shrink(),
+                  },
+                ),
+              )
+            else
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: _Step3Confirmation(
                       level: state.selectedLevel ?? '',
                       dailyCount: state.selectedDailyCount ?? 0,
                     ),
-                },
+                  ),
+                ),
               ),
-            ),
 
             // 底部操作区
             Column(
@@ -98,7 +149,7 @@ class OnboardingScreen extends ConsumerWidget {
                               controller.nextStep();
                             } else {
                               controller.completeOnboarding(
-                                  onComplete ?? () {});
+                                  widget.onComplete ?? () {});
                             }
                           },
                         ),
@@ -213,47 +264,61 @@ class _Step3Confirmation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 撑满可用高度 + 居中：总结内容居中显示（对照 Kotlin
+    // Column(verticalScroll) + Spacer(weight(1f)) 把按钮压到底部、
+    // 内容留白居中）
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('准备好了！', style: AppType.textTheme.displayMedium),
-        const SizedBox(height: 4),
-        Text(
-          '系统将根据你的设置，每天推送匹配水平的英文文章。首次生成需要一些时间，请稍候。',
-          style: AppType.textTheme.bodyMedium?.copyWith(color: AppColors.muted),
-        ),
         const SizedBox(height: 24),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceCard,
-            borderRadius: BorderRadius.circular(AppRadius.md),
-          ),
+        Expanded(
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Icon(Icons.menu_book_outlined,
-                  size: 40, color: AppColors.primary),
-              const SizedBox(height: 8),
-              Text(
-                '你的专属阅读之旅即将开始',
-                style: AppType.textTheme.titleMedium,
-              ),
+              Text('准备好了！', style: AppType.textTheme.displayMedium),
               const SizedBox(height: 4),
               Text(
-                '每天坚持阅读，不知不觉提升英语',
-                style: AppType.textTheme.bodySmall
+                '系统将根据你的设置，每天推送匹配水平的英文文章。首次生成需要一些时间，请稍候。',
+                style: AppType.textTheme.bodyMedium
                     ?.copyWith(color: AppColors.muted),
               ),
-              const SizedBox(height: 16),
-              Text(
-                '水平：${_levelLabel(level)}   |   每日 $dailyCount 篇',
-                textAlign: TextAlign.center,
-                style: AppType.textTheme.bodyMedium
-                    ?.copyWith(color: AppColors.primary),
+              const SizedBox(height: 24),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceCard,
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.menu_book_outlined,
+                        size: 40, color: AppColors.primary),
+                    const SizedBox(height: 8),
+                    Text(
+                      '你的专属阅读之旅即将开始',
+                      style: AppType.textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '每天坚持阅读，不知不觉提升英语',
+                      style: AppType.textTheme.bodySmall
+                          ?.copyWith(color: AppColors.muted),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '水平：${_levelLabel(level)}   |   每日 $dailyCount 篇',
+                      textAlign: TextAlign.center,
+                      style: AppType.textTheme.bodyMedium
+                          ?.copyWith(color: AppColors.primary),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
+        const SizedBox(height: 24),
       ],
     );
   }

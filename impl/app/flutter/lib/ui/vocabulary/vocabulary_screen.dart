@@ -50,9 +50,10 @@ class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Column(
-        children: [
-          // 顶栏：返回 + 进度 + 录入
+      body: SafeArea(
+        child: Column(
+          children: [
+            // 顶栏：返回 + 进度 + 录入
           _VocabularyAppBar(
             totalCount: state.totalCount,
             currentIndex: state.currentIndex,
@@ -77,6 +78,7 @@ class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
             },
           ),
         ],
+        ),
       ),
     );
   }

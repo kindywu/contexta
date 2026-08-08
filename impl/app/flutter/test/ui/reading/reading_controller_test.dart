@@ -535,6 +535,79 @@ void main() {
       expect(controller.state.openTtsSettings, isTrue);
     });
 
+    test('引擎初始化中：点击播放等待就绪后朗读（不误报不可用）', () async {
+      final ready = Completer<TtsEngine>();
+      controller = ReadingController(
+        articleRepository: articleRepo,
+        settingsRepository: settingsRepo,
+        statsRepository: statsRepo,
+        wordRepository: wordRepo,
+        llmClient: llmClient,
+        vocabularyRepository: vocabRepo,
+        ttsEngineFuture: ready.future,
+      );
+      await controller.loadArticle(1);
+
+      controller.toggleFullArticlePlayback();
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.state.snackbarMessage, isNull);
+      expect(controller.state.openTtsSettings, isFalse);
+      // 点击瞬间立即设为播放中（按钮切换），引擎就绪后自动播放
+      expect(controller.state.isSpeakingFullArticle, isTrue);
+
+      ready.complete(tts);
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.state.isSpeakingFullArticle, isTrue);
+      expect(tts.spoken, ['Hello world. Second paragraph.']);
+    });
+
+    test('引擎初始化中：段落播放等待就绪后朗读（不误报不可用）', () async {
+      final ready = Completer<TtsEngine>();
+      controller = ReadingController(
+        articleRepository: articleRepo,
+        settingsRepository: settingsRepo,
+        statsRepository: statsRepo,
+        wordRepository: wordRepo,
+        llmClient: llmClient,
+        vocabularyRepository: vocabRepo,
+        ttsEngineFuture: ready.future,
+      );
+      await controller.loadArticle(1);
+
+      controller.playParagraph(0);
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.state.snackbarMessage, isNull);
+      expect(controller.state.speakingParagraphIndex, isNull);
+
+      ready.complete(tts);
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.state.speakingParagraphIndex, 0);
+      expect(tts.spoken, ['Hello world.']);
+    });
+
+    test('引擎初始化失败：等待后仍不可用 → 照常提示', () async {
+      final ready = Completer<TtsEngine>();
+      controller = ReadingController(
+        articleRepository: articleRepo,
+        settingsRepository: settingsRepo,
+        statsRepository: statsRepo,
+        wordRepository: wordRepo,
+        llmClient: llmClient,
+        vocabularyRepository: vocabRepo,
+        ttsEngineFuture: ready.future,
+      );
+      await controller.loadArticle(1);
+
+      controller.toggleFullArticlePlayback();
+      ready.complete(tts);
+      tts.available = false;
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.state.snackbarMessage, ReadingController.ttsErrorMessage);
+      expect(controller.state.openTtsSettings, isTrue);
+      expect(controller.state.isSpeakingFullArticle, isFalse);
+    });
+
     test('TTS 不可用：自动朗读静默跳过（无 Snackbar）', () async {
       tts.available = false;
       settingsRepo = _FakeSettingsRepo(

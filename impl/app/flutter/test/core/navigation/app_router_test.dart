@@ -14,6 +14,7 @@ import 'package:contexta/domain/repository/vocabulary_repository.dart';
 import 'package:contexta/domain/repository/word_repository.dart';
 import 'package:contexta/ui/addword/add_word_screen.dart';
 import 'package:contexta/ui/home/home_screen.dart';
+import 'package:contexta/ui/onboarding/onboarding_screen.dart';
 import 'package:contexta/ui/reading/reading_screen.dart';
 import 'package:contexta/ui/reference/reference_screen.dart';
 import 'package:contexta/ui/settings/settings_screen.dart';
@@ -46,6 +47,12 @@ class _FakeArticleRepo implements ArticleRepository {
 class _FakeSettingsRepo implements SettingsRepository {
   @override
   Stream<UserSettings?> observeSettings() => const Stream.empty();
+
+  @override
+  Future<UserSettings?> getSettings() async => null;
+
+  @override
+  Future<bool> isOnboarded() async => false;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
@@ -110,10 +117,13 @@ void main() {
       .toList();
 
   group('初始路由', () {
-    testWidgets('启动落在 onboarding（占位页，无底栏）', (tester) async {
+    testWidgets('启动落在 onboarding（真实页，无底栏）', (tester) async {
       await pumpApp(tester);
 
-      expect(find.text('Onboarding — 待实现'), findsOneWidget);
+      // Task 29 修复：Onboarding 页已接入路由（Task 21 漏接）
+      expect(find.byType(OnboardingScreen), findsOneWidget);
+      expect(find.text('Contexta'), findsOneWidget);
+      expect(find.text('下一步'), findsOneWidget);
       expect(find.byType(BottomNavBar), findsNothing);
     });
   });

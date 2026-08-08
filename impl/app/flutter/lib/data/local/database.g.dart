@@ -6975,6 +6975,535 @@ class VocabularyEntriesCompanion extends UpdateCompanion<VocabularyEntryRow> {
   }
 }
 
+class $TtsCachesTable extends TtsCaches
+    with TableInfo<$TtsCachesTable, TtsCacheRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TtsCachesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _articleParagraphIdMeta =
+      const VerificationMeta('articleParagraphId');
+  @override
+  late final GeneratedColumn<int> articleParagraphId = GeneratedColumn<int>(
+    'article_paragraph_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES article_paragraph (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _wordIdMeta = const VerificationMeta('wordId');
+  @override
+  late final GeneratedColumn<int> wordId = GeneratedColumn<int>(
+    'word_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _speedMeta = const VerificationMeta('speed');
+  @override
+  late final GeneratedColumn<double> speed = GeneratedColumn<double>(
+    'speed',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _filePathMeta = const VerificationMeta(
+    'filePath',
+  );
+  @override
+  late final GeneratedColumn<String> filePath = GeneratedColumn<String>(
+    'file_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileSizeMeta = const VerificationMeta(
+    'fileSize',
+  );
+  @override
+  late final GeneratedColumn<int> fileSize = GeneratedColumn<int>(
+    'file_size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lastAccessedAtMeta = const VerificationMeta(
+    'lastAccessedAt',
+  );
+  @override
+  late final GeneratedColumn<int> lastAccessedAt = GeneratedColumn<int>(
+    'last_accessed_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    articleParagraphId,
+    wordId,
+    speed,
+    filePath,
+    fileSize,
+    createdAt,
+    lastAccessedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'tts_cache';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TtsCacheRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('article_paragraph_id')) {
+      context.handle(
+        _articleParagraphIdMeta,
+        articleParagraphId.isAcceptableOrUnknown(
+          data['article_paragraph_id']!,
+          _articleParagraphIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('word_id')) {
+      context.handle(
+        _wordIdMeta,
+        wordId.isAcceptableOrUnknown(data['word_id']!, _wordIdMeta),
+      );
+    }
+    if (data.containsKey('speed')) {
+      context.handle(
+        _speedMeta,
+        speed.isAcceptableOrUnknown(data['speed']!, _speedMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_speedMeta);
+    }
+    if (data.containsKey('file_path')) {
+      context.handle(
+        _filePathMeta,
+        filePath.isAcceptableOrUnknown(data['file_path']!, _filePathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_filePathMeta);
+    }
+    if (data.containsKey('file_size')) {
+      context.handle(
+        _fileSizeMeta,
+        fileSize.isAcceptableOrUnknown(data['file_size']!, _fileSizeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fileSizeMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('last_accessed_at')) {
+      context.handle(
+        _lastAccessedAtMeta,
+        lastAccessedAt.isAcceptableOrUnknown(
+          data['last_accessed_at']!,
+          _lastAccessedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_lastAccessedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TtsCacheRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TtsCacheRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      articleParagraphId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}article_paragraph_id'],
+      ),
+      wordId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}word_id'],
+      ),
+      speed: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}speed'],
+      )!,
+      filePath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_path'],
+      )!,
+      fileSize: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_size'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      lastAccessedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_accessed_at'],
+      )!,
+    );
+  }
+
+  @override
+  $TtsCachesTable createAlias(String alias) {
+    return $TtsCachesTable(attachedDatabase, alias);
+  }
+}
+
+class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
+  final int id;
+
+  /// 段落关联（paragraph → TTS 缓存）；级联删除文章段落时自动清缓存。
+  final int? articleParagraphId;
+
+  /// 单词关联（word → TTS 缓存，短期不用但预留）。
+  final int? wordId;
+
+  /// 语速：0.75 或 1.0。
+  final double speed;
+
+  /// 缓存文件路径（相对 appSupportDir，如 tts_cache/42_1.0.wav）。
+  final String filePath;
+
+  /// 文件大小（bytes）。
+  final int fileSize;
+
+  /// 缓存创建时间（Unix millis）。
+  final int createdAt;
+
+  /// 最近访问时间（读写命中即更新），用于 FIFO 淘汰。
+  final int lastAccessedAt;
+  const TtsCacheRow({
+    required this.id,
+    this.articleParagraphId,
+    this.wordId,
+    required this.speed,
+    required this.filePath,
+    required this.fileSize,
+    required this.createdAt,
+    required this.lastAccessedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    if (!nullToAbsent || articleParagraphId != null) {
+      map['article_paragraph_id'] = Variable<int>(articleParagraphId);
+    }
+    if (!nullToAbsent || wordId != null) {
+      map['word_id'] = Variable<int>(wordId);
+    }
+    map['speed'] = Variable<double>(speed);
+    map['file_path'] = Variable<String>(filePath);
+    map['file_size'] = Variable<int>(fileSize);
+    map['created_at'] = Variable<int>(createdAt);
+    map['last_accessed_at'] = Variable<int>(lastAccessedAt);
+    return map;
+  }
+
+  TtsCachesCompanion toCompanion(bool nullToAbsent) {
+    return TtsCachesCompanion(
+      id: Value(id),
+      articleParagraphId: articleParagraphId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(articleParagraphId),
+      wordId: wordId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(wordId),
+      speed: Value(speed),
+      filePath: Value(filePath),
+      fileSize: Value(fileSize),
+      createdAt: Value(createdAt),
+      lastAccessedAt: Value(lastAccessedAt),
+    );
+  }
+
+  factory TtsCacheRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TtsCacheRow(
+      id: serializer.fromJson<int>(json['id']),
+      articleParagraphId: serializer.fromJson<int?>(json['articleParagraphId']),
+      wordId: serializer.fromJson<int?>(json['wordId']),
+      speed: serializer.fromJson<double>(json['speed']),
+      filePath: serializer.fromJson<String>(json['filePath']),
+      fileSize: serializer.fromJson<int>(json['fileSize']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      lastAccessedAt: serializer.fromJson<int>(json['lastAccessedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'articleParagraphId': serializer.toJson<int?>(articleParagraphId),
+      'wordId': serializer.toJson<int?>(wordId),
+      'speed': serializer.toJson<double>(speed),
+      'filePath': serializer.toJson<String>(filePath),
+      'fileSize': serializer.toJson<int>(fileSize),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'lastAccessedAt': serializer.toJson<int>(lastAccessedAt),
+    };
+  }
+
+  TtsCacheRow copyWith({
+    int? id,
+    Value<int?> articleParagraphId = const Value.absent(),
+    Value<int?> wordId = const Value.absent(),
+    double? speed,
+    String? filePath,
+    int? fileSize,
+    int? createdAt,
+    int? lastAccessedAt,
+  }) => TtsCacheRow(
+    id: id ?? this.id,
+    articleParagraphId: articleParagraphId.present
+        ? articleParagraphId.value
+        : this.articleParagraphId,
+    wordId: wordId.present ? wordId.value : this.wordId,
+    speed: speed ?? this.speed,
+    filePath: filePath ?? this.filePath,
+    fileSize: fileSize ?? this.fileSize,
+    createdAt: createdAt ?? this.createdAt,
+    lastAccessedAt: lastAccessedAt ?? this.lastAccessedAt,
+  );
+  TtsCacheRow copyWithCompanion(TtsCachesCompanion data) {
+    return TtsCacheRow(
+      id: data.id.present ? data.id.value : this.id,
+      articleParagraphId: data.articleParagraphId.present
+          ? data.articleParagraphId.value
+          : this.articleParagraphId,
+      wordId: data.wordId.present ? data.wordId.value : this.wordId,
+      speed: data.speed.present ? data.speed.value : this.speed,
+      filePath: data.filePath.present ? data.filePath.value : this.filePath,
+      fileSize: data.fileSize.present ? data.fileSize.value : this.fileSize,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      lastAccessedAt: data.lastAccessedAt.present
+          ? data.lastAccessedAt.value
+          : this.lastAccessedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TtsCacheRow(')
+          ..write('id: $id, ')
+          ..write('articleParagraphId: $articleParagraphId, ')
+          ..write('wordId: $wordId, ')
+          ..write('speed: $speed, ')
+          ..write('filePath: $filePath, ')
+          ..write('fileSize: $fileSize, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('lastAccessedAt: $lastAccessedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    articleParagraphId,
+    wordId,
+    speed,
+    filePath,
+    fileSize,
+    createdAt,
+    lastAccessedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TtsCacheRow &&
+          other.id == this.id &&
+          other.articleParagraphId == this.articleParagraphId &&
+          other.wordId == this.wordId &&
+          other.speed == this.speed &&
+          other.filePath == this.filePath &&
+          other.fileSize == this.fileSize &&
+          other.createdAt == this.createdAt &&
+          other.lastAccessedAt == this.lastAccessedAt);
+}
+
+class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
+  final Value<int> id;
+  final Value<int?> articleParagraphId;
+  final Value<int?> wordId;
+  final Value<double> speed;
+  final Value<String> filePath;
+  final Value<int> fileSize;
+  final Value<int> createdAt;
+  final Value<int> lastAccessedAt;
+  const TtsCachesCompanion({
+    this.id = const Value.absent(),
+    this.articleParagraphId = const Value.absent(),
+    this.wordId = const Value.absent(),
+    this.speed = const Value.absent(),
+    this.filePath = const Value.absent(),
+    this.fileSize = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.lastAccessedAt = const Value.absent(),
+  });
+  TtsCachesCompanion.insert({
+    this.id = const Value.absent(),
+    this.articleParagraphId = const Value.absent(),
+    this.wordId = const Value.absent(),
+    required double speed,
+    required String filePath,
+    required int fileSize,
+    required int createdAt,
+    required int lastAccessedAt,
+  }) : speed = Value(speed),
+       filePath = Value(filePath),
+       fileSize = Value(fileSize),
+       createdAt = Value(createdAt),
+       lastAccessedAt = Value(lastAccessedAt);
+  static Insertable<TtsCacheRow> custom({
+    Expression<int>? id,
+    Expression<int>? articleParagraphId,
+    Expression<int>? wordId,
+    Expression<double>? speed,
+    Expression<String>? filePath,
+    Expression<int>? fileSize,
+    Expression<int>? createdAt,
+    Expression<int>? lastAccessedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (articleParagraphId != null)
+        'article_paragraph_id': articleParagraphId,
+      if (wordId != null) 'word_id': wordId,
+      if (speed != null) 'speed': speed,
+      if (filePath != null) 'file_path': filePath,
+      if (fileSize != null) 'file_size': fileSize,
+      if (createdAt != null) 'created_at': createdAt,
+      if (lastAccessedAt != null) 'last_accessed_at': lastAccessedAt,
+    });
+  }
+
+  TtsCachesCompanion copyWith({
+    Value<int>? id,
+    Value<int?>? articleParagraphId,
+    Value<int?>? wordId,
+    Value<double>? speed,
+    Value<String>? filePath,
+    Value<int>? fileSize,
+    Value<int>? createdAt,
+    Value<int>? lastAccessedAt,
+  }) {
+    return TtsCachesCompanion(
+      id: id ?? this.id,
+      articleParagraphId: articleParagraphId ?? this.articleParagraphId,
+      wordId: wordId ?? this.wordId,
+      speed: speed ?? this.speed,
+      filePath: filePath ?? this.filePath,
+      fileSize: fileSize ?? this.fileSize,
+      createdAt: createdAt ?? this.createdAt,
+      lastAccessedAt: lastAccessedAt ?? this.lastAccessedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (articleParagraphId.present) {
+      map['article_paragraph_id'] = Variable<int>(articleParagraphId.value);
+    }
+    if (wordId.present) {
+      map['word_id'] = Variable<int>(wordId.value);
+    }
+    if (speed.present) {
+      map['speed'] = Variable<double>(speed.value);
+    }
+    if (filePath.present) {
+      map['file_path'] = Variable<String>(filePath.value);
+    }
+    if (fileSize.present) {
+      map['file_size'] = Variable<int>(fileSize.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (lastAccessedAt.present) {
+      map['last_accessed_at'] = Variable<int>(lastAccessedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TtsCachesCompanion(')
+          ..write('id: $id, ')
+          ..write('articleParagraphId: $articleParagraphId, ')
+          ..write('wordId: $wordId, ')
+          ..write('speed: $speed, ')
+          ..write('filePath: $filePath, ')
+          ..write('fileSize: $fileSize, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('lastAccessedAt: $lastAccessedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -7004,6 +7533,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final $VocabularyEntriesTable vocabularyEntries =
       $VocabularyEntriesTable(this);
+  late final $TtsCachesTable ttsCaches = $TtsCachesTable(this);
   late final Index indexDailyLearningRefBatchId = Index(
     'index_daily_learning_ref_batch_id',
     'CREATE INDEX index_daily_learning_ref_batch_id ON daily_learning (ref_batch_id)',
@@ -7052,6 +7582,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'index_vocabulary_entry_word_id',
     'CREATE INDEX index_vocabulary_entry_word_id ON vocabulary_entry (word_id)',
   );
+  late final Index ttsCacheLastAccessedAtIndex = Index(
+    'tts_cache_last_accessed_at_index',
+    'CREATE INDEX tts_cache_last_accessed_at_index ON tts_cache (last_accessed_at)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -7072,6 +7606,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     wordSenses,
     exampleSentences,
     vocabularyEntries,
+    ttsCaches,
     indexDailyLearningRefBatchId,
     indexArticleBatchGeneratedOn,
     indexArticleBatchDifficultyLevelSnapshotGeneratedOn,
@@ -7084,6 +7619,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     indexWordSenseWordId,
     indexExampleSentenceWordSenseId,
     indexVocabularyEntryWordId,
+    ttsCacheLastAccessedAtIndex,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -7128,6 +7664,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('vocabulary_entry', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'article_paragraph',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('tts_cache', kind: UpdateKind.delete)],
     ),
   ]);
 }
@@ -9930,6 +10473,23 @@ final class $$ArticleParagraphsTableReferences
       manager.$state.copyWith(prefetchedData: [item]),
     );
   }
+
+  static MultiTypedResultKey<$TtsCachesTable, List<TtsCacheRow>>
+  _ttsCachesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.ttsCaches,
+    aliasName: 'article_paragraph__id__tts_cache__article_paragraph_id',
+  );
+
+  $$TtsCachesTableProcessedTableManager get ttsCachesRefs {
+    final manager = $$TtsCachesTableTableManager($_db, $_db.ttsCaches).filter(
+      (f) => f.articleParagraphId.id.sqlEquals($_itemColumn<int>('id')!),
+    );
+
+    final cache = $_typedResult.readTableOrNull(_ttsCachesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$ArticleParagraphsTableFilterComposer
@@ -9982,6 +10542,31 @@ class $$ArticleParagraphsTableFilterComposer
           ),
     );
     return composer;
+  }
+
+  Expression<bool> ttsCachesRefs(
+    Expression<bool> Function($$TtsCachesTableFilterComposer f) f,
+  ) {
+    final $$TtsCachesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.ttsCaches,
+      getReferencedColumn: (t) => t.articleParagraphId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TtsCachesTableFilterComposer(
+            $db: $db,
+            $table: $db.ttsCaches,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
   }
 }
 
@@ -10087,6 +10672,31 @@ class $$ArticleParagraphsTableAnnotationComposer
     );
     return composer;
   }
+
+  Expression<T> ttsCachesRefs<T extends Object>(
+    Expression<T> Function($$TtsCachesTableAnnotationComposer a) f,
+  ) {
+    final $$TtsCachesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.ttsCaches,
+      getReferencedColumn: (t) => t.articleParagraphId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TtsCachesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.ttsCaches,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$ArticleParagraphsTableTableManager
@@ -10102,7 +10712,7 @@ class $$ArticleParagraphsTableTableManager
           $$ArticleParagraphsTableUpdateCompanionBuilder,
           (ArticleParagraphRow, $$ArticleParagraphsTableReferences),
           ArticleParagraphRow,
-          PrefetchHooks Function({bool articleId})
+          PrefetchHooks Function({bool articleId, bool ttsCachesRefs})
         > {
   $$ArticleParagraphsTableTableManager(
     _$AppDatabase db,
@@ -10156,10 +10766,10 @@ class $$ArticleParagraphsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({articleId = false}) {
+          prefetchHooksCallback: ({articleId = false, ttsCachesRefs = false}) {
             return PrefetchHooks(
               db: db,
-              explicitlyWatchedTables: [],
+              explicitlyWatchedTables: [if (ttsCachesRefs) db.ttsCaches],
               addJoins:
                   <
                     T extends TableManagerState<
@@ -10195,7 +10805,29 @@ class $$ArticleParagraphsTableTableManager
                     return state;
                   },
               getPrefetchedDataCallback: (items) async {
-                return [];
+                return [
+                  if (ttsCachesRefs)
+                    await $_getPrefetchedData<
+                      ArticleParagraphRow,
+                      $ArticleParagraphsTable,
+                      TtsCacheRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$ArticleParagraphsTableReferences
+                          ._ttsCachesRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$ArticleParagraphsTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).ttsCachesRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where(
+                            (e) => e.articleParagraphId == item.id,
+                          ),
+                      typedResults: items,
+                    ),
+                ];
               },
             );
           },
@@ -10215,7 +10847,7 @@ typedef $$ArticleParagraphsTableProcessedTableManager =
       $$ArticleParagraphsTableUpdateCompanionBuilder,
       (ArticleParagraphRow, $$ArticleParagraphsTableReferences),
       ArticleParagraphRow,
-      PrefetchHooks Function({bool articleId})
+      PrefetchHooks Function({bool articleId, bool ttsCachesRefs})
     >;
 typedef $$GenerationErrorLogsTableCreateCompanionBuilder =
     GenerationErrorLogsCompanion Function({
@@ -12067,6 +12699,379 @@ typedef $$VocabularyEntriesTableProcessedTableManager =
       VocabularyEntryRow,
       PrefetchHooks Function({bool wordId})
     >;
+typedef $$TtsCachesTableCreateCompanionBuilder =
+    TtsCachesCompanion Function({
+      Value<int> id,
+      Value<int?> articleParagraphId,
+      Value<int?> wordId,
+      required double speed,
+      required String filePath,
+      required int fileSize,
+      required int createdAt,
+      required int lastAccessedAt,
+    });
+typedef $$TtsCachesTableUpdateCompanionBuilder =
+    TtsCachesCompanion Function({
+      Value<int> id,
+      Value<int?> articleParagraphId,
+      Value<int?> wordId,
+      Value<double> speed,
+      Value<String> filePath,
+      Value<int> fileSize,
+      Value<int> createdAt,
+      Value<int> lastAccessedAt,
+    });
+
+final class $$TtsCachesTableReferences
+    extends BaseReferences<_$AppDatabase, $TtsCachesTable, TtsCacheRow> {
+  $$TtsCachesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $ArticleParagraphsTable _articleParagraphIdTable(_$AppDatabase db) =>
+      db.articleParagraphs.createAlias(
+        'tts_cache__article_paragraph_id__article_paragraph__id',
+      );
+
+  $$ArticleParagraphsTableProcessedTableManager? get articleParagraphId {
+    final $_column = $_itemColumn<int>('article_paragraph_id');
+    if ($_column == null) return null;
+    final manager = $$ArticleParagraphsTableTableManager(
+      $_db,
+      $_db.articleParagraphs,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_articleParagraphIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$TtsCachesTableFilterComposer
+    extends Composer<_$AppDatabase, $TtsCachesTable> {
+  $$TtsCachesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get wordId => $composableBuilder(
+    column: $table.wordId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get speed => $composableBuilder(
+    column: $table.speed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileSize => $composableBuilder(
+    column: $table.fileSize,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastAccessedAt => $composableBuilder(
+    column: $table.lastAccessedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$ArticleParagraphsTableFilterComposer get articleParagraphId {
+    final $$ArticleParagraphsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.articleParagraphId,
+      referencedTable: $db.articleParagraphs,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ArticleParagraphsTableFilterComposer(
+            $db: $db,
+            $table: $db.articleParagraphs,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$TtsCachesTableOrderingComposer
+    extends Composer<_$AppDatabase, $TtsCachesTable> {
+  $$TtsCachesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get wordId => $composableBuilder(
+    column: $table.wordId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get speed => $composableBuilder(
+    column: $table.speed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get filePath => $composableBuilder(
+    column: $table.filePath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileSize => $composableBuilder(
+    column: $table.fileSize,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastAccessedAt => $composableBuilder(
+    column: $table.lastAccessedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$ArticleParagraphsTableOrderingComposer get articleParagraphId {
+    final $$ArticleParagraphsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.articleParagraphId,
+      referencedTable: $db.articleParagraphs,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ArticleParagraphsTableOrderingComposer(
+            $db: $db,
+            $table: $db.articleParagraphs,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$TtsCachesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TtsCachesTable> {
+  $$TtsCachesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get wordId =>
+      $composableBuilder(column: $table.wordId, builder: (column) => column);
+
+  GeneratedColumn<double> get speed =>
+      $composableBuilder(column: $table.speed, builder: (column) => column);
+
+  GeneratedColumn<String> get filePath =>
+      $composableBuilder(column: $table.filePath, builder: (column) => column);
+
+  GeneratedColumn<int> get fileSize =>
+      $composableBuilder(column: $table.fileSize, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get lastAccessedAt => $composableBuilder(
+    column: $table.lastAccessedAt,
+    builder: (column) => column,
+  );
+
+  $$ArticleParagraphsTableAnnotationComposer get articleParagraphId {
+    final $$ArticleParagraphsTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.articleParagraphId,
+          referencedTable: $db.articleParagraphs,
+          getReferencedColumn: (t) => t.id,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$ArticleParagraphsTableAnnotationComposer(
+                $db: $db,
+                $table: $db.articleParagraphs,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return composer;
+  }
+}
+
+class $$TtsCachesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TtsCachesTable,
+          TtsCacheRow,
+          $$TtsCachesTableFilterComposer,
+          $$TtsCachesTableOrderingComposer,
+          $$TtsCachesTableAnnotationComposer,
+          $$TtsCachesTableCreateCompanionBuilder,
+          $$TtsCachesTableUpdateCompanionBuilder,
+          (TtsCacheRow, $$TtsCachesTableReferences),
+          TtsCacheRow,
+          PrefetchHooks Function({bool articleParagraphId})
+        > {
+  $$TtsCachesTableTableManager(_$AppDatabase db, $TtsCachesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TtsCachesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TtsCachesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TtsCachesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int?> articleParagraphId = const Value.absent(),
+                Value<int?> wordId = const Value.absent(),
+                Value<double> speed = const Value.absent(),
+                Value<String> filePath = const Value.absent(),
+                Value<int> fileSize = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> lastAccessedAt = const Value.absent(),
+              }) => TtsCachesCompanion(
+                id: id,
+                articleParagraphId: articleParagraphId,
+                wordId: wordId,
+                speed: speed,
+                filePath: filePath,
+                fileSize: fileSize,
+                createdAt: createdAt,
+                lastAccessedAt: lastAccessedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int?> articleParagraphId = const Value.absent(),
+                Value<int?> wordId = const Value.absent(),
+                required double speed,
+                required String filePath,
+                required int fileSize,
+                required int createdAt,
+                required int lastAccessedAt,
+              }) => TtsCachesCompanion.insert(
+                id: id,
+                articleParagraphId: articleParagraphId,
+                wordId: wordId,
+                speed: speed,
+                filePath: filePath,
+                fileSize: fileSize,
+                createdAt: createdAt,
+                lastAccessedAt: lastAccessedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$TtsCachesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({articleParagraphId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (articleParagraphId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.articleParagraphId,
+                                referencedTable: $$TtsCachesTableReferences
+                                    ._articleParagraphIdTable(db),
+                                referencedColumn: $$TtsCachesTableReferences
+                                    ._articleParagraphIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$TtsCachesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TtsCachesTable,
+      TtsCacheRow,
+      $$TtsCachesTableFilterComposer,
+      $$TtsCachesTableOrderingComposer,
+      $$TtsCachesTableAnnotationComposer,
+      $$TtsCachesTableCreateCompanionBuilder,
+      $$TtsCachesTableUpdateCompanionBuilder,
+      (TtsCacheRow, $$TtsCachesTableReferences),
+      TtsCacheRow,
+      PrefetchHooks Function({bool articleParagraphId})
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -12108,4 +13113,6 @@ class $AppDatabaseManager {
       $$ExampleSentencesTableTableManager(_db, _db.exampleSentences);
   $$VocabularyEntriesTableTableManager get vocabularyEntries =>
       $$VocabularyEntriesTableTableManager(_db, _db.vocabularyEntries);
+  $$TtsCachesTableTableManager get ttsCaches =>
+      $$TtsCachesTableTableManager(_db, _db.ttsCaches);
 }

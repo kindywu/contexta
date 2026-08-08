@@ -53,14 +53,13 @@ class AppModal extends StatelessWidget {
                 child: const ColoredBox(color: AppColors.scrim),
               ),
             ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: isBottom ? 0 : null,
-              top: isBottom ? null : 0,
-              child: Align(
-                alignment:
-                    isBottom ? Alignment.bottomCenter : Alignment.center,
+            // Align（非 Positioned）在 Stack 中填充全屏，面板才能真正居中
+            // （对照 Kotlin Box(fillMaxSize) + Column.align）
+            Align(
+              alignment:
+                  isBottom ? Alignment.bottomCenter : Alignment.center,
+              child: SizedBox(
+                width: isBottom ? double.infinity : null,
                 child: ConstrainedBox(
                   constraints: isBottom
                       ? BoxConstraints(

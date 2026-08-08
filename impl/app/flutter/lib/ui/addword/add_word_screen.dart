@@ -46,23 +46,27 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: Column(
-        children: [
-          AppTopBar(title: '录入单词', onBack: widget.onBack),
-          Expanded(
-            child: state.success != null
-                ? _AddWordResultContent(
-                    success: state.success!,
-                    onAddAnother: controller.reset,
-                    onDone: widget.onBack,
-                  )
-                : _AddWordInputContent(
-                    state: state,
-                    controller: controller,
-                    inputController: _inputController,
-                  ),
-          ),
-        ],
+      // SafeArea：灵动岛（挖孔）/手势条区域留安全边距（对照 Kotlin
+      // enableEdgeToEdge + Scaffold 默认消费 systemBars insets）
+      body: SafeArea(
+        child: Column(
+          children: [
+            AppTopBar(title: '录入单词', onBack: widget.onBack),
+            Expanded(
+              child: state.success != null
+                  ? _AddWordResultContent(
+                      success: state.success!,
+                      onAddAnother: controller.reset,
+                      onDone: widget.onBack,
+                    )
+                  : _AddWordInputContent(
+                      state: state,
+                      controller: controller,
+                      inputController: _inputController,
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

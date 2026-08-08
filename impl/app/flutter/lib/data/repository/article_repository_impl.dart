@@ -359,6 +359,7 @@ class ArticleRepositoryImpl implements ArticleRepository {
       nextRetryAt: model.nextRetryAt,
       paragraphs: paragraphRows
           .map((p) => ArticleParagraph(
+              id: p.id,
               orderIndex: p.orderIndex,
               englishText: p.englishText,
               chineseTranslation: p.chineseTranslation))
