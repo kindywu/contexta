@@ -28,14 +28,14 @@
   README.md         # 产品概述
   CLAUDE.md         # 本文件
   impl/             # 实现代码（由 AI 根据文档生成）
-  impl/app/android  # Contexta的Android版本实现
+  impl/app/flutter  # Contexta 的 Flutter 实现
 ```
 
 ### 实现代码中的文档目录
 
 ```
-impl/app/android/app/docs/             # 主题文档（按主题描述系统设计，供人类理解系统）
-impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务前编写的计划，执行完后可删除）
+impl/app/flutter/docs/                 # 主题文档（按主题描述系统设计，供人类理解系统；当前尚未创建）
+impl/app/flutter/temp_docs/            # 临时计划文档（执行复杂任务前编写的计划，执行完后可删除；当前尚未创建）
 ```
 
 ### 文档布局（根目录 `/`）
@@ -46,11 +46,11 @@ impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务
 - **技术约束** — 技术选型、约束条件、权衡决策
 
 ### 实现代码（`impl/`）
-所有源代码位于 `impl/` 下。代码主要由 AI 根据根目录的文档生成。实现技术栈尚未确认 — 遇到技术选型决策时标注为待定。
+所有源代码位于 `impl/` 下。代码主要由 AI 根据根目录的文档生成。当前技术栈：Flutter（Dart），本地数据库用 drift（SQLite），状态管理用 flutter_riverpod。
 
 ## 入门
 
-当前为全新项目，尚无实现代码。开发将在文档（产品、设计、技术约束）定稿后开始。
+项目已有 Flutter 实现（`impl/app/flutter/`），开发在现有代码基础上按"理解 → 实现 → 验证 → 同步文档 → 提交"推进。
 
 ## 核心原则
 
@@ -119,7 +119,7 @@ impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务
    - ✅ `article.title: String`
    - ❌ `article.tags: String`（存 "tech,science,news"）
 
-   例外：明确需要字段灵活性且查询不依赖拆分内容时，使用 `kotlinx.serialization` 序列化并加注释说明原因。
+   例外：明确需要字段灵活性且查询不依赖拆分内容时，使用 Dart 序列化（`jsonEncode` / `jsonDecode` 存 TEXT）并加注释说明原因。
 
 2. **2NF（完全依赖）**：非主键列必须完全依赖于全部主键（消除部分依赖），主要针对联合主键
    - 联合主键的表中，所有非主键列需描述"整条记录"，而非仅描述某个主键代表的实体
@@ -208,15 +208,15 @@ impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务
 
 | 实体类型 | 推荐主键 | 说明 |
 |---------|---------|------|
-| 长期实体 | `Long` 自增（Room `@PrimaryKey(autoGenerate = true)`） | 简单、高效 |
+| 长期实体 | `Long` 自增（drift `integer().autoIncrement()()`） | 简单、高效 |
 | 流水账 | `Long` 自增 | 追加写入，自然递增 |
 | 关系实体 | `Long` 自增 或 联合主键 | 联合主键防重复 |
 | 映射/字典表 | 业务主键（如枚举名、代码） | 可读性优先 |
 | 需外部引用的 | `UUID` / `String` | 避免暴露自增 ID |
 
-联合主键使用 `@Entity(primaryKeys = [...])`。
+drift 中联合主键（或无自增主键）通过 `Set<Column> get primaryKey => {...}` 覆盖声明。
 
-> 你的项目：`DailyLearning` 用 `learning_date`（ISO 日期）作为业务主键，确保每天最多一条学习记录。—— `db:PK`
+> 你的项目：`DailyLearning` 表用 `learning_date`（ISO 日期，TEXT）作为主键（`Set<Column> get primaryKey => {learningDate}`），确保每天最多一条学习记录。—— `db:PK`
 
 ---
 
@@ -224,12 +224,12 @@ impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务
 
 | 元素 | 规范 | 示例 |
 |------|------|------|
-| 表名（Entity） | 小写蛇形，单数 | `article`, `article_batch` |
+| 表名（drift Table） | 落库名小写蛇形、单数（复数类名 + `tableName` 显式覆盖） | `class ArticleBatches` → `article_batch` |
 | 字段名 | 小写蛇形 | `created_at`, `is_deleted` |
 | 关联外键 | `父表名_id` | `batch_id`, `article_id` |
 | 布尔字段 | `is_xxx` / `has_xxx` | `is_deleted`, `is_read` |
 | DAO | 单数 + `Dao` | `ArticleDao`, `WordDao` |
-| Entity 类 | 单数 + `Entity` | `ArticleEntity`, `ArticleBatchEntity` |
+| 数据类（drift Row） | 单数 + `Row`（`@DataClassName`） | `ArticleRow`, `ArticleBatchRow` |
 
 ---
 
@@ -254,8 +254,8 @@ impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务
 
 1. **NOT NULL**：业务上必有值的字段必须声明 `NOT NULL`
 2. **DEFAULT**：有合理默认值的字段设置 DEFAULT
-3. **外键**：Room 支持外键（`@ForeignKey`），但当前项目未启用——原因是非破坏性迁移的成本较高
-4. **UNIQUE**：联合唯一或单字段唯一用 `@Entity(indices = [Index(unique = true)])`
+3. **外键**：drift 支持外键（`customConstraint` 声明 `FOREIGN KEY`），但当前项目未启用——原因是非破坏性迁移的成本较高
+4. **UNIQUE**：联合唯一或单字段唯一用 `@TableIndex(unique: true)`
 
 ---
 
@@ -263,8 +263,8 @@ impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务
 
 | 阶段 | 策略 |
 |------|------|
-| 开发期（未发布） | `fallbackToDestructiveMigration()` — 直接重建 |
-| 发布后 | 手写 `Migration(N, N+1)`，保留数据 |
+| 开发期（未发布） | 不递增 schema 版本、不写 drift Migration —— schema 变更后用 `tool/migrate_db.sh` 对备份库 / 真机旧库就地补表（幂等，只补缺失表/列） |
+| 发布后 | 手写 `MigrationStrategy.onUpgrade` 迁移，保留数据 |
 | 大版本 | 渐进式迁移，一次升一个版本 |
 
-当前使用 `fallbackToDestructiveMigration()`，适合开发阶段。
+开发期覆盖安装不会重建表，schema 变更后需对旧库执行 `./tool/migrate_db.sh <db路径>` 就地升级（`--check` 只打印差异，不修改）。
