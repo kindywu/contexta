@@ -29,6 +29,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // showTranslationModePicker）
   bool _showLevelPicker = false;
   bool _showTranslationModePicker = false;
+  bool _showTtsSpeedPicker = false;
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +65,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             setState(() => _showLevelPicker = true),
                         onShowTranslationModePicker: () => setState(
                             () => _showTranslationModePicker = true),
+                        onShowTtsSpeedPicker: () =>
+                            setState(() => _showTtsSpeedPicker = true),
                       )
                     else
                       _StatsContent(stats: state.stats),
@@ -115,6 +118,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           },
           onDismiss: () =>
               setState(() => _showTranslationModePicker = false),
+        ),
+      if (_showTtsSpeedPicker)
+        _SettingsPickerDialog(
+          title: '选择朗读语速',
+          options: const [
+            ('0.8', '0.8x（慢）'),
+            ('1.0', '1x（标准）'),
+            ('1.2', '1.2x（快）'),
+          ],
+          selectedValue: state.ttsSpeed.toString(),
+          onSelect: (value) {
+            controller.updateTtsSpeed(double.parse(value));
+            setState(() => _showTtsSpeedPicker = false);
+          },
+          onDismiss: () => setState(() => _showTtsSpeedPicker = false),
         ),
       if (state.showLevelInfoDialog)
         _SettingsInfoDialog(
@@ -214,12 +232,14 @@ class _LearningSettingsContent extends StatelessWidget {
     required this.controller,
     required this.onShowLevelPicker,
     required this.onShowTranslationModePicker,
+    required this.onShowTtsSpeedPicker,
   });
 
   final SettingsUiState state;
   final SettingsController controller;
   final VoidCallback onShowLevelPicker;
   final VoidCallback onShowTranslationModePicker;
+  final VoidCallback onShowTtsSpeedPicker;
 
   @override
   Widget build(BuildContext context) {
@@ -245,7 +265,7 @@ class _LearningSettingsContent extends StatelessWidget {
             Expanded(
               child: _SettingsStepperItem(
                 label: '每日文章数量',
-                description: '从CURRENT batch中展示的文章数，最多5篇',
+                description: '展示的文章数',
                 value: state.dailyCount,
                 canDecrement: state.dailyCount > 1,
                 canIncrement: state.dailyCount < 5,
@@ -264,6 +284,13 @@ class _LearningSettingsContent extends StatelessWidget {
           description: '文章阅读时译文显示方式',
           value: _translationModeLabel(state.translationMode),
           onClick: onShowTranslationModePicker,
+        ),
+        // 朗读语速
+        _SettingsPickerItem(
+          label: '朗读语速',
+          description: '文章朗读速度，全局生效',
+          value: _ttsSpeedLabel(state.ttsSpeed),
+          onClick: onShowTtsSpeedPicker,
         ),
         // 单词掌握阈值
         _SettingsStepperItem(
@@ -801,4 +828,10 @@ String _translationModeLabel(String mode) => switch (mode) {
       'BLURRED' => '模糊',
       'HIDDEN' => '隐藏',
       _ => mode,
+    };
+
+String _ttsSpeedLabel(double speed) => switch (speed) {
+      0.8 => '0.8x（慢）',
+      1.2 => '1.2x（快）',
+      _ => '1x（标准）',
     };

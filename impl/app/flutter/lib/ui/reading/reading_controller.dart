@@ -294,6 +294,8 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       paragraphs: article.paragraphs,
       translationMode: TranslationMode.fromStorage(
           settings?.translationDisplayMode),
+      // 全局语速：进入文章时从设置读取（设置页可改，切换时回写）
+      ttsSpeed: settings?.ttsSpeed ?? 1.0,
       revealedParagraphs: const {},
       isLoading: false,
       isReadCompleted: alreadyRead,
@@ -582,15 +584,16 @@ class ReadingController extends StateNotifier<ReadingUiState> {
   }
 
   /// 语速切换：1x → 0.8x → 1.2x → 1x 循环（引擎内部把显示语速映射为实际速率）。
+  /// 切换结果回写设置（全局生效，设置页同步显示）。
   void toggleTtsSpeed() {
     const speeds = [1.0, 0.8, 1.2];
     final current = state.ttsSpeed;
     final nextIndex = speeds.indexOf(current);
-    state = state.copyWith(
-      ttsSpeed: nextIndex >= 0
-          ? speeds[(nextIndex + 1) % speeds.length]
-          : speeds.first,
-    );
+    final next = nextIndex >= 0
+        ? speeds[(nextIndex + 1) % speeds.length]
+        : speeds.first;
+    state = state.copyWith(ttsSpeed: next);
+    _settingsRepository.updateTtsSpeed(next);
   }
 
   void _unavailableTts() {

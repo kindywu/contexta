@@ -34,6 +34,7 @@ class SettingsRepositoryImpl implements SettingsRepository {
       difficultyLevel: 'MEDIUM',
       dailyArticleCount: 3,
       translationDisplayMode: 'FULL',
+      ttsSpeed: 1.0,
       masteryThresholdN: 1,
       autoPlayAudio: false,
     )).toCompanion(true).copyWith(
@@ -68,6 +69,14 @@ class SettingsRepositoryImpl implements SettingsRepository {
     if (existing == null) return;
     await _settingsDao.upsert(
         existing.toCompanion(true).copyWith(translationDisplayMode: Value(mode)));
+  }
+
+  @override
+  Future<void> updateTtsSpeed(double speed) async {
+    final existing = await _settingsDao.get();
+    if (existing == null) return;
+    await _settingsDao.upsert(
+        existing.toCompanion(true).copyWith(ttsSpeed: Value(speed)));
   }
 
   @override

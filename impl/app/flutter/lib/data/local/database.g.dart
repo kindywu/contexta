@@ -65,6 +65,17 @@ class $UserSettingsTable extends UserSettings
         type: DriftSqlType.string,
         requiredDuringInsert: true,
       );
+  static const VerificationMeta _ttsSpeedMeta = const VerificationMeta(
+    'ttsSpeed',
+  );
+  @override
+  late final GeneratedColumn<double> ttsSpeed = GeneratedColumn<double>(
+    'tts_speed',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _masteryThresholdNMeta = const VerificationMeta(
     'masteryThresholdN',
   );
@@ -97,6 +108,7 @@ class $UserSettingsTable extends UserSettings
     difficultyLevel,
     dailyArticleCount,
     translationDisplayMode,
+    ttsSpeed,
     masteryThresholdN,
     autoPlayAudio,
   ];
@@ -159,6 +171,14 @@ class $UserSettingsTable extends UserSettings
     } else if (isInserting) {
       context.missing(_translationDisplayModeMeta);
     }
+    if (data.containsKey('tts_speed')) {
+      context.handle(
+        _ttsSpeedMeta,
+        ttsSpeed.isAcceptableOrUnknown(data['tts_speed']!, _ttsSpeedMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_ttsSpeedMeta);
+    }
     if (data.containsKey('mastery_threshold_n')) {
       context.handle(
         _masteryThresholdNMeta,
@@ -210,6 +230,10 @@ class $UserSettingsTable extends UserSettings
         DriftSqlType.string,
         data['${effectivePrefix}translation_display_mode'],
       )!,
+      ttsSpeed: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}tts_speed'],
+      )!,
       masteryThresholdN: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}mastery_threshold_n'],
@@ -238,6 +262,9 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
 
   /// FULL | BLURRED | HIDDEN
   final String translationDisplayMode;
+
+  /// 朗读语速（UI 显示语速：0.8 / 1.0 / 1.2，引擎内部映射实际速率）
+  final double ttsSpeed;
   final int masteryThresholdN;
   final bool autoPlayAudio;
   const UserSettingsRow({
@@ -246,6 +273,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     required this.difficultyLevel,
     required this.dailyArticleCount,
     required this.translationDisplayMode,
+    required this.ttsSpeed,
     required this.masteryThresholdN,
     required this.autoPlayAudio,
   });
@@ -257,6 +285,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     map['difficulty_level'] = Variable<String>(difficultyLevel);
     map['daily_article_count'] = Variable<int>(dailyArticleCount);
     map['translation_display_mode'] = Variable<String>(translationDisplayMode);
+    map['tts_speed'] = Variable<double>(ttsSpeed);
     map['mastery_threshold_n'] = Variable<int>(masteryThresholdN);
     map['auto_play_audio'] = Variable<bool>(autoPlayAudio);
     return map;
@@ -269,6 +298,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       difficultyLevel: Value(difficultyLevel),
       dailyArticleCount: Value(dailyArticleCount),
       translationDisplayMode: Value(translationDisplayMode),
+      ttsSpeed: Value(ttsSpeed),
       masteryThresholdN: Value(masteryThresholdN),
       autoPlayAudio: Value(autoPlayAudio),
     );
@@ -287,6 +317,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       translationDisplayMode: serializer.fromJson<String>(
         json['translationDisplayMode'],
       ),
+      ttsSpeed: serializer.fromJson<double>(json['ttsSpeed']),
       masteryThresholdN: serializer.fromJson<int>(json['masteryThresholdN']),
       autoPlayAudio: serializer.fromJson<bool>(json['autoPlayAudio']),
     );
@@ -302,6 +333,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       'translationDisplayMode': serializer.toJson<String>(
         translationDisplayMode,
       ),
+      'ttsSpeed': serializer.toJson<double>(ttsSpeed),
       'masteryThresholdN': serializer.toJson<int>(masteryThresholdN),
       'autoPlayAudio': serializer.toJson<bool>(autoPlayAudio),
     };
@@ -313,6 +345,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     String? difficultyLevel,
     int? dailyArticleCount,
     String? translationDisplayMode,
+    double? ttsSpeed,
     int? masteryThresholdN,
     bool? autoPlayAudio,
   }) => UserSettingsRow(
@@ -322,6 +355,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     dailyArticleCount: dailyArticleCount ?? this.dailyArticleCount,
     translationDisplayMode:
         translationDisplayMode ?? this.translationDisplayMode,
+    ttsSpeed: ttsSpeed ?? this.ttsSpeed,
     masteryThresholdN: masteryThresholdN ?? this.masteryThresholdN,
     autoPlayAudio: autoPlayAudio ?? this.autoPlayAudio,
   );
@@ -340,6 +374,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       translationDisplayMode: data.translationDisplayMode.present
           ? data.translationDisplayMode.value
           : this.translationDisplayMode,
+      ttsSpeed: data.ttsSpeed.present ? data.ttsSpeed.value : this.ttsSpeed,
       masteryThresholdN: data.masteryThresholdN.present
           ? data.masteryThresholdN.value
           : this.masteryThresholdN,
@@ -357,6 +392,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
           ..write('difficultyLevel: $difficultyLevel, ')
           ..write('dailyArticleCount: $dailyArticleCount, ')
           ..write('translationDisplayMode: $translationDisplayMode, ')
+          ..write('ttsSpeed: $ttsSpeed, ')
           ..write('masteryThresholdN: $masteryThresholdN, ')
           ..write('autoPlayAudio: $autoPlayAudio')
           ..write(')'))
@@ -370,6 +406,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     difficultyLevel,
     dailyArticleCount,
     translationDisplayMode,
+    ttsSpeed,
     masteryThresholdN,
     autoPlayAudio,
   );
@@ -382,6 +419,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
           other.difficultyLevel == this.difficultyLevel &&
           other.dailyArticleCount == this.dailyArticleCount &&
           other.translationDisplayMode == this.translationDisplayMode &&
+          other.ttsSpeed == this.ttsSpeed &&
           other.masteryThresholdN == this.masteryThresholdN &&
           other.autoPlayAudio == this.autoPlayAudio);
 }
@@ -392,6 +430,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
   final Value<String> difficultyLevel;
   final Value<int> dailyArticleCount;
   final Value<String> translationDisplayMode;
+  final Value<double> ttsSpeed;
   final Value<int> masteryThresholdN;
   final Value<bool> autoPlayAudio;
   const UserSettingsCompanion({
@@ -400,6 +439,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     this.difficultyLevel = const Value.absent(),
     this.dailyArticleCount = const Value.absent(),
     this.translationDisplayMode = const Value.absent(),
+    this.ttsSpeed = const Value.absent(),
     this.masteryThresholdN = const Value.absent(),
     this.autoPlayAudio = const Value.absent(),
   });
@@ -409,12 +449,14 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     required String difficultyLevel,
     required int dailyArticleCount,
     required String translationDisplayMode,
+    required double ttsSpeed,
     required int masteryThresholdN,
     required bool autoPlayAudio,
   }) : isOnboarded = Value(isOnboarded),
        difficultyLevel = Value(difficultyLevel),
        dailyArticleCount = Value(dailyArticleCount),
        translationDisplayMode = Value(translationDisplayMode),
+       ttsSpeed = Value(ttsSpeed),
        masteryThresholdN = Value(masteryThresholdN),
        autoPlayAudio = Value(autoPlayAudio);
   static Insertable<UserSettingsRow> custom({
@@ -423,6 +465,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     Expression<String>? difficultyLevel,
     Expression<int>? dailyArticleCount,
     Expression<String>? translationDisplayMode,
+    Expression<double>? ttsSpeed,
     Expression<int>? masteryThresholdN,
     Expression<bool>? autoPlayAudio,
   }) {
@@ -433,6 +476,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
       if (dailyArticleCount != null) 'daily_article_count': dailyArticleCount,
       if (translationDisplayMode != null)
         'translation_display_mode': translationDisplayMode,
+      if (ttsSpeed != null) 'tts_speed': ttsSpeed,
       if (masteryThresholdN != null) 'mastery_threshold_n': masteryThresholdN,
       if (autoPlayAudio != null) 'auto_play_audio': autoPlayAudio,
     });
@@ -444,6 +488,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     Value<String>? difficultyLevel,
     Value<int>? dailyArticleCount,
     Value<String>? translationDisplayMode,
+    Value<double>? ttsSpeed,
     Value<int>? masteryThresholdN,
     Value<bool>? autoPlayAudio,
   }) {
@@ -454,6 +499,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
       dailyArticleCount: dailyArticleCount ?? this.dailyArticleCount,
       translationDisplayMode:
           translationDisplayMode ?? this.translationDisplayMode,
+      ttsSpeed: ttsSpeed ?? this.ttsSpeed,
       masteryThresholdN: masteryThresholdN ?? this.masteryThresholdN,
       autoPlayAudio: autoPlayAudio ?? this.autoPlayAudio,
     );
@@ -479,6 +525,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
         translationDisplayMode.value,
       );
     }
+    if (ttsSpeed.present) {
+      map['tts_speed'] = Variable<double>(ttsSpeed.value);
+    }
     if (masteryThresholdN.present) {
       map['mastery_threshold_n'] = Variable<int>(masteryThresholdN.value);
     }
@@ -496,6 +545,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
           ..write('difficultyLevel: $difficultyLevel, ')
           ..write('dailyArticleCount: $dailyArticleCount, ')
           ..write('translationDisplayMode: $translationDisplayMode, ')
+          ..write('ttsSpeed: $ttsSpeed, ')
           ..write('masteryThresholdN: $masteryThresholdN, ')
           ..write('autoPlayAudio: $autoPlayAudio')
           ..write(')'))
@@ -7682,6 +7732,7 @@ typedef $$UserSettingsTableCreateCompanionBuilder =
       required String difficultyLevel,
       required int dailyArticleCount,
       required String translationDisplayMode,
+      required double ttsSpeed,
       required int masteryThresholdN,
       required bool autoPlayAudio,
     });
@@ -7692,6 +7743,7 @@ typedef $$UserSettingsTableUpdateCompanionBuilder =
       Value<String> difficultyLevel,
       Value<int> dailyArticleCount,
       Value<String> translationDisplayMode,
+      Value<double> ttsSpeed,
       Value<int> masteryThresholdN,
       Value<bool> autoPlayAudio,
     });
@@ -7727,6 +7779,11 @@ class $$UserSettingsTableFilterComposer
 
   ColumnFilters<String> get translationDisplayMode => $composableBuilder(
     column: $table.translationDisplayMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get ttsSpeed => $composableBuilder(
+    column: $table.ttsSpeed,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7775,6 +7832,11 @@ class $$UserSettingsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get ttsSpeed => $composableBuilder(
+    column: $table.ttsSpeed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get masteryThresholdN => $composableBuilder(
     column: $table.masteryThresholdN,
     builder: (column) => ColumnOrderings(column),
@@ -7817,6 +7879,9 @@ class $$UserSettingsTableAnnotationComposer
     column: $table.translationDisplayMode,
     builder: (column) => column,
   );
+
+  GeneratedColumn<double> get ttsSpeed =>
+      $composableBuilder(column: $table.ttsSpeed, builder: (column) => column);
 
   GeneratedColumn<int> get masteryThresholdN => $composableBuilder(
     column: $table.masteryThresholdN,
@@ -7865,6 +7930,7 @@ class $$UserSettingsTableTableManager
                 Value<String> difficultyLevel = const Value.absent(),
                 Value<int> dailyArticleCount = const Value.absent(),
                 Value<String> translationDisplayMode = const Value.absent(),
+                Value<double> ttsSpeed = const Value.absent(),
                 Value<int> masteryThresholdN = const Value.absent(),
                 Value<bool> autoPlayAudio = const Value.absent(),
               }) => UserSettingsCompanion(
@@ -7873,6 +7939,7 @@ class $$UserSettingsTableTableManager
                 difficultyLevel: difficultyLevel,
                 dailyArticleCount: dailyArticleCount,
                 translationDisplayMode: translationDisplayMode,
+                ttsSpeed: ttsSpeed,
                 masteryThresholdN: masteryThresholdN,
                 autoPlayAudio: autoPlayAudio,
               ),
@@ -7883,6 +7950,7 @@ class $$UserSettingsTableTableManager
                 required String difficultyLevel,
                 required int dailyArticleCount,
                 required String translationDisplayMode,
+                required double ttsSpeed,
                 required int masteryThresholdN,
                 required bool autoPlayAudio,
               }) => UserSettingsCompanion.insert(
@@ -7891,6 +7959,7 @@ class $$UserSettingsTableTableManager
                 difficultyLevel: difficultyLevel,
                 dailyArticleCount: dailyArticleCount,
                 translationDisplayMode: translationDisplayMode,
+                ttsSpeed: ttsSpeed,
                 masteryThresholdN: masteryThresholdN,
                 autoPlayAudio: autoPlayAudio,
               ),

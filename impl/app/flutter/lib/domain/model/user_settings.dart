@@ -9,6 +9,7 @@ class UserSettings {
   final String difficultyLevel; // LOW | MEDIUM | HIGH
   final int dailyArticleCount;
   final String translationDisplayMode; // FULL | BLURRED | HIDDEN
+  final double ttsSpeed; // 0.8 | 1.0 | 1.2（UI 显示语速）
   final int masteryThresholdN;
   final bool autoPlayAudio;
 
@@ -18,6 +19,7 @@ class UserSettings {
     this.difficultyLevel = 'MEDIUM',
     this.dailyArticleCount = 3,
     this.translationDisplayMode = 'FULL',
+    this.ttsSpeed = 1.0,
     this.masteryThresholdN = 1,
     this.autoPlayAudio = false,
   });
@@ -26,6 +28,7 @@ class UserSettings {
   String toString() => 'UserSettings(id=$id, isOnboarded=$isOnboarded, '
       'difficultyLevel=$difficultyLevel, dailyArticleCount=$dailyArticleCount, '
       'translationDisplayMode=$translationDisplayMode, '
+      'ttsSpeed=$ttsSpeed, '
       'masteryThresholdN=$masteryThresholdN, autoPlayAudio=$autoPlayAudio)';
 }
 

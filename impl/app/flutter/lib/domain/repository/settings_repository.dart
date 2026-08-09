@@ -18,6 +18,9 @@ abstract interface class SettingsRepository {
 
   Future<void> updateTranslationMode(String mode);
 
+  /// 更新朗读语速（UI 显示语速：0.8 / 1.0 / 1.2）。
+  Future<void> updateTtsSpeed(double speed);
+
   /// 夹取 1..5 后更新。
   Future<void> updateMasteryThreshold(int n);
 

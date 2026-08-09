@@ -10,6 +10,7 @@ class SettingsUiState {
     this.level = 'MEDIUM',
     this.dailyCount = 3,
     this.translationMode = 'FULL',
+    this.ttsSpeed = 1.0,
     this.masteryThreshold = 1,
     this.autoPlayAudio = false,
     this.stats = const SettingsStatsData(),
@@ -25,6 +26,7 @@ class SettingsUiState {
   final String level;
   final int dailyCount;
   final String translationMode;
+  final double ttsSpeed;
   final int masteryThreshold;
   final bool autoPlayAudio;
   final SettingsStatsData stats;
@@ -47,6 +49,7 @@ class SettingsUiState {
     String? level,
     int? dailyCount,
     String? translationMode,
+    double? ttsSpeed,
     int? masteryThreshold,
     bool? autoPlayAudio,
     SettingsStatsData? stats,
@@ -62,6 +65,7 @@ class SettingsUiState {
         level: level ?? this.level,
         dailyCount: dailyCount ?? this.dailyCount,
         translationMode: translationMode ?? this.translationMode,
+        ttsSpeed: ttsSpeed ?? this.ttsSpeed,
         masteryThreshold: masteryThreshold ?? this.masteryThreshold,
         autoPlayAudio: autoPlayAudio ?? this.autoPlayAudio,
         stats: stats ?? this.stats,
@@ -136,6 +140,7 @@ class SettingsController extends StateNotifier<SettingsUiState> {
       level: settings.difficultyLevel,
       dailyCount: settings.dailyArticleCount,
       translationMode: settings.translationDisplayMode,
+      ttsSpeed: settings.ttsSpeed,
       masteryThreshold: settings.masteryThresholdN,
       autoPlayAudio: settings.autoPlayAudio,
       stats: SettingsStatsData(
@@ -235,6 +240,11 @@ class SettingsController extends StateNotifier<SettingsUiState> {
   Future<void> updateTranslationMode(String mode) async {
     await _settingsRepository.updateTranslationMode(mode);
     state = state.copyWith(translationMode: mode);
+  }
+
+  Future<void> updateTtsSpeed(double speed) async {
+    await _settingsRepository.updateTtsSpeed(speed);
+    state = state.copyWith(ttsSpeed: speed);
   }
 
   Future<void> incrementMasteryThreshold() async {

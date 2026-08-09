@@ -33,6 +33,9 @@ class _FakeSettingsRepo implements SettingsRepository {
   Future<void> updateTranslationMode(String mode) async {}
 
   @override
+  Future<void> updateTtsSpeed(double speed) async {}
+
+  @override
   Future<void> updateMasteryThreshold(int n) async {}
 
   @override

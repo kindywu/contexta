@@ -216,6 +216,10 @@ class FakeSettingsRepository implements SettingsRepository {
       throw UnimplementedError();
 
   @override
+  Future<void> updateTtsSpeed(double speed) =>
+      throw UnimplementedError();
+
+  @override
   Future<void> updateMasteryThreshold(int n) => throw UnimplementedError();
 
   @override

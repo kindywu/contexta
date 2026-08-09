@@ -30,6 +30,9 @@ class UserSettings extends Table {
   /// FULL | BLURRED | HIDDEN
   TextColumn get translationDisplayMode => text()();
 
+  /// 朗读语速（UI 显示语速：0.8 / 1.0 / 1.2，引擎内部映射实际速率）
+  RealColumn get ttsSpeed => real()();
+
   IntColumn get masteryThresholdN => integer()();
 
   BoolColumn get autoPlayAudio => boolean()();

@@ -39,6 +39,7 @@ void main() {
         difficultyLevel: Value('MEDIUM'),
         dailyArticleCount: Value(5),
         translationDisplayMode: Value('FULL'),
+        ttsSpeed: Value(1.0),
         masteryThresholdN: Value(2),
         autoPlayAudio: Value(true),
       ));
@@ -58,6 +59,7 @@ void main() {
         difficultyLevel: Value('MEDIUM'),
         dailyArticleCount: Value(3),
         translationDisplayMode: Value('FULL'),
+        ttsSpeed: Value(1.0),
         masteryThresholdN: Value(1),
         autoPlayAudio: Value(false),
       ));

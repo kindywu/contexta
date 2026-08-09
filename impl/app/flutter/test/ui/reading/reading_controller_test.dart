@@ -64,13 +64,20 @@ class _FakeSettingsRepo implements SettingsRepository {
     this.settings = const UserSettings(
         isOnboarded: true, translationDisplayMode: 'BLURRED'),
     this.onUpdateTranslationMode,
+    this.onUpdateTtsSpeed,
   });
 
   final UserSettings settings;
   final Future<void> Function(String mode)? onUpdateTranslationMode;
+  final Future<void> Function(double speed)? onUpdateTtsSpeed;
 
   @override
   Future<UserSettings?> getSettings() async => settings;
+
+  @override
+  Future<void> updateTtsSpeed(double speed) async {
+    await onUpdateTtsSpeed?.call(speed);
+  }
 
   @override
   Future<void> updateTranslationMode(String mode) async {
@@ -704,6 +711,24 @@ void main() {
 
       controller.toggleTtsSpeed();
       expect(controller.state.ttsSpeed, 1.0);
+    });
+
+    test('切换语速回写设置（全局生效）', () async {
+      final written = <double>[];
+      settingsRepo = _FakeSettingsRepo(
+        settings: const UserSettings(isOnboarded: true, ttsSpeed: 0.8),
+        onUpdateTtsSpeed: (speed) async => written.add(speed),
+      );
+      controller = makeController();
+
+      // 进入文章：语速从设置读取（0.8）
+      await controller.loadArticle(1);
+      expect(controller.state.ttsSpeed, 0.8);
+
+      // 切换：本地状态 + 回写设置
+      controller.toggleTtsSpeed();
+      expect(controller.state.ttsSpeed, 1.2);
+      expect(written, [1.2]);
     });
 
     test('自动朗读：设置开启进入文章自动播全文（含标题）', () async {
