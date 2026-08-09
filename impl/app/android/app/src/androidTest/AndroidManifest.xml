@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Use the Hilt-generated test application instead of the production
-         @HiltAndroidApp ContextaApplication. Without this override, @HiltAndroidTest
-         tests will fail with: "Hilt test cannot use a @HiltAndroidApp application".
-         The _Generated suffix is appended by the Hilt annotation processor. -->
-    <application android:name="com.ak.contexta.TestContextaApplication_Application" />
-</manifest>
