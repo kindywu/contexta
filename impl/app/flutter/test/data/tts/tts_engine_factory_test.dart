@@ -109,6 +109,11 @@ class _OkSession implements KittenTtsSession {
       void Function(String utteranceId, int done, int total)? listener) {}
 
   @override
+  void setOnParagraphStarted(
+      void Function(String utteranceId, int paragraphIndex, int total)?
+          listener) {}
+
+  @override
   Future<void> pregenerateParagraphs({
     required List<({int paragraphId, String text})> paragraphs,
     required double speed,

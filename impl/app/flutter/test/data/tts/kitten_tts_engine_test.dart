@@ -152,6 +152,21 @@ class _FakeSession implements KittenTtsSession {
   void setProgressListener(
       void Function(String utteranceId, int done, int total)? listener) {}
 
+  void Function(String utteranceId, int paragraphIndex, int total)?
+      _paragraphStartedListener;
+
+  @override
+  void setOnParagraphStarted(
+      void Function(String utteranceId, int paragraphIndex, int total)?
+          listener) {
+    _paragraphStartedListener = listener;
+  }
+
+  /// 测试触发：模拟第 [index] 段开始播放（3 段总正文）。
+  void simulateParagraphStarted(int index) {
+    _paragraphStartedListener?.call('ktk-0', index, 3);
+  }
+
   @override
   Future<void> pregenerateParagraphs({
     required List<({int paragraphId, String text})> paragraphs,

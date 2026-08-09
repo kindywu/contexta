@@ -58,6 +58,12 @@ abstract interface class KittenTtsSession {
   void setProgressListener(
       void Function(String utteranceId, int done, int total)? listener);
 
+  /// 注册「段落开始播放」回调（播放 worker 每段实际发声前调用）。
+  /// 带 utterance id、段落索引（正文从 0 起，标题段不上报）与正文总段数；
+  /// 传 null 注销。与 [setProgressListener]（生成进度）不同，此回调反映真实播放位置。
+  void setOnParagraphStarted(
+      void Function(String utteranceId, int paragraphIndex, int total)? listener);
+
   /// 后台预生成段落音频并写入缓存（跳过已缓存段落）。
   ///
   /// 引擎空闲时调用（播放结束后），不抢占播放。被 stop/新播放打断。
@@ -90,6 +96,8 @@ class KittenTtsPluginSession implements KittenTtsSession {
   final TtsCacheManager? cache;
   void Function(String utteranceId)? _finishListener;
   void Function(String utteranceId, int done, int total)? _progressListener;
+  void Function(String utteranceId, int paragraphIndex, int total)?
+      _paragraphStartedListener;
   String? _currentUtteranceId;
   Completer<void>? _playbackCompleter;
   StreamSubscription<void>? _completeSub;
@@ -689,6 +697,13 @@ class KittenTtsPluginSession implements KittenTtsSession {
   void setProgressListener(
       void Function(String utteranceId, int done, int total)? listener) {
     _progressListener = listener;
+  }
+
+  @override
+  void setOnParagraphStarted(
+      void Function(String utteranceId, int paragraphIndex, int total)?
+          listener) {
+    _paragraphStartedListener = listener;
   }
 
   @override
