@@ -104,6 +104,7 @@ extension on UserSettingsRow {
         difficultyLevel: difficultyLevel,
         dailyArticleCount: dailyArticleCount,
         translationDisplayMode: translationDisplayMode,
+        ttsSpeed: ttsSpeed,
         masteryThresholdN: masteryThresholdN,
         autoPlayAudio: autoPlayAudio,
       );
