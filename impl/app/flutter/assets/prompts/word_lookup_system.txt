@@ -22,3 +22,4 @@ Rules:
 - <example> must contain both <en> and <zh>
 - Output only the XML — no explanations, no markdown
 - Escape XML special characters: & → &amp;, < → &lt;, > → &gt;
+- The root element must be <spelling> — never wrap the word in a custom tag (e.g. <ocean>ocean</ocean>)

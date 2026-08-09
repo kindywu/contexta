@@ -188,7 +188,7 @@ Color? _firstRichTextBg(WidgetTester tester) {
       if (w is! RichText) return false;
       final children = (w.text as TextSpan).children;
       return children?.any((s) => s is WidgetSpan) ?? false;
-    }),
+    }).first,
   );
   final spans = (rich.text as TextSpan).children ?? const <InlineSpan>[];
   for (final span in spans) {
@@ -276,6 +276,38 @@ void main() {
       find.textContaining(word, findRichText: true);
 
   group('查词弹窗', () {
+    testWidgets('点击标题单词 → 查词弹窗 loading（标题分词可点击）', (tester) async {
+      // 单单词标题：tap RichText 中心必落在单词上（多词标题中心可能
+      // 落在词间空白，点击不命中任何单词 span）
+      stub.article = const Article(
+        id: 3,
+        batchId: 1,
+        orderIndex: 0,
+        contentCategory: 'NEWS',
+        title: 'Ocean',
+        status: ArticleStatus.success,
+        generationStartedAt: null,
+        generationCompletedAt: '2026-08-07T12:00:00+08:00',
+        retryCount: 0,
+        accumulatedReadSeconds: 0,
+        readCompletedAt: null,
+        lastRetryAt: null,
+        paragraphs: [
+          ArticleParagraph(
+            orderIndex: 0,
+            englishText: 'Hello',
+            chineseTranslation: '你好世界。',
+          ),
+        ],
+      );
+      stub.lookupCompleter = Completer<WordDetail?>();
+      await pumpScreen(tester);
+
+      await tester.tap(find.textContaining('Ocean', findRichText: true));
+      await tester.pump();
+      expect(find.text('正在查询…'), findsOneWidget);
+    });
+
     testWidgets('点击正文单词 → 先 loading 再回填词头/音标/义项', (tester) async {
       stub.lookupCompleter = Completer<WordDetail?>();
       await pumpScreen(tester);
@@ -397,6 +429,47 @@ void main() {
       await tester.tap(find.byIcon(Icons.stop_outlined));
       await tester.pumpAndSettle();
       expect(_firstRichTextBg(tester), isNull);
+    });
+
+    testWidgets('全文朗读读标题：标题高亮且不滚动；正文第 1 段发声后高亮交接', (tester) async {
+      stub.article = makeLongArticle();
+      await pumpScreen(tester);
+
+      await tester.tap(find.byIcon(Icons.play_arrow));
+      await tester.pumpAndSettle();
+
+      // 标题段上报 -1：标题文字加底色，段落 0 位置不变（不滚动）
+      tts.simulateParagraphStarted(-1);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<RichText>(find.text('Long Article', findRichText: true))
+            .text
+            .style
+            ?.backgroundColor,
+        const Color(0x2ECC785C),
+      );
+      final para0Before = paragraphTop(tester, 0);
+      await tester.pumpAndSettle();
+      expect(paragraphTop(tester, 0), para0Before);
+
+      // 标题段无段号 → 播放条显示「正在朗读…」
+      expect(find.text('正在朗读…'), findsOneWidget);
+
+      // 正文第 1 段发声：标题高亮消失 → 段 0 高亮，播放条「第 1/2 段」
+      // （播放进度，total 由桩固定为 2）
+      tts.simulateParagraphStarted(0);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<RichText>(find.text('Long Article', findRichText: true))
+            .text
+            .style
+            ?.backgroundColor,
+        isNull,
+      );
+      expect(_firstRichTextBg(tester), const Color(0x2ECC785C));
+      expect(find.text('第 1/2 段'), findsOneWidget);
     });
   });
 

@@ -8,6 +8,10 @@ import 'package:kittentts/kittentts_flutter.dart' as kit;
 
 import 'tts_cache_manager.dart';
 
+/// 标题段的段落索引哨兵：全文朗读时标题也参与段落播放上报（读标题即高亮
+/// 标题），与正文（从 0 起）区分。UI / 控制器据此渲染标题高亮。
+const int kTitleParagraphIndex = -1;
+
 /// KittenTTS 会话抽象：由 [KittenTtsFactory] 创建，测试注入 fake。
 ///
 /// 职责：生成 WAV → audioplayers 播放 → 完成时回调 utterance id。
@@ -59,8 +63,9 @@ abstract interface class KittenTtsSession {
       void Function(String utteranceId, int done, int total)? listener);
 
   /// 注册「段落开始播放」回调（播放 worker 每段实际发声前调用）。
-  /// 带 utterance id、段落索引（正文从 0 起，标题段不上报）与正文总段数；
-  /// 传 null 注销。与 [setProgressListener]（生成进度）不同，此回调反映真实播放位置。
+  /// 带 utterance id、段落索引与正文总段数；标题段上报
+  /// [kTitleParagraphIndex]（-1），正文从 0 起；传 null 注销。与
+  /// [setProgressListener]（生成进度）不同，此回调反映真实播放位置。
   void setOnParagraphStarted(
       void Function(String utteranceId, int paragraphIndex, int total)? listener);
 
@@ -269,14 +274,14 @@ class KittenTtsPluginSession implements KittenTtsSession {
       // 全部播完：立即通知完成（预取在后台自然收尾，不阻塞 UI 状态复位）
       if (_currentUtteranceId == utteranceId) {
         _currentUtteranceId = null;
-        _finishListener?.call(utteranceId);
+        _notifyFinished(utteranceId);
       }
       // 让预取继续跑完（fire-and-forget；stop/新播放时其内部检查退出）
     } catch (e) {
       debugPrint('[KittenTTS] speakParagraphs ERROR: $e');
       if (_currentUtteranceId == utteranceId) {
         _currentUtteranceId = null;
-        _finishListener?.call(utteranceId);
+        _notifyFinished(utteranceId);
       }
     }
   }
@@ -325,7 +330,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
 
     if (_currentUtteranceId == utteranceId) {
       _currentUtteranceId = null;
-      _finishListener?.call(utteranceId);
+      _notifyFinished(utteranceId);
     }
   }
 
@@ -407,10 +412,12 @@ class KittenTtsPluginSession implements KittenTtsSession {
       await for (final item in items) {
         if (_currentUtteranceId != utteranceId) return;
         debugPrint('[KittenTTS] fullArticle play: ${item.isTitle ? "title" : "para"}');
-        final index = item.paragraphIndex;
-        if (index != null) {
-          _paragraphStartedListener?.call(utteranceId, index, totalParagraphs);
-        }
+        // 每段发声前上报（标题也上报，index=-1）：高亮与真实发声同步
+        _paragraphStartedListener?.call(
+          utteranceId,
+          item.paragraphIndex ?? kTitleParagraphIndex,
+          totalParagraphs,
+        );
         if (item.bytes != null) {
           await _playWav(item.bytes!, utteranceId);
         } else if (item.filePath != null) {
@@ -513,13 +520,13 @@ class KittenTtsPluginSession implements KittenTtsSession {
       }
       if (_currentUtteranceId == utteranceId) {
         _currentUtteranceId = null;
-        _finishListener?.call(utteranceId);
+        _notifyFinished(utteranceId);
       }
     } catch (e) {
       debugPrint('[KittenTTS] playFiles ERROR: $e');
       if (_currentUtteranceId == utteranceId) {
         _currentUtteranceId = null;
-        _finishListener?.call(utteranceId);
+        _notifyFinished(utteranceId);
       }
     }
   }
@@ -529,18 +536,19 @@ class KittenTtsPluginSession implements KittenTtsSession {
       await _playFileSource(File(filePath).openRead(), utteranceId);
       if (_currentUtteranceId == utteranceId) {
         _currentUtteranceId = null;
-        _finishListener?.call(utteranceId);
+        _notifyFinished(utteranceId);
       }
     } catch (e) {
       debugPrint('[KittenTTS] playFile ERROR: $e');
       if (_currentUtteranceId == utteranceId) {
         _currentUtteranceId = null;
-        _finishListener?.call(utteranceId);
+        _notifyFinished(utteranceId);
       }
     }
   }
 
   Future<void> _playFileSource(Stream<List<int>> stream, String utteranceId) async {
+    debugPrint('[KittenTTS] _playFileSource: START id=$utteranceId');
     _playbackCompleter = Completer<void>();
     _completeSub?.cancel();
     _completeSub = _player.onPlayerComplete.listen((_) => _finishPlayback());
@@ -577,7 +585,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
       debugPrint('[KittenTTS] generate ERROR: $e');
       if (_currentUtteranceId == utteranceId) {
         _currentUtteranceId = null;
-        _finishListener?.call(utteranceId);
+        _notifyFinished(utteranceId);
       }
     }
   }
@@ -595,7 +603,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
     // 成功播完 → 通知完成（stop/打断时由 _stopCurrent 触发，此处只补成功路径）
     if (_currentUtteranceId == utteranceId) {
       _currentUtteranceId = null;
-      _finishListener?.call(utteranceId);
+      _notifyFinished(utteranceId);
     }
   }
 
@@ -651,7 +659,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
         if (last != null) await last.future;
         if (_currentUtteranceId == utteranceId) {
           _currentUtteranceId = null;
-          _finishListener?.call(utteranceId);
+          _notifyFinished(utteranceId);
         }
       },
       cancelOnError: false,
@@ -662,18 +670,20 @@ class KittenTtsPluginSession implements KittenTtsSession {
     } catch (e) {
       if (_currentUtteranceId == utteranceId) {
         _currentUtteranceId = null;
-        _finishListener?.call(utteranceId);
+        _notifyFinished(utteranceId);
       }
     }
   }
 
   Future<void> _playWav(Uint8List wav, String utteranceId) async {
+    debugPrint('[KittenTTS] _playWav: len=${wav.length}B START id=$utteranceId');
     _playbackCompleter = Completer<void>();
     _completeSub?.cancel();
     _completeSub = _player.onPlayerComplete.listen((_) => _finishPlayback());
     try {
       await _player.play(BytesSource(wav, mimeType: 'audio/wav'));
       await _playbackCompleter!.future;
+      debugPrint('[KittenTTS] _playWav: DONE id=$utteranceId');
     } catch (_) {
       _finishPlayback();
       rethrow;
@@ -684,8 +694,16 @@ class KittenTtsPluginSession implements KittenTtsSession {
     final completer = _playbackCompleter;
     _playbackCompleter = null;
     if (completer != null && !completer.isCompleted) {
+      debugPrint('[KittenTTS] onPlayerComplete → playback finished');
       completer.complete();
     }
+  }
+
+  /// 统一 finish 出口：所有完成路径（自然播完 / 出错 / 被打断）都经此通知，
+  /// 日志记录 utterance id，供真机取证「高亮何时消失、为何提前消失」。
+  void _notifyFinished(String utteranceId) {
+    debugPrint('[KittenTTS] FINISH: id=$utteranceId');
+    _notifyFinished(utteranceId);
   }
 
   @override
@@ -696,6 +714,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
   Future<void> _stopCurrent() async {
     final id = _currentUtteranceId;
     _currentUtteranceId = null;
+    debugPrint('[KittenTTS] _stopCurrent: interrupting id=$id');
     _streamSub?.cancel();
     _streamSub = null;
     _finishPlayback();

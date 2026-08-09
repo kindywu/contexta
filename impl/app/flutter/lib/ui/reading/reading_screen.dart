@@ -16,6 +16,7 @@ import '../../core/theme/app_type.dart';
 import 'reading_controller.dart';
 import 'translation_visibility.dart';
 import 'word_extractor.dart';
+import '../../data/tts/kitten_tts_session.dart' show kTitleParagraphIndex;
 
 /// Reading 页（对照 Kotlin ReadingScreen.kt）：
 /// - 3dp 珊瑚滚动进度条（宽 = scrollFraction）
@@ -161,7 +162,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
       readingControllerProvider(widget.articleId)
           .select((s) => s.speakingParagraphIndex),
       (previous, next) {
-        if (next == null) return;
+        if (next == null || next < 0) return; // 标题段（-1）不滚动
         final state = ref.read(readingControllerProvider(widget.articleId));
         if (!state.isSpeakingFullArticle) return; // 单段播放只高亮不滚动
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -218,10 +219,15 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
                               horizontal: AppPage.horizontalPadding),
                           children: [
                         const SizedBox(height: AppSpacing.sm),
-                        Text(
-                          state.title ?? '文章',
-                          style: AppType.textTheme.displayMedium
-                              ?.copyWith(color: AppColors.ink),
+                        _TitleText(
+                          text: state.title ?? '文章',
+                          isSpeaking: state.speakingParagraphIndex ==
+                              kTitleParagraphIndex,
+                          vocabularyWords: state.vocabularyWords,
+                          onWordClick: (word) => ref
+                              .read(readingControllerProvider(widget.articleId)
+                                  .notifier)
+                              .showWordSheet(word),
                         ),
                         const SizedBox(height: AppSpacing.md),
                         Container(height: 1, color: AppColors.hairline),
@@ -466,7 +472,7 @@ class _ReadingPlayerBar extends StatelessWidget {
           const SizedBox(width: AppSpacing.sm),
           if (speechProgress != null && speechTotalParagraphs != null)
             Text(
-              '生成中 ${speechProgress!.toStringAsFixed(0)}/${speechTotalParagraphs} 段',
+              '第 ${speechProgress!.toStringAsFixed(0)}/$speechTotalParagraphs 段',
               style: AppType.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w500,
                 color: AppColors.primary,
@@ -653,6 +659,110 @@ class _WordSheetBody extends StatelessWidget {
   }
 }
 
+/// 按单词区间切分文本生成 spans：单词 → 可点击 span（生词珊瑚底色），
+/// 空白/标点原样保留。正文段落与文章标题共用；[style] 为 gap/非生词
+/// 单词的基础样式（朗读底色即由此携带），生词 span 覆盖为珊瑚底色。
+List<InlineSpan> _clickableWordSpans({
+  required String text,
+  required TextStyle? style,
+  required Set<String> vocabularyWords,
+  required TapGestureRecognizer Function(String word) recognizerFor,
+}) {
+  final spans = <InlineSpan>[];
+  var cursor = 0;
+  for (final range in findWordRanges(text)) {
+    final gap = text.substring(cursor, range.$1);
+    if (gap.isNotEmpty) spans.add(TextSpan(text: gap, style: style));
+    final word = text.substring(range.$1, range.$2);
+    final normalized = word.toLowerCase();
+    spans.add(
+      TextSpan(
+        text: word,
+        style: vocabularyWords.contains(normalized)
+            ? const TextStyle(
+                color: AppColors.ink,
+                backgroundColor: Color(0x2ECC785C),
+              )
+            : style,
+        recognizer: recognizerFor(normalized),
+      ),
+    );
+    cursor = range.$2;
+  }
+  final tail = text.substring(cursor);
+  if (tail.isNotEmpty) spans.add(TextSpan(text: tail, style: style));
+  return spans;
+}
+
+/// 文章标题：分词可点击查词 + 朗读时高亮（-1 哨兵，与正文同色）。
+/// 与 _ReadingParagraph 同样由 StatefulWidget 持有 TapGestureRecognizer，
+/// dispose 时统一释放。
+class _TitleText extends StatefulWidget {
+  const _TitleText({
+    required this.text,
+    required this.isSpeaking,
+    required this.vocabularyWords,
+    required this.onWordClick,
+  });
+
+  final String text;
+  final bool isSpeaking;
+  final Set<String> vocabularyWords;
+  final ValueChanged<String> onWordClick;
+
+  @override
+  State<_TitleText> createState() => _TitleTextState();
+}
+
+class _TitleTextState extends State<_TitleText> {
+  final List<TapGestureRecognizer> _recognizers = [];
+
+  @override
+  void dispose() {
+    for (final recognizer in _recognizers) {
+      recognizer.dispose();
+    }
+    _recognizers.clear();
+    super.dispose();
+  }
+
+  TapGestureRecognizer _wordRecognizer(String word) {
+    final recognizer = TapGestureRecognizer()
+      ..onTap = () => widget.onWordClick(word);
+    _recognizers.add(recognizer);
+    return recognizer;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 朗读中整段追加同色底色（与正文段落一致）；gap/生词 span 继承
+    // 或覆盖，见 _clickableWordSpans。Align 使标题在 ListView 的 tight
+    // 交叉轴约束下 shrink-wrap（与正文段落一致），文字区域才是可点区域。
+    final speakingBg = widget.isSpeaking
+        ? const TextStyle(backgroundColor: Color(0x2ECC785C))
+        : null;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: RichText(
+        text: TextSpan(
+          style: AppType.textTheme.displayMedium?.copyWith(
+            color: AppColors.ink,
+            backgroundColor: widget.isSpeaking
+                ? const Color(0x2ECC785C)
+                : null,
+          ),
+          children: _clickableWordSpans(
+            text: widget.text,
+            style: speakingBg,
+            vocabularyWords: widget.vocabularyWords,
+            recognizerFor: _wordRecognizer,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 单个段落：可点击分词 + 内联播放图标 + 译文（对照 Kotlin ReadingParagraph）。
 /// StatefulWidget 持有分词 TapGestureRecognizer，dispose 时统一释放。
 class _ReadingParagraph extends StatefulWidget {
@@ -777,39 +887,15 @@ class _ReadingParagraphState extends State<_ReadingParagraph> {
   /// 单词 → 可点击 TextSpan（生词珊瑚底色高亮）；空白/标点原样 TextSpan。
   /// 朗读中（isSpeaking）整段文字追加同色底色，生词 span 保持原样（同色融合）。
   List<InlineSpan> _buildAnnotatedSpans() {
-    final spans = <InlineSpan>[];
     final speakingBg = widget.isSpeaking
         ? const TextStyle(backgroundColor: Color(0x2ECC785C))
         : null;
-    var cursor = 0;
-    for (final range in findWordRanges(widget.englishText)) {
-      final gap = widget.englishText.substring(cursor, range.$1);
-      if (gap.isNotEmpty) {
-        spans.add(TextSpan(text: gap, style: speakingBg));
-      }
-      final word = widget.englishText.substring(range.$1, range.$2);
-      final normalized = word.toLowerCase();
-      final isVocab = widget.vocabularyWords.contains(normalized);
-      spans.add(
-        TextSpan(
-          text: word,
-          style: isVocab
-              ? const TextStyle(
-                  color: AppColors.ink,
-                  backgroundColor: Color(0x2ECC785C),
-                )
-              : (speakingBg ??
-                  const TextStyle(color: AppColors.ink)),
-          recognizer: _wordRecognizer(normalized),
-        ),
-      );
-      cursor = range.$2;
-    }
-    final tail = widget.englishText.substring(cursor);
-    if (tail.isNotEmpty) {
-      spans.add(TextSpan(text: tail, style: speakingBg));
-    }
-    return spans;
+    return _clickableWordSpans(
+      text: widget.englishText,
+      style: speakingBg,
+      vocabularyWords: widget.vocabularyWords,
+      recognizerFor: _wordRecognizer,
+    );
   }
 }
 

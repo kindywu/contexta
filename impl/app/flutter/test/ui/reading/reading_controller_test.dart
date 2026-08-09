@@ -776,14 +776,24 @@ void main() {
     test('全文朗读：段落回调逐段更新 speakingParagraphIndex', () async {
       await controller.loadArticle(1);
       await controller.startFullArticlePlayback();
-      expect(controller.state.speakingParagraphIndex, isNull); // 标题段不上报
+      expect(controller.state.speakingParagraphIndex, isNull); // 尚未上报
 
+      // 标题段上报 -1：标题高亮，播放条不显示段号
+      tts.simulateParagraphStarted(-1);
+      expect(controller.state.speakingParagraphIndex, -1);
+      expect(controller.state.speechProgress, isNull);
+      expect(controller.state.speechTotalParagraphs, isNull);
+
+      // 正文第 1 段发声：高亮段 0，播放条「第 1/2 段」（播放进度）
       tts.simulateParagraphStarted(0);
       expect(controller.state.speakingParagraphIndex, 0);
+      expect(controller.state.speechProgress, 1);
+      expect(controller.state.speechTotalParagraphs, 2);
       expect(controller.state.isSpeakingFullArticle, isTrue);
 
       tts.simulateParagraphStarted(1);
       expect(controller.state.speakingParagraphIndex, 1);
+      expect(controller.state.speechProgress, 2);
     });
 
     test('全文朗读：迟到旧 utterance 段落回调被过滤', () async {

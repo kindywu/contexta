@@ -67,10 +67,10 @@ class ReadingUiState {
   /// 全文朗读中。
   final bool isSpeakingFullArticle;
 
-  /// 全文朗读段落进度（已完成段落数，null = 未知/不使用）。
+  /// 全文朗读播放进度（当前发声段落序号 1-based，标题段为 null）。
   final double? speechProgress;
 
-  /// 全文朗读总段落数（配合 speechProgress 显示「第 N/M 段」）。
+  /// 全文朗读总段数（正文段数，配合 speechProgress 显示「第 N/M 段」）。
   final int? speechTotalParagraphs;
 
   /// 正在朗读的段落索引（null = 无）。
@@ -240,6 +240,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     // 对照 Kotlin init：只有当前 utterance 结束才清状态；迟到的旧 utterance
     // 回调（快速切换播放时）被 id 校验过滤
     engine.setOnSpeakingFinished((utteranceId) {
+      debugPrint('[ReadingCtrl] onSpeakingFinished: id=$utteranceId current=$_currentUtteranceId');
       if (utteranceId == _currentUtteranceId) {
         _currentUtteranceId = null;
         if (!_disposed) {
@@ -255,24 +256,28 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       }
     });
     // 全文朗读段落级播放进度：播放 worker 每段发声前上报（KittenTTS 路径；
-    // 系统 TTS 无段落边界不触发）。id 校验过滤迟到旧事件（同 finish 回调语义）
+    // 系统 TTS 无段落边界不触发）。id 校验过滤迟到旧事件（同 finish 回调
+    // 语义）。同时驱动播放条进度（第 N/M 段）——播放位置而非生成位置，
+    // 标题段（-1）不显示段号。
     engine.setOnParagraphStarted((utteranceId, paragraphIndex, total) {
+      debugPrint('[ReadingCtrl] paragraphStarted: id=$utteranceId index=$paragraphIndex total=$total current=$_currentUtteranceId');
       if (utteranceId == _currentUtteranceId && !_disposed) {
-        state = state.copyWith(speakingParagraphIndex: paragraphIndex);
+        state = state.copyWith(
+          speakingParagraphIndex: paragraphIndex,
+          speechProgress: paragraphIndex >= 0
+              ? (paragraphIndex + 1).toDouble()
+              : null,
+          speechTotalParagraphs: paragraphIndex >= 0 ? total : null,
+        );
       }
     });
     debugPrint('[ReadingCtrl] _onTtsReady: isKitten=${engine is KittenTtsEngine} runtimeType=${engine.runtimeType}');
     if (engine is KittenTtsEngine) {
+      // 生成进度仅日志观测（播放条已改由 paragraphStarted 播放进度驱动，
+      // 生成超前于发声，不可作为 UI 进度）
       engine.setOnProgress((utteranceId, done, total) {
         if (utteranceId == _currentUtteranceId && !_disposed) {
-          debugPrint('[ReadingCtrl] progress: $done/$total');
-          // 段落进度：done/total 是已完成段落数；total<=0 时未知（流式路径）
-          if (total > 0) {
-            state = state.copyWith(
-              speechProgress: done.toDouble(),
-              speechTotalParagraphs: total,
-            );
-          }
+          debugPrint('[ReadingCtrl] genProgress: $done/$total');
         }
       });
     }
@@ -673,7 +678,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       debugPrint('[ReadingCtrl] _llmFallback: LLM content len=${result.content.length} retries=${result.retryCount}');
       final parsed = parseWordLlmResponse(result.content);
       if (parsed == null) {
-        debugPrint('[ReadingCtrl] _llmFallback: PARSE FAILED. content head: ${result.content.substring(0, result.content.length > 200 ? 200 : result.content.length)}');
+        debugPrint('[ReadingCtrl] _llmFallback: PARSE FAILED. content: ${result.content}');
         return null;
       }
       return _wordRepository.saveLlmResult(
