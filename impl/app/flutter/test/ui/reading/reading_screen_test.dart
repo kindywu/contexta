@@ -138,6 +138,47 @@ Article makeArticle() => const Article(
       ],
     );
 
+Article makeLongArticle() => Article(
+      id: 2,
+      batchId: 1,
+      orderIndex: 0,
+      contentCategory: 'NEWS',
+      title: 'Long Article',
+      status: ArticleStatus.success,
+      generationStartedAt: null,
+      generationCompletedAt: '2026-08-07T12:00:00+08:00',
+      retryCount: 0,
+      accumulatedReadSeconds: 0,
+      readCompletedAt: null,
+      lastRetryAt: null,
+      paragraphs: [
+        for (var i = 0; i < 8; i++)
+          ArticleParagraph(
+            orderIndex: i,
+            englishText:
+                'Paragraph $i. This is a fairly long English sentence '
+                'used to make each paragraph tall enough to overflow the '
+                'test viewport and force scrolling between paragraphs.',
+            chineseTranslation: '第 $i 段中文译文。',
+          ),
+      ],
+    );
+
+/// 段落 widget 定位：按 GlobalObjectKey 的 value（内容相等）匹配。
+/// GlobalObjectKey 按 identical 判等，跨实例无法用 find.byKey 命中，
+/// 故按 key value 过滤。
+Finder paragraphFinder(int index) => find.byWidgetPredicate(
+      (w) => w.key is GlobalObjectKey &&
+          (w.key! as GlobalObjectKey).value == 'reading-para-$index',
+    );
+
+/// 段落顶部全局 y（段落未构建（懒构建范围外）时显式失败）。
+double paragraphTop(WidgetTester tester, int index) {
+  final finder = paragraphFinder(index);
+  expect(finder, findsWidgets, reason: '段落 $index 应已构建');
+  return tester.getTopLeft(finder).dy;
+}
+
 /// 朗读段英文正文 RichText 中带底色的 span 的底色（无底色返回 null）。
 /// 页面中 RichText 不止一个（顶栏图标/译文 chip/标题等均为 Text 内部渲染），
 /// 需定位到正文段落：其 TextSpan 内含内联播放钮 WidgetSpan，据此筛选。
@@ -356,6 +397,79 @@ void main() {
       await tester.tap(find.byIcon(Icons.stop_outlined));
       await tester.pumpAndSettle();
       expect(_firstRichTextBg(tester), isNull);
+    });
+  });
+
+  group('自动滚动', () {
+    testWidgets('全文朗读段落切换 → 滚动到视口 1/3 处', (tester) async {
+      stub.article = makeLongArticle();
+      await pumpScreen(tester);
+
+      final listViewTop = tester.getTopLeft(find.byType(ListView)).dy;
+      final listViewHeight = tester.getSize(find.byType(ListView)).height;
+      // 段高 = 相邻段顶部间距（getOffsetToReveal 按 (视口-段高)/3 对齐）
+      final paraHeight = paragraphTop(tester, 1) - paragraphTop(tester, 0);
+
+      // 触发全文朗读（走 speak 拼接路径；播放条文字不可点，点播放图标）
+      await tester.tap(find.byIcon(Icons.play_arrow));
+      await tester.pumpAndSettle();
+      expect(tts.spoken, isNotEmpty);
+
+      // 段落 0 顶部在 1/3 线上方（首屏内），目标 offset 为负被 clamp，
+      // 不做任何滚动
+      final para0Before = paragraphTop(tester, 0);
+      tts.simulateParagraphStarted(0);
+      await tester.pumpAndSettle();
+      expect(paragraphTop(tester, 0), para0Before);
+
+      // 切到段落 2 → 段落 2 顶部对齐 (视口-段高)/3 处
+      tts.simulateParagraphStarted(2);
+      await tester.pumpAndSettle();
+      expect(paragraphTop(tester, 2),
+          closeTo(listViewTop + (listViewHeight - paraHeight) / 3, 1));
+    });
+
+    testWidgets('单段播放不自动滚动', (tester) async {
+      stub.article = makeLongArticle();
+      await pumpScreen(tester);
+      final before = paragraphTop(tester, 0);
+
+      // 点击段落 0 内联播放 → 高亮但不滚动
+      await tester.tap(find.byIcon(Icons.volume_up_outlined).first);
+      await tester.pumpAndSettle();
+      expect(paragraphTop(tester, 0), before);
+    });
+
+    testWidgets('用户手动滚动暂停跟随，下一次段落切换恢复', (tester) async {
+      stub.article = makeLongArticle();
+      await pumpScreen(tester);
+
+      final listViewTop = tester.getTopLeft(find.byType(ListView)).dy;
+      final listViewHeight = tester.getSize(find.byType(ListView)).height;
+      final paraHeight = paragraphTop(tester, 1) - paragraphTop(tester, 0);
+
+      await tester.tap(find.byIcon(Icons.play_arrow));
+      await tester.pumpAndSettle();
+      tts.simulateParagraphStarted(0);
+      await tester.pumpAndSettle();
+
+      // 用户上滑离开当前段（-200：保证段落 1 仍在构建范围内）
+      await tester.drag(find.byType(ListView), const Offset(0, -200));
+      await tester.pumpAndSettle();
+      final afterDrag = paragraphTop(tester, 1);
+
+      // 段落 1 切换：被手滚跳过（位置不变）
+      tts.simulateParagraphStarted(1);
+      await tester.pumpAndSettle();
+      final duringUserScroll = paragraphTop(tester, 1);
+      expect(duringUserScroll, closeTo(afterDrag, 1));
+
+      // 段落 2 切换：恢复跟随
+      tts.simulateParagraphStarted(2);
+      await tester.pumpAndSettle();
+      expect(paragraphTop(tester, 2),
+          closeTo(listViewTop + (listViewHeight - paraHeight) / 3, 1));
+      expect(paragraphTop(tester, 1), isNot(closeTo(duringUserScroll, 1)));
     });
   });
 }

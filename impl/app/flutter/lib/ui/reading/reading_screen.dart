@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -48,6 +49,18 @@ class ReadingScreen extends ConsumerStatefulWidget {
 class _ReadingScreenState extends ConsumerState<ReadingScreen> {
   final ScrollController _scrollController = ScrollController();
   double _scrollFraction = 0;
+
+  /// 用户手指拖拽中（暂停自动跟随；程序滚动 animateTo 不触发）。
+  bool _userScrolling = false;
+
+  /// 每段一个缓存的 GlobalObjectKey。GlobalObjectKey 按 identical 判等，
+  /// 查找必须复用创建时的同一实例（每次新建等值 String 无法命中），
+  /// 因此按 index 缓存，build 与 _scrollToParagraph 共用。
+  final Map<int, GlobalObjectKey<State<StatefulWidget>>> _paragraphKeys = {};
+  GlobalObjectKey<State<StatefulWidget>> _paragraphKey(int index) =>
+      _paragraphKeys.putIfAbsent(
+          index, () => GlobalObjectKey('reading-para-$index'));
+
   Timer? _toastTimer;
 
   @override
@@ -75,6 +88,26 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
     _toastTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// 滚动使当前朗读段顶部对齐视口 1/3 处（getOffsetToReveal + animateTo
+  /// 300ms easeInOut）。用户手指拖拽中跳过本次，下次段落切换恢复跟随。
+  void _scrollToParagraph(int index) {
+    if (_userScrolling) {
+      _userScrolling = false; // 手滚跳过本次，下次段落切换恢复
+      return;
+    }
+    final ctx = _paragraphKey(index).currentContext;
+    final renderObj = ctx?.findRenderObject();
+    if (renderObj == null || !_scrollController.hasClients) return;
+    final viewport = RenderAbstractViewport.maybeOf(renderObj);
+    if (viewport == null) return;
+    final offset = viewport.getOffsetToReveal(renderObj, 1 / 3).offset;
+    _scrollController.animateTo(
+      offset,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
   }
 
   @override
@@ -108,6 +141,20 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
         final uri = Uri.parse('android.settings.TTS_SETTINGS');
         launchUrl(uri, mode: LaunchMode.externalApplication)
             .catchError((_) => false);
+      },
+    );
+
+    // 副作用 3：全文朗读段落切换 → 自动滚动到 1/3 处
+    ref.listen<int?>(
+      readingControllerProvider(widget.articleId)
+          .select((s) => s.speakingParagraphIndex),
+      (previous, next) {
+        if (next == null) return;
+        final state = ref.read(readingControllerProvider(widget.articleId));
+        if (!state.isSpeakingFullArticle) return; // 单段播放只高亮不滚动
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToParagraph(next);
+        });
       },
     );
 
@@ -145,11 +192,19 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
                       message: error,
                       subMessage: '请返回重新选择',
                     ),
-                  (false, null) => ListView(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: AppPage.horizontalPadding),
-                      children: [
+                  (false, null) =>
+                      NotificationListener<ScrollStartNotification>(
+                        onNotification: (notification) {
+                          if (notification.dragDetails != null) {
+                            _userScrolling = true;
+                          }
+                          return false;
+                        },
+                        child: ListView(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: AppPage.horizontalPadding),
+                          children: [
                         const SizedBox(height: AppSpacing.sm),
                         Text(
                           state.title ?? '文章',
@@ -162,7 +217,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
                         for (final (index, paragraph)
                             in state.paragraphs.indexed)
                           _ReadingParagraph(
-                            key: ValueKey(index),
+                            key: _paragraphKey(index),
                             englishText: paragraph.englishText,
                             chineseTranslation: paragraph.chineseTranslation,
                             translationMode: state.translationMode,
@@ -206,6 +261,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
                         const SizedBox(height: AppSpacing.xs),
                       ],
                     ),
+                      ),
                 },
               ),
               // 底部播放条：常驻（音乐播放器样式）
