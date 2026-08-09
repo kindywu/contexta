@@ -140,6 +140,12 @@ class GenerationScheduler implements BackgroundWorkScheduler {
         tag: 'batch_$batchId',
         // expedited: true 曾导致调度崩溃（见上）；改为普通任务
         expedited: false,
+        // 前台服务：worker 运行时提升为前台服务（通知 + 进程优先级提升），
+        // 规避国产 ROM（HyperOS/MIUI 等）对后台进程的网络封禁——
+        // 后台 worker 的 Dio 请求会被系统断网（DioException [unknown]，
+        // 日志见 2026-08-09），前台服务视为用户可见，网络豁免。
+        // 任务结束自动停止，无需手动管理。
+        foregroundServiceConfig: foregroundConfig(batchId),
       ),
     );
     debugPrint('[GenerationScheduler] registered batch=$batchId');

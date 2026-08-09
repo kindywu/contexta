@@ -44,13 +44,16 @@ void main() {
       expect(spec.outOfQuotaPolicy, OutOfQuotaPolicy.runAsNonExpeditedWorkRequest);
     });
 
-    test('不用 expedited 且不携带 FGS 配置（避免 SHORT_SERVICE 权限检查崩溃）',
+    test('不用 expedited，但携带 FGS 配置（前台服务规避国产 ROM 后台封网）',
         () async {
       await scheduler.scheduleBatchGeneration(6);
 
       final spec = gateway.registered.single;
       expect(spec.expedited, isFalse);
-      expect(spec.foregroundServiceConfig, isNull);
+      expect(spec.foregroundServiceConfig, isNotNull);
+      expect(spec.foregroundServiceConfig!.notificationTitle, 'Contexta 正在生成文章');
+      expect(spec.foregroundServiceConfig!.notificationText, '批次 #6 生成中…');
+      expect(spec.foregroundServiceConfig!.notificationId, 1001);
     });
 
     test('batchId 缺失/非法时通知正文用 "生成中…"（Kotlin getForegroundInfo '
