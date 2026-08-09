@@ -151,4 +151,11 @@ class SystemTtsEngine implements TtsEngine {
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {
     _onSpeakingFinished = callback;
   }
+
+  @override
+  void setOnParagraphStarted(
+      void Function(String? utteranceId, int paragraphIndex, int total)?
+          callback) {
+    // 拼接朗读无段落边界，不实现（对照 Kotlin 无对应机制）
+  }
 }

@@ -72,6 +72,8 @@ class _TtsStub implements TtsEngine {
   bool available = true;
   int stopCount = 0;
   final List<String> spoken = [];
+  void Function(String? utteranceId, int paragraphIndex, int total)?
+      onParagraphStarted;
 
   @override
   bool isAvailable() => available;
@@ -93,6 +95,17 @@ class _TtsStub implements TtsEngine {
 
   @override
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
+
+  @override
+  void setOnParagraphStarted(
+      void Function(String? utteranceId, int paragraphIndex, int total)?
+          callback) {
+    onParagraphStarted = callback;
+  }
+
+  void simulateParagraphStarted(int index) {
+    onParagraphStarted?.call('ctx-1', index, 2);
+  }
 }
 
 Article makeArticle() => const Article(

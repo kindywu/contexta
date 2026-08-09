@@ -20,6 +20,12 @@ abstract interface class TtsEngine {
   /// 注册当前 utterance 结束回调（自然结束 / stop / 被新 utterance 打断）。
   /// 带结束的 utterance id；传 null 注销。
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback);
+
+  /// 注册「段落开始播放」回调（播放 worker 在每段实际发声前调用）。
+  /// 带 utterance id、段落索引（正文从 0 起，不含标题段）与正文总段数；
+  /// 传 null 注销。无段落边界信息的引擎（系统 TTS 拼接朗读）不触发。
+  void setOnParagraphStarted(
+    void Function(String? utteranceId, int paragraphIndex, int total)? callback);
 }
 
 /// UI 显示语速 → 引擎实际语速的映射（对照 Kotlin ReadingViewModel.actualSpeechRate）。

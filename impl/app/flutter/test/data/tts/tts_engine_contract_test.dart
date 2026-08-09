@@ -74,6 +74,15 @@ void main() {
       expect(first, isEmpty);
       expect(second, [id]);
     });
+
+    test('setOnParagraphStarted 收到段落索引（0 起，不含标题）', () async {
+      final engine = _FakeEngine();
+      engine.setOnParagraphStarted((id, index, total) {});
+      final id = engine.speak('hello');
+      engine.simulateParagraphStarted(0);
+      expect(engine.lastParagraphIndex, 0);
+      expect(id, isNotNull);
+    });
   });
 
   group('TtsSpeedMapper', () {
@@ -92,6 +101,9 @@ class _FakeEngine implements TtsEngine {
   bool failNextSpeak = false;
   String? failureMessage;
   void Function(String? utteranceId)? _callback;
+  void Function(String? utteranceId, int paragraphIndex, int total)?
+      _paragraphStarted;
+  int? lastParagraphIndex;
 
   @override
   bool isAvailable() => failureMessage == null;
@@ -116,6 +128,18 @@ class _FakeEngine implements TtsEngine {
   @override
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {
     _callback = callback;
+  }
+
+  @override
+  void setOnParagraphStarted(
+      void Function(String? utteranceId, int paragraphIndex, int total)?
+          callback) {
+    _paragraphStarted = callback;
+  }
+
+  void simulateParagraphStarted(int index) {
+    _paragraphStarted?.call(currentId, index, 3);
+    lastParagraphIndex = index;
   }
 
   void finish(String id) {

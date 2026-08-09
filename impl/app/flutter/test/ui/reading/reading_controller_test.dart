@@ -113,6 +113,8 @@ class _RecordingTts implements TtsEngine {
   final List<double> speeds = [];
   int stopCount = 0;
   void Function(String? utteranceId)? onFinished;
+  void Function(String? utteranceId, int paragraphIndex, int total)?
+      onParagraphStarted;
   int _counter = 0;
 
   @override
@@ -146,6 +148,17 @@ class _RecordingTts implements TtsEngine {
   @override
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {
     onFinished = callback;
+  }
+
+  @override
+  void setOnParagraphStarted(
+      void Function(String? utteranceId, int paragraphIndex, int total)?
+          callback) {
+    onParagraphStarted = callback;
+  }
+
+  void simulateParagraphStarted(int index) {
+    onParagraphStarted?.call(_lastId, index, 2);
   }
 }
 

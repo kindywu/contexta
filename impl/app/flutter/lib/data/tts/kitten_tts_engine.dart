@@ -197,6 +197,14 @@ class KittenTtsEngine implements TtsEngine {
     _onSpeakingFinished = callback;
   }
 
+  @override
+  void setOnParagraphStarted(
+      void Function(String? utteranceId, int paragraphIndex, int total)?
+          callback) {
+    // 占位：段落回调透传待 KittenTtsSession 支持段落开始监听后实现
+    // （对照 Kotlin 播放 worker 逐段上报，见后续任务）
+  }
+
   /// 注册生成进度回调（全文朗读流式合成时，句子生成进度）。
   void setOnProgress(void Function(String? utteranceId, int done, int total)? callback) {
     _onProgress = callback;

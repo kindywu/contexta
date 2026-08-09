@@ -56,6 +56,11 @@ class _TtsStub implements TtsEngine {
 
   @override
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
+
+  @override
+  void setOnParagraphStarted(
+      void Function(String? utteranceId, int paragraphIndex, int total)?
+          callback) {}
 }
 
 VocabWord vocabWord({
