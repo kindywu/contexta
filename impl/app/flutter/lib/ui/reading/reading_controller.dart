@@ -254,6 +254,13 @@ class ReadingController extends StateNotifier<ReadingUiState> {
         }
       }
     });
+    // 全文朗读段落级播放进度：播放 worker 每段发声前上报（KittenTTS 路径；
+    // 系统 TTS 无段落边界不触发）。id 校验过滤迟到旧事件（同 finish 回调语义）
+    engine.setOnParagraphStarted((utteranceId, paragraphIndex, total) {
+      if (utteranceId == _currentUtteranceId && !_disposed) {
+        state = state.copyWith(speakingParagraphIndex: paragraphIndex);
+      }
+    });
     debugPrint('[ReadingCtrl] _onTtsReady: isKitten=${engine is KittenTtsEngine} runtimeType=${engine.runtimeType}');
     if (engine is KittenTtsEngine) {
       engine.setOnProgress((utteranceId, done, total) {

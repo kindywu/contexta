@@ -117,6 +117,12 @@ class _RecordingTts implements TtsEngine {
       onParagraphStarted;
   int _counter = 0;
 
+  /// 最近一次段落回调收到的参数（controller 未注册 setOnParagraphStarted 时
+  /// 保持 null——捕获断言使「删除注册行」的弱断言回归可被检出）。
+  String? lastParagraphId;
+  int? lastParagraphIndex;
+  int? lastParagraphTotal;
+
   @override
   bool isAvailable() => available;
 
@@ -154,7 +160,15 @@ class _RecordingTts implements TtsEngine {
   void setOnParagraphStarted(
       void Function(String? utteranceId, int paragraphIndex, int total)?
           callback) {
-    onParagraphStarted = callback;
+    // 包装记录最近一次回调参数：注册行被删时捕获字段保持 null，测试变红
+    onParagraphStarted = callback == null
+        ? null
+        : (utteranceId, paragraphIndex, total) {
+            lastParagraphId = utteranceId;
+            lastParagraphIndex = paragraphIndex;
+            lastParagraphTotal = total;
+            callback(utteranceId, paragraphIndex, total);
+          };
   }
 
   void simulateParagraphStarted(int index) {
@@ -755,6 +769,33 @@ void main() {
       // 自动朗读同样包含标题（系统 TTS 拼接）
       expect(tts.spoken, ['Test Hello world. Second paragraph.']);
       expect(controller.state.isSpeakingFullArticle, isTrue);
+    });
+  });
+
+  group('全文朗读', () {
+    test('全文朗读：段落回调逐段更新 speakingParagraphIndex', () async {
+      await controller.loadArticle(1);
+      await controller.startFullArticlePlayback();
+      expect(controller.state.speakingParagraphIndex, isNull); // 标题段不上报
+
+      tts.simulateParagraphStarted(0);
+      expect(controller.state.speakingParagraphIndex, 0);
+      expect(controller.state.isSpeakingFullArticle, isTrue);
+
+      tts.simulateParagraphStarted(1);
+      expect(controller.state.speakingParagraphIndex, 1);
+    });
+
+    test('全文朗读：迟到旧 utterance 段落回调被过滤', () async {
+      await controller.loadArticle(1);
+      controller.playParagraph(0); // ctx-0
+      await controller.startFullArticlePlayback(); // ctx-1
+
+      tts.simulateParagraphStarted(0); // 用 _lastId = ctx-1 触发
+      // 捕获断言（三元组）：controller 未注册 setOnParagraphStarted 时保持 null
+      expect(tts.lastParagraphId, 'ctx-1');
+      expect(tts.lastParagraphIndex, 0);
+      expect(controller.state.speakingParagraphIndex, 0);
     });
   });
 
