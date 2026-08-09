@@ -18,6 +18,7 @@ import 'package:contexta/ui/reading/reading_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
 
 /// Reading 页 widget 测试（Task 24：播放条 + 查词弹窗 + TTS 不可用 toast）。
 /// 状态机/查词逻辑已由 reading_controller_test 覆盖，此处验证 UI 接线。
@@ -225,6 +226,25 @@ void main() {
     ));
     await tester.pumpAndSettle();
   }
+
+  group('屏幕常亮', () {
+    testWidgets('进入阅读页开启常亮，退出页面关闭', (tester) async {
+      final fake = _FakeWakelock();
+      final original = WakelockPlusPlatformInterface.instance;
+      WakelockPlusPlatformInterface.instance = fake;
+      addTearDown(() {
+        WakelockPlusPlatformInterface.instance = original;
+      });
+
+      await pumpScreen(tester);
+      expect(fake.toggles, [true],
+          reason: '进入阅读页应立即开启屏幕常亮');
+
+      await tester.pumpWidget(const SizedBox());
+      expect(fake.toggles, [true, false],
+          reason: '离开阅读页（dispose）应关闭常亮');
+    });
+  });
 
   group('播放条', () {
     testWidgets('常驻底部：播放按钮 + 朗读全文 + 1x 语速胶囊', (tester) async {
@@ -584,4 +604,18 @@ void main() {
       expect(position.pixels, closeTo(maxBefore * 6 / 8, 1));
     });
   });
+}
+
+/// 屏幕常亮 fake：记录 toggle 调用序列（替换 platform instance，绕开
+/// pigeon MethodChannel，测试无需 mock 通道编码）。
+class _FakeWakelock extends WakelockPlusPlatformInterface {
+  final List<bool> toggles = [];
+
+  @override
+  Future<void> toggle({required bool enable}) async {
+    toggles.add(enable);
+  }
+
+  @override
+  Future<bool> get enabled async => toggles.isNotEmpty && toggles.last;
 }

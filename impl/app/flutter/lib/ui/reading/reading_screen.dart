@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderAbstractViewport;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../core/components/app_button.dart';
 import '../../core/components/app_modal.dart';
@@ -67,6 +68,9 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
   @override
   void initState() {
     super.initState();
+    // 阅读页期间屏幕常亮：阻止系统休眠/自动变暗（阅读类 app 标准行为；
+    // 离开页面（dispose）时关闭）。后台时 Android 系统自动失效，无需处理。
+    WakelockPlus.enable();
     _scrollController.addListener(() {
       final max = _scrollController.position.maxScrollExtent;
       final fraction = max > 0
@@ -86,6 +90,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _toastTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
