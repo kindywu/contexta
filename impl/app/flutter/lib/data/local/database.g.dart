@@ -7554,6 +7554,258 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
   }
 }
 
+class $DbVersionTable extends DbVersion
+    with TableInfo<$DbVersionTable, DbVersionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DbVersionTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _versionMeta = const VerificationMeta(
+    'version',
+  );
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+    'version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, version, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'db_version';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DbVersionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('version')) {
+      context.handle(
+        _versionMeta,
+        version.isAcceptableOrUnknown(data['version']!, _versionMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_versionMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DbVersionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DbVersionRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      version: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $DbVersionTable createAlias(String alias) {
+    return $DbVersionTable(attachedDatabase, alias);
+  }
+}
+
+class DbVersionRow extends DataClass implements Insertable<DbVersionRow> {
+  /// 单例行，恒为 1（与 UserSettings 同构：无自增主键）
+  final int id;
+
+  /// 当前库结构版本（≥ 1）
+  final int version;
+
+  /// 版本更新时间（Unix millis）
+  final int updatedAt;
+  const DbVersionRow({
+    required this.id,
+    required this.version,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['version'] = Variable<int>(version);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  DbVersionCompanion toCompanion(bool nullToAbsent) {
+    return DbVersionCompanion(
+      id: Value(id),
+      version: Value(version),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory DbVersionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DbVersionRow(
+      id: serializer.fromJson<int>(json['id']),
+      version: serializer.fromJson<int>(json['version']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'version': serializer.toJson<int>(version),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  DbVersionRow copyWith({int? id, int? version, int? updatedAt}) =>
+      DbVersionRow(
+        id: id ?? this.id,
+        version: version ?? this.version,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
+  DbVersionRow copyWithCompanion(DbVersionCompanion data) {
+    return DbVersionRow(
+      id: data.id.present ? data.id.value : this.id,
+      version: data.version.present ? data.version.value : this.version,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DbVersionRow(')
+          ..write('id: $id, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, version, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DbVersionRow &&
+          other.id == this.id &&
+          other.version == this.version &&
+          other.updatedAt == this.updatedAt);
+}
+
+class DbVersionCompanion extends UpdateCompanion<DbVersionRow> {
+  final Value<int> id;
+  final Value<int> version;
+  final Value<int> updatedAt;
+  const DbVersionCompanion({
+    this.id = const Value.absent(),
+    this.version = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+  });
+  DbVersionCompanion.insert({
+    this.id = const Value.absent(),
+    required int version,
+    required int updatedAt,
+  }) : version = Value(version),
+       updatedAt = Value(updatedAt);
+  static Insertable<DbVersionRow> custom({
+    Expression<int>? id,
+    Expression<int>? version,
+    Expression<int>? updatedAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (version != null) 'version': version,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    });
+  }
+
+  DbVersionCompanion copyWith({
+    Value<int>? id,
+    Value<int>? version,
+    Value<int>? updatedAt,
+  }) {
+    return DbVersionCompanion(
+      id: id ?? this.id,
+      version: version ?? this.version,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DbVersionCompanion(')
+          ..write('id: $id, ')
+          ..write('version: $version, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -7584,6 +7836,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $VocabularyEntriesTable vocabularyEntries =
       $VocabularyEntriesTable(this);
   late final $TtsCachesTable ttsCaches = $TtsCachesTable(this);
+  late final $DbVersionTable dbVersion = $DbVersionTable(this);
   late final Index indexDailyLearningRefBatchId = Index(
     'index_daily_learning_ref_batch_id',
     'CREATE INDEX index_daily_learning_ref_batch_id ON daily_learning (ref_batch_id)',
@@ -7657,6 +7910,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     exampleSentences,
     vocabularyEntries,
     ttsCaches,
+    dbVersion,
     indexDailyLearningRefBatchId,
     indexArticleBatchGeneratedOn,
     indexArticleBatchDifficultyLevelSnapshotGeneratedOn,
@@ -13141,6 +13395,162 @@ typedef $$TtsCachesTableProcessedTableManager =
       TtsCacheRow,
       PrefetchHooks Function({bool articleParagraphId})
     >;
+typedef $$DbVersionTableCreateCompanionBuilder =
+    DbVersionCompanion Function({
+      Value<int> id,
+      required int version,
+      required int updatedAt,
+    });
+typedef $$DbVersionTableUpdateCompanionBuilder =
+    DbVersionCompanion Function({
+      Value<int> id,
+      Value<int> version,
+      Value<int> updatedAt,
+    });
+
+class $$DbVersionTableFilterComposer
+    extends Composer<_$AppDatabase, $DbVersionTable> {
+  $$DbVersionTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$DbVersionTableOrderingComposer
+    extends Composer<_$AppDatabase, $DbVersionTable> {
+  $$DbVersionTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$DbVersionTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DbVersionTable> {
+  $$DbVersionTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$DbVersionTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DbVersionTable,
+          DbVersionRow,
+          $$DbVersionTableFilterComposer,
+          $$DbVersionTableOrderingComposer,
+          $$DbVersionTableAnnotationComposer,
+          $$DbVersionTableCreateCompanionBuilder,
+          $$DbVersionTableUpdateCompanionBuilder,
+          (
+            DbVersionRow,
+            BaseReferences<_$AppDatabase, $DbVersionTable, DbVersionRow>,
+          ),
+          DbVersionRow,
+          PrefetchHooks Function()
+        > {
+  $$DbVersionTableTableManager(_$AppDatabase db, $DbVersionTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DbVersionTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DbVersionTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DbVersionTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> version = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+              }) => DbVersionCompanion(
+                id: id,
+                version: version,
+                updatedAt: updatedAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int version,
+                required int updatedAt,
+              }) => DbVersionCompanion.insert(
+                id: id,
+                version: version,
+                updatedAt: updatedAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$DbVersionTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DbVersionTable,
+      DbVersionRow,
+      $$DbVersionTableFilterComposer,
+      $$DbVersionTableOrderingComposer,
+      $$DbVersionTableAnnotationComposer,
+      $$DbVersionTableCreateCompanionBuilder,
+      $$DbVersionTableUpdateCompanionBuilder,
+      (
+        DbVersionRow,
+        BaseReferences<_$AppDatabase, $DbVersionTable, DbVersionRow>,
+      ),
+      DbVersionRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -13184,4 +13594,6 @@ class $AppDatabaseManager {
       $$VocabularyEntriesTableTableManager(_db, _db.vocabularyEntries);
   $$TtsCachesTableTableManager get ttsCaches =>
       $$TtsCachesTableTableManager(_db, _db.ttsCaches);
+  $$DbVersionTableTableManager get dbVersion =>
+      $$DbVersionTableTableManager(_db, _db.dbVersion);
 }

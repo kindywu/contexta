@@ -174,7 +174,20 @@ void main() {
       expect(idx!.read<int>('unique'), 0);
     });
 
-    test('注册 8 张基础表（article_batch 由 FK 引用自动包含，本任务显式注册）', () async {
+    test('db_version 表结构（版本指针：单例行 id=1，无自增无 DEFAULT）', () async {
+      final cols = await tableInfo('db_version');
+      expect(cols.length, 3);
+      expectCol(cols, 'id', type: 'INTEGER', notNull: true, pk: true);
+      expectCol(cols, 'version', type: 'INTEGER', notNull: true, pk: false);
+      expectCol(cols, 'updated_at', type: 'INTEGER', notNull: true, pk: false);
+    });
+
+    test('db_version 无自增（单例行语义，版本推进归迁移脚本）', () async {
+      final sql = await tableSql('db_version');
+      expect(sql.toUpperCase(), isNot(contains('AUTOINCREMENT')));
+    });
+
+    test('注册 9 张基础表（article_batch 由 FK 引用自动包含，本任务显式注册）', () async {
       final rows = await db.customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
       ).get();
@@ -192,6 +205,7 @@ void main() {
           'learning_stats_summary',
           'daily_learning',
           'article_batch',
+          'db_version',
         }),
       );
     });

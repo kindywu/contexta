@@ -181,3 +181,35 @@ class DailyLearnings extends Table {
   @override
   Set<Column> get primaryKey => {learningDate};
 }
+
+/// 表 db_version（数据库结构版本指针）
+///
+/// 单例行（id=1），记录当前库结构版本。版本模型：
+/// - 库内 version = 已应用编号迁移脚本的最高目标版本（tool/migrations/NNN-*.sql），
+///   无脚本时恒为 1（v1 是就地补丁期，不写编号脚本）
+/// - 仓库 tool/db_version 文件 = 生产环境已发布版本（0 = 从未发布）
+/// - 硬校验不变量：库内 version ≤ 文件值 + 1（库超前于发布声明即报错）
+/// - 职责分离：db_version 是「当前版本指针」，推进只归 tool/migrate_db.sh 与
+///   发布后的 drift onUpgrade；schema_migration_log 是「迁移历史账本」，
+///   每应用一个编号脚本写一行——二者互不推导
+///
+/// 打开时自愈（database_open.dart beforeOpen）：表/行缺失则补建（version=1），
+/// 保证旧库/asset 库打开即自洽；版本推进不归 app 管。
+@DataClassName('DbVersionRow')
+class DbVersion extends Table {
+  /// 库表名 db_version（类名复数，必须显式覆盖）
+  @override
+  String get tableName => 'db_version';
+
+  /// 单例行，恒为 1（与 UserSettings 同构：无自增主键）
+  IntColumn get id => integer()();
+
+  /// 当前库结构版本（≥ 1）
+  IntColumn get version => integer()();
+
+  /// 版本更新时间（Unix millis）
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}

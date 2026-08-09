@@ -42,6 +42,22 @@ Future<AppDatabase> buildAppDatabase({String? overridePath}) async {
         await db.customStatement('PRAGMA journal_mode = WAL');
         await db.customStatement('PRAGMA busy_timeout = 5000');
         await db.customStatement('PRAGMA foreign_keys = ON');
+        // db_version 自愈（版本管理，见 tables/settings_tables.dart DbVersion 注释）：
+        // 旧库 / asset 预置库可能没有该表（migrate_db.sh 漏跑或历史库），打开即补建，
+        // 保证任何库自洽。drift 迁移回调先于 beforeOpen 执行，此兜底对全新库
+        // （createAll 已建表）与旧库（无迁移）均安全；版本推进不归 app 管，
+        // 只保证「表 + 单例行存在（version=1）」，编号脚本的推进由
+        // tool/migrate_db.sh / 发布后 onUpgrade 负责，避免两处写版本打架。
+        await db.customStatement('''
+CREATE TABLE IF NOT EXISTS `db_version` (
+  `id` INTEGER NOT NULL PRIMARY KEY,
+  `version` INTEGER NOT NULL,
+  `updated_at` INTEGER NOT NULL
+)''');
+        await db.customStatement(
+          'INSERT OR IGNORE INTO db_version (id, version, updated_at) '
+          'VALUES (1, 1, ${DateTime.now().millisecondsSinceEpoch})',
+        );
       },
     ),
   );

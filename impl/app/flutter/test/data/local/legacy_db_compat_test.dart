@@ -9,15 +9,23 @@ import 'package:contexta/data/local/database_open.dart';
 
 /// Task 8：drift 直接打开 Android Room 建的旧库（真机备份 fixture）。
 ///
+/// fixture 现状（2026-08-09 版本管理落地时升级）：Room 时代旧库已用
+/// **临时 dev 补丁**（不记录仓库，见 tool/migrate_db.sh 头注释）补到 v1：
+/// +tts_cache 表、+user_settings.tts_speed 列，再由 migrate_db.sh 补
+/// db_version 表 + 单例行（version=1）。Room 内部表与 user_version=1
+/// 原样保留 —— 模拟「开发期就地升级后的真实设备库」。
+///
 /// 核心承诺验证：
 /// 1. 打开本身不抛异常 —— Room 内部表（room_master_table / android_metadata）
 ///    被 drift 忽略；
 /// 2. user_version=1 与 drift schemaVersion=1 匹配 → 不触发迁移/重建
 ///    （不重建证据：sqlite_sequence、rowid、Room 内部表内容打开前后不变）；
-/// 3. 15 张表数据完整可读（行数 + 真实内容抽样，含 Kotlin 大写枚举原样字符串、
+/// 3. 17 张表数据完整可读（行数 + 真实内容抽样，含 Kotlin 大写枚举原样字符串、
 ///    generation_error_log.notified_at 的 Unix 毫秒语义）；
 /// 4. PRAGMA 级 schema 语义比对：旧库与 drift 生成的新库逐项一致
-///    （列名/类型/notnull/pk/无 DEFAULT、索引名/唯一性/列序、FK on_delete）。
+///    （列名/类型/notnull/pk、索引名/唯一性/列序、FK on_delete；
+///    DEFAULT 除外——ALTER 补的 tts_speed 带 DEFAULT 1.0 是已知接受差异，
+///    单独断言，见 schema 语义比对测试）。
 ///
 /// fixture 使用临时目录副本（不污染 test/fixtures/legacy/contexta.db；
 /// 旧库是 WAL 模式，drift 打开会写 -wal/-shm 边车文件）。
@@ -89,7 +97,7 @@ Map<String, Object?> _rawBaseline(String path) {
 
 void main() {
   group('legacy_db_compat', () {
-    // 15 张业务表（Room 内部表不在内）
+    // 17 张业务表（Room 内部表不在内）：16 张业务表 + db_version 版本指针表
     const allTables = <String>[
       'user_settings',
       'config_change_log',
@@ -106,6 +114,8 @@ void main() {
       'word_sense',
       'example_sentence',
       'vocabulary_entry',
+      'tts_cache',
+      'db_version',
     ];
 
     // 打开前（sqlite3 只读基线）快照出的 sqlite_sequence：9 张有数据的
@@ -130,7 +140,7 @@ void main() {
         expect(version.read<int>('user_version'), 1,
             reason: 'drift schemaVersion=1 与旧库 user_version=1 匹配，不触发迁移');
 
-        // 15 张表行数与备份核验一致
+        // 17 张表行数与备份核验一致（tts_cache 空表、db_version 单例行）
         const expectedCounts = <String, int>{
           'article_batch': 12,
           'article': 60,
@@ -147,6 +157,8 @@ void main() {
           'config_change_log': 0,
           'schema_migration_log': 0,
           'generation_error_log': 3,
+          'tts_cache': 0,
+          'db_version': 1,
         };
         for (final e in expectedCounts.entries) {
           final row = await db.customSelect(
@@ -158,6 +170,14 @@ void main() {
         // 外键开启（buildAppDatabase 的 beforeOpen 对齐 Room 默认）
         final fk = await db.customSelect('PRAGMA foreign_keys').getSingle();
         expect(fk.read<int>('foreign_keys'), 1);
+
+        // db_version 版本指针：行 = 1（v1 是 init 阶段，无编号迁移脚本）
+        final dv = await db.customSelect(
+          'SELECT version, updated_at FROM db_version WHERE id = 1',
+        ).getSingle();
+        expect(dv.read<int>('version'), 1,
+            reason: '库内版本 1 = 文件值 0 + 1（从未发布，版本并入 v1）');
+        expect(dv.read<int>('updated_at'), greaterThan(0));
 
         // Room 内部表被 drift 忽略（仍存在，未被删也未报错）
         final master = await db.customSelect(
@@ -210,6 +230,8 @@ void main() {
         expect(us.translationDisplayMode, 'BLURRED');
         expect(us.masteryThresholdN, 1);
         expect(us.autoPlayAudio, isFalse);
+        // tts_speed 由临时补丁 ALTER 补入（NOT NULL DEFAULT 1.0，存量行回填 1.0）
+        expect(us.ttsSpeed, 1.0);
 
         final ve = await db.select(db.vocabularyEntries).getSingle();
         expect(ve.id, 1);
@@ -332,12 +354,12 @@ void main() {
       }
     });
 
-    test('schema 语义比对：旧库 15 张表 PRAGMA 与 drift 生成结构逐项一致', () async {
+    test('schema 语义比对：旧库 17 张表 PRAGMA 与 drift 生成结构逐项一致', () async {
       final (legacy, tmp) = await _openLegacy();
       // 参照库：同一组 Table 类生成的崭新 drift 库
       final fresh = AppDatabase.forTesting(NativeDatabase.memory());
       try {
-        // 表集合一致（业务表 15 张；旧库另有 room 内部表，drift 忽略）
+        // 表集合一致（业务表 17 张；旧库另有 room 内部表，drift 忽略）
         Future<Set<String>> tableSet(AppDatabase d) async {
           final rows = await d.customSelect(
             "SELECT name FROM sqlite_master WHERE type='table' "
@@ -350,21 +372,26 @@ void main() {
         expect(await tableSet(legacy), await tableSet(fresh));
         expect(await tableSet(legacy), allTables.toSet());
 
+        // 列比对不含 DEFAULT：ALTER 补入的 tts_speed 带 DEFAULT 1.0（SQLite
+        // 无法去默认值），drift 全新建表无 DEFAULT —— 已知接受差异，见下方专项断言。
+        // 按列名排序后再比较：ALTER 追加列必然排在表末尾，与建表顺序不同，
+        // 而列序不影响按名访问（drift 全部按名读写）。
         Future<List<List<Object?>>> columnsOf(AppDatabase d, String t) async {
           final rows = await d.customSelect(
-            "SELECT name, type, \"notnull\", pk, dflt_value "
+            "SELECT name, type, \"notnull\", pk "
             "FROM pragma_table_info('$t')",
           ).get();
-          return [
+          final cols = [
             for (final r in rows)
               [
                 r.read<String>('name'),
                 r.read<String>('type'),
                 r.read<int>('notnull'),
                 r.read<int>('pk'),
-                r.read<String?>('dflt_value'),
               ],
           ];
+          cols.sort((a, b) => (a[0] as String).compareTo(b[0] as String));
+          return cols;
         }
 
         Future<Map<String, int>> indexesOf(AppDatabase d, String t) async {
@@ -421,6 +448,20 @@ void main() {
           expect(await fksOf(legacy, t), await fksOf(fresh, t),
               reason: '表 $t 外键（父表/列/on_delete/on_update）一致');
         }
+
+        // tts_speed 专项断言：旧库 ALTER 补列的 DEFAULT 是唯一接受差异
+        Future<String?> ttsSpeedDflt(AppDatabase d) async {
+          final rows = await d.customSelect(
+            "SELECT dflt_value FROM pragma_table_info('user_settings') "
+            "WHERE name = 'tts_speed'",
+          ).get();
+          return rows.single.read<String?>('dflt_value');
+        }
+
+        expect(await ttsSpeedDflt(legacy), '1.0',
+            reason: 'ALTER 补列须 NOT NULL DEFAULT（SQLite 规则），存量行回填默认值');
+        expect(await ttsSpeedDflt(fresh), isNull,
+            reason: 'drift 全新建表按项目「无 DEFAULT」规则');
       } finally {
         await legacy.close();
         await fresh.close();
@@ -433,17 +474,19 @@ void main() {
     test('旧库 PRAGMA 硬编码抽查（与 schema_*_tables_test 同风格断言）', () async {
       final (db, tmp) = await _openLegacy();
       try {
-        // user_settings 7 列
+        // user_settings 8 列（含临时补丁 ALTER 补入的 tts_speed）
         final usCols = await db.customSelect(
           "SELECT name, type, \"notnull\", pk FROM pragma_table_info('user_settings')",
         ).get();
-        expect(usCols, hasLength(7));
+        expect(usCols, hasLength(8));
         final byName = {for (final r in usCols) r.read<String>('name'): r};
         expect(byName['id']!.read<String>('type'), 'INTEGER');
         expect(byName['id']!.read<int>('pk'), 1);
         expect(byName['is_onboarded']!.read<String>('type'), 'INTEGER');
         expect(byName['difficulty_level']!.read<String>('type'), 'TEXT');
         expect(byName['auto_play_audio']!.read<int>('notnull'), 1);
+        expect(byName['tts_speed']!.read<String>('type'), 'REAL');
+        expect(byName['tts_speed']!.read<int>('notnull'), 1);
 
         // word 表列 + 唯一索引
         final wordCols = await db.customSelect(

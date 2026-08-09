@@ -10,7 +10,8 @@ part 'database.g.dart';
 /// Contexta 主数据库（drift 侧）。
 ///
 /// 表结构逐列对照 Android Room schema（Task 8 用真机旧库逐列比对验证）。
-/// 已注册 16 张表：基础表组 7 张 + 文章表组 4 张 + 词库表组 4 张 + TTS 缓存 1 张。
+/// 已注册 17 张表：基础表组 8 张 + 文章表组 4 张 + 词库表组 4 张 + TTS 缓存 1 张
+/// （DbVersion 为数据库结构版本指针表，见 tables/settings_tables.dart 注释）。
 @DriftDatabase(
   tables: [
     UserSettings,
@@ -29,6 +30,7 @@ part 'database.g.dart';
     ExampleSentences,
     VocabularyEntries,
     TtsCaches,
+    DbVersion,
   ],
 )
 class AppDatabase extends _$AppDatabase {

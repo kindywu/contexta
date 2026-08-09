@@ -210,7 +210,7 @@ void main() {
       expect(map['index_generation_error_log_created_at'], 0);
     });
 
-    test('注册表集合：11 张既有 + 词库表组 4 张（Task 6 后共 15 张）', () async {
+    test('注册表集合：全部 17 张（16 张业务表 + db_version 版本指针表）', () async {
       final rows = await db.customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
       ).get();
@@ -233,6 +233,8 @@ void main() {
           'word_sense',
           'example_sentence',
           'vocabulary_entry',
+          'tts_cache',
+          'db_version',
         },
       );
     });

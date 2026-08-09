@@ -261,10 +261,54 @@ drift 中联合主键（或无自增主键）通过 `Set<Column> get primaryKey 
 
 ### MIGRATION — 迁移策略
 
+**版本模型**：`tool/db_version` 文件 = 生产已发布版本（`0` = 从未发布生产环境）；库内 `db_version` 表（单例行 `id=1`）= 已应用编号脚本的最高目标版本（无脚本则 `1`）。硬校验不变量：**库内 version ≤ 文件值 + 1**（库领先发布声明 → 报错）。`db_version`（当前版本指针）与 `schema_migration_log`（迁移历史账本）职责分离，互不推导。
+
 | 阶段 | 策略 |
 |------|------|
-| 开发期（未发布） | 不递增 schema 版本、不写 drift Migration —— schema 变更后用 `tool/migrate_db.sh` 对备份库 / 真机旧库就地补表（幂等，只补缺失表/列） |
-| 发布后 | 手写 `MigrationStrategy.onUpgrade` 迁移，保留数据 |
+| 0→1（未发布，`tool/db_version` = 0） | **init 阶段，不写编号迁移脚本**——init 由 drift `createAll`（+ asset 预置库）承载。结构变更**并入 v1 不递增**，schema 变更后用 `tool/migrate_db.sh` 对备份库 / 真机旧库就地补表（幂等，只补缺失表/列）。结构变更时生成**临时补丁脚本（放 `/tmp`，不提交仓库）**，仅在备份真机库 / 升级结构时使用，用完即弃 |
+| 1→2→3（发布后，`tool/db_version` ≥ 1） | 每次 schema 变更**递增版本**，写编号迁移脚本**并提交**：`tool/migrations/NNN-*.sql`（NNN = 目标版本，从 `002` 起；001 不存在——init 阶段不写编号脚本），单文件自包含事务，`INSERT INTO schema_migration_log` + `UPDATE db_version` 收尾；drift `MigrationStrategy.onUpgrade` 在发布后**镜像同一批变更**（双写纪律，脚本与 onUpgrade 互引注释） |
 | 大版本 | 渐进式迁移，一次升一个版本 |
 
-开发期覆盖安装不会重建表，schema 变更后需对旧库执行 `./tool/migrate_db.sh <db路径>` 就地升级（`--check` 只打印差异，不修改）。
+**发布后新列规则**：SQLite `ALTER TABLE ADD COLUMN` 不接受 `NOT NULL` 且无 DEFAULT 的列——发布后新增列用 `withDefault()` 或 nullable + 回填，否则上线会失败。
+
+**sqlite3 CLI 纪律**：CLI 连接默认 `foreign_keys=OFF`，只用于只读校验 / 纯 DDL 补丁；业务读写一律走应用（drift）。
+
+**tool/ 目录纪律**：`tool/` 只放生产脚本与升级脚本（`db_version` 文件、`migrate_db.sh`、`backup_db.sh`、`migrations/`）。**dev 补丁脚本不进仓库**，只在备份升级结构时临时使用。
+
+> 命令：`./tool/backup_db.sh`（备份真机库）→ `./tool/migrate_db.sh <db路径> [--check]`（就地升级）——详见 [docs/database-schema.md](impl/app/flutter/docs/database-schema.md)。
+
+---
+
+## 数据库与部署纪律（防卸载 / 防丢数据硬闸）
+
+**背景**：2026-08-09 曾因 `flutter install` 签名不匹配触发自动卸载，清空设备数据库。以下规则为硬闸，任何情况不得绕过。
+
+### 部署纪律（严禁卸载）
+
+1. **绝不使用 `flutter install` / `flutter run` 覆盖真机**——二者签名不匹配（release↔debug）时都会**静默卸载**旧包。只允许 `adb install -r`（失败会报错，不会卸载）。`flutter run` 只用于模拟器。
+2. **部署前核对签名**：`apksigner verify --print-certs app-debug.apk | grep SHA-256` vs `adb shell dumpsys package com.ak.contexta | grep signatures`（小写去冒号比对）；设备无包则跳过。
+3. **部署前核对 versionCode**：`dumpsys` 的 versionCode 大于 APK 则中止（**降级同样触发卸载路径**）。
+4. **卸载设备 app 前，必须先备份**：`tool/backup_db.sh` → `tool/migrate_db.sh <备份副本> --check` 确认可升级 → 再卸载。
+5. **run-as 依赖 debuggable 构建**：release 构建（debuggable=false）无法 run-as 拉库。开发期统一部署 debug APK（`adb install -r`），release 只留给正式发布。
+
+### 数据库结构变更流程（保留数据）
+
+1. **备份先行**（永远第一步）：`tool/backup_db.sh`（WAL 三件套齐拉：contexta.db + -wal + -shm）。
+2. `tool/migrate_db.sh <备份副本> --check` → 实跑 → 校验 `SELECT version FROM db_version`。
+3. **推回设备**：force-stop → push 副本到 `/data/local/tmp` → chmod 666 → run-as **先删设备端 -wal/-shm 再** cp 主文件（残留 WAL 帧会污染新库）→ 拉回验证（integrity / 表数 / 行数）。
+4. 部署新 APK：签名核对 → versionCode 核对 → `adb install -r` → `adb shell monkey -p com.ak.contexta 1` 启动验证。
+
+### Asset 库刷新纪律
+
+**`assets/contexta.db` 与真机库同构，结构变更时必须同步刷新**：
+
+1. 副本 `PRAGMA wal_checkpoint(TRUNCATE)`（把 WAL 折入主文件）；
+2. cp 到 `assets/contexta.db`；
+3. **`rm -f` 侧车文件**（contexta.db-wal / contexta.db-shm）——git 会漏掉 -wal，残留即静默丢数据；
+4. 校验：17 张表（+ Room 遗留表）、db_version 行 = 1、user_version = 1、article 行数 > 0、integrity_check = ok。
+
+> ⚠️ asset 库携带个人数据（真机库拷贝），当前单人应用接受；将来对外分发需先脱敏。
+
+### 备份冷存档
+
+`.backup/`（仓库根，已 gitignore）存放真机备份，**每月做一次冷备份**：`git add -f .backup/contexta-db-*` 提交最近一次备份。任何删除备份的操作必须先确认对象是本次会话产物，**绝不删除既有备份**。
