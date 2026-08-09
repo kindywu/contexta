@@ -74,6 +74,8 @@ class _TtsStub implements TtsEngine {
   final List<String> spoken = [];
   void Function(String? utteranceId, int paragraphIndex, int total)?
       onParagraphStarted;
+  String? _lastId;
+  void Function(String? utteranceId)? onFinished;
 
   @override
   bool isAvailable() => available;
@@ -85,16 +87,22 @@ class _TtsStub implements TtsEngine {
   String? speak(String text, {double speed = 1.0}) {
     if (!available) return null;
     spoken.add(text);
+    _lastId = 'ctx-1';
     return 'ctx-1';
   }
 
   @override
   void stop() {
     stopCount++;
+    final id = _lastId;
+    _lastId = null;
+    onFinished?.call(id);
   }
 
   @override
-  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
+  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {
+    onFinished = callback;
+  }
 
   @override
   void setOnParagraphStarted(
@@ -129,6 +137,26 @@ Article makeArticle() => const Article(
         ),
       ],
     );
+
+/// 朗读段英文正文 RichText 中带底色的 span 的底色（无底色返回 null）。
+/// 页面中 RichText 不止一个（顶栏图标/译文 chip/标题等均为 Text 内部渲染），
+/// 需定位到正文段落：其 TextSpan 内含内联播放钮 WidgetSpan，据此筛选。
+Color? _firstRichTextBg(WidgetTester tester) {
+  final rich = tester.widget<RichText>(
+    find.byWidgetPredicate((w) {
+      if (w is! RichText) return false;
+      final children = (w.text as TextSpan).children;
+      return children?.any((s) => s is WidgetSpan) ?? false;
+    }),
+  );
+  final spans = (rich.text as TextSpan).children ?? const <InlineSpan>[];
+  for (final span in spans) {
+    if (span is TextSpan && span.style?.backgroundColor != null) {
+      return span.style!.backgroundColor;
+    }
+  }
+  return null;
+}
 
 void main() {
   late _Stub stub;
@@ -313,6 +341,21 @@ void main() {
       await tester.pump(const Duration(seconds: 10));
       await tester.pump();
       expect(find.byType(ImageFiltered), findsOneWidget);
+    });
+  });
+
+  group('段落朗读高亮', () {
+    testWidgets('点击段落播放 → 英文正文加底色；再次点击停止 → 底色消失', (tester) async {
+      await pumpScreen(tester);
+      expect(_firstRichTextBg(tester), isNull);
+
+      await tester.tap(find.byIcon(Icons.volume_up_outlined));
+      await tester.pumpAndSettle();
+      expect(_firstRichTextBg(tester), const Color(0x2ECC785C));
+
+      await tester.tap(find.byIcon(Icons.stop_outlined));
+      await tester.pumpAndSettle();
+      expect(_firstRichTextBg(tester), isNull);
     });
   });
 }

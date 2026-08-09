@@ -707,13 +707,17 @@ class _ReadingParagraphState extends State<_ReadingParagraph> {
   }
 
   /// 单词 → 可点击 TextSpan（生词珊瑚底色高亮）；空白/标点原样 TextSpan。
+  /// 朗读中（isSpeaking）整段文字追加同色底色，生词 span 保持原样（同色融合）。
   List<InlineSpan> _buildAnnotatedSpans() {
     final spans = <InlineSpan>[];
+    final speakingBg = widget.isSpeaking
+        ? const TextStyle(backgroundColor: Color(0x2ECC785C))
+        : null;
     var cursor = 0;
     for (final range in findWordRanges(widget.englishText)) {
       final gap = widget.englishText.substring(cursor, range.$1);
       if (gap.isNotEmpty) {
-        spans.add(TextSpan(text: gap));
+        spans.add(TextSpan(text: gap, style: speakingBg));
       }
       final word = widget.englishText.substring(range.$1, range.$2);
       final normalized = word.toLowerCase();
@@ -726,7 +730,8 @@ class _ReadingParagraphState extends State<_ReadingParagraph> {
                   color: AppColors.ink,
                   backgroundColor: Color(0x2ECC785C),
                 )
-              : const TextStyle(color: AppColors.ink),
+              : (speakingBg ??
+                  const TextStyle(color: AppColors.ink)),
           recognizer: _wordRecognizer(normalized),
         ),
       );
@@ -734,7 +739,7 @@ class _ReadingParagraphState extends State<_ReadingParagraph> {
     }
     final tail = widget.englishText.substring(cursor);
     if (tail.isNotEmpty) {
-      spans.add(TextSpan(text: tail));
+      spans.add(TextSpan(text: tail, style: speakingBg));
     }
     return spans;
   }
