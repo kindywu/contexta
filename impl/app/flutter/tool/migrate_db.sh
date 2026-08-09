@@ -4,18 +4,23 @@
 #
 # 版本模型（与 lib/data/local/tables/settings_tables.dart DbVersion 注释一致）：
 #   tool/db_version 文件  = 生产环境已发布版本（0 = 从未发布）
-#   db_version 表（库内单例行 id=1）= 已应用编号迁移脚本的最高目标版本（无脚本则 1）
+#   db_version 表（库内单例行 id=1）= 已应用编号迁移脚本的最高目标版本
+#   （无表/行 = 版本 0：尚未跑过任何迁移的库，含空库与 Room 遗留库）
 #   硬校验不变量：库内 version ≤ 文件值 + 1（库超前于发布声明即报错）
+#
+# 编号脚本链（tool/migrations/NNN-*.sql，NNN = 脚本升级到的目标版本）：
+#   001-init.sql（0→1：v1 标准结构）→ 002（1→2）→ 003（2→3）→ …
+#   链条完整：未来发布 v5 时遇到 v3 用户库，按序应用 004、005；
+#   遇到版本 0 的库（无 db_version 表/行），从 001 起跑完整 init。
 #
 # 职责：
 #   1. 前置校验：integrity_check + 版本硬校验
-#   2. 确保段：db_version 表 + 单例行存在（缺表 CREATE、缺行 INSERT version=1）
-#      —— 与 app 打开自愈（database_open.dart beforeOpen）相同幂等操作
-#   3. 编号迁移段：按序应用 tool/migrations/NNN-*.sql（发布后 1→2→3 使用；
-#      db_version=0 未发布阶段无编号脚本，此段空转）
+#   2. 编号迁移段：按序应用 (CUR, TARGET] 区间内的脚本（TARGET = 文件值 + 1，
+#      允许开发库比生产领先一个版本）；每个待升级库先存 .bak-v$CUR 保留现场
 #
-# ⚠️ 开发期（db_version=0）的结构变更**不写编号脚本**：用临时补丁脚本
-# （/tmp 或 temp_docs/，不提交仓库）对真机备份库就地升级，仅用于保留测试数据。
+# ⚠️ 开发期（tool/db_version = 0）v1 的结构变更**不写编号脚本**（并入 v1，
+#   同步更新 001-init.sql 的 v1 定义）；对已存在 v1 库的补结构用临时补丁脚本
+#   （/tmp，不提交仓库），仅用于保留测试数据。
 #
 # 用法：
 #   ./tool/migrate_db.sh <contexta.db 路径> [--check]
@@ -47,30 +52,17 @@ if [ "$INTEGRITY" != "ok" ]; then
   exit 1
 fi
 
-# 当前库版本（db_version 表可能不存在，探测后为空串）
+# 当前库版本：无 db_version 表/行 = 版本 0（从 001 起跑 init；空库、Room
+# 遗留库均落于此）；有表有行 = 已应用编号脚本的最高目标版本
 CUR=""
 if sqlite3 "$DB" "SELECT name FROM sqlite_master WHERE type='table' AND name='db_version';" | grep -q db_version; then
   CUR="$(sqlite3 "$DB" "SELECT version FROM db_version WHERE id = 1;" 2>/dev/null || true)"
 fi
-
-# ── 1. 确保段：db_version 表 + 单例行（与 app 自愈 SQL 一致）──────
 if [ -z "$CUR" ]; then
-  echo "🔧 补 db_version 表 + 单例行（version=1）"
-  CHANGED=1
-  if [ "$CHECK" != "--check" ]; then
-    NOW_MS=$(( $(date +%s) * 1000 ))
-    sqlite3 "$DB" <<SQL
-CREATE TABLE IF NOT EXISTS \`db_version\` (
-  \`id\` INTEGER NOT NULL PRIMARY KEY,
-  \`version\` INTEGER NOT NULL,
-  \`updated_at\` INTEGER NOT NULL
-);
-INSERT OR IGNORE INTO db_version (id, version, updated_at) VALUES (1, 1, $NOW_MS);
-SQL
-  fi
-  CUR=1
+  CUR=0
+  echo "ℹ️  库内版本: 0（无 db_version 表/行，将从 001-init.sql 开始）"
 else
-  echo "✅ db_version 表已存在（version=${CUR}）"
+  echo "ℹ️  库内版本: ${CUR}"
 fi
 
 # 版本硬校验：库内行 ≤ 文件值 + 1
@@ -80,7 +72,7 @@ if [ "$CUR" -gt "$MAX_ALLOWED" ]; then
   exit 1
 fi
 
-# ── 2. 编号迁移脚本段（发布后使用；未发布则空转）──────────────────
+# ── 编号迁移脚本段：按序应用 (CUR, TARGET] ────────────────────────
 TARGET=$((PROD_VERSION + 1))
 PENDING=""
 if [ "$CUR" -lt "$TARGET" ]; then
@@ -97,9 +89,9 @@ if [ -n "$PENDING" ]; then
   if [ "$CHECK" != "--check" ]; then
     for script in $PENDING; do
       echo "→ 应用 $script"
-      cp "$DB" "$DB.bak-v$CUR"  # 保留现场，失败可恢复
+      cp "$DB" "$DB.bak-v${CUR}"  # 保留现场，失败可恢复
       sqlite3 -bail "$DB" < "$script" \
-        || { echo "❌ 脚本失败（现场保留于 $DB.bak-v$CUR，恢复: mv $DB.bak-v$CUR ${DB}）"; exit 1; }
+        || { echo "❌ 脚本失败（现场保留于 $DB.bak-v${CUR}，恢复: mv $DB.bak-v${CUR} ${DB}）"; exit 1; }
       CUR=$((CUR + 1))
     done
   fi

@@ -261,12 +261,12 @@ drift 中联合主键（或无自增主键）通过 `Set<Column> get primaryKey 
 
 ### MIGRATION — 迁移策略
 
-**版本模型**：`tool/db_version` 文件 = 生产已发布版本（`0` = 从未发布生产环境）；库内 `db_version` 表（单例行 `id=1`）= 已应用编号脚本的最高目标版本（无脚本则 `1`）。硬校验不变量：**库内 version ≤ 文件值 + 1**（库领先发布声明 → 报错）。`db_version`（当前版本指针）与 `schema_migration_log`（迁移历史账本）职责分离，互不推导。
+**版本模型**：`tool/db_version` 文件 = 生产已发布版本（`0` = 从未发布生产环境）；库内 `db_version` 表（单例行 `id=1`）= 已应用编号脚本的最高目标版本（**无表/行 = 版本 0**：尚未跑过任何迁移的库，含空库与 Room 遗留库）。硬校验不变量：**库内 version ≤ 文件值 + 1**（库领先发布声明 → 报错）。`db_version`（当前版本指针）与 `schema_migration_log`（迁移历史账本）职责分离，互不推导。
 
 | 阶段 | 策略 |
 |------|------|
-| 0→1（未发布，`tool/db_version` = 0） | **init 阶段，不写编号迁移脚本**——init 由 drift `createAll`（+ asset 预置库）承载。结构变更**并入 v1 不递增**，schema 变更后用 `tool/migrate_db.sh` 对备份库 / 真机旧库就地补表（幂等，只补缺失表/列）。结构变更时生成**临时补丁脚本（放 `/tmp`，不提交仓库）**，仅在备份真机库 / 升级结构时使用，用完即弃 |
-| 1→2→3（发布后，`tool/db_version` ≥ 1） | 每次 schema 变更**递增版本**，写编号迁移脚本**并提交**：`tool/migrations/NNN-*.sql`（NNN = 目标版本，从 `002` 起；001 不存在——init 阶段不写编号脚本），单文件自包含事务，`INSERT INTO schema_migration_log` + `UPDATE db_version` 收尾；drift `MigrationStrategy.onUpgrade` 在发布后**镜像同一批变更**（双写纪律，脚本与 onUpgrade 互引注释） |
+| 0→1（未发布，`tool/db_version` = 0） | **`tool/migrations/001-init.sql` 提交仓库**——版本链条起点（0→1 init），描述 v1 标准结构，全部 `IF NOT EXISTS` 幂等（空库 / Room 遗留库 / 任意已有库重复执行均安全）。开发期 v1 结构变更**并入 v1 不递增**，**同步更新 001**（001 描述的 v1 = 当前开发结构）；对备份库 / 真机旧库的补结构用**临时补丁脚本（放 `/tmp`，不提交仓库）**，用完即弃。**首次发布 v1（文件改 1）后 001 冻结**，之后的结构变更写 002 起 |
+| 1→2→3（发布后，`tool/db_version` ≥ 1） | 每次 schema 变更**递增版本**，写编号迁移脚本**并提交**：`tool/migrations/NNN-*.sql`（NNN = 目标版本：001 = init（0→1），发布后从 002 起），单文件自包含事务，`INSERT INTO schema_migration_log` + `UPDATE db_version` 收尾；drift `MigrationStrategy.onUpgrade` 在发布后**镜像同一批变更**（双写纪律，脚本与 onUpgrade 互引注释）。**链条完整**：未来发布 v5 遇到 v3 用户库，`migrate_db.sh` 按序应用 004、005 |
 | 大版本 | 渐进式迁移，一次升一个版本 |
 
 **发布后新列规则**：SQLite `ALTER TABLE ADD COLUMN` 不接受 `NOT NULL` 且无 DEFAULT 的列——发布后新增列用 `withDefault()` 或 nullable + 回填，否则上线会失败。

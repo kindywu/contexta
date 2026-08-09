@@ -58,7 +58,7 @@ erDiagram
 | 载体 | 位置 | 内容 | 职责 |
 |---|---|---|---|
 | `tool/db_version` 文件 | 仓库 | `0` | **生产已发布版本**（0 = 从未发布生产环境） |
-| `db_version` 表（单例行 id=1） | 库内 | `version` | **已应用编号脚本的最高目标版本**（无脚本则 1） |
+| `db_version` 表（单例行 id=1） | 库内 | `version` | **已应用编号脚本的最高目标版本**（无表/行 = 版本 0：尚未跑过任何迁移的库） |
 | `schema_migration_log` 表 | 库内 | 每行一次迁移 | 迁移历史账本（`SchemaMigrationLogDao.getCurrentVersion()` 读取 MAX(to_version)） |
 
 ### 版本不变量（硬校验）
@@ -83,15 +83,15 @@ INSERT OR IGNORE INTO db_version (id, version, updated_at) VALUES (1, 1, <毫秒
 ```mermaid
 stateDiagram-v2
     [*] --> Init: db_version文件=0（未发布）
-    Init --> Init: 结构变更→并入v1（临时补丁，不进仓库）
-    Init --> V1发布: 首次发布生产环境
+    Init --> Init: 结构变更→并入v1（同步更新001，临时补丁不进仓库）
+    Init --> V1发布: 首次发布生产环境（001-init.sql 冻结）
     V1发布 --> V2: 结构变更→编号脚本002+提交
     V2 --> V3: 结构变更→编号脚本003+提交
     V3 --> [*]
 ```
 
-- **0→1 = init 阶段**：不写编号迁移脚本；init 由 drift `createAll` + asset 预置库承载。结构变更时生成临时补丁脚本（`/tmp`，不提交），仅用于备份真机库 / 升级结构时，用完即弃。
-- **1→2→3 = 编号迁移**：每次结构变更递增版本，写 `tool/migrations/NNN-*.sql`（NNN = 目标版本，从 002 起；001 不存在）并提交；drift `onUpgrade` 在发布后镜像同一批变更（双写纪律）。
+- **0→1 = 001-init.sql（版本链条起点）**：`tool/migrations/001-init.sql` 描述 v1 标准结构（17 张表 + 索引），全部 `IF NOT EXISTS` 幂等——空库 / Room 遗留库 / 任意已有库重复执行均安全；开发期（文件=0）v1 结构变更**同步更新 001**（001 = 活的 v1），首次发布后**冻结**。
+- **1→2→3 = 编号迁移**：每次结构变更递增版本，写 `tool/migrations/NNN-*.sql`（NNN = 目标版本，从 002 起）并提交；drift `onUpgrade` 在发布后镜像同一批变更（双写纪律）。**链条完整**——未来发布 v5 遇到 v3 用户库，`migrate_db.sh` 按序应用 004、005。
 
 ## 三、迁移流程线：工具链
 
@@ -124,12 +124,12 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     A[前置: integrity_check + 读 tool/db_version] --> B{db_version 表/行存在?}
-    B -- 否 --> C[补表 + INSERT OR IGNORE 行=1]
+    B -- 否 --> C[库内版本=0: 从 001-init.sql 起跑完整 init]
     B -- 是 --> D
     C --> D{硬校验: 库内 ≤ 文件值+1?}
     D -- 超限 --> E[报错中止]
-    D -- 正常 --> F[编号脚本 runner: 逐个应用 (cur, target]]
-    F --> G[每个库先存 .bak-v$cur 保留现场]
+    D -- 正常 --> F[编号脚本 runner: 按序应用 (CUR, TARGET] 区间脚本]
+    F --> G[每个待升级库先存 .bak-v$CUR 保留现场]
     G --> H[校验 + 打印 db_version]
 ```
 
