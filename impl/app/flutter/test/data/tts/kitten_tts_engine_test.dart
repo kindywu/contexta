@@ -54,6 +54,19 @@ void main() {
     expect(finished, ['ktk-0']);
   });
 
+  test('setOnParagraphStarted 透传给 session', () async {
+    final session = _FakeSession();
+    final engine = _engine(factory: _withSession(session));
+    await engine.init();
+
+    final started = <(String, int, int)>[];
+    // 引擎层签名 id 可空（对齐 TtsEngine 接口）；session 契约保证非空，透传时收缩安全
+    engine.setOnParagraphStarted((id, index, total) => started.add((id!, index, total)));
+    session.simulateParagraphStarted(1);
+
+    expect(started, [('ktk-0', 1, 3)]);
+  });
+
   test('speak 转发 text/speed/id 到 session', () async {
     final session = _FakeSession();
     final engine = _engine(factory: _withSession(session));

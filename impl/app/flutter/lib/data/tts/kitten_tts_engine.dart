@@ -31,6 +31,8 @@ class KittenTtsEngine implements TtsEngine {
   String? _failureReason;
   void Function(String? utteranceId)? _onSpeakingFinished;
   void Function(String? utteranceId, int done, int total)? _onProgress;
+  void Function(String utteranceId, int paragraphIndex, int total)?
+      _onParagraphStarted;
   int _utteranceCounter = 0;
 
   @override
@@ -197,12 +199,15 @@ class KittenTtsEngine implements TtsEngine {
     _onSpeakingFinished = callback;
   }
 
+  /// 注册「段落开始播放」回调（播放 worker 在每段实际发声前调用）。
+  /// 带 utterance id、段落索引（正文从 0 起，不含标题段）与正文总段数；
+  /// 传 null 注销。透传给 session 层回调（session 契约 id 非空，收缩安全）。
   @override
   void setOnParagraphStarted(
       void Function(String? utteranceId, int paragraphIndex, int total)?
           callback) {
-    // 占位：段落回调透传待 KittenTtsSession 支持段落开始监听后实现
-    // （对照 Kotlin 播放 worker 逐段上报，见后续任务）
+    _onParagraphStarted = callback;
+    debugPrint('[KittenTTS.engine] setOnParagraphStarted: callback=${callback != null}');
   }
 
   /// 注册生成进度回调（全文朗读流式合成时，句子生成进度）。
@@ -229,6 +234,11 @@ class KittenTtsEngine implements TtsEngine {
       session.setFinishListener((id) => _onSpeakingFinished?.call(id));
       session.setProgressListener((id, done, total) =>
           _onProgress?.call(id, done, total));
+      // 段落播放回调透传：日志兜底，未注册回调时也能从日志定位事件是否触发
+      session.setOnParagraphStarted((id, index, total) {
+        debugPrint('[KittenTTS.engine] paragraphStarted: id=$id index=$index total=$total');
+        _onParagraphStarted?.call(id, index, total);
+      });
       _session = session;
       debugPrint('[KittenTtsEngine] init SUCCESS');
     } catch (e) {
