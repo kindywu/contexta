@@ -105,10 +105,16 @@ class KittenTtsPluginSession implements KittenTtsSession {
   final _generationJobs = <Future<void>>[];
 
   /// 工厂实现：用内置 phonemizer 数据创建 KittenTTS。
+  ///
+  /// CEPhonemizer 显式传 rulesPath/listPath（与 onnx 同目录、由
+  /// installModelAssets 一并解压）——不传时插件会从 GitHub raw 下载词典
+  /// 且 http 无超时，国内网络下 init 挂起。词典缺失时 allowRuleBasedFallback
+  /// 兜底到纯规则音素器（音质略差但可用）。
   static Future<KittenTtsSession> create({
     required String onnxPath,
     required String voicesPath,
   }) async {
+    final modelsDir = onnxPath.substring(0, onnxPath.lastIndexOf('/'));
     final instance = await kit.KittenTTS.create(
       config: kit.KittenTTSConfig(
         model: kit.model.micro,
@@ -117,7 +123,11 @@ class KittenTtsPluginSession implements KittenTtsSession {
           onnxPath: onnxPath,
           voicesPath: voicesPath,
         ),
-        phonemizer: kit.CEPhonemizer(allowRuleBasedFallback: true),
+        phonemizer: kit.CEPhonemizer(
+          rulesPath: '$modelsDir/en_rules',
+          listPath: '$modelsDir/en_list',
+          allowRuleBasedFallback: true,
+        ),
         analytics: false,
       ),
     );

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import '../../domain/tts/tts_engine.dart';
@@ -33,11 +34,19 @@ class TtsEngineFactory {
   final Directory? _modelBaseOverride;
   final TtsCacheManager? cache;
 
+  /// KittenTTS 原生 init 兜底超时：任何挂起（如插件内部网络等待）都不能
+  /// 阻塞朗读链路，超时后按失败处理回退系统 TTS。
+  static const Duration kittenInitTimeout = Duration(seconds: 45);
+
   /// 创建 TTS 引擎：先尝试 KittenTTS，失败自动回退系统 TTS。
   Future<TtsEngine> create() async {
     debugPrint('[TtsFactory] creating TTS engine...');
     final kitten = _createKittenEngine();
-    await kitten.init();
+    try {
+      await kitten.init().timeout(kittenInitTimeout);
+    } on TimeoutException {
+      debugPrint('[TtsFactory] KittenTTS init TIMEOUT, fallback to system TTS');
+    }
     debugPrint('[TtsFactory] KittenTTS init done, available=${kitten.isAvailable()} reason=${kitten.unavailabilityReason()}');
     if (kitten.isAvailable()) return kitten;
 

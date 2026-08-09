@@ -252,6 +252,11 @@ class KittenTtsEngine implements TtsEngine {
 ///
 /// marker 文件（.installed）存在则跳过（AssetsInstaller 语义）。返回模型
 /// 所在目录。测试注入 [basePathOverride]（文件已放好，跳过拷贝）。
+///
+/// 除模型外同时解压 CEPhonemizer 词典（en_rules / en_list，共 ~260KB）：
+/// 词典缺失时插件会从 raw.githubusercontent.com 下载且 http 无超时——
+/// 国内网络下表现为 KittenTTS init 挂起（CPU 0%）。打包进 assets 后
+/// create() 以 rulesPath/listPath 直用本地文件，零网络依赖。
 Future<Directory> installModelAssets(
   String assetBasePath, {
   Directory? basePathOverride,
@@ -264,7 +269,12 @@ Future<Directory> installModelAssets(
   final marker = File('${target.path}/.installed');
   if (await marker.exists()) return target;
 
-  for (final name in const ['kitten_tts_micro_v0_8.onnx', 'voices.npz']) {
+  for (final name in const [
+    'kitten_tts_micro_v0_8.onnx',
+    'voices.npz',
+    'en_rules',
+    'en_list',
+  ]) {
     final data = await rootBundle.load('$assetBasePath/$name');
     final file = File('${target.path}/$name');
     await file.writeAsBytes(data.buffer.asUint8List(
