@@ -432,12 +432,23 @@ void main() {
     testWidgets('单段播放不自动滚动', (tester) async {
       stub.article = makeLongArticle();
       await pumpScreen(tester);
-      final before = paragraphTop(tester, 0);
 
-      // 点击段落 0 内联播放 → 高亮但不滚动
-      await tester.tap(find.byIcon(Icons.volume_up_outlined).first);
+      // 先经全文朗读滚动让段 2 可见：段落 0 目标 offset 为负被 clamp，
+      // 无法区分门控是否生效；段 2 目标为正——若门控失效会自动滚动 → 红
+      await tester.tap(find.byIcon(Icons.play_arrow));
       await tester.pumpAndSettle();
-      expect(paragraphTop(tester, 0), before);
+      tts.simulateParagraphStarted(1);
+      await tester.pumpAndSettle();
+      final before = paragraphTop(tester, 2);
+
+      // 点段 2 内联播放（全文播放的滚动是程序滚动，不触发手滚跳过；
+      // .first 会命中段 0，须按段落定位）
+      await tester.tap(find.descendant(
+        of: paragraphFinder(2),
+        matching: find.byIcon(Icons.volume_up_outlined),
+      ));
+      await tester.pumpAndSettle();
+      expect(paragraphTop(tester, 2), before);
     });
 
     testWidgets('用户手动滚动暂停跟随，下一次段落切换恢复', (tester) async {
@@ -470,6 +481,34 @@ void main() {
       expect(paragraphTop(tester, 2),
           closeTo(listViewTop + (listViewHeight - paraHeight) / 3, 1));
       expect(paragraphTop(tester, 1), isNot(closeTo(duringUserScroll, 1)));
+    });
+
+    testWidgets('段落未构建（懒加载范围外）→ 估算定位兜底', (tester) async {
+      stub.article = makeLongArticle();
+      await pumpScreen(tester);
+
+      // 触发全文朗读
+      await tester.tap(find.byIcon(Icons.play_arrow));
+      await tester.pumpAndSettle();
+      expect(tts.spoken, isNotEmpty);
+
+      final position = tester
+          .state<ScrollableState>(find.descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          ))
+          .position;
+      // 滚动前快照 maxScrollExtent：SliverList 对未构建尾部按均值估算，
+      // 滚动后尾部已构建该值会变化——须与兜底实现同一时刻读取
+      final maxBefore = position.maxScrollExtent;
+
+      // 大幅跳转到段 6：超出首屏 viewport + cacheExtent 构建范围，
+      // currentContext 为 null → 估算兜底（maxScrollExtent * 6/8），不抛错
+      tts.simulateParagraphStarted(6);
+      await tester.pumpAndSettle();
+
+      expect(position.pixels, greaterThan(0));
+      expect(position.pixels, closeTo(maxBefore * 6 / 8, 1));
     });
   });
 }

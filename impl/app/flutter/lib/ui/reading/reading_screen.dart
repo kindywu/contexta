@@ -92,14 +92,26 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
 
   /// 滚动使当前朗读段顶部对齐视口 1/3 处（getOffsetToReveal + animateTo
   /// 300ms easeInOut）。用户手指拖拽中跳过本次，下次段落切换恢复跟随。
-  void _scrollToParagraph(int index) {
+  void _scrollToParagraph(int index, int total) {
     if (_userScrolling) {
       _userScrolling = false; // 手滚跳过本次，下次段落切换恢复
       return;
     }
-    final ctx = _paragraphKey(index).currentContext;
-    final renderObj = ctx?.findRenderObject();
-    if (renderObj == null || !_scrollController.hasClients) return;
+    final renderObj = _paragraphKey(index).currentContext?.findRenderObject();
+    if (renderObj == null) {
+      // 段落未构建（超出 viewport + cacheExtent，如大幅跳转后）：估算定位兜底。
+      // 近似滚到 index/total 处即可——段内即构建，下一次切换会精确对齐。
+      if (!_scrollController.hasClients || total <= 0) return;
+      final estimated =
+          _scrollController.position.maxScrollExtent * index / total;
+      _scrollController.animateTo(
+        estimated,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      return;
+    }
+    if (!_scrollController.hasClients) return;
     final viewport = RenderAbstractViewport.maybeOf(renderObj);
     if (viewport == null) return;
     final offset = viewport.getOffsetToReveal(renderObj, 1 / 3).offset;
@@ -153,7 +165,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
         final state = ref.read(readingControllerProvider(widget.articleId));
         if (!state.isSpeakingFullArticle) return; // 单段播放只高亮不滚动
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToParagraph(next);
+          _scrollToParagraph(next, state.paragraphs.length);
         });
       },
     );
