@@ -98,12 +98,25 @@ void main() {
   });
 }
 
-/// 构造引擎：modelBaseOverride 指向临时目录，跳过 rootBundle 加载。
+/// 构造引擎：modelBaseOverride 指向临时目录，预置完整安装态
+/// （.installed marker + 4 个资产文件），installModelAssets 走跳过分支。
 KittenTtsEngine _engine({KittenTtsFactory? factory}) {
+  final root = Directory.systemTemp.createTempSync('kittentts_engine_test');
+  final models = Directory('${root.path}/models')..createSync();
+  File('${models.path}/.installed').writeAsStringSync('1');
+  for (final name in [
+    'kitten_tts_micro_v0_8.onnx',
+    'voices.npz',
+    'en_rules',
+    'en_list',
+  ]) {
+    File('${models.path}/$name').writeAsBytesSync([1]);
+  }
+  addTearDown(() => root.deleteSync(recursive: true));
   return KittenTtsEngine(
     assetBasePath: '/fake/assets',
     factory: factory ?? _okFactory,
-    modelBaseOverride: Directory.systemTemp,
+    modelBaseOverride: root,
   );
 }
 

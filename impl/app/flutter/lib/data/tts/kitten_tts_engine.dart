@@ -250,8 +250,12 @@ class KittenTtsEngine implements TtsEngine {
 
 /// 从 Flutter assets 解压 KittenTTS 模型到应用支持目录。
 ///
-/// marker 文件（.installed）存在则跳过（AssetsInstaller 语义）。返回模型
-/// 所在目录。测试注入 [basePathOverride]（文件已放好，跳过拷贝）。
+/// marker 文件（.installed）存在 **且所有期望文件齐全** 才跳过
+/// （AssetsInstaller 语义）。marker 存在但文件缺失时必须重新解压——
+/// 词典（en_rules / en_list）打包进 assets 之前安装的旧 marker 会让新
+/// 代码跳过拷贝，CEPhonemizer 因此静默降级为纯规则音素器（音质变差）。
+/// 返回模型所在目录。测试注入 [basePathOverride]（根目录）与
+/// [bundleOverride]（内存资产包，绕过 rootBundle）。
 ///
 /// 除模型外同时解压 CEPhonemizer 词典（en_rules / en_list，共 ~260KB）：
 /// 词典缺失时插件会从 raw.githubusercontent.com 下载且 http 无超时——
@@ -260,22 +264,28 @@ class KittenTtsEngine implements TtsEngine {
 Future<Directory> installModelAssets(
   String assetBasePath, {
   Directory? basePathOverride,
+  AssetBundle? bundleOverride,
 }) async {
   final root = basePathOverride ??
       Directory('${(await getApplicationSupportDirectory()).path}/kittentts');
   final target = Directory('${root.path}/models');
   await target.create(recursive: true);
-  if (basePathOverride != null) return target;
-  final marker = File('${target.path}/.installed');
-  if (await marker.exists()) return target;
 
-  for (final name in const [
+  const expectedFiles = [
     'kitten_tts_micro_v0_8.onnx',
     'voices.npz',
     'en_rules',
     'en_list',
-  ]) {
-    final data = await rootBundle.load('$assetBasePath/$name');
+  ];
+  final marker = File('${target.path}/.installed');
+  if (await marker.exists() &&
+      expectedFiles.every((name) => File('${target.path}/$name').existsSync())) {
+    return target;
+  }
+
+  final bundle = bundleOverride ?? rootBundle;
+  for (final name in expectedFiles) {
+    final data = await bundle.load('$assetBasePath/$name');
     final file = File('${target.path}/$name');
     await file.writeAsBytes(data.buffer.asUint8List(
       data.offsetInBytes,

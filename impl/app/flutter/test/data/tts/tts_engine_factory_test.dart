@@ -19,7 +19,7 @@ void main() {
         kittenAssetBasePath: '/fake/assets',
         kittenFactory: _okKitten,
         systemFactory: _FakeFlutterTts.new,
-        modelBaseOverride: Directory.systemTemp,
+        modelBaseOverride: _installedRoot(),
       );
 
       final engine = await factory.create();
@@ -53,6 +53,24 @@ void main() {
       expect(engine.unavailabilityReason(), isNotNull);
     });
   });
+}
+
+/// 预置完整安装态（marker + 4 资产文件）的临时根目录，
+/// 让 installModelAssets 走跳过分支（与 kitten_tts_engine_test 一致）。
+Directory _installedRoot() {
+  final root = Directory.systemTemp.createTempSync('tts_factory_test');
+  final models = Directory('${root.path}/models')..createSync();
+  File('${models.path}/.installed').writeAsStringSync('1');
+  for (final name in [
+    'kitten_tts_micro_v0_8.onnx',
+    'voices.npz',
+    'en_rules',
+    'en_list',
+  ]) {
+    File('${models.path}/$name').writeAsBytesSync([1]);
+  }
+  addTearDown(() => root.deleteSync(recursive: true));
+  return root;
 }
 
 Future<KittenTtsSession> _okKitten({
