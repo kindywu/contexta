@@ -294,7 +294,10 @@ class KittenTtsPluginSession implements KittenTtsSession {
     final generationDone = Completer<void>();
 
     // 播放 worker：顺序消费队列，播完自动切换下一项（标题→段落无缝）
-    final playback = _playQueued(controller.stream, utteranceId, generationDone);
+    final playback = _playQueued(
+      controller.stream, utteranceId, generationDone,
+      totalParagraphs: paragraphs.length,
+    );
 
     // 生成 worker：标题 → 逐段（查缓存/生成+写缓存），推入队列
     final generation = _generateFullArticle(
@@ -347,7 +350,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
 
         if (cachedPath != null) {
           debugPrint('[KittenTTS] fullArticle: para ${i + 1}/$total cache HIT');
-          controller.add(_QueuedAudio.file(cachedPath));
+          controller.add(_QueuedAudio.file(cachedPath, paragraphIndex: i));
         } else {
           debugPrint('[KittenTTS] fullArticle: para ${i + 1}/$total gen');
           final result = await _engine.generate(para.text, speed: speed);
@@ -365,7 +368,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
               debugPrint('[KittenTTS] fullArticle cache write FAILED: $e');
             }
           }
-          controller.add(_QueuedAudio.wav(wav));
+          controller.add(_QueuedAudio.wav(wav, paragraphIndex: i));
         }
 
         // 进度：已推入播放队列的段落数 / 总段落数（标题不计入）
@@ -382,16 +385,22 @@ class KittenTtsPluginSession implements KittenTtsSession {
     }
   }
 
-  /// 播放 worker：依次播放 [items]；全部播完（或被打断）完成 [done]。
+  /// 播放 worker：依次播放 [items]；每段（非标题）实际发声前上报段落索引
+  /// （真实播放进度，不超前）；全部播完（或被打断）完成 [done]。
   Future<void> _playQueued(
     Stream<_QueuedAudio> items,
     String utteranceId,
-    Completer<void> done,
-  ) async {
+    Completer<void> done, {
+    required int totalParagraphs,
+  }) async {
     try {
       await for (final item in items) {
         if (_currentUtteranceId != utteranceId) return;
         debugPrint('[KittenTTS] fullArticle play: ${item.isTitle ? "title" : "para"}');
+        final index = item.paragraphIndex;
+        if (index != null) {
+          _paragraphStartedListener?.call(utteranceId, index, totalParagraphs);
+        }
         if (item.bytes != null) {
           await _playWav(item.bytes!, utteranceId);
         } else if (item.filePath != null) {
@@ -767,12 +776,13 @@ class KittenSpeedMapper {
 }
 
 /// 全文朗读待播队列项：WAV 字节 或 缓存文件路径（二选一）。
+/// [paragraphIndex] 为正文段落索引（标题为 null），供播放 worker 上报播放位置。
 class _QueuedAudio {
-  _QueuedAudio.wav(Uint8List bytes, {this.isTitle = false})
+  _QueuedAudio.wav(Uint8List bytes, {this.isTitle = false, this.paragraphIndex})
       : bytes = bytes,
         filePath = null;
 
-  _QueuedAudio.file(String path)
+  _QueuedAudio.file(String path, {this.paragraphIndex})
       : bytes = null,
         filePath = path,
         isTitle = false;
@@ -780,4 +790,5 @@ class _QueuedAudio {
   final Uint8List? bytes;
   final String? filePath;
   final bool isTitle;
+  final int? paragraphIndex;
 }
