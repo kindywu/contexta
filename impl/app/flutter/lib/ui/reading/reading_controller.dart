@@ -581,10 +581,16 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     }
   }
 
-  /// 语速切换：1x ↔ 0.75x（引擎内部把显示语速映射为实际速率）。
+  /// 语速切换：1x → 0.8x → 1.2x → 1x 循环（引擎内部把显示语速映射为实际速率）。
   void toggleTtsSpeed() {
+    const speeds = [1.0, 0.8, 1.2];
     final current = state.ttsSpeed;
-    state = state.copyWith(ttsSpeed: current < 1.0 ? 1.0 : 0.75);
+    final nextIndex = speeds.indexOf(current);
+    state = state.copyWith(
+      ttsSpeed: nextIndex >= 0
+          ? speeds[(nextIndex + 1) % speeds.length]
+          : speeds.first,
+    );
   }
 
   void _unavailableTts() {

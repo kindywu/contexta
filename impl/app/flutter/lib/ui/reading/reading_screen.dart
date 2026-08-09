@@ -365,6 +365,7 @@ class _ReadingPlayerBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final slow = ttsSpeed < 1.0;
+    final fast = ttsSpeed > 1.0;
     return Container(
       color: AppColors.surfaceCard,
       padding: const EdgeInsets.symmetric(
@@ -425,7 +426,7 @@ class _ReadingPlayerBar extends StatelessWidget {
                   vertical: 4,
                 ),
                 child: Text(
-                  slow ? '0.75x' : '1x',
+                  _speedLabel(ttsSpeed),
                   style: AppType.textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: slow ? AppColors.mutedSoft : AppColors.onPrimary,
@@ -437,6 +438,13 @@ class _ReadingPlayerBar extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// 语速显示标签：0.8x / 1x / 1.2x（去掉多余的小数位）。
+  String _speedLabel(double speed) {
+    if (speed == 0.8) return '0.8x';
+    if (speed == 1.2) return '1.2x';
+    return '1x';
   }
 }
 

@@ -483,10 +483,10 @@ void main() {
   group('播放状态机（Task 24）', () {
     test('段落播放传入显示语速（引擎内部映射实际速率）', () async {
       await controller.loadArticle(1);
-      controller.toggleTtsSpeed(); // 0.75x
+      controller.toggleTtsSpeed(); // 0.8x
       controller.playParagraph(0);
 
-      expect(tts.speeds, [0.75]);
+      expect(tts.speeds, [0.8]);
       expect(controller.state.speakingParagraphIndex, 0);
     });
 
@@ -692,12 +692,15 @@ void main() {
       expect(controller.state.openTtsSettings, isFalse);
     });
 
-    test('语速 1x ↔ 0.75x 切换', () async {
+    test('语速 1x → 0.8x → 1.2x → 1x 循环切换', () async {
       await controller.loadArticle(1);
       expect(controller.state.ttsSpeed, 1.0);
 
       controller.toggleTtsSpeed();
-      expect(controller.state.ttsSpeed, 0.75);
+      expect(controller.state.ttsSpeed, 0.8);
+
+      controller.toggleTtsSpeed();
+      expect(controller.state.ttsSpeed, 1.2);
 
       controller.toggleTtsSpeed();
       expect(controller.state.ttsSpeed, 1.0);

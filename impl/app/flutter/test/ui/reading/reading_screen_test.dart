@@ -153,14 +153,18 @@ void main() {
       expect(find.byIcon(Icons.play_arrow), findsOneWidget);
     });
 
-    testWidgets('点击语速胶囊切换 0.75x → 再点回 1x', (tester) async {
+    testWidgets('点击语速胶囊循环切换 1x → 0.8x → 1.2x', (tester) async {
       await pumpScreen(tester);
 
       await tester.tap(find.text('1x'));
       await tester.pump();
-      expect(find.text('0.75x'), findsOneWidget);
+      expect(find.text('0.8x'), findsOneWidget);
 
-      await tester.tap(find.text('0.75x'));
+      await tester.tap(find.text('0.8x'));
+      await tester.pump();
+      expect(find.text('1.2x'), findsOneWidget);
+
+      await tester.tap(find.text('1.2x'));
       await tester.pump();
       expect(find.text('1x'), findsOneWidget);
     });
