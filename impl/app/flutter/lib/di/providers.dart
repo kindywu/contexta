@@ -25,6 +25,7 @@ import '../domain/repository/article_repository.dart';
 import '../domain/repository/settings_repository.dart';
 import '../domain/repository/stats_repository.dart';
 import '../domain/repository/vocabulary_repository.dart';
+import '../domain/model/tts_voice.dart';
 import '../domain/repository/word_repository.dart';
 import '../domain/time/time_provider.dart';
 import '../domain/tts/tts_engine.dart';
@@ -143,6 +144,12 @@ final vocabularyRepositoryProvider = Provider<VocabularyRepository>((ref) {
 final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
   final db = ref.watch(databaseProvider).requireValue;
   return SettingsRepositoryImpl(UserSettingsDao(db));
+});
+
+/// 当前朗读音色（所有 TTS 消费方共用；无设置行时默认 Bella）。
+final currentTtsVoiceProvider = FutureProvider<TtsVoice>((ref) async {
+  final settings = await ref.watch(settingsRepositoryProvider).getSettings();
+  return settings?.ttsVoice ?? TtsVoice.bella;
 });
 
 final statsRepositoryProvider = Provider<StatsRepository>((ref) {
