@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 
+import '../../domain/model/tts_voice.dart';
 import '../../domain/model/user_settings.dart';
 import '../../domain/repository/settings_repository.dart';
 import '../local/database.dart';
@@ -82,6 +83,14 @@ class SettingsRepositoryImpl implements SettingsRepository {
   }
 
   @override
+  Future<void> updateTtsVoice(TtsVoice voice) async {
+    final existing = await _settingsDao.get();
+    if (existing == null) return;
+    await _settingsDao.upsert(
+        existing.toCompanion(true).copyWith(ttsVoiceId: Value(voice.dbValue)));
+  }
+
+  @override
   Future<void> updateMasteryThreshold(int n) async {
     final existing = await _settingsDao.get();
     if (existing == null) return;
@@ -107,6 +116,7 @@ extension on UserSettingsRow {
         dailyArticleCount: dailyArticleCount,
         translationDisplayMode: translationDisplayMode,
         ttsSpeed: ttsSpeed,
+        ttsVoice: TtsVoice.fromDbValue(ttsVoiceId),
         masteryThresholdN: masteryThresholdN,
         autoPlayAudio: autoPlayAudio,
       );

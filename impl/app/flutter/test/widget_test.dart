@@ -1,4 +1,5 @@
 import 'package:contexta/di/providers.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/usecase/activate_seed_batch_usecase.dart';
@@ -34,6 +35,9 @@ class _FakeSettingsRepo implements SettingsRepository {
 
   @override
   Future<void> updateTtsSpeed(double speed) async {}
+
+  @override
+  Future<void> updateTtsVoice(TtsVoice voice) async {}
 
   @override
   Future<void> updateMasteryThreshold(int n) async {}

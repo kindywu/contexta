@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:contexta/core/time/iso8601.dart';
 import 'package:contexta/data/local/database.dart';
 import 'package:contexta/data/local/daos/settings_daos.dart';
+import 'package:contexta/data/repository/settings_repository_impl.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
 
 /// Task 9 DAO 基础组测试。
 ///
@@ -68,6 +70,38 @@ void main() {
       await dao.markOnboarded();
       final row = await dao.get();
       expect(row!.isOnboarded, true);
+    });
+  });
+
+  group('SettingsRepository', () {
+    late AppDatabase db;
+    late UserSettingsDao dao;
+    late SettingsRepositoryImpl repo;
+
+    setUp(() {
+      db = AppDatabase.forTesting(NativeDatabase.memory());
+      dao = UserSettingsDao(db);
+      repo = SettingsRepositoryImpl(dao);
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('updateTtsVoice 持久化后读回，无行默认 BELLA', () async {
+      await repo.completeOnboarding('MEDIUM', 3);
+      // completeOnboarding 默认行 tts_voice_id = 'BELLA'
+      expect((await repo.getSettings())!.ttsVoice, TtsVoice.bella);
+
+      await repo.updateTtsVoice(TtsVoice.hugo);
+      final settings = await repo.getSettings();
+      expect(settings!.ttsVoice, TtsVoice.hugo);
+      final row = await dao.get();
+      expect(row!.ttsVoiceId, 'HUGO');
+    });
+
+    test('无行时不抛错（与 updateTtsSpeed 行为一致）', () async {
+      await repo.updateTtsVoice(TtsVoice.leo); // 空库，无 user_settings 行
     });
   });
 

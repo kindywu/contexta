@@ -3,6 +3,7 @@ import 'package:contexta/domain/model/article.dart';
 import 'package:contexta/domain/model/article_batch.dart';
 import 'package:contexta/domain/model/daily_learning_info.dart';
 import 'package:contexta/domain/model/generation_error.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/repository/article_repository.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
@@ -218,6 +219,9 @@ class FakeSettingsRepository implements SettingsRepository {
   @override
   Future<void> updateTtsSpeed(double speed) =>
       throw UnimplementedError();
+
+  @override
+  Future<void> updateTtsVoice(TtsVoice voice) => throw UnimplementedError();
 
   @override
   Future<void> updateMasteryThreshold(int n) => throw UnimplementedError();
