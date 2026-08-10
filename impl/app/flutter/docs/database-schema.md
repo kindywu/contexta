@@ -25,7 +25,7 @@ erDiagram
 
 | 表 | 类型 | 主键 | 关键列 | 外键 |
 |---|---|---|---|---|
-| `user_settings` | 长期实体（1:1） | `id`（无自增） | `is_onboarded`、`difficulty_level`、`daily_article_count`、`translation_display_mode`、`tts_speed`、`mastery_threshold_n`、`auto_play_audio` | — |
+| `user_settings` | 长期实体（1:1） | `id`（无自增） | `is_onboarded`、`difficulty_level`、`daily_article_count`、`translation_display_mode`、`tts_speed`、`tts_voice_id`、`mastery_threshold_n`、`auto_play_audio` | — |
 | `config_change_log` | 流水账 | `id` 自增 | `field_name`、`old_value`、`new_value`、`created_at` | — |
 | `schema_migration_log` | 流水账 | `id` 自增 | `from_version`、`to_version`、`description`、`created_at` | — |
 | `generation_pipeline_status` | 流水账（单行） | `id`（无自增） | `is_blocked`、`blocked_reason`、`blocked_at`、`blocked_app_version_code` | — |
@@ -40,14 +40,14 @@ erDiagram
 | `word_sense` | 长期实体 | `id` 自增 | `word_id`、`order_index`、`part_of_speech`、`chinese_meaning`、`english_definition` | `word_id` → `word.id` CASCADE |
 | `example_sentence` | 长期实体 | `id` 自增 | `word_sense_id`、`order_index`、`sentence_en`、`sentence_zh`、`is_primary` | `word_sense_id` → `word_sense.id` CASCADE |
 | `vocabulary_entry` | 关系实体 | `id` 自增 | `word_id`、`instance_number`、`status`（NEW/LEARNING/MASTERED）、`correct_review_streak`、`mastered_at`、`deleted_at`、`deleted_reason` | `word_id` → `word.id` CASCADE |
-| `tts_cache` | 流水账 | `id` 自增 | `article_paragraph_id`（可空）、`word_id`（可空）、`speed`、`file_path`、`file_size`、`created_at`、`last_accessed_at`（索引，FIFO 淘汰） | `article_paragraph_id` → `article_paragraph.id` CASCADE |
+| `tts_cache` | 流水账 | `id` 自增 | `article_paragraph_id`（可空）、`word_id`（可空）、`speed`、`voice_id`、`file_path`、`file_size`、`created_at`、`last_accessed_at`（索引，FIFO 淘汰） | `article_paragraph_id` → `article_paragraph.id` CASCADE |
 | `db_version` | 版本指针（单行） | `id`（无自增） | `version`、`updated_at` | — |
 
 > 2 张 Room 遗留内部表（`android_metadata`、`room_master_table`）随旧版 App 升级留存，业务代码不读写，迁移脚本也不删除。
 
 ### 关键规则（db:NF / db:PK / db:INDEX）
 
-- **无 DEFAULT 子句**：默认值由应用代码填充（对照 Room 逐列一致）；唯一例外是测试夹具中 `tts_speed` 的临时补丁默认值。
+- **无 DEFAULT 子句**：默认值由应用代码填充（对照 Room 逐列一致）。两个例外：(1) 测试夹具中 `tts_speed` 的临时补丁默认值；(2) 开发期补列补丁 / 打开自愈给 `tts_voice_id`、`voice_id` 补的 `DEFAULT 'BELLA'`——SQLite 的 `ALTER TABLE ADD COLUMN NOT NULL` 必须带 DEFAULT，DEFAULT 仅服务于补列路径，应用代码始终显式写值，语义与 001-init.sql 的无 DEFAULT 写法等价。
 - **AUTOINCREMENT 纪律**：自增主键 → `AUTOINCREMENT`；单行/业务主键（`user_settings`、`generation_pipeline_status`、`learning_stats_summary`、`daily_learning`、`db_version`）→ 裸 `INTEGER PRIMARY KEY` 无自增。
 - **索引按需**：外键单列索引、`(difficulty_level_snapshot, generated_on)` UNIQUE、`(article_id, order_index)` UNIQUE、`tts_cache_last_accessed_at_index` 等，全部对照 Room 自动命名规则逐条一致（schema_*_test.dart 逐列断言）。
 
@@ -77,6 +77,16 @@ INSERT OR IGNORE INTO db_version (id, version, updated_at) VALUES (1, 1, <毫秒
 ```
 
 只保证「表 + 单例行存在」，版本推进只由 `migrate_db.sh` / 发布后 `onUpgrade` 管理。drift 2.34.3 中 migration（onCreate/onUpgrade）先于 `beforeOpen` 运行，旧库/新库均安全。
+
+同一 beforeOpen 还有**开发期 v1 结构变更自愈**（`selfHealVoiceColumns`，见 `database_open.dart`）：对旧库 / asset 旧库幂等补列，保证任何库打开即自洽。
+
+```sql
+-- 幂等：列已存在则跳过
+ALTER TABLE user_settings ADD COLUMN tts_voice_id TEXT NOT NULL DEFAULT 'BELLA';
+ALTER TABLE tts_cache ADD COLUMN voice_id TEXT NOT NULL DEFAULT 'BELLA';
+```
+
+补列同样先探测 `PRAGMA table_info`，列已存在则跳过（对新库/已补库均安全）。此模式在开发期（版本未发布）对「真机旧库 / asset 旧库 / Room 遗留库」统一兜底；发布后结构变更改走编号迁移脚本（`NNN-*.sql`），不再依赖 beforeOpen 补列。
 
 ### 阶段语义
 

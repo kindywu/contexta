@@ -8,7 +8,7 @@ import 'package:contexta/data/local/daos/settings_daos.dart';
 import 'package:contexta/data/repository/settings_repository_impl.dart';
 import 'package:contexta/domain/model/tts_voice.dart';
 
-/// Task 9 DAO 基础组测试。
+/// DAO 基础组测试：用户设置（含音色 tts_voice_id）与日记账 DAO。
 ///
 /// 对照 Android 原版 DAO（UserSettingsDao.kt / DailyLearningDao.kt /
 /// LearningStatsSummaryDao.kt / ConfigChangeLogDao.kt /
