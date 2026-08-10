@@ -13,6 +13,16 @@ use crate::wn;
 
 pub const SAMPLE_WORDS: [&str; 3] = ["serendipity", "ephemeral", "resilience"];
 
+/// 内部信号：--limit 到达，中断流式游标（不是错误）
+#[derive(Debug)]
+struct StopLimit;
+impl std::fmt::Display for StopLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "limit 到达")
+    }
+}
+impl std::error::Error for StopLimit {}
+
 pub fn default_output() -> PathBuf {
     find_repo_root()
         .expect("repo root")
@@ -50,6 +60,13 @@ pub fn run_dump(args: &DumpArgs) -> Result<()> {
 
     let mut process = |row: &StardictRow| -> Result<()> {
         total += 1;
+        if args.all {
+            if let Some(l) = args.limit {
+                if total > l {
+                    return Err(StopLimit.into());
+                }
+            }
+        }
         if existing.contains(&row.word.to_lowercase()) {
             skipped += 1;
             return Ok(());
@@ -83,7 +100,11 @@ pub fn run_dump(args: &DumpArgs) -> Result<()> {
             }
         }
         None if args.all => {
-            stream_all(&stardict, &mut process)?;
+            match stream_all(&stardict, &mut process) {
+                Ok(_) => {}
+                Err(e) if e.downcast_ref::<StopLimit>().is_some() => {} // 正常截断
+                Err(e) => return Err(e),
+            }
         }
         None => {
             // dump 无 --words 时默认与 sample 相同的精选词
