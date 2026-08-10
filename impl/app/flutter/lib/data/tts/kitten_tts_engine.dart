@@ -52,7 +52,7 @@ class KittenTtsEngine implements TtsEngine {
     }
     final id = 'ktk-${_utteranceCounter++}';
     debugPrint('[KittenTTS.engine] speak: dispatching id=$id to session');
-    session.speak(text, speed: speed, utteranceId: id);
+    session.speak(text, speed: speed, utteranceId: id, voice: voice?.sdkVoiceId);
     return id;
   }
 
@@ -63,6 +63,7 @@ class KittenTtsEngine implements TtsEngine {
     required int paragraphId,
     required String text,
     required double speed,
+    TtsVoice? voice,
   }) async {
     final session = _session;
     if (session == null) {
@@ -72,7 +73,8 @@ class KittenTtsEngine implements TtsEngine {
     final cm = cache;
     String? cachedPath;
     if (cm != null && paragraphId > 0) {
-      cachedPath = await cm.lookupParagraph(paragraphId, speed);
+      cachedPath = await cm.lookupParagraph(
+          paragraphId, speed, voice ?? TtsVoice.bella);
     }
     if (cachedPath != null) {
       debugPrint('[KittenTTS.engine] speakParagraph: cache HIT $cachedPath');
@@ -85,6 +87,7 @@ class KittenTtsEngine implements TtsEngine {
       texts: [text],
       paragraphIds: [paragraphId],
       speed: speed,
+      voice: voice,
     );
   }
 
@@ -95,6 +98,7 @@ class KittenTtsEngine implements TtsEngine {
     required List<String> texts,
     required List<int> paragraphIds,
     required double speed,
+    TtsVoice? voice,
   }) async {
     final session = _session;
     if (session == null) {
@@ -108,6 +112,7 @@ class KittenTtsEngine implements TtsEngine {
       paragraphIds: paragraphIds,
       speed: speed,
       utteranceId: id,
+      voice: voice?.sdkVoiceId,
     );
     return id;
   }
@@ -121,6 +126,7 @@ class KittenTtsEngine implements TtsEngine {
     String? title,
     required List<({int id, String text})> paragraphs,
     required double speed,
+    TtsVoice? voice,
   }) async {
     final session = _session;
     if (session == null) {
@@ -134,6 +140,7 @@ class KittenTtsEngine implements TtsEngine {
       paragraphs: paragraphs,
       speed: speed,
       utteranceId: id,
+      voice: voice?.sdkVoiceId,
     );
     return id;
   }
@@ -149,8 +156,9 @@ class KittenTtsEngine implements TtsEngine {
   /// 从缓存播放段落列表（全文朗读缓存路径）。
   ///
   /// 返回 utteranceId 表示全部缓存命中且开始播放，null 表示缓存缺失需 fallback。
-  Future<String?> playCachedParagraphs(List<int> paragraphIds, double speed) async {
-    debugPrint('[KittenTTS.engine] playCachedParagraphs: ids=$paragraphIds speed=$speed');
+  Future<String?> playCachedParagraphs(List<int> paragraphIds, double speed,
+      TtsVoice? voice) async {
+    debugPrint('[KittenTTS.engine] playCachedParagraphs: ids=$paragraphIds speed=$speed voice=$voice');
     final session = _session;
     if (session == null) {
       debugPrint('[KittenTTS.engine] playCachedParagraphs: session null');
@@ -163,7 +171,8 @@ class KittenTtsEngine implements TtsEngine {
     }
 
     // 按段落顺序查缓存，返回命中的 filePath 列表
-    final hits = await cm.lookupArticleParagraphs(paragraphIds, speed);
+    final hits =
+        await cm.lookupArticleParagraphs(paragraphIds, speed, voice ?? TtsVoice.bella);
     debugPrint('[KittenTTS.engine] playCachedParagraphs: hits=${hits.length}/${paragraphIds.length}');
     if (hits.length != paragraphIds.length) return null; // 有未缓存的段落
 
@@ -181,12 +190,14 @@ class KittenTtsEngine implements TtsEngine {
   Future<void> pregenerateParagraphs({
     required List<({int paragraphId, String text})> paragraphs,
     required double speed,
+    TtsVoice? voice,
   }) async {
     final session = _session;
     if (session == null) return;
     await session.pregenerateParagraphs(
       paragraphs: paragraphs,
       speed: speed,
+      voice: voice?.sdkVoiceId,
     );
   }
 

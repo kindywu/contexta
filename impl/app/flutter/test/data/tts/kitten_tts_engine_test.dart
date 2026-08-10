@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:contexta/data/tts/kitten_tts_engine.dart';
 import 'package:contexta/data/tts/kitten_tts_session.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// KittenTtsEngine 测试：用 fake session 验证 speak/stop/完成回调/初始化失败。
@@ -95,6 +96,32 @@ void main() {
     await engine.init();
 
     expect(factory.created, hasLength(1));
+  });
+
+  test('speak/speakParagraphs/speakFullArticle 透传 voice 到会话', () async {
+    final session = _FakeSession();
+    final engine = _engine(factory: _withSession(session));
+    await engine.init();
+
+    engine.speak('hello', voice: TtsVoice.hugo);
+    expect(session.lastVoice, 'hugo');
+
+    await engine.speakParagraphs(
+        texts: ['a'], paragraphIds: [1], speed: 1.0, voice: TtsVoice.leo);
+    expect(session.lastVoice, 'leo');
+
+    await engine.speakFullArticle(
+        paragraphs: [(id: 1, text: 'a')], speed: 1.0, voice: TtsVoice.luna);
+    expect(session.lastVoice, 'luna');
+  });
+
+  test('voice 为空时透传 null（引擎默认音色）', () async {
+    final session = _FakeSession();
+    final engine = _engine(factory: _withSession(session));
+    await engine.init();
+
+    engine.speak('hello');
+    expect(session.lastVoice, isNull);
   });
 }
 
