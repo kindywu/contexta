@@ -3,18 +3,18 @@ use rusqlite::Connection;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-/// 从 CWD 逐级向上找含 ref/stardict.db 的目录；找不到 → Err
+/// 从 CWD 逐级向上找仓库根（含 impl/etl/ref/stardict.db 的目录）；找不到 → Err
 pub fn find_repo_root() -> Result<PathBuf> {
     let mut dir = std::env::current_dir().context("cannot read cwd")?;
     loop {
-        if dir.join("ref/stardict.db").exists() {
+        if dir.join("impl/etl/ref/stardict.db").exists() {
             return Ok(dir);
         }
         if !dir.pop() {
             break;
         }
     }
-    Err(anyhow!("找不到仓库根（未发现 ref/stardict.db，请从仓库内运行）"))
+    Err(anyhow!("找不到仓库根（未发现 impl/etl/ref/stardict.db，请从仓库内运行）"))
 }
 
 /// 打开只读 SQLite 连接（mode=ro）。路径不存在 → Err
