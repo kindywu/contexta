@@ -62,6 +62,7 @@ class _FakeVocabRepo implements VocabularyRepository {
 class _TtsStub implements TtsEngine {
   bool available = true;
   final List<String> spoken = [];
+  TtsVoice? lastVoice;
 
   @override
   bool isAvailable() => available;
@@ -73,6 +74,7 @@ class _TtsStub implements TtsEngine {
   String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
     if (!available) return null;
     spoken.add(text);
+    lastVoice = voice;
     return 'ctx-$text';
   }
 
@@ -141,6 +143,7 @@ void main() {
   Future<VocabularyController> createController({
     bool autoPlayAudio = false,
     List<VocabWord> words = const [],
+    TtsVoice voice = TtsVoice.bella,
   }) async {
     settingsRepo = _FakeSettingsRepo(
       settings: UserSettings(isOnboarded: true, autoPlayAudio: autoPlayAudio),
@@ -151,6 +154,7 @@ void main() {
       vocabularyRepository: vocabRepo,
       settingsRepository: settingsRepo,
       ttsEngineFuture: Future.value(tts),
+      voice: () => voice,
     );
     await Future<void>.delayed(Duration.zero);
     return c;
@@ -168,13 +172,15 @@ void main() {
       expect(controller.state.currentWord, isNull);
     });
 
-    test('autoPlayAudio 开启：显示首个词并自动朗读', () async {
+    test('autoPlayAudio 开启：显示首个词并自动朗读（携带音色）', () async {
       controller = await createController(
         autoPlayAudio: true,
         words: [vocabWord(spelling: 'hello')],
+        voice: TtsVoice.hugo,
       );
       expect(controller.state.currentWord?.word, 'hello');
       expect(tts.spoken, ['hello']);
+      expect(tts.lastVoice, TtsVoice.hugo);
     });
 
     test('autoPlayAudio 关闭：不自动朗读', () async {
@@ -196,6 +202,7 @@ void main() {
               isOnboarded: true, autoPlayAudio: true),
         ),
         ttsEngineFuture: Future.value(tts),
+        voice: () => TtsVoice.bella,
       );
       await Future<void>.delayed(Duration.zero);
       expect(controller.state.currentWord?.word, 'hello');
@@ -219,6 +226,16 @@ void main() {
       expect(second, isNotNull);
       expect(second, isNot(first));
       expect(tts.spoken, [first, second]);
+    });
+
+    test('playWord 朗读当前词并携带音色', () async {
+      controller = await createController(
+        words: [vocabWord(spelling: 'hello')],
+        voice: TtsVoice.luna,
+      );
+      controller.playWord();
+      expect(tts.spoken, ['hello']);
+      expect(tts.lastVoice, TtsVoice.luna);
     });
 
     test('卡片包含词性块与例句数据', () async {
@@ -257,6 +274,7 @@ void main() {
         vocabularyRepository: vocabRepo,
         settingsRepository: settingsRepo,
         ttsEngineFuture: Future.value(tts),
+        voice: () => TtsVoice.bella,
       );
       await Future<void>.delayed(Duration.zero);
 
@@ -285,6 +303,7 @@ void main() {
         vocabularyRepository: vocabRepo,
         settingsRepository: settingsRepo,
         ttsEngineFuture: Future.value(tts),
+        voice: () => TtsVoice.bella,
       );
       await Future<void>.delayed(Duration.zero);
 
@@ -318,6 +337,7 @@ void main() {
         vocabularyRepository: vocabRepo,
         settingsRepository: settingsRepo,
         ttsEngineFuture: Future.value(tts),
+        voice: () => TtsVoice.bella,
       );
       await Future<void>.delayed(Duration.zero);
 

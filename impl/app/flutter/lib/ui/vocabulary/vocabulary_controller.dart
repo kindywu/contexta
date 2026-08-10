@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di/providers.dart';
+import '../../domain/model/tts_voice.dart';
 import '../../domain/model/vocab_word.dart';
 import '../../domain/repository/settings_repository.dart';
 import '../../domain/repository/vocabulary_repository.dart';
@@ -112,6 +113,7 @@ class VocabularyController extends StateNotifier<VocabularyUiState> {
     required this._vocabularyRepository,
     required this._settingsRepository,
     required Future<TtsEngine> ttsEngineFuture,
+    required this._voice,
   })  : _ttsEngineFuture = ttsEngineFuture,
         super(const VocabularyUiState()) {
     ttsEngineFuture.then(_onTtsReady);
@@ -121,6 +123,7 @@ class VocabularyController extends StateNotifier<VocabularyUiState> {
   final VocabularyRepository _vocabularyRepository;
   final SettingsRepository _settingsRepository;
   final Future<TtsEngine> _ttsEngineFuture;
+  final TtsVoice Function() _voice;
 
   TtsEngine? _ttsEngine;
   List<VocabWord> _vocabList = [];
@@ -213,7 +216,7 @@ class VocabularyController extends StateNotifier<VocabularyUiState> {
       if (_disposed) return;
     }
     if (!engine.isAvailable()) return;
-    engine.speak(word);
+    engine.speak(word, voice: _voice());
   }
 
   /// 标记认识：streak+1；达阈值自动转 MASTERED（从列表移除）。
@@ -273,7 +276,7 @@ class VocabularyController extends StateNotifier<VocabularyUiState> {
   void playWord() {
     final word = state.currentWord?.word;
     if (word == null) return;
-    _ttsEngine?.speak(word);
+    _ttsEngine?.speak(word, voice: _voice());
   }
 
   /// 重新开始一轮复习。
@@ -291,6 +294,9 @@ class VocabularyController extends StateNotifier<VocabularyUiState> {
 }
 
 /// Vocabulary 页控制器 Provider。
+/// voice 用 ref.read（每次朗读取当前音色）：ref.watch 会触发 provider
+/// 重建 → StateNotifier 被 dispose（加载中页面即崩 'used after dispose'），
+/// 且闭包内 ref.watch 在依赖变化窗口期触发 Riverpod 断言（见参考页）。
 final vocabularyControllerProvider =
     StateNotifierProvider.autoDispose<VocabularyController, VocabularyUiState>(
         (ref) {
@@ -298,5 +304,7 @@ final vocabularyControllerProvider =
     vocabularyRepository: ref.watch(vocabularyRepositoryProvider),
     settingsRepository: ref.watch(settingsRepositoryProvider),
     ttsEngineFuture: ref.watch(ttsEngineProvider.future),
+    voice: () =>
+        ref.read(currentTtsVoiceProvider).valueOrNull ?? TtsVoice.bella,
   );
 });
