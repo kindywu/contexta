@@ -7,6 +7,9 @@ import '../../core/components/stat_card.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
+import '../../di/providers.dart';
+import '../../domain/model/tts_voice.dart';
+import '../../domain/tts/tts_engine.dart';
 import 'settings_controller.dart';
 
 /// Settings 页（对照 Kotlin SettingsScreen.kt）：
@@ -30,6 +33,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _showLevelPicker = false;
   bool _showTranslationModePicker = false;
   bool _showTtsSpeedPicker = false;
+  bool _showTtsVoicePicker = false;
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +71,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             () => _showTranslationModePicker = true),
                         onShowTtsSpeedPicker: () =>
                             setState(() => _showTtsSpeedPicker = true),
+                        onShowTtsVoicePicker: () =>
+                            setState(() => _showTtsVoicePicker = true),
                       )
                     else
                       _StatsContent(stats: state.stats),
@@ -133,6 +139,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             setState(() => _showTtsSpeedPicker = false);
           },
           onDismiss: () => setState(() => _showTtsSpeedPicker = false),
+        ),
+      if (_showTtsVoicePicker)
+        _VoicePickerDialog(
+          selectedValue: state.ttsVoice.dbValue,
+          onSelect: (voice) {
+            controller.updateTtsVoice(voice);
+            setState(() => _showTtsVoicePicker = false);
+          },
+          onDismiss: () => setState(() => _showTtsVoicePicker = false),
         ),
       if (state.showLevelInfoDialog)
         _SettingsInfoDialog(
@@ -233,6 +248,7 @@ class _LearningSettingsContent extends StatelessWidget {
     required this.onShowLevelPicker,
     required this.onShowTranslationModePicker,
     required this.onShowTtsSpeedPicker,
+    required this.onShowTtsVoicePicker,
   });
 
   final SettingsUiState state;
@@ -240,6 +256,7 @@ class _LearningSettingsContent extends StatelessWidget {
   final VoidCallback onShowLevelPicker;
   final VoidCallback onShowTranslationModePicker;
   final VoidCallback onShowTtsSpeedPicker;
+  final VoidCallback onShowTtsVoicePicker;
 
   @override
   Widget build(BuildContext context) {
@@ -291,6 +308,13 @@ class _LearningSettingsContent extends StatelessWidget {
           description: '文章朗读速度，全局生效',
           value: _ttsSpeedLabel(state.ttsSpeed),
           onClick: onShowTtsSpeedPicker,
+        ),
+        // 朗读音色
+        _SettingsPickerItem(
+          label: '朗读音色',
+          description: 'KittenTTS 朗读时生效',
+          value: state.ttsVoice.label,
+          onClick: onShowTtsVoicePicker,
         ),
         // 单词掌握阈值
         _SettingsStepperItem(
@@ -835,3 +859,132 @@ String _ttsSpeedLabel(double speed) => switch (speed) {
       1.2 => '1.2x（快）',
       _ => '1x（标准）',
     };
+
+/// 音色选择弹窗：radio 列表 + 每行喇叭试听（固定例句）。
+/// 试听状态（播放中的音色）本地管理，关闭弹窗即停；选择即回调，不打断朗读。
+class _VoicePickerDialog extends ConsumerStatefulWidget {
+  const _VoicePickerDialog({
+    required this.selectedValue,
+    required this.onSelect,
+    required this.onDismiss,
+  });
+
+  final String selectedValue;
+  final ValueChanged<TtsVoice> onSelect;
+  final VoidCallback onDismiss;
+
+  @override
+  ConsumerState<_VoicePickerDialog> createState() =>
+      _VoicePickerDialogState();
+}
+
+class _VoicePickerDialogState extends ConsumerState<_VoicePickerDialog> {
+  TtsVoice? _previewingVoice;
+
+  /// 已解析的引擎（供 dispose 停播；dispose 中不可用 ref，故 initState 起监听捕获）。
+  TtsEngine? _engine;
+
+  @override
+  void initState() {
+    super.initState();
+    // listenManual：initState 安全 + 随 widget 销毁自动注销；
+    // 引擎解析后捕获，dispose 时停掉试听朗读
+    ref.listenManual(ttsEngineProvider, (_, next) {
+      _engine = next.valueOrNull;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final engineFuture = ref.watch(ttsEngineProvider.future);
+    return AppModal(
+      visible: true,
+      onDismiss: _stopPreviewAndDismiss,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '选择朗读音色',
+            style: AppType.textTheme.headlineMedium
+                ?.copyWith(color: AppColors.ink),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          for (final voice in TtsVoice.values)
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () => widget.onSelect(voice),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 10, horizontal: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            widget.selectedValue == voice.dbValue
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            size: 20,
+                            color: widget.selectedValue == voice.dbValue
+                                ? AppColors.primary
+                                : AppColors.mutedSoft,
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Text(voice.label,
+                              style: AppType.textTheme.bodyLarge),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                // 试听喇叭：点击播固定例句；播放中的行高亮，再点停止
+                InkWell(
+                  onTap: () => _togglePreview(voice, engineFuture),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Icon(
+                      _previewingVoice == voice
+                          ? Icons.volume_up
+                          : Icons.volume_down_outlined,
+                      size: 22,
+                      color: _previewingVoice == voice
+                          ? AppColors.primary
+                          : AppColors.mutedSoft,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _togglePreview(
+      TtsVoice voice, Future<TtsEngine> engineFuture) async {
+    if (_previewingVoice == voice) {
+      final engine = await engineFuture;
+      engine.stop();
+      setState(() => _previewingVoice = null);
+      return;
+    }
+    final engine = await engineFuture;
+    if (!engine.isAvailable()) return;
+    engine.speak('Hi, this is ${voice.englishName} speaking.',
+        voice: voice);
+    setState(() => _previewingVoice = voice);
+  }
+
+  void _stopPreviewAndDismiss() {
+    final engine = ref.read(ttsEngineProvider).valueOrNull;
+    engine?.stop();
+    widget.onDismiss();
+  }
+
+  @override
+  void dispose() {
+    _engine?.stop();
+    super.dispose();
+  }
+}

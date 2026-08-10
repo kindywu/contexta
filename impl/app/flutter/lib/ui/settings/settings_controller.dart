@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di/providers.dart';
+import '../../domain/model/tts_voice.dart';
 import '../../domain/repository/settings_repository.dart';
 import '../../domain/repository/stats_repository.dart';
+import '../../domain/tts/tts_engine.dart';
 
 /// Settings 页 UI 状态（对照 Kotlin SettingsUiState）。
 class SettingsUiState {
@@ -11,6 +13,7 @@ class SettingsUiState {
     this.dailyCount = 3,
     this.translationMode = 'FULL',
     this.ttsSpeed = 1.0,
+    this.ttsVoice = TtsVoice.bella,
     this.masteryThreshold = 1,
     this.autoPlayAudio = false,
     this.stats = const SettingsStatsData(),
@@ -27,6 +30,7 @@ class SettingsUiState {
   final int dailyCount;
   final String translationMode;
   final double ttsSpeed;
+  final TtsVoice ttsVoice;
   final int masteryThreshold;
   final bool autoPlayAudio;
   final SettingsStatsData stats;
@@ -50,6 +54,7 @@ class SettingsUiState {
     int? dailyCount,
     String? translationMode,
     double? ttsSpeed,
+    TtsVoice? ttsVoice,
     int? masteryThreshold,
     bool? autoPlayAudio,
     SettingsStatsData? stats,
@@ -66,6 +71,7 @@ class SettingsUiState {
         dailyCount: dailyCount ?? this.dailyCount,
         translationMode: translationMode ?? this.translationMode,
         ttsSpeed: ttsSpeed ?? this.ttsSpeed,
+        ttsVoice: ttsVoice ?? this.ttsVoice,
         masteryThreshold: masteryThreshold ?? this.masteryThreshold,
         autoPlayAudio: autoPlayAudio ?? this.autoPlayAudio,
         stats: stats ?? this.stats,
@@ -119,6 +125,8 @@ class SettingsController extends StateNotifier<SettingsUiState> {
     required this._settingsRepository,
     required this._statsRepository,
     required this._triggerNextBatch,
+    required this._ttsEngineFuture,
+    this.onTtsVoiceChanged,
   }) : super(const SettingsUiState()) {
     loadSettings();
   }
@@ -127,6 +135,14 @@ class SettingsController extends StateNotifier<SettingsUiState> {
   final StatsRepository _statsRepository;
   final Future<void> Function(String difficulty, int dailyCount)
       _triggerNextBatch;
+  final Future<TtsEngine> _ttsEngineFuture;
+
+  /// 音色变更回调：持久化成功后调用（生产接线 invalidate
+  /// currentTtsVoiceProvider，使下次朗读立即用新音色；测试可注入断言）。
+  final void Function()? onTtsVoiceChanged;
+
+  /// 试听引擎（弹窗试听用）。
+  Future<TtsEngine> get engineFuture => _ttsEngineFuture;
 
   Future<void> loadSettings() async {
     final settings = await _settingsRepository.getSettings();
@@ -141,6 +157,7 @@ class SettingsController extends StateNotifier<SettingsUiState> {
       dailyCount: settings.dailyArticleCount,
       translationMode: settings.translationDisplayMode,
       ttsSpeed: settings.ttsSpeed,
+      ttsVoice: settings.ttsVoice,
       masteryThreshold: settings.masteryThresholdN,
       autoPlayAudio: settings.autoPlayAudio,
       stats: SettingsStatsData(
@@ -247,6 +264,14 @@ class SettingsController extends StateNotifier<SettingsUiState> {
     state = state.copyWith(ttsSpeed: speed);
   }
 
+  /// 更新朗读音色：写库成功后更新状态并回调（未变更则忽略）。
+  Future<void> updateTtsVoice(TtsVoice voice) async {
+    if (voice == state.ttsVoice) return;
+    await _settingsRepository.updateTtsVoice(voice);
+    state = state.copyWith(ttsVoice: voice);
+    onTtsVoiceChanged?.call();
+  }
+
   Future<void> incrementMasteryThreshold() async {
     final newValue = state.masteryThreshold + 1;
     if (newValue > 5) return;
@@ -277,5 +302,8 @@ final settingsControllerProvider =
     statsRepository: ref.watch(statsRepositoryProvider),
     triggerNextBatch: (difficulty, dailyCount) =>
         ref.read(triggerNextBatchUseCaseProvider)(difficulty, dailyCount),
+    ttsEngineFuture: ref.watch(ttsEngineProvider.future),
+    // 音色写库后失效缓存，参考页/词汇页/朗读下次读取即新音色
+    onTtsVoiceChanged: () => ref.invalidate(currentTtsVoiceProvider),
   );
 });

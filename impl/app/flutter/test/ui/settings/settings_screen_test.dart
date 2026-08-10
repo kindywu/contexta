@@ -1,9 +1,11 @@
 import 'package:contexta/core/components/app_modal.dart';
 import 'package:contexta/di/providers.dart';
 import 'package:contexta/domain/model/daily_stats.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/repository/stats_repository.dart';
+import 'package:contexta/domain/tts/tts_engine.dart';
 import 'package:contexta/domain/usecase/trigger_next_batch_usecase.dart';
 import 'package:contexta/ui/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
@@ -98,6 +100,20 @@ class _FakeSettingsRepo implements SettingsRepository {
   }
 
   @override
+  Future<void> updateTtsVoice(TtsVoice voice) async {
+    updates.add('voice:${voice.dbValue}');
+    settings = UserSettings(
+      isOnboarded: settings.isOnboarded,
+      difficultyLevel: settings.difficultyLevel,
+      dailyArticleCount: settings.dailyArticleCount,
+      translationDisplayMode: settings.translationDisplayMode,
+      ttsVoice: voice,
+      masteryThresholdN: settings.masteryThresholdN,
+      autoPlayAudio: settings.autoPlayAudio,
+    );
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
 
@@ -111,6 +127,36 @@ class _FakeStatsRepo implements StatsRepository {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
+}
+
+/// TTS 引擎桩：记录 speak 调用（文本 + 音色）供试听断言。
+class _TtsStub implements TtsEngine {
+  final List<String> spoken = [];
+  final List<TtsVoice?> spokenVoices = [];
+
+  @override
+  bool isAvailable() => true;
+
+  @override
+  String? unavailabilityReason() => null;
+
+  @override
+  String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
+    spoken.add(text);
+    spokenVoices.add(voice);
+    return 'ctx-1';
+  }
+
+  @override
+  void stop() {}
+
+  @override
+  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
+
+  @override
+  void setOnParagraphStarted(
+      void Function(String? utteranceId, int paragraphIndex, int total)?
+          callback) {}
 }
 
 const _stats = DailyStats(
@@ -127,11 +173,13 @@ void main() {
   late _FakeSettingsRepo settingsRepo;
   late _FakeStatsRepo statsRepo;
   late List<String> triggered;
+  late _TtsStub tts;
 
   setUp(() {
     settingsRepo = _FakeSettingsRepo();
     statsRepo = _FakeStatsRepo(stats: _stats);
     triggered = [];
+    tts = _TtsStub();
   });
 
   Future<void> pumpScreen(WidgetTester tester) async {
@@ -139,6 +187,7 @@ void main() {
       overrides: [
         settingsRepositoryProvider.overrideWithValue(settingsRepo),
         statsRepositoryProvider.overrideWithValue(statsRepo),
+        ttsEngineProvider.overrideWith((ref) async => tts),
         triggerNextBatchUseCaseProvider.overrideWith((ref) {
           return TriggerNextBatchStub(
             onCall: (difficulty, dailyCount) async =>
@@ -272,6 +321,50 @@ void main() {
       await tester.tap(find.text('知道了'));
       await tester.pumpAndSettle();
       expect(find.byType(AppModal), findsNothing);
+    });
+  });
+
+  group('朗读音色', () {
+    testWidgets('音色行显示当前值，弹窗 8 项可选，选择后行值更新', (tester) async {
+      await pumpScreen(tester);
+
+      expect(find.text('朗读音色'), findsOneWidget);
+      expect(find.text('贝拉 · Bella'), findsOneWidget);
+
+      await tester.tap(find.text('贝拉 · Bella'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择朗读音色'), findsOneWidget);
+
+      // 8 个音色标签（bella 同时在设置行 + 弹窗行，共 2 处）
+      for (final voice in TtsVoice.values) {
+        final count = voice == TtsVoice.bella ? 2 : 1;
+        expect(find.text(voice.label), findsNWidgets(count));
+      }
+
+      await tester.tap(find.text('露娜 · Luna'));
+      await tester.pumpAndSettle();
+
+      expect(settingsRepo.updates, contains('voice:LUNA'));
+      expect(find.text('选择朗读音色'), findsNothing);
+      expect(find.text('露娜 · Luna'), findsOneWidget); // 行值已更新
+      expect(find.text('贝拉 · Bella'), findsNothing);
+    });
+
+    testWidgets('试听：8 个喇叭图标，点击播放固定例句（bella）', (tester) async {
+      await pumpScreen(tester);
+
+      await tester.tap(find.text('贝拉 · Bella'));
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.volume_down_outlined), findsNWidgets(8));
+
+      await tester.tap(find.byIcon(Icons.volume_down_outlined).first);
+      await tester.pumpAndSettle();
+
+      expect(tts.spoken, ['Hi, this is Bella speaking.']);
+      expect(tts.spokenVoices, [TtsVoice.bella]);
+      // 播放中的行高亮为 volume_up，其余 7 行仍为 volume_down_outlined
+      expect(find.byIcon(Icons.volume_up), findsOneWidget);
+      expect(find.byIcon(Icons.volume_down_outlined), findsNWidgets(7));
     });
   });
 }

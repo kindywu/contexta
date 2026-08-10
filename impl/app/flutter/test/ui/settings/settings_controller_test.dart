@@ -1,7 +1,9 @@
 import 'package:contexta/domain/model/daily_stats.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/repository/stats_repository.dart';
+import 'package:contexta/domain/tts/tts_engine.dart';
 import 'package:contexta/ui/settings/settings_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -11,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// - ℹ️ 信息弹窗开合
 /// - 难度修改：request → confirm（持久化 + 触发生成）/ cancel
 /// - 篇数修改：request（边界校验）→ confirm（仅写 DB）/ cancel
-/// - 译文模式 / 掌握阈值（1..5 夹取）/ 自动朗读 直接持久化
+/// - 译文模式 / 掌握阈值（1..5 夹取）/ 自动朗读 / 朗读音色 直接持久化
 
 class _FakeSettingsRepo implements SettingsRepository {
   _FakeSettingsRepo({UserSettings? settings})
@@ -95,6 +97,20 @@ class _FakeSettingsRepo implements SettingsRepository {
   }
 
   @override
+  Future<void> updateTtsVoice(TtsVoice voice) async {
+    updates.add('voice:${voice.dbValue}');
+    _settings = UserSettings(
+      isOnboarded: _settings.isOnboarded,
+      difficultyLevel: _settings.difficultyLevel,
+      dailyArticleCount: _settings.dailyArticleCount,
+      translationDisplayMode: _settings.translationDisplayMode,
+      ttsVoice: voice,
+      masteryThresholdN: _settings.masteryThresholdN,
+      autoPlayAudio: _settings.autoPlayAudio,
+    );
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
 
@@ -108,6 +124,35 @@ class _FakeStatsRepo implements StatsRepository {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
+}
+
+class _FakeTtsEngine implements TtsEngine {
+  final List<String> spoken = [];
+  final List<TtsVoice?> spokenVoices = [];
+
+  @override
+  bool isAvailable() => true;
+
+  @override
+  String? unavailabilityReason() => null;
+
+  @override
+  String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
+    spoken.add(text);
+    spokenVoices.add(voice);
+    return 'ctx-1';
+  }
+
+  @override
+  void stop() {}
+
+  @override
+  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
+
+  @override
+  void setOnParagraphStarted(
+      void Function(String? utteranceId, int paragraphIndex, int total)?
+          callback) {}
 }
 
 const _stats = DailyStats(
@@ -129,6 +174,7 @@ void main() {
   Future<SettingsController> createController({
     UserSettings? settings,
     DailyStats? stats,
+    void Function()? onTtsVoiceChanged,
   }) async {
     settingsRepo = _FakeSettingsRepo(settings: settings);
     statsRepo = _FakeStatsRepo(stats: stats);
@@ -138,7 +184,10 @@ void main() {
       statsRepository: statsRepo,
       triggerNextBatch: (String difficulty, int dailyCount) async {
         triggered.add('$difficulty:$dailyCount');
-      },    );
+      },
+      ttsEngineFuture: Future.value(_FakeTtsEngine()),
+      onTtsVoiceChanged: onTtsVoiceChanged,
+    );
     await Future<void>.delayed(Duration.zero);
     return c;
   }
@@ -355,6 +404,34 @@ void main() {
 
       await controller.toggleAutoPlayAudio();
       expect(controller.state.autoPlayAudio, isFalse);
+    });
+  });
+
+  group('朗读音色', () {
+    test('updateTtsVoice 持久化并更新状态', () async {
+      controller = await createController();
+
+      await controller.updateTtsVoice(TtsVoice.hugo);
+
+      expect(controller.state.ttsVoice, TtsVoice.hugo);
+      expect(settingsRepo.updates, contains('voice:HUGO'));
+    });
+
+    test('相同音色早退；成功后回调 onTtsVoiceChanged', () async {
+      var changed = 0;
+      controller = await createController(
+        onTtsVoiceChanged: () => changed++,
+      );
+
+      // 与当前音色（默认 bella）相同 → 早退，不持久化不回调
+      await controller.updateTtsVoice(TtsVoice.bella);
+      expect(changed, 0);
+      expect(settingsRepo.updates, isEmpty);
+
+      await controller.updateTtsVoice(TtsVoice.luna);
+      expect(changed, 1);
+      expect(controller.state.ttsVoice, TtsVoice.luna);
+      expect(settingsRepo.updates, contains('voice:LUNA'));
     });
   });
 }
