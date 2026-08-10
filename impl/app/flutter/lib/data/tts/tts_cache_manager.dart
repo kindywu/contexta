@@ -4,11 +4,14 @@ import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../domain/model/tts_voice.dart';
 import '../local/database.dart';
 
 /// TTS 音频缓存管理器：磁盘 WAV + DB 元数据 + FIFO 淘汰。
 ///
 /// 命中 → 直接播文件；未命中 → 生成后写入缓存。
+/// 缓存键 = 段落 ID + 语速 + 音色（UNIQUE 联合含 voice_id）：同段同速不同
+/// 音色各自缓存、互不串音。
 /// FIFO 淘汰：总大小超 [storageCapBytes]（默认 50MB）时，按 lastAccessedAt
 /// 升序逐条删除最旧条目（DB 行 + 磁盘文件）。
 ///
@@ -17,17 +20,26 @@ class TtsCacheManager {
   TtsCacheManager({
     required this.db,
     this.storageCapBytes = 50 * 1024 * 1024,
+    this.cacheDirectoryOverride,
   });
 
   final AppDatabase db;
   final int storageCapBytes;
 
+  /// 缓存目录注入（测试用临时目录；生产为 null 走 getApplicationSupportDirectory）。
+  /// 对齐 KittenTtsEngine.modelBaseOverride 的注入模式。
+  final Directory? cacheDirectoryOverride;
+
   Directory? _cacheDir;
 
   Future<Directory> get _dir async {
     if (_cacheDir != null) return _cacheDir!;
-    final root = await getApplicationSupportDirectory();
-    _cacheDir = Directory('${root.path}/tts_cache');
+    if (cacheDirectoryOverride != null) {
+      _cacheDir = cacheDirectoryOverride;
+    } else {
+      final root = await getApplicationSupportDirectory();
+      _cacheDir = Directory('${root.path}/tts_cache');
+    }
     if (!await _cacheDir!.exists()) {
       await _cacheDir!.create(recursive: true);
     }
@@ -36,14 +48,21 @@ class TtsCacheManager {
     return _cacheDir!;
   }
 
-  /// 按段落 ID + 语速查找缓存文件路径。
+  /// 按段落 ID + 语速 + 音色查找缓存文件路径。
   ///
   /// 命中 → 更新 lastAccessedAt，返回文件路径。
   /// 未命中 → 返回 null。
-  Future<String?> lookupParagraph(int paragraphId, double speed) async {
+  ///
+  /// [voice] 目标音色（默认 BELLA，与 Task 2/3 的默认一致；Task 6/7
+  /// 透传真实音色后默认仅作兜底）。
+  Future<String?> lookupParagraph(int paragraphId, double speed,
+      [TtsVoice voice = TtsVoice.bella]) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final rows = await (db.select(db.ttsCaches)
-          ..where((t) => t.articleParagraphId.equals(paragraphId) & t.speed.equals(speed)))
+          ..where((t) =>
+              t.articleParagraphId.equals(paragraphId) &
+              t.speed.equals(speed) &
+              t.voiceId.equals(voice.dbValue)))
         .get();
     if (rows.isNotEmpty) {
       await (db.update(db.ttsCaches)
@@ -60,15 +79,18 @@ class TtsCacheManager {
 
   /// 查找文章所有段落的缓存状态。
   ///
-  /// 返回 {paragraphId → filePath} 的 Map（仅命中项）。
+  /// 返回 {paragraphId → filePath} 的 Map（仅命中项），按 [voice] 过滤。
   Future<Map<int, String>> lookupArticleParagraphs(
     List<int> paragraphIds,
-    double speed,
-  ) async {
+    double speed, [
+    TtsVoice voice = TtsVoice.bella,
+  ]) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final rows = await (db.select(db.ttsCaches)
           ..where((t) =>
-              t.articleParagraphId.isIn(paragraphIds) & t.speed.equals(speed)))
+              t.articleParagraphId.isIn(paragraphIds) &
+              t.speed.equals(speed) &
+              t.voiceId.equals(voice.dbValue)))
         .get();
 
     final result = <int, String>{};
@@ -88,30 +110,34 @@ class TtsCacheManager {
 
   /// 写入段落缓存：WAV → 磁盘 + DB 行。
   ///
+  /// 文件名含音色维度（同段同速不同音色 → 不同文件）。
   /// 写入后检查总大小，超 [storageCapBytes] 时执行 FIFO 淘汰。
   Future<String> writeParagraph({
     required int paragraphId,
     required List<int> wavData,
     required double speed,
+    TtsVoice voice = TtsVoice.bella,
   }) async {
     final dir = await _dir;
-    final fileName = 'p_${paragraphId}_${speed.toStringAsFixed(2)}.wav';
+    final fileName =
+        'p_${paragraphId}_${speed.toStringAsFixed(2)}_${voice.dbValue}.wav';
     final filePath = '${dir.path}/$fileName';
     final file = File(filePath);
     await file.writeAsBytes(wavData);
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    // 去重：先删同 (paragraphId, speed) 旧行，防止并发生成插重复行
+    // 去重：先删同 (paragraphId, speed, voice) 旧行，防止并发生成插重复行
     await (db.delete(db.ttsCaches)
           ..where((t) =>
-              t.articleParagraphId.equals(paragraphId) & t.speed.equals(speed)))
+              t.articleParagraphId.equals(paragraphId) &
+              t.speed.equals(speed) &
+              t.voiceId.equals(voice.dbValue)))
         .go();
     await db.into(db.ttsCaches).insert(
       TtsCachesCompanion(
         articleParagraphId: Value(paragraphId),
         speed: Value(speed),
-        // Task 2 加列：默认音色 BELLA（Task 4 缓存键加 voice 时接入真实音色）
-        voiceId: const Value('BELLA'),
+        voiceId: Value(voice.dbValue),
         filePath: Value(filePath),
         fileSize: Value(wavData.length),
         createdAt: Value(now),
@@ -125,10 +151,14 @@ class TtsCacheManager {
     return filePath;
   }
 
-  /// 检查是否需要生成（缓存不存在或文件丢失）。
-  Future<bool> needsGenerate(int paragraphId, double speed) async {
+  /// 检查是否需要生成（该段落该语速该音色无缓存或文件丢失）。
+  Future<bool> needsGenerate(int paragraphId, double speed,
+      [TtsVoice voice = TtsVoice.bella]) async {
     final existing = await (db.select(db.ttsCaches)
-          ..where((t) => t.articleParagraphId.equals(paragraphId) & t.speed.equals(speed)))
+          ..where((t) =>
+              t.articleParagraphId.equals(paragraphId) &
+              t.speed.equals(speed) &
+              t.voiceId.equals(voice.dbValue)))
         .get();
     if (existing.isEmpty) return true;
     return !(await File(existing.first.filePath).exists());
