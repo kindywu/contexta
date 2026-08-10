@@ -1,0 +1,119 @@
+import 'package:contexta/data/background/generation_scheduler.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:workmanager/workmanager.dart';
+
+/// GenerationScheduler 测试（对照 Kotlin GenerationSchedulerTest 语义）：
+/// - uniqueWorkName = `article_generation_batch_<id>` + KEEP 策略 + 指数退避 30s
+/// - tag = `batch_<id>`
+/// - 不用 expedited：workmanager_android 0.10.6 在 expedited=true 时硬检查
+///   FOREGROUND_SERVICE_SHORT_SERVICE 权限（Android 15+ 系统已移除该权限），
+///   checkPermission 恒 DENIED → 抛异常 → 调度失败 → 批次永久卡 PENDING
+/// - cancelBatchGeneration → cancelByUniqueName；cancelAllGeneration →
+///   cancelByTag("article_generation")
+void main() {
+  late _FakeGateway gateway;
+  late GenerationScheduler scheduler;
+
+  setUp(() {
+    gateway = _FakeGateway();
+    scheduler = GenerationScheduler.unittest(gateway);
+  });
+
+  group('scheduleBatchGeneration', () {
+    test('注册一次性任务：uniqueName/taskName/inputData/tag', () async {
+      final ok = await scheduler.scheduleBatchGeneration(6);
+
+      expect(ok, isTrue);
+      expect(gateway.registered, hasLength(1));
+      final spec = gateway.registered.single;
+      expect(spec.uniqueName, 'article_generation_batch_6');
+      expect(spec.taskName, 'articleGeneration');
+      expect(spec.inputData, {'batchId': 6, 'appVersionCode': 0});
+      expect(spec.tag, 'batch_6');
+      expect(spec.expedited, isFalse);
+    });
+
+    test('KEEP 策略 + 指数退避 30s（Kotlin ExistingWorkPolicy.KEEP / '
+        'BackoffPolicy.EXPONENTIAL 30s）', () async {
+      await scheduler.scheduleBatchGeneration(6);
+
+      final spec = gateway.registered.single;
+      expect(spec.existingWorkPolicy, ExistingWorkPolicy.keep);
+      expect(spec.backoffPolicy, BackoffPolicy.exponential);
+      expect(spec.backoffPolicyDelay, const Duration(seconds: 30));
+      expect(spec.outOfQuotaPolicy, OutOfQuotaPolicy.runAsNonExpeditedWorkRequest);
+    });
+
+    test('不用 expedited，但携带 FGS 配置（前台服务规避国产 ROM 后台封网）',
+        () async {
+      await scheduler.scheduleBatchGeneration(6);
+
+      final spec = gateway.registered.single;
+      expect(spec.expedited, isFalse);
+      expect(spec.foregroundServiceConfig, isNotNull);
+      expect(spec.foregroundServiceConfig!.notificationTitle, 'Contexta 正在生成文章');
+      expect(spec.foregroundServiceConfig!.notificationText, '批次 #6 生成中…');
+      expect(spec.foregroundServiceConfig!.notificationId, 1001);
+    });
+
+    test('batchId 缺失/非法时通知正文用 "生成中…"（Kotlin getForegroundInfo '
+        'batchId <= 0 分支）', () {
+      final config = GenerationScheduler.foregroundConfig(-1);
+      expect(config.notificationText, '生成中…');
+    });
+
+    test('appVersionCode 透传进 inputData', () async {
+      await scheduler.scheduleBatchGeneration(6, appVersionCode: 12);
+
+      final spec = gateway.registered.single;
+      expect(spec.inputData, {'batchId': 6, 'appVersionCode': 12});
+    });
+
+    test('不同批次用不同 uniqueName（各自独立调度）', () async {
+      await scheduler.scheduleBatchGeneration(6);
+      await scheduler.scheduleBatchGeneration(7);
+
+      expect(gateway.registered.map((s) => s.uniqueName),
+          ['article_generation_batch_6', 'article_generation_batch_7']);
+    });
+  });
+
+  group('cancel', () {
+    test('cancelBatchGeneration → cancelByUniqueName(batch 前缀)', () async {
+      await scheduler.cancelBatchGeneration(6);
+      expect(gateway.cancelledByUniqueName, ['article_generation_batch_6']);
+    });
+
+    test('cancelAllGeneration → cancelByTag(article_generation)', () async {
+      await scheduler.cancelAllGeneration();
+      expect(gateway.cancelledByTag, ['article_generation']);
+    });
+  });
+}
+
+class _FakeGateway implements WorkmanagerGateway {
+  final List<GenerationTaskSpec> registered = [];
+  final List<String> cancelledByUniqueName = [];
+  final List<String> cancelledByTag = [];
+  bool cancelAllCalled = false;
+
+  @override
+  Future<void> registerOneOffTask(GenerationTaskSpec spec) async {
+    registered.add(spec);
+  }
+
+  @override
+  Future<void> cancelByUniqueName(String uniqueName) async {
+    cancelledByUniqueName.add(uniqueName);
+  }
+
+  @override
+  Future<void> cancelByTag(String tag) async {
+    cancelledByTag.add(tag);
+  }
+
+  @override
+  Future<void> cancelAll() async {
+    cancelAllCalled = true;
+  }
+}

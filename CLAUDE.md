@@ -28,14 +28,14 @@
   README.md         # 产品概述
   CLAUDE.md         # 本文件
   impl/             # 实现代码（由 AI 根据文档生成）
-  impl/app/android  # Contexta的Android版本实现
+  impl/app/flutter  # Contexta 的 Flutter 实现
 ```
 
 ### 实现代码中的文档目录
 
 ```
-impl/app/android/app/docs/             # 主题文档（按主题描述系统设计，供人类理解系统）
-impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务前编写的计划，执行完后可删除）
+impl/app/flutter/docs/                 # 主题文档（按主题描述系统设计，供人类理解系统；当前尚未创建）
+impl/app/flutter/temp_docs/            # 临时计划文档（执行复杂任务前编写的计划，执行完后可删除；当前尚未创建）
 ```
 
 ### 文档布局（根目录 `/`）
@@ -46,11 +46,11 @@ impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务
 - **技术约束** — 技术选型、约束条件、权衡决策
 
 ### 实现代码（`impl/`）
-所有源代码位于 `impl/` 下。代码主要由 AI 根据根目录的文档生成。实现技术栈尚未确认 — 遇到技术选型决策时标注为待定。
+所有源代码位于 `impl/` 下。代码主要由 AI 根据根目录的文档生成。当前技术栈：Flutter（Dart），本地数据库用 drift（SQLite），状态管理用 flutter_riverpod。
 
 ## 入门
 
-当前为全新项目，尚无实现代码。开发将在文档（产品、设计、技术约束）定稿后开始。
+项目已有 Flutter 实现（`impl/app/flutter/`），开发在现有代码基础上按"理解 → 实现 → 验证 → 同步文档 → 提交"推进。
 
 ## 核心原则
 
@@ -119,7 +119,7 @@ impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务
    - ✅ `article.title: String`
    - ❌ `article.tags: String`（存 "tech,science,news"）
 
-   例外：明确需要字段灵活性且查询不依赖拆分内容时，使用 `kotlinx.serialization` 序列化并加注释说明原因。
+   例外：明确需要字段灵活性且查询不依赖拆分内容时，使用 Dart 序列化（`jsonEncode` / `jsonDecode` 存 TEXT）并加注释说明原因。
 
 2. **2NF（完全依赖）**：非主键列必须完全依赖于全部主键（消除部分依赖），主要针对联合主键
    - 联合主键的表中，所有非主键列需描述"整条记录"，而非仅描述某个主键代表的实体
@@ -208,15 +208,15 @@ impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务
 
 | 实体类型 | 推荐主键 | 说明 |
 |---------|---------|------|
-| 长期实体 | `Long` 自增（Room `@PrimaryKey(autoGenerate = true)`） | 简单、高效 |
+| 长期实体 | `Long` 自增（drift `integer().autoIncrement()()`） | 简单、高效 |
 | 流水账 | `Long` 自增 | 追加写入，自然递增 |
 | 关系实体 | `Long` 自增 或 联合主键 | 联合主键防重复 |
 | 映射/字典表 | 业务主键（如枚举名、代码） | 可读性优先 |
 | 需外部引用的 | `UUID` / `String` | 避免暴露自增 ID |
 
-联合主键使用 `@Entity(primaryKeys = [...])`。
+drift 中联合主键（或无自增主键）通过 `Set<Column> get primaryKey => {...}` 覆盖声明。
 
-> 你的项目：`DailyLearning` 用 `learning_date`（ISO 日期）作为业务主键，确保每天最多一条学习记录。—— `db:PK`
+> 你的项目：`DailyLearning` 表用 `learning_date`（ISO 日期，TEXT）作为主键（`Set<Column> get primaryKey => {learningDate}`），确保每天最多一条学习记录。—— `db:PK`
 
 ---
 
@@ -224,12 +224,12 @@ impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务
 
 | 元素 | 规范 | 示例 |
 |------|------|------|
-| 表名（Entity） | 小写蛇形，单数 | `article`, `article_batch` |
+| 表名（drift Table） | 落库名小写蛇形、单数（复数类名 + `tableName` 显式覆盖） | `class ArticleBatches` → `article_batch` |
 | 字段名 | 小写蛇形 | `created_at`, `is_deleted` |
 | 关联外键 | `父表名_id` | `batch_id`, `article_id` |
 | 布尔字段 | `is_xxx` / `has_xxx` | `is_deleted`, `is_read` |
 | DAO | 单数 + `Dao` | `ArticleDao`, `WordDao` |
-| Entity 类 | 单数 + `Entity` | `ArticleEntity`, `ArticleBatchEntity` |
+| 数据类（drift Row） | 单数 + `Row`（`@DataClassName`） | `ArticleRow`, `ArticleBatchRow` |
 
 ---
 
@@ -254,17 +254,61 @@ impl/app/android/app/temp_docs/        # 临时计划文档（执行复杂任务
 
 1. **NOT NULL**：业务上必有值的字段必须声明 `NOT NULL`
 2. **DEFAULT**：有合理默认值的字段设置 DEFAULT
-3. **外键**：Room 支持外键（`@ForeignKey`），但当前项目未启用——原因是非破坏性迁移的成本较高
-4. **UNIQUE**：联合唯一或单字段唯一用 `@Entity(indices = [Index(unique = true)])`
+3. **外键**：drift 支持外键（`customConstraint` 声明 `FOREIGN KEY`），但当前项目未启用——原因是非破坏性迁移的成本较高
+4. **UNIQUE**：联合唯一或单字段唯一用 `@TableIndex(unique: true)`
 
 ---
 
 ### MIGRATION — 迁移策略
 
+**版本模型**：`tool/db_version` 文件 = 生产已发布版本（`0` = 从未发布生产环境）；库内 `db_version` 表（单例行 `id=1`）= 已应用编号脚本的最高目标版本（**无表/行 = 版本 0**：尚未跑过任何迁移的库，含空库与 Room 遗留库）。硬校验不变量：**库内 version ≤ 文件值 + 1**（库领先发布声明 → 报错）。`db_version`（当前版本指针）与 `schema_migration_log`（迁移历史账本）职责分离，互不推导。
+
 | 阶段 | 策略 |
 |------|------|
-| 开发期（未发布） | `fallbackToDestructiveMigration()` — 直接重建 |
-| 发布后 | 手写 `Migration(N, N+1)`，保留数据 |
+| 0→1（未发布，`tool/db_version` = 0） | **`tool/migrations/001-init.sql` 提交仓库**——版本链条起点（0→1 init），描述 v1 标准结构，全部 `IF NOT EXISTS` 幂等（空库 / Room 遗留库 / 任意已有库重复执行均安全）。开发期 v1 结构变更**并入 v1 不递增**，**同步更新 001**（001 描述的 v1 = 当前开发结构）；对备份库 / 真机旧库的补结构用**临时补丁脚本（放 `/tmp`，不提交仓库）**，用完即弃。**首次发布 v1（文件改 1）后 001 冻结**，之后的结构变更写 002 起 |
+| 1→2→3（发布后，`tool/db_version` ≥ 1） | 每次 schema 变更**递增版本**，写编号迁移脚本**并提交**：`tool/migrations/NNN-*.sql`（NNN = 目标版本：001 = init（0→1），发布后从 002 起），单文件自包含事务，`INSERT INTO schema_migration_log` + `UPDATE db_version` 收尾；drift `MigrationStrategy.onUpgrade` 在发布后**镜像同一批变更**（双写纪律，脚本与 onUpgrade 互引注释）。**链条完整**：未来发布 v5 遇到 v3 用户库，`migrate_db.sh` 按序应用 004、005 |
 | 大版本 | 渐进式迁移，一次升一个版本 |
 
-当前使用 `fallbackToDestructiveMigration()`，适合开发阶段。
+**发布后新列规则**：SQLite `ALTER TABLE ADD COLUMN` 不接受 `NOT NULL` 且无 DEFAULT 的列——发布后新增列用 `withDefault()` 或 nullable + 回填，否则上线会失败。
+
+**sqlite3 CLI 纪律**：CLI 连接默认 `foreign_keys=OFF`，只用于只读校验 / 纯 DDL 补丁；业务读写一律走应用（drift）。
+
+**tool/ 目录纪律**：`tool/` 只放生产脚本与升级脚本（`db_version` 文件、`migrate_db.sh`、`backup_db.sh`、`migrations/`）。**dev 补丁脚本不进仓库**，只在备份升级结构时临时使用。
+
+> 命令：`./tool/backup_db.sh`（备份真机库）→ `./tool/migrate_db.sh <db路径> [--check]`（就地升级）——详见 [docs/database-schema.md](impl/app/flutter/docs/database-schema.md)。
+
+---
+
+## 数据库与部署纪律（防卸载 / 防丢数据硬闸）
+
+**背景**：2026-08-09 曾因 `flutter install` 签名不匹配触发自动卸载，清空设备数据库。以下规则为硬闸，任何情况不得绕过。
+
+### 部署纪律（严禁卸载）
+
+1. **绝不使用 `flutter install` / `flutter run` 覆盖真机**——二者签名不匹配（release↔debug）时都会**静默卸载**旧包。只允许 `adb install -r`（失败会报错，不会卸载）。`flutter run` 只用于模拟器。
+2. **部署前核对签名**：`apksigner verify --print-certs app-debug.apk | grep SHA-256` vs `adb shell dumpsys package com.ak.contexta | grep signatures`（小写去冒号比对）；设备无包则跳过。
+3. **部署前核对 versionCode**：`dumpsys` 的 versionCode 大于 APK 则中止（**降级同样触发卸载路径**）。
+4. **卸载设备 app 前，必须先备份**：`tool/backup_db.sh` → `tool/migrate_db.sh <备份副本> --check` 确认可升级 → 再卸载。
+5. **run-as 依赖 debuggable 构建**：release 构建（debuggable=false）无法 run-as 拉库。开发期统一部署 debug APK（`adb install -r`），release 只留给正式发布。
+
+### 数据库结构变更流程（保留数据）
+
+1. **备份先行**（永远第一步）：`tool/backup_db.sh`（WAL 三件套齐拉：contexta.db + -wal + -shm）。
+2. `tool/migrate_db.sh <备份副本> --check` → 实跑 → 校验 `SELECT version FROM db_version`。
+3. **推回设备**：force-stop → push 副本到 `/data/local/tmp` → chmod 666 → run-as **先删设备端 -wal/-shm 再** cp 主文件（残留 WAL 帧会污染新库）→ 拉回验证（integrity / 表数 / 行数）。
+4. 部署新 APK：签名核对 → versionCode 核对 → `adb install -r` → `adb shell monkey -p com.ak.contexta 1` 启动验证。
+
+### Asset 库刷新纪律
+
+**`assets/contexta.db` 与真机库同构，结构变更时必须同步刷新**：
+
+1. 副本 `PRAGMA wal_checkpoint(TRUNCATE)`（把 WAL 折入主文件）；
+2. cp 到 `assets/contexta.db`；
+3. **`rm -f` 侧车文件**（contexta.db-wal / contexta.db-shm）——git 会漏掉 -wal，残留即静默丢数据；
+4. 校验：17 张表（+ Room 遗留表）、db_version 行 = 1、user_version = 1、article 行数 > 0、integrity_check = ok。
+
+> ⚠️ asset 库携带个人数据（真机库拷贝），当前单人应用接受；将来对外分发需先脱敏。
+
+### 备份冷存档
+
+`.backup/`（仓库根，已 gitignore）存放真机备份，**每月做一次冷备份**：`git add -f .backup/contexta-db-*` 提交最近一次备份。任何删除备份的操作必须先确认对象是本次会话产物，**绝不删除既有备份**。

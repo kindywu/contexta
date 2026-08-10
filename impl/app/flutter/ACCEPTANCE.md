@@ -1,0 +1,68 @@
+# Contexta Flutter 迁移 — 真机验收清单
+
+> 对照迁移计划 Task 29：覆盖安装、核心链路、10 条关键行为、TTS。
+> 状态：🟢 通过 / 🟡 待验证 / 🔴 失败（附原因与修复 commit）
+
+## 0. 环境
+
+- [x] 设备已连接（`adb devices`）
+- [x] Debug APK 构建成功（`flutter build apk --debug`）
+- [x] 构建期配置注入：`android/local.properties`（gitignore，不入库）的
+  `deepseek.apiKey` / `deepseek.model` / `deepseek.baseUrl` 在打包时经
+  Gradle 以 `--dart-define` 语义注入 `AppConfig`（镜像 Android 原版
+  `BuildConfig`，见 `android/app/build.gradle.kts`）
+
+## 1. 覆盖安装（数据库兼容）
+
+| # | 验收项 | 预期 | 结果 |
+|---|--------|------|------|
+| 1.1 | 不卸载旧版覆盖安装 | 安装成功，无崩溃 | |
+| 1.2 | 首页显示历史数据 | 12 批次 / 60 文章 / 10 单词 | |
+| 1.3 | 用户设置保留 | 难度 / 篇数 / 译文模式不变 | |
+| 1.4 | 已 onboarding | 启动直达首页（跳过向导） | |
+
+## 2. 核心链路
+
+| # | 验收项 | 预期 | 结果 |
+|---|--------|------|------|
+| 2.1 | 首页 | 文章分组 + streak 胶囊 + 状态正确 | |
+| 2.2 | 阅读：正文分词 | 点单词弹查词 | |
+| 2.3 | 阅读：查词 | 本地命中 / LLM 兜底 + 加入生词本 | 🟢 |
+| 2.4 | 阅读：译文 4 模式 | 完全 / 减弱 / 模糊 / 隐藏 | |
+| 2.5 | 阅读：播放 | 自动朗读 + 播放条控制 | |
+| 2.6 | 阅读：120s 自动已读 | 计时到自动标记已读 | |
+| 2.7 | 生词本 | FAB 掌握流转 + 总结页 | |
+| 2.8 | 设置 | 难度确认触发新批次生成 | |
+| 2.9 | 录入单词 | 本地命中复用 / LLM 生成 + 结果卡 | |
+| 2.10 | 参考页 | 三 tab + 格子弹窗发音 | |
+
+## 3. 10 条关键行为
+
+| # | 行为 | 结果 |
+|---|------|------|
+| 3.1 | LLM 超时分类（Recoverable 重试 3 次 → 超时抛错） | |
+| 3.2 | 批次不卡死（未完成 → Worker 重试） | |
+| 3.3 | 孤儿修复（重启清理 GENERATING 残留） | |
+| 3.4 | 每天每难度一批 | |
+| 3.5 | FATAL 文章永不 READY | |
+| 3.6 | 告警送达回写（notified_at） | |
+| 3.7 | 飞书签名（HmacSHA256） | |
+| 3.8 | 杀进程续跑（workmanager 重调度） | |
+| 3.9 | 前台服务通知（生成中） | |
+| 3.10 | dailyCountSnapshot 展示 | |
+
+## 4. TTS
+
+| # | 验收项 | 预期 | 结果 |
+|---|--------|------|------|
+| 4.1 | KittenTTS 默认发音 | 阅读页 / 生词本 / 参考页发声正常 | 🟢 |
+| 4.2 | 语速 1x / 0.75x | 切换生效 | |
+| 4.3 | 断模型回退 | 系统 TTS 兜底发声 | |
+| 4.4 | 自动朗读 | 设置开启后进文章自动播 | |
+
+## 5. 发现的问题
+
+| # | 问题 | 严重度 | 修复 commit |
+|---|------|--------|-------------|
+| 1 | Onboarding 页未接入路由：Task 21 实现了 OnboardingScreen，但 app_router.dart 仍用占位页（真机显示「Onboarding — 待实现」） | 高 | （待提交）app_router.dart:29 接入真实页 + onComplete 清栈跳首页；同步 app_router_test / widget_test 断言 |
+| 2 | 查词 LLM 调用失败：`DioDeepSeekApi` baseUrl 缺尾斜杠，dio 拼接 `baseUrl + path` 后主机名被污染（`api.deepseek.comv1`），DNS 解析失败 → 重试耗尽 → 查词降级空结果。Kotlin 默认值带尾斜杠，Dart 不带 | 高 | （已提交）`deepseek_api.dart` 构造时兜底补斜杠 + `deepseek_api_test.dart` 防回归测试 |

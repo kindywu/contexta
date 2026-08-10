@@ -5,6 +5,7 @@ ref/
 # 真机数据库备份（迁移用），不提交
 .backup/
 
-.superpowers
+.superpowers/*.**
 
-docs/.superpowers
+docs/superpowers/
+impl/app/flutter/temp_docs
