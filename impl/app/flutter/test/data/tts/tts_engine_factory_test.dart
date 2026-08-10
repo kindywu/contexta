@@ -92,6 +92,7 @@ class _OkSession implements KittenTtsSession {
     String text, {
     required double speed,
     required String utteranceId,
+    String? voice,
   }) async {}
 
   @override
@@ -100,6 +101,7 @@ class _OkSession implements KittenTtsSession {
     required List<({int id, String text})> paragraphs,
     required double speed,
     required String utteranceId,
+    String? voice,
   }) async {}
 
   @override
@@ -108,6 +110,7 @@ class _OkSession implements KittenTtsSession {
     required List<int> paragraphIds,
     required double speed,
     required String utteranceId,
+    String? voice,
   }) async {}
 
   @override
@@ -135,6 +138,7 @@ class _OkSession implements KittenTtsSession {
   Future<void> pregenerateParagraphs({
     required List<({int paragraphId, String text})> paragraphs,
     required double speed,
+    String? voice,
   }) async {}
 
   @override

@@ -124,6 +124,9 @@ class _FakeSession implements KittenTtsSession {
   final List<String> spokenTexts = [];
   final List<double> spokenSpeeds = [];
   final List<String> spokenIds = [];
+
+  /// 最近一次收到的 [voice]（Task 7 断言 voice 透传依赖）。
+  String? lastVoice;
   int stopCount = 0;
   void Function(String utteranceId)? _finishListener;
 
@@ -132,10 +135,12 @@ class _FakeSession implements KittenTtsSession {
     String text, {
     required double speed,
     required String utteranceId,
+    String? voice,
   }) async {
     spokenTexts.add(text);
     spokenSpeeds.add(speed);
     spokenIds.add(utteranceId);
+    lastVoice = voice;
   }
 
   @override
@@ -144,7 +149,10 @@ class _FakeSession implements KittenTtsSession {
     required List<({int id, String text})> paragraphs,
     required double speed,
     required String utteranceId,
-  }) async {}
+    String? voice,
+  }) async {
+    lastVoice = voice;
+  }
 
   @override
   Future<void> speakParagraphs(
@@ -152,7 +160,10 @@ class _FakeSession implements KittenTtsSession {
     required List<int> paragraphIds,
     required double speed,
     required String utteranceId,
-  }) async {}
+    String? voice,
+  }) async {
+    lastVoice = voice;
+  }
 
   @override
   Future<bool> playFile(String filePath, {required String utteranceId}) async => true;
@@ -197,7 +208,10 @@ class _FakeSession implements KittenTtsSession {
   Future<void> pregenerateParagraphs({
     required List<({int paragraphId, String text})> paragraphs,
     required double speed,
-  }) async {}
+    String? voice,
+  }) async {
+    lastVoice = voice;
+  }
 
   @override
   Future<void> dispose() async {}

@@ -6,11 +6,24 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:kittentts/kittentts_flutter.dart' as kit;
 
+import '../../domain/model/tts_voice.dart';
 import 'tts_cache_manager.dart';
 
 /// 标题段的段落索引哨兵：全文朗读时标题也参与段落播放上报（读标题即高亮
 /// 标题），与正文（从 0 起）区分。UI / 控制器据此渲染标题高亮。
 const int kTitleParagraphIndex = -1;
+
+/// 把 SDK 音色 id（小写，如 "luna"，即 [TtsVoice.sdkVoiceId]）映射为
+/// [TtsVoice]（缓存键用 [TtsVoice.dbValue] 大写枚举名）。
+///
+/// null / 未知 id → [TtsVoice.bella]：与 KittenTTS 引擎默认音色（config
+/// defaultVoice = bella）语义一致——缓存读写退化为旧行为，不产生孤儿键。
+TtsVoice _toTtsVoice(String? id) => id == null
+    ? TtsVoice.bella
+    : TtsVoice.values.firstWhere(
+        (v) => v.sdkVoiceId == id,
+        orElse: () => TtsVoice.bella,
+      );
 
 /// KittenTTS 会话抽象：由 [KittenTtsFactory] 创建，测试注入 fake。
 ///
@@ -18,17 +31,23 @@ const int kTitleParagraphIndex = -1;
 /// 每次 speak 打断上一次（生成 Job 取消 + 播放器 stop）。
 abstract interface class KittenTtsSession {
   /// 生成并播放 [text]，结束后调用 finishListener。
-  Future<void> speak(String text, {required double speed, required String utteranceId});
+  ///
+  /// [voice] 目标音色（SDK voice id，null 用引擎默认音色）。
+  Future<void> speak(String text,
+      {required double speed, required String utteranceId, String? voice});
 
   /// 按段落生成 + 播放（全文朗读首次路径）。
   ///
   /// 逐段 [kit.KittenTTS.generate] → 写缓存 → 播放；每段完成上报进度
   /// (done=已完成段落数, total=总段落数)。全部播完调用 finishListener。
+  ///
+  /// [voice] 目标音色（SDK voice id，null 用引擎默认音色）。
   Future<void> speakParagraphs(
     List<String> texts, {
     required List<int> paragraphIds,
     required double speed,
     required String utteranceId,
+    String? voice,
   });
 
   /// 全文朗读：标题 + 正文段落，单个 utterance 内无缝衔接播放。
@@ -37,11 +56,14 @@ abstract interface class KittenTtsSession {
   /// 推文件路径，未命中生成 + 写缓存），播放 worker 按序消费播放——播放
   /// 等待生成，生成无需等待，按段落依次执行。[title] 可为空跳过。
   /// 进度只计正文段落（done/total）；全部播完调用 finishListener。
+  ///
+  /// [voice] 目标音色（SDK voice id，null 用引擎默认音色）。
   Future<void> speakFullArticle({
     String? title,
     required List<({int id, String text})> paragraphs,
     required double speed,
     required String utteranceId,
+    String? voice,
   });
 
   /// 播放本地 WAV 文件路径（缓存命中时）。
@@ -72,9 +94,12 @@ abstract interface class KittenTtsSession {
   /// 后台预生成段落音频并写入缓存（跳过已缓存段落）。
   ///
   /// 引擎空闲时调用（播放结束后），不抢占播放。被 stop/新播放打断。
+  ///
+  /// [voice] 目标音色（SDK voice id，null 用引擎默认音色）。
   Future<void> pregenerateParagraphs({
     required List<({int paragraphId, String text})> paragraphs,
     required double speed,
+    String? voice,
   });
 
   Future<void> dispose();
@@ -146,11 +171,12 @@ class KittenTtsPluginSession implements KittenTtsSession {
     String text, {
     required double speed,
     required String utteranceId,
+    String? voice,
   }) async {
     debugPrint('[KittenTTS] speak: len=${text.length} speed=$speed id=$utteranceId');
     await _stopCurrent();
     _currentUtteranceId = utteranceId;
-    final job = _generateAndPlay(text, speed, utteranceId);
+    final job = _generateAndPlay(text, speed, utteranceId, voice);
     _generationJobs.add(job);
     try {
       await job;
@@ -187,12 +213,13 @@ class KittenTtsPluginSession implements KittenTtsSession {
     required List<int> paragraphIds,
     required double speed,
     required String utteranceId,
+    String? voice,
   }) async {
     debugPrint('[KittenTTS] speakParagraphs: ${texts.length} paragraphs id=$utteranceId');
     await _stopCurrent();
     _currentUtteranceId = utteranceId;
 
-    final task = _speakParagraphsSequential(texts, paragraphIds, speed, utteranceId);
+    final task = _speakParagraphsSequential(texts, paragraphIds, speed, utteranceId, voice);
     _generationJobs.add(task);
     try {
       await task;
@@ -210,6 +237,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
     List<int> paragraphIds,
     double speed,
     String utteranceId,
+    String? voice,
   ) async {
     final total = texts.length;
     final progressListener = _progressListener;
@@ -221,14 +249,14 @@ class KittenTtsPluginSession implements KittenTtsSession {
         final cm = cache;
         String? cachedPath;
         if (cm != null && paragraphIds[i] > 0) {
-          cachedPath = await cm.lookupParagraph(paragraphIds[i], speed);
+          cachedPath = await cm.lookupParagraph(paragraphIds[i], speed, _toTtsVoice(voice));
         }
 
         if (cachedPath != null) {
           // 缓存命中（预取已完成该段）：直接播文件，引擎空闲可并行预取
           if (prefetch == null) {
             prefetch = _prefetchRemaining(
-              texts, paragraphIds, speed, utteranceId,
+              texts, paragraphIds, speed, utteranceId, voice,
               startIndex: i + 2,
             );
           }
@@ -236,7 +264,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
           await _playFileSource(File(cachedPath).openRead(), utteranceId);
         } else {
           debugPrint('[KittenTTS] paragraph ${i + 1}/$total: gen+play');
-          final result = await _engine.generate(texts[i], speed: speed);
+          final result = await _engine.generate(texts[i], speed: speed, voice: voice);
           if (_currentUtteranceId != utteranceId) return;
 
           final wav = result.wavData();
@@ -247,6 +275,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
               await cm.writeParagraph(
                 paragraphId: paragraphIds[i],
                 speed: speed,
+                voice: _toTtsVoice(voice),
                 wavData: wav,
               );
             } catch (e) {
@@ -257,7 +286,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
           // 当前段已生成，引擎空闲 → 启动后续段落预取（i+2 起，i+1 由循环处理）
           if (prefetch == null) {
             prefetch = _prefetchRemaining(
-              texts, paragraphIds, speed, utteranceId,
+              texts, paragraphIds, speed, utteranceId, voice,
               startIndex: i + 2,
             );
           }
@@ -300,6 +329,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
     required List<({int id, String text})> paragraphs,
     required double speed,
     required String utteranceId,
+    String? voice,
   }) async {
     debugPrint('[KittenTTS] speakFullArticle: title="${title ?? ""}" paras=${paragraphs.length} id=$utteranceId');
     await _stopCurrent();
@@ -321,6 +351,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
       paragraphs: paragraphs,
       speed: speed,
       utteranceId: utteranceId,
+      voice: voice,
     );
     generationDone.complete(generation);
     // 生成 worker 推完全部后关闭流（播放 worker 播完最后一项结束）
@@ -341,13 +372,14 @@ class KittenTtsPluginSession implements KittenTtsSession {
     required List<({int id, String text})> paragraphs,
     required double speed,
     required String utteranceId,
+    String? voice,
   }) async {
     final cm = cache;
     try {
       if (title != null && title.isNotEmpty) {
         if (_currentUtteranceId != utteranceId) return;
         debugPrint('[KittenTTS] fullArticle: generating title');
-        final result = await _engine.generate(title, speed: speed);
+        final result = await _engine.generate(title, speed: speed, voice: voice);
         if (_currentUtteranceId != utteranceId) return;
         controller.add(_QueuedAudio.wav(result.wavData(), isTitle: true));
       }
@@ -360,7 +392,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
 
         String? cachedPath;
         if (cm != null && para.id > 0) {
-          cachedPath = await cm.lookupParagraph(para.id, speed);
+          cachedPath = await cm.lookupParagraph(para.id, speed, _toTtsVoice(voice));
         }
 
         if (cachedPath != null) {
@@ -368,7 +400,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
           controller.add(_QueuedAudio.file(cachedPath, paragraphIndex: i));
         } else {
           debugPrint('[KittenTTS] fullArticle: para ${i + 1}/$total gen');
-          final result = await _engine.generate(para.text, speed: speed);
+          final result = await _engine.generate(para.text, speed: speed, voice: voice);
           if (_currentUtteranceId != utteranceId) return;
 
           final wav = result.wavData();
@@ -377,6 +409,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
               await cm.writeParagraph(
                 paragraphId: para.id,
                 speed: speed,
+                voice: _toTtsVoice(voice),
                 wavData: wav,
               );
             } catch (e) {
@@ -440,9 +473,10 @@ class KittenTtsPluginSession implements KittenTtsSession {
     List<int> paragraphIds,
     double speed,
     String utteranceId,
-    {required int startIndex,
+    String? voice, {
+    required int startIndex,
     int batchSize = 3,
-    }) async {
+  }) async {
     final cm = cache;
     if (cm == null) return;
 
@@ -456,7 +490,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
     final toGen = <int>[];
     for (var i = startIndex; i < end; i++) {
       if (paragraphIds[i] > 0) {
-        final needs = await cm.needsGenerate(paragraphIds[i], speed);
+        final needs = await cm.needsGenerate(paragraphIds[i], speed, _toTtsVoice(voice));
         if (needs) toGen.add(i);
       }
     }
@@ -472,11 +506,12 @@ class KittenTtsPluginSession implements KittenTtsSession {
       await Future.wait(batch.map((i) async {
         if (_currentUtteranceId != utteranceId) return;
         try {
-          final result = await _engine.generate(texts[i], speed: speed);
+          final result = await _engine.generate(texts[i], speed: speed, voice: voice);
           if (_currentUtteranceId != utteranceId) return;
           await cm.writeParagraph(
             paragraphId: paragraphIds[i],
             speed: speed,
+            voice: _toTtsVoice(voice),
             wavData: result.wavData(),
           );
           debugPrint('[KittenTTS] prefetch: paragraph ${paragraphIds[i]} OK');
@@ -574,12 +609,13 @@ class KittenTtsPluginSession implements KittenTtsSession {
     String text,
     double speed,
     String utteranceId,
+    String? voice,
   ) async {
     try {
       if (text.length > _streamThreshold) {
-        await _generateAndPlayStream(text, speed, utteranceId);
+        await _generateAndPlayStream(text, speed, utteranceId, voice);
       } else {
-        await _generateAndPlaySingle(text, speed, utteranceId);
+        await _generateAndPlaySingle(text, speed, utteranceId, voice);
       }
     } catch (e) {
       debugPrint('[KittenTTS] generate ERROR: $e');
@@ -594,9 +630,10 @@ class KittenTtsPluginSession implements KittenTtsSession {
     String text,
     double speed,
     String utteranceId,
+    String? voice,
   ) async {
     debugPrint('[KittenTTS] generating (single): len=${text.length} speed=$speed');
-    final result = await _engine.generate(text, speed: speed);
+    final result = await _engine.generate(text, speed: speed, voice: voice);
     debugPrint('[KittenTTS] generated OK, wavSize=${result.wavData().length}');
     if (_currentUtteranceId != utteranceId) return;
     await _playWav(result.wavData(), utteranceId);
@@ -612,9 +649,10 @@ class KittenTtsPluginSession implements KittenTtsSession {
     String text,
     double speed,
     String utteranceId,
+    String? voice,
   ) async {
     debugPrint('[KittenTTS] generating (stream): len=${text.length} speed=$speed');
-    final stream = _engine.stream(text, speed: speed);
+    final stream = _engine.stream(text, speed: speed, voice: voice);
     _streamSub?.cancel();
 
     // 进度：插件按 ~200 字符 chunk yield，无法预知总数；用累计块数上报，
@@ -748,6 +786,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
   Future<void> pregenerateParagraphs({
     required List<({int paragraphId, String text})> paragraphs,
     required double speed,
+    String? voice,
   }) async {
     final cm = cache;
     if (cm == null) return;
@@ -756,7 +795,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
     final toGenerate = <({int paragraphId, String text})>[];
     for (final p in paragraphs) {
       if (_currentUtteranceId != null) return; // 新播放打断预生成
-      final needs = await cm.needsGenerate(p.paragraphId, speed);
+      final needs = await cm.needsGenerate(p.paragraphId, speed, _toTtsVoice(voice));
       if (needs) toGenerate.add(p);
     }
     debugPrint('[KittenTTS] pregen: ${toGenerate.length}/${paragraphs.length} need generation');
@@ -772,12 +811,13 @@ class KittenTtsPluginSession implements KittenTtsSession {
         if (_currentUtteranceId != null) return;
         try {
           debugPrint('[KittenTTS] pregen: paragraph ${p.paragraphId} (batch ${i ~/ 3 + 1})');
-          final result = await _engine.generate(p.text, speed: speed);
+          final result = await _engine.generate(p.text, speed: speed, voice: voice);
           if (_currentUtteranceId != null) return;
           final wav = result.wavData();
           await cm.writeParagraph(
             paragraphId: p.paragraphId,
             speed: speed,
+            voice: _toTtsVoice(voice),
             wavData: wav,
           );
           debugPrint('[KittenTTS] pregen: paragraph ${p.paragraphId} OK (${wav.length}B)');
