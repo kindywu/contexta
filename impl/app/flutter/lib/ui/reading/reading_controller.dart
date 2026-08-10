@@ -7,6 +7,7 @@ import '../../di/providers.dart';
 import '../../domain/generation/word_prompts.dart';
 import '../../domain/llm_client.dart';
 import '../../domain/model/article.dart';
+import '../../domain/model/tts_voice.dart';
 import '../../domain/model/word_detail.dart';
 import '../../domain/repository/article_repository.dart';
 import '../../domain/repository/settings_repository.dart';
@@ -31,6 +32,7 @@ class ReadingUiState {
     this.snackbarMessage,
     this.openTtsSettings = false,
     this.ttsSpeed = 1.0,
+    this.ttsVoice = TtsVoice.bella,
     this.isReadCompleted = false,
     this.isSpeakingFullArticle = false,
     this.speechProgress,
@@ -62,6 +64,9 @@ class ReadingUiState {
 
   /// 显示语速（1x / 0.75x；引擎内部映射实际速率）。
   final double ttsSpeed;
+
+  /// 朗读音色（设置页可选，进入文章时从设置读取）。
+  final TtsVoice ttsVoice;
   final bool isReadCompleted;
 
   /// 全文朗读中。
@@ -91,6 +96,7 @@ class ReadingUiState {
     Object? snackbarMessage = _unset,
     bool? openTtsSettings,
     double? ttsSpeed,
+    TtsVoice? ttsVoice,
     bool? isReadCompleted,
     bool? isSpeakingFullArticle,
     Object? speechProgress = _unset,
@@ -114,6 +120,7 @@ class ReadingUiState {
             : snackbarMessage as String?,
         openTtsSettings: openTtsSettings ?? this.openTtsSettings,
         ttsSpeed: ttsSpeed ?? this.ttsSpeed,
+        ttsVoice: ttsVoice ?? this.ttsVoice,
         isReadCompleted: isReadCompleted ?? this.isReadCompleted,
         isSpeakingFullArticle: isSpeakingFullArticle ?? this.isSpeakingFullArticle,
         speechProgress: identical(speechProgress, _unset)
@@ -306,8 +313,9 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       paragraphs: article.paragraphs,
       translationMode: TranslationMode.fromStorage(
           settings?.translationDisplayMode),
-      // 全局语速：进入文章时从设置读取（设置页可改，切换时回写）
+      // 全局语速/音色：进入文章时从设置读取（设置页可改，切换时回写）
       ttsSpeed: settings?.ttsSpeed ?? 1.0,
+      ttsVoice: settings?.ttsVoice ?? TtsVoice.bella,
       revealedParagraphs: const {},
       isLoading: false,
       isReadCompleted: alreadyRead,
@@ -356,6 +364,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
           (paragraphId: p.id, text: p.englishText),
       ],
       speed: state.ttsSpeed,
+      voice: state.ttsVoice,
     ));
   }
 
@@ -424,10 +433,11 @@ class ReadingController extends StateNotifier<ReadingUiState> {
         paragraphId: p.id,
         text: p.englishText,
         speed: state.ttsSpeed,
+        voice: state.ttsVoice,
       );
     } else {
       id = engine.speak(state.paragraphs[index].englishText,
-          speed: state.ttsSpeed);
+          speed: state.ttsSpeed, voice: state.ttsVoice);
     }
     if (id != null) {
       _currentUtteranceId = id;
@@ -536,6 +546,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
             (id: p.id, text: p.englishText),
         ],
         speed: state.ttsSpeed,
+        voice: state.ttsVoice,
       );
       debugPrint('[ReadingCtrl] speakFullArticle returned: $id');
       if (id == null) {
@@ -558,7 +569,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     ];
     final fullText = parts.join(' ');
     debugPrint('[ReadingCtrl] speaking full text: len=${fullText.length} speed=${state.ttsSpeed}');
-    final id = engine.speak(fullText, speed: state.ttsSpeed);
+    final id = engine.speak(fullText, speed: state.ttsSpeed, voice: state.ttsVoice);
     debugPrint('[ReadingCtrl] engine.speak returned: $id');
     if (id == null) {
       debugPrint('[ReadingCtrl] engine.speak returned null');
@@ -584,7 +595,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       _unavailableTts();
       return;
     }
-    final id = engine.speak(word, speed: state.ttsSpeed);
+    final id = engine.speak(word, speed: state.ttsSpeed, voice: state.ttsVoice);
     debugPrint('[ReadingCtrl] playWordPronunciation speak returned id=$id');
     if (id != null) {
       _currentUtteranceId = id;

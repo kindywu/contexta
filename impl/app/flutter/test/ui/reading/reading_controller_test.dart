@@ -63,7 +63,10 @@ class _FakeArticleRepo implements ArticleRepository {
 class _FakeSettingsRepo implements SettingsRepository {
   _FakeSettingsRepo({
     this.settings = const UserSettings(
-        isOnboarded: true, translationDisplayMode: 'BLURRED'),
+      isOnboarded: true,
+      translationDisplayMode: 'BLURRED',
+      ttsVoice: TtsVoice.hugo,
+    ),
     this.onUpdateTranslationMode,
     this.onUpdateTtsSpeed,
   });
@@ -79,6 +82,9 @@ class _FakeSettingsRepo implements SettingsRepository {
   Future<void> updateTtsSpeed(double speed) async {
     await onUpdateTtsSpeed?.call(speed);
   }
+
+  @override
+  Future<void> updateTtsVoice(TtsVoice voice) async {}
 
   @override
   Future<void> updateTranslationMode(String mode) async {
@@ -113,6 +119,9 @@ class _RecordingTts implements TtsEngine {
   final List<String> spoken = [];
   final List<double> speeds = [];
   int stopCount = 0;
+
+  /// 最近一次 speak 收到的音色（null = 未传/默认）。
+  TtsVoice? lastVoice;
   void Function(String? utteranceId)? onFinished;
   void Function(String? utteranceId, int paragraphIndex, int total)?
       onParagraphStarted;
@@ -135,6 +144,7 @@ class _RecordingTts implements TtsEngine {
     if (!available) return null;
     spoken.add(text);
     speeds.add(speed);
+    lastVoice = voice;
     _lastId = 'ctx-${_counter++}';
     return _lastId;
   }
@@ -523,6 +533,28 @@ void main() {
 
       expect(tts.speeds, [0.8]);
       expect(controller.state.speakingParagraphIndex, 0);
+    });
+
+    test('段落/全文/单词朗读携带当前设置音色', () async {
+      await controller.loadArticle(1);
+      // 进入文章：音色从设置读取（_FakeSettingsRepo 默认 ttsVoice: hugo）
+      expect(controller.state.ttsVoice, TtsVoice.hugo);
+
+      // 段落朗读
+      controller.playParagraph(0);
+      expect(tts.lastVoice, TtsVoice.hugo);
+
+      // 全文朗读（系统 TTS 拼接路径）
+      tts.lastVoice = null;
+      await controller.toggleFullArticlePlayback();
+      expect(tts.lastVoice, TtsVoice.hugo);
+
+      // 单词发音（查词弹窗入口 playWordPronunciation）
+      tts.lastVoice = null;
+      controller.showWordSheet('hello');
+      await Future<void>.delayed(Duration.zero);
+      controller.playWordPronunciation();
+      expect(tts.lastVoice, TtsVoice.hugo);
     });
 
     test('自然完成回调清除朗读状态', () async {
