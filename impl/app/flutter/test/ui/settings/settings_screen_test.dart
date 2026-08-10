@@ -129,10 +129,11 @@ class _FakeStatsRepo implements StatsRepository {
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
 
-/// TTS 引擎桩：记录 speak 调用（文本 + 音色）供试听断言。
+/// TTS 引擎桩：记录 speak 调用（文本 + 音色）与 stop 调用供试听断言。
 class _TtsStub implements TtsEngine {
   final List<String> spoken = [];
   final List<TtsVoice?> spokenVoices = [];
+  int stopCount = 0;
 
   @override
   bool isAvailable() => true;
@@ -148,7 +149,9 @@ class _TtsStub implements TtsEngine {
   }
 
   @override
-  void stop() {}
+  void stop() {
+    stopCount++;
+  }
 
   @override
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
@@ -365,6 +368,28 @@ void main() {
       // 播放中的行高亮为 volume_up，其余 7 行仍为 volume_down_outlined
       expect(find.byIcon(Icons.volume_up), findsOneWidget);
       expect(find.byIcon(Icons.volume_down_outlined), findsNWidgets(7));
+    });
+
+    testWidgets('试听后选择音色 → 弹窗关闭且引擎 stop 被调用（关闭即停）', (tester) async {
+      await pumpScreen(tester);
+
+      await tester.tap(find.text('贝拉 · Bella'));
+      await tester.pumpAndSettle();
+
+      // 试听 bella
+      await tester.tap(find.byIcon(Icons.volume_down_outlined).first);
+      await tester.pumpAndSettle();
+      expect(tts.spoken, ['Hi, this is Bella speaking.']);
+      expect(tts.stopCount, 0);
+
+      // 直接选择音色关闭弹窗（onSelect 路径，不经过 _stopPreviewAndDismiss）：
+      // dispose 必须停掉正在试听的例句
+      await tester.tap(find.text('露娜 · Luna'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('选择朗读音色'), findsNothing);
+      expect(tts.stopCount, 1);
+      expect(settingsRepo.updates, contains('voice:LUNA'));
     });
   });
 }

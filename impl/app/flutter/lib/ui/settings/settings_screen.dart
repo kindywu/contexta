@@ -888,10 +888,13 @@ class _VoicePickerDialogState extends ConsumerState<_VoicePickerDialog> {
   void initState() {
     super.initState();
     // listenManual：initState 安全 + 随 widget 销毁自动注销；
-    // 引擎解析后捕获，dispose 时停掉试听朗读
-    ref.listenManual(ttsEngineProvider, (_, next) {
-      _engine = next.valueOrNull;
-    });
+    // fireImmediately 立即拿到当前值（引擎可能在弹窗打开前已解析，
+    // 非 autoDispose FutureProvider 此后不再 emit），dispose 时停掉试听朗读
+    ref.listenManual(
+      ttsEngineProvider,
+      (_, next) => _engine = next.valueOrNull,
+      fireImmediately: true,
+    );
   }
 
   @override
