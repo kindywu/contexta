@@ -8,4 +8,4 @@ ref/
 .superpowers/*.**
 
 docs/superpowers/
-temp_docs/
+impl/app/flutter/temp_docs
