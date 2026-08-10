@@ -76,6 +76,17 @@ class $UserSettingsTable extends UserSettings
     type: DriftSqlType.double,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _ttsVoiceIdMeta = const VerificationMeta(
+    'ttsVoiceId',
+  );
+  @override
+  late final GeneratedColumn<String> ttsVoiceId = GeneratedColumn<String>(
+    'tts_voice_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _masteryThresholdNMeta = const VerificationMeta(
     'masteryThresholdN',
   );
@@ -109,6 +120,7 @@ class $UserSettingsTable extends UserSettings
     dailyArticleCount,
     translationDisplayMode,
     ttsSpeed,
+    ttsVoiceId,
     masteryThresholdN,
     autoPlayAudio,
   ];
@@ -179,6 +191,17 @@ class $UserSettingsTable extends UserSettings
     } else if (isInserting) {
       context.missing(_ttsSpeedMeta);
     }
+    if (data.containsKey('tts_voice_id')) {
+      context.handle(
+        _ttsVoiceIdMeta,
+        ttsVoiceId.isAcceptableOrUnknown(
+          data['tts_voice_id']!,
+          _ttsVoiceIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_ttsVoiceIdMeta);
+    }
     if (data.containsKey('mastery_threshold_n')) {
       context.handle(
         _masteryThresholdNMeta,
@@ -234,6 +257,10 @@ class $UserSettingsTable extends UserSettings
         DriftSqlType.double,
         data['${effectivePrefix}tts_speed'],
       )!,
+      ttsVoiceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tts_voice_id'],
+      )!,
       masteryThresholdN: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}mastery_threshold_n'],
@@ -265,6 +292,9 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
 
   /// 朗读语速（UI 显示语速：0.8 / 1.0 / 1.2，引擎内部映射实际速率）
   final double ttsSpeed;
+
+  /// 朗读音色（TtsVoice.dbValue：BELLA | JASPER | LUNA | BRUNO | ROSIE | HUGO | KIKI | LEO）
+  final String ttsVoiceId;
   final int masteryThresholdN;
   final bool autoPlayAudio;
   const UserSettingsRow({
@@ -274,6 +304,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     required this.dailyArticleCount,
     required this.translationDisplayMode,
     required this.ttsSpeed,
+    required this.ttsVoiceId,
     required this.masteryThresholdN,
     required this.autoPlayAudio,
   });
@@ -286,6 +317,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     map['daily_article_count'] = Variable<int>(dailyArticleCount);
     map['translation_display_mode'] = Variable<String>(translationDisplayMode);
     map['tts_speed'] = Variable<double>(ttsSpeed);
+    map['tts_voice_id'] = Variable<String>(ttsVoiceId);
     map['mastery_threshold_n'] = Variable<int>(masteryThresholdN);
     map['auto_play_audio'] = Variable<bool>(autoPlayAudio);
     return map;
@@ -299,6 +331,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       dailyArticleCount: Value(dailyArticleCount),
       translationDisplayMode: Value(translationDisplayMode),
       ttsSpeed: Value(ttsSpeed),
+      ttsVoiceId: Value(ttsVoiceId),
       masteryThresholdN: Value(masteryThresholdN),
       autoPlayAudio: Value(autoPlayAudio),
     );
@@ -318,6 +351,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
         json['translationDisplayMode'],
       ),
       ttsSpeed: serializer.fromJson<double>(json['ttsSpeed']),
+      ttsVoiceId: serializer.fromJson<String>(json['ttsVoiceId']),
       masteryThresholdN: serializer.fromJson<int>(json['masteryThresholdN']),
       autoPlayAudio: serializer.fromJson<bool>(json['autoPlayAudio']),
     );
@@ -334,6 +368,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
         translationDisplayMode,
       ),
       'ttsSpeed': serializer.toJson<double>(ttsSpeed),
+      'ttsVoiceId': serializer.toJson<String>(ttsVoiceId),
       'masteryThresholdN': serializer.toJson<int>(masteryThresholdN),
       'autoPlayAudio': serializer.toJson<bool>(autoPlayAudio),
     };
@@ -346,6 +381,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     int? dailyArticleCount,
     String? translationDisplayMode,
     double? ttsSpeed,
+    String? ttsVoiceId,
     int? masteryThresholdN,
     bool? autoPlayAudio,
   }) => UserSettingsRow(
@@ -356,6 +392,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     translationDisplayMode:
         translationDisplayMode ?? this.translationDisplayMode,
     ttsSpeed: ttsSpeed ?? this.ttsSpeed,
+    ttsVoiceId: ttsVoiceId ?? this.ttsVoiceId,
     masteryThresholdN: masteryThresholdN ?? this.masteryThresholdN,
     autoPlayAudio: autoPlayAudio ?? this.autoPlayAudio,
   );
@@ -375,6 +412,9 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
           ? data.translationDisplayMode.value
           : this.translationDisplayMode,
       ttsSpeed: data.ttsSpeed.present ? data.ttsSpeed.value : this.ttsSpeed,
+      ttsVoiceId: data.ttsVoiceId.present
+          ? data.ttsVoiceId.value
+          : this.ttsVoiceId,
       masteryThresholdN: data.masteryThresholdN.present
           ? data.masteryThresholdN.value
           : this.masteryThresholdN,
@@ -393,6 +433,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
           ..write('dailyArticleCount: $dailyArticleCount, ')
           ..write('translationDisplayMode: $translationDisplayMode, ')
           ..write('ttsSpeed: $ttsSpeed, ')
+          ..write('ttsVoiceId: $ttsVoiceId, ')
           ..write('masteryThresholdN: $masteryThresholdN, ')
           ..write('autoPlayAudio: $autoPlayAudio')
           ..write(')'))
@@ -407,6 +448,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     dailyArticleCount,
     translationDisplayMode,
     ttsSpeed,
+    ttsVoiceId,
     masteryThresholdN,
     autoPlayAudio,
   );
@@ -420,6 +462,7 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
           other.dailyArticleCount == this.dailyArticleCount &&
           other.translationDisplayMode == this.translationDisplayMode &&
           other.ttsSpeed == this.ttsSpeed &&
+          other.ttsVoiceId == this.ttsVoiceId &&
           other.masteryThresholdN == this.masteryThresholdN &&
           other.autoPlayAudio == this.autoPlayAudio);
 }
@@ -431,6 +474,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
   final Value<int> dailyArticleCount;
   final Value<String> translationDisplayMode;
   final Value<double> ttsSpeed;
+  final Value<String> ttsVoiceId;
   final Value<int> masteryThresholdN;
   final Value<bool> autoPlayAudio;
   const UserSettingsCompanion({
@@ -440,6 +484,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     this.dailyArticleCount = const Value.absent(),
     this.translationDisplayMode = const Value.absent(),
     this.ttsSpeed = const Value.absent(),
+    this.ttsVoiceId = const Value.absent(),
     this.masteryThresholdN = const Value.absent(),
     this.autoPlayAudio = const Value.absent(),
   });
@@ -450,6 +495,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     required int dailyArticleCount,
     required String translationDisplayMode,
     required double ttsSpeed,
+    required String ttsVoiceId,
     required int masteryThresholdN,
     required bool autoPlayAudio,
   }) : isOnboarded = Value(isOnboarded),
@@ -457,6 +503,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
        dailyArticleCount = Value(dailyArticleCount),
        translationDisplayMode = Value(translationDisplayMode),
        ttsSpeed = Value(ttsSpeed),
+       ttsVoiceId = Value(ttsVoiceId),
        masteryThresholdN = Value(masteryThresholdN),
        autoPlayAudio = Value(autoPlayAudio);
   static Insertable<UserSettingsRow> custom({
@@ -466,6 +513,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     Expression<int>? dailyArticleCount,
     Expression<String>? translationDisplayMode,
     Expression<double>? ttsSpeed,
+    Expression<String>? ttsVoiceId,
     Expression<int>? masteryThresholdN,
     Expression<bool>? autoPlayAudio,
   }) {
@@ -477,6 +525,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
       if (translationDisplayMode != null)
         'translation_display_mode': translationDisplayMode,
       if (ttsSpeed != null) 'tts_speed': ttsSpeed,
+      if (ttsVoiceId != null) 'tts_voice_id': ttsVoiceId,
       if (masteryThresholdN != null) 'mastery_threshold_n': masteryThresholdN,
       if (autoPlayAudio != null) 'auto_play_audio': autoPlayAudio,
     });
@@ -489,6 +538,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     Value<int>? dailyArticleCount,
     Value<String>? translationDisplayMode,
     Value<double>? ttsSpeed,
+    Value<String>? ttsVoiceId,
     Value<int>? masteryThresholdN,
     Value<bool>? autoPlayAudio,
   }) {
@@ -500,6 +550,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
       translationDisplayMode:
           translationDisplayMode ?? this.translationDisplayMode,
       ttsSpeed: ttsSpeed ?? this.ttsSpeed,
+      ttsVoiceId: ttsVoiceId ?? this.ttsVoiceId,
       masteryThresholdN: masteryThresholdN ?? this.masteryThresholdN,
       autoPlayAudio: autoPlayAudio ?? this.autoPlayAudio,
     );
@@ -528,6 +579,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     if (ttsSpeed.present) {
       map['tts_speed'] = Variable<double>(ttsSpeed.value);
     }
+    if (ttsVoiceId.present) {
+      map['tts_voice_id'] = Variable<String>(ttsVoiceId.value);
+    }
     if (masteryThresholdN.present) {
       map['mastery_threshold_n'] = Variable<int>(masteryThresholdN.value);
     }
@@ -546,6 +600,7 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
           ..write('dailyArticleCount: $dailyArticleCount, ')
           ..write('translationDisplayMode: $translationDisplayMode, ')
           ..write('ttsSpeed: $ttsSpeed, ')
+          ..write('ttsVoiceId: $ttsVoiceId, ')
           ..write('masteryThresholdN: $masteryThresholdN, ')
           ..write('autoPlayAudio: $autoPlayAudio')
           ..write(')'))
@@ -7075,6 +7130,17 @@ class $TtsCachesTable extends TtsCaches
     type: DriftSqlType.double,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _voiceIdMeta = const VerificationMeta(
+    'voiceId',
+  );
+  @override
+  late final GeneratedColumn<String> voiceId = GeneratedColumn<String>(
+    'voice_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _filePathMeta = const VerificationMeta(
     'filePath',
   );
@@ -7125,6 +7191,7 @@ class $TtsCachesTable extends TtsCaches
     articleParagraphId,
     wordId,
     speed,
+    voiceId,
     filePath,
     fileSize,
     createdAt,
@@ -7167,6 +7234,14 @@ class $TtsCachesTable extends TtsCaches
       );
     } else if (isInserting) {
       context.missing(_speedMeta);
+    }
+    if (data.containsKey('voice_id')) {
+      context.handle(
+        _voiceIdMeta,
+        voiceId.isAcceptableOrUnknown(data['voice_id']!, _voiceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_voiceIdMeta);
     }
     if (data.containsKey('file_path')) {
       context.handle(
@@ -7228,6 +7303,10 @@ class $TtsCachesTable extends TtsCaches
         DriftSqlType.double,
         data['${effectivePrefix}speed'],
       )!,
+      voiceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}voice_id'],
+      )!,
       filePath: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}file_path'],
@@ -7265,6 +7344,9 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
   /// 语速：0.75 或 1.0。
   final double speed;
 
+  /// 音色（TtsVoice.dbValue）：缓存键含音色维度，不同音色缓存互不串音
+  final String voiceId;
+
   /// 缓存文件路径（相对 appSupportDir，如 tts_cache/42_1.0.wav）。
   final String filePath;
 
@@ -7281,6 +7363,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
     this.articleParagraphId,
     this.wordId,
     required this.speed,
+    required this.voiceId,
     required this.filePath,
     required this.fileSize,
     required this.createdAt,
@@ -7297,6 +7380,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
       map['word_id'] = Variable<int>(wordId);
     }
     map['speed'] = Variable<double>(speed);
+    map['voice_id'] = Variable<String>(voiceId);
     map['file_path'] = Variable<String>(filePath);
     map['file_size'] = Variable<int>(fileSize);
     map['created_at'] = Variable<int>(createdAt);
@@ -7314,6 +7398,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
           ? const Value.absent()
           : Value(wordId),
       speed: Value(speed),
+      voiceId: Value(voiceId),
       filePath: Value(filePath),
       fileSize: Value(fileSize),
       createdAt: Value(createdAt),
@@ -7331,6 +7416,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
       articleParagraphId: serializer.fromJson<int?>(json['articleParagraphId']),
       wordId: serializer.fromJson<int?>(json['wordId']),
       speed: serializer.fromJson<double>(json['speed']),
+      voiceId: serializer.fromJson<String>(json['voiceId']),
       filePath: serializer.fromJson<String>(json['filePath']),
       fileSize: serializer.fromJson<int>(json['fileSize']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
@@ -7345,6 +7431,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
       'articleParagraphId': serializer.toJson<int?>(articleParagraphId),
       'wordId': serializer.toJson<int?>(wordId),
       'speed': serializer.toJson<double>(speed),
+      'voiceId': serializer.toJson<String>(voiceId),
       'filePath': serializer.toJson<String>(filePath),
       'fileSize': serializer.toJson<int>(fileSize),
       'createdAt': serializer.toJson<int>(createdAt),
@@ -7357,6 +7444,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
     Value<int?> articleParagraphId = const Value.absent(),
     Value<int?> wordId = const Value.absent(),
     double? speed,
+    String? voiceId,
     String? filePath,
     int? fileSize,
     int? createdAt,
@@ -7368,6 +7456,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
         : this.articleParagraphId,
     wordId: wordId.present ? wordId.value : this.wordId,
     speed: speed ?? this.speed,
+    voiceId: voiceId ?? this.voiceId,
     filePath: filePath ?? this.filePath,
     fileSize: fileSize ?? this.fileSize,
     createdAt: createdAt ?? this.createdAt,
@@ -7381,6 +7470,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
           : this.articleParagraphId,
       wordId: data.wordId.present ? data.wordId.value : this.wordId,
       speed: data.speed.present ? data.speed.value : this.speed,
+      voiceId: data.voiceId.present ? data.voiceId.value : this.voiceId,
       filePath: data.filePath.present ? data.filePath.value : this.filePath,
       fileSize: data.fileSize.present ? data.fileSize.value : this.fileSize,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
@@ -7397,6 +7487,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
           ..write('articleParagraphId: $articleParagraphId, ')
           ..write('wordId: $wordId, ')
           ..write('speed: $speed, ')
+          ..write('voiceId: $voiceId, ')
           ..write('filePath: $filePath, ')
           ..write('fileSize: $fileSize, ')
           ..write('createdAt: $createdAt, ')
@@ -7411,6 +7502,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
     articleParagraphId,
     wordId,
     speed,
+    voiceId,
     filePath,
     fileSize,
     createdAt,
@@ -7424,6 +7516,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
           other.articleParagraphId == this.articleParagraphId &&
           other.wordId == this.wordId &&
           other.speed == this.speed &&
+          other.voiceId == this.voiceId &&
           other.filePath == this.filePath &&
           other.fileSize == this.fileSize &&
           other.createdAt == this.createdAt &&
@@ -7435,6 +7528,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
   final Value<int?> articleParagraphId;
   final Value<int?> wordId;
   final Value<double> speed;
+  final Value<String> voiceId;
   final Value<String> filePath;
   final Value<int> fileSize;
   final Value<int> createdAt;
@@ -7444,6 +7538,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
     this.articleParagraphId = const Value.absent(),
     this.wordId = const Value.absent(),
     this.speed = const Value.absent(),
+    this.voiceId = const Value.absent(),
     this.filePath = const Value.absent(),
     this.fileSize = const Value.absent(),
     this.createdAt = const Value.absent(),
@@ -7454,11 +7549,13 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
     this.articleParagraphId = const Value.absent(),
     this.wordId = const Value.absent(),
     required double speed,
+    required String voiceId,
     required String filePath,
     required int fileSize,
     required int createdAt,
     required int lastAccessedAt,
   }) : speed = Value(speed),
+       voiceId = Value(voiceId),
        filePath = Value(filePath),
        fileSize = Value(fileSize),
        createdAt = Value(createdAt),
@@ -7468,6 +7565,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
     Expression<int>? articleParagraphId,
     Expression<int>? wordId,
     Expression<double>? speed,
+    Expression<String>? voiceId,
     Expression<String>? filePath,
     Expression<int>? fileSize,
     Expression<int>? createdAt,
@@ -7479,6 +7577,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
         'article_paragraph_id': articleParagraphId,
       if (wordId != null) 'word_id': wordId,
       if (speed != null) 'speed': speed,
+      if (voiceId != null) 'voice_id': voiceId,
       if (filePath != null) 'file_path': filePath,
       if (fileSize != null) 'file_size': fileSize,
       if (createdAt != null) 'created_at': createdAt,
@@ -7491,6 +7590,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
     Value<int?>? articleParagraphId,
     Value<int?>? wordId,
     Value<double>? speed,
+    Value<String>? voiceId,
     Value<String>? filePath,
     Value<int>? fileSize,
     Value<int>? createdAt,
@@ -7501,6 +7601,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
       articleParagraphId: articleParagraphId ?? this.articleParagraphId,
       wordId: wordId ?? this.wordId,
       speed: speed ?? this.speed,
+      voiceId: voiceId ?? this.voiceId,
       filePath: filePath ?? this.filePath,
       fileSize: fileSize ?? this.fileSize,
       createdAt: createdAt ?? this.createdAt,
@@ -7522,6 +7623,9 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
     }
     if (speed.present) {
       map['speed'] = Variable<double>(speed.value);
+    }
+    if (voiceId.present) {
+      map['voice_id'] = Variable<String>(voiceId.value);
     }
     if (filePath.present) {
       map['file_path'] = Variable<String>(filePath.value);
@@ -7545,6 +7649,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
           ..write('articleParagraphId: $articleParagraphId, ')
           ..write('wordId: $wordId, ')
           ..write('speed: $speed, ')
+          ..write('voiceId: $voiceId, ')
           ..write('filePath: $filePath, ')
           ..write('fileSize: $fileSize, ')
           ..write('createdAt: $createdAt, ')
@@ -7987,6 +8092,7 @@ typedef $$UserSettingsTableCreateCompanionBuilder =
       required int dailyArticleCount,
       required String translationDisplayMode,
       required double ttsSpeed,
+      required String ttsVoiceId,
       required int masteryThresholdN,
       required bool autoPlayAudio,
     });
@@ -7998,6 +8104,7 @@ typedef $$UserSettingsTableUpdateCompanionBuilder =
       Value<int> dailyArticleCount,
       Value<String> translationDisplayMode,
       Value<double> ttsSpeed,
+      Value<String> ttsVoiceId,
       Value<int> masteryThresholdN,
       Value<bool> autoPlayAudio,
     });
@@ -8038,6 +8145,11 @@ class $$UserSettingsTableFilterComposer
 
   ColumnFilters<double> get ttsSpeed => $composableBuilder(
     column: $table.ttsSpeed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ttsVoiceId => $composableBuilder(
+    column: $table.ttsVoiceId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -8091,6 +8203,11 @@ class $$UserSettingsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get ttsVoiceId => $composableBuilder(
+    column: $table.ttsVoiceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get masteryThresholdN => $composableBuilder(
     column: $table.masteryThresholdN,
     builder: (column) => ColumnOrderings(column),
@@ -8136,6 +8253,11 @@ class $$UserSettingsTableAnnotationComposer
 
   GeneratedColumn<double> get ttsSpeed =>
       $composableBuilder(column: $table.ttsSpeed, builder: (column) => column);
+
+  GeneratedColumn<String> get ttsVoiceId => $composableBuilder(
+    column: $table.ttsVoiceId,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get masteryThresholdN => $composableBuilder(
     column: $table.masteryThresholdN,
@@ -8185,6 +8307,7 @@ class $$UserSettingsTableTableManager
                 Value<int> dailyArticleCount = const Value.absent(),
                 Value<String> translationDisplayMode = const Value.absent(),
                 Value<double> ttsSpeed = const Value.absent(),
+                Value<String> ttsVoiceId = const Value.absent(),
                 Value<int> masteryThresholdN = const Value.absent(),
                 Value<bool> autoPlayAudio = const Value.absent(),
               }) => UserSettingsCompanion(
@@ -8194,6 +8317,7 @@ class $$UserSettingsTableTableManager
                 dailyArticleCount: dailyArticleCount,
                 translationDisplayMode: translationDisplayMode,
                 ttsSpeed: ttsSpeed,
+                ttsVoiceId: ttsVoiceId,
                 masteryThresholdN: masteryThresholdN,
                 autoPlayAudio: autoPlayAudio,
               ),
@@ -8205,6 +8329,7 @@ class $$UserSettingsTableTableManager
                 required int dailyArticleCount,
                 required String translationDisplayMode,
                 required double ttsSpeed,
+                required String ttsVoiceId,
                 required int masteryThresholdN,
                 required bool autoPlayAudio,
               }) => UserSettingsCompanion.insert(
@@ -8214,6 +8339,7 @@ class $$UserSettingsTableTableManager
                 dailyArticleCount: dailyArticleCount,
                 translationDisplayMode: translationDisplayMode,
                 ttsSpeed: ttsSpeed,
+                ttsVoiceId: ttsVoiceId,
                 masteryThresholdN: masteryThresholdN,
                 autoPlayAudio: autoPlayAudio,
               ),
@@ -13028,6 +13154,7 @@ typedef $$TtsCachesTableCreateCompanionBuilder =
       Value<int?> articleParagraphId,
       Value<int?> wordId,
       required double speed,
+      required String voiceId,
       required String filePath,
       required int fileSize,
       required int createdAt,
@@ -13039,6 +13166,7 @@ typedef $$TtsCachesTableUpdateCompanionBuilder =
       Value<int?> articleParagraphId,
       Value<int?> wordId,
       Value<double> speed,
+      Value<String> voiceId,
       Value<String> filePath,
       Value<int> fileSize,
       Value<int> createdAt,
@@ -13090,6 +13218,11 @@ class $$TtsCachesTableFilterComposer
 
   ColumnFilters<double> get speed => $composableBuilder(
     column: $table.speed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get voiceId => $composableBuilder(
+    column: $table.voiceId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -13161,6 +13294,11 @@ class $$TtsCachesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get voiceId => $composableBuilder(
+    column: $table.voiceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get filePath => $composableBuilder(
     column: $table.filePath,
     builder: (column) => ColumnOrderings(column),
@@ -13222,6 +13360,9 @@ class $$TtsCachesTableAnnotationComposer
 
   GeneratedColumn<double> get speed =>
       $composableBuilder(column: $table.speed, builder: (column) => column);
+
+  GeneratedColumn<String> get voiceId =>
+      $composableBuilder(column: $table.voiceId, builder: (column) => column);
 
   GeneratedColumn<String> get filePath =>
       $composableBuilder(column: $table.filePath, builder: (column) => column);
@@ -13294,6 +13435,7 @@ class $$TtsCachesTableTableManager
                 Value<int?> articleParagraphId = const Value.absent(),
                 Value<int?> wordId = const Value.absent(),
                 Value<double> speed = const Value.absent(),
+                Value<String> voiceId = const Value.absent(),
                 Value<String> filePath = const Value.absent(),
                 Value<int> fileSize = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
@@ -13303,6 +13445,7 @@ class $$TtsCachesTableTableManager
                 articleParagraphId: articleParagraphId,
                 wordId: wordId,
                 speed: speed,
+                voiceId: voiceId,
                 filePath: filePath,
                 fileSize: fileSize,
                 createdAt: createdAt,
@@ -13314,6 +13457,7 @@ class $$TtsCachesTableTableManager
                 Value<int?> articleParagraphId = const Value.absent(),
                 Value<int?> wordId = const Value.absent(),
                 required double speed,
+                required String voiceId,
                 required String filePath,
                 required int fileSize,
                 required int createdAt,
@@ -13323,6 +13467,7 @@ class $$TtsCachesTableTableManager
                 articleParagraphId: articleParagraphId,
                 wordId: wordId,
                 speed: speed,
+                voiceId: voiceId,
                 filePath: filePath,
                 fileSize: fileSize,
                 createdAt: createdAt,

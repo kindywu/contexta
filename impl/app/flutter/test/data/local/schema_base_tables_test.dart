@@ -67,17 +67,36 @@ void main() {
 
     test('user_settings 表结构（对照 UserSettingsEntity.kt）', () async {
       final cols = await tableInfo('user_settings');
-      expect(cols.length, 8);
+      expect(cols.length, 9);
       expectCol(cols, 'id', type: 'INTEGER', notNull: true, pk: true);
       expectCol(cols, 'is_onboarded', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'difficulty_level', type: 'TEXT', notNull: true, pk: false);
       expectCol(cols, 'daily_article_count', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'translation_display_mode', type: 'TEXT', notNull: true, pk: false);
       expectCol(cols, 'tts_speed', type: 'REAL', notNull: true, pk: false);
+      // Task 2 加列：朗读音色（TtsVoice.dbValue），无 DEFAULT（Room 纪律）
+      expectCol(cols, 'tts_voice_id', type: 'TEXT', notNull: true, pk: false);
       expectCol(cols, 'mastery_threshold_n', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'auto_play_audio', type: 'INTEGER', notNull: true, pk: false);
       // Room: @PrimaryKey val id: Int（无 autoGenerate）→ 无 AUTOINCREMENT
       expect(await tableSql('user_settings'), isNot(contains('AUTOINCREMENT')));
+    });
+
+    test('tts_cache 表结构（对照 TtsCacheEntity.kt：9 列，Task 2 加 voice_id）', () async {
+      final cols = await tableInfo('tts_cache');
+      expect(cols.length, 9);
+      expectCol(cols, 'id', type: 'INTEGER', notNull: true, pk: true);
+      expectCol(cols, 'article_paragraph_id', type: 'INTEGER', notNull: false, pk: false);
+      expectCol(cols, 'word_id', type: 'INTEGER', notNull: false, pk: false);
+      expectCol(cols, 'speed', type: 'REAL', notNull: true, pk: false);
+      // Task 2 加列：音色（TtsVoice.dbValue），无 DEFAULT（Room 纪律）
+      expectCol(cols, 'voice_id', type: 'TEXT', notNull: true, pk: false);
+      expectCol(cols, 'file_path', type: 'TEXT', notNull: true, pk: false);
+      expectCol(cols, 'file_size', type: 'INTEGER', notNull: true, pk: false);
+      expectCol(cols, 'created_at', type: 'INTEGER', notNull: true, pk: false);
+      expectCol(cols, 'last_accessed_at', type: 'INTEGER', notNull: true, pk: false);
+      // Room: @PrimaryKey(autoGenerate = true) → AUTOINCREMENT
+      expect(await tableSql('tts_cache'), contains('AUTOINCREMENT'));
     });
 
     test('config_change_log 表结构（对照 ConfigChangeLogEntity.kt）', () async {

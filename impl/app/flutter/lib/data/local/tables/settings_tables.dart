@@ -10,7 +10,12 @@ import 'article_tables.dart';
 /// - 自增主键 → integer().autoIncrement()；无自增 → integer()() + primaryKey override
 /// - 索引名与 Room 完全一致（Room 按 表名_列名 自动命名）
 
-/// 表 user_settings（UserSettingsEntity.kt：单例行 id=1，7 列全 NOT NULL，无索引无外键）
+/// 表 user_settings（UserSettingsEntity.kt：单例行 id=1，全列 NOT NULL，无索引无外键）
+///
+/// 列序说明：Room 原 7 列（id / is_onboarded / difficulty_level /
+/// daily_article_count / translation_display_mode / mastery_threshold_n /
+/// auto_play_audio）+ 开发期 v1 补入 tts_speed / tts_voice_id，共 9 列；
+/// tts_voice_id（音色）紧跟 tts_speed。
 @DataClassName('UserSettingsRow')
 class UserSettings extends Table {
   /// Room 表名 user_settings（类名复数，显式覆盖保持一致）
@@ -32,6 +37,9 @@ class UserSettings extends Table {
 
   /// 朗读语速（UI 显示语速：0.8 / 1.0 / 1.2，引擎内部映射实际速率）
   RealColumn get ttsSpeed => real()();
+
+  /// 朗读音色（TtsVoice.dbValue：BELLA | JASPER | LUNA | BRUNO | ROSIE | HUGO | KIKI | LEO）
+  TextColumn get ttsVoiceId => text()();
 
   IntColumn get masteryThresholdN => integer()();
 

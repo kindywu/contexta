@@ -110,6 +110,8 @@ class TtsCacheManager {
       TtsCachesCompanion(
         articleParagraphId: Value(paragraphId),
         speed: Value(speed),
+        // Task 2 加列：默认音色 BELLA（Task 4 缓存键加 voice 时接入真实音色）
+        voiceId: const Value('BELLA'),
         filePath: Value(filePath),
         fileSize: Value(wavData.length),
         createdAt: Value(now),

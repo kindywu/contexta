@@ -35,6 +35,8 @@ class SettingsRepositoryImpl implements SettingsRepository {
       dailyArticleCount: 3,
       translationDisplayMode: 'FULL',
       ttsSpeed: 1.0,
+      // Task 2 加列：默认音色 BELLA（TtsVoice.dbValue 字面量，Task 3 接入枚举）
+      ttsVoiceId: 'BELLA',
       masteryThresholdN: 1,
       autoPlayAudio: false,
     )).toCompanion(true).copyWith(

@@ -8,7 +8,9 @@ import 'article_tables.dart';
 ///
 /// 中文命名规范文档 db:NAME / db:INDEX / db:TYPE（流水账）。
 ///
-/// UNIQUE 联合 (article_paragraph_id, word_id, speed)：每种语速各一条缓存。
+/// UNIQUE 联合 (article_paragraph_id, word_id, speed, voice_id)：每种语速 ×
+/// 音色各一条缓存（voice_id 为 Task 2 加列：缓存键含音色维度，不同音色缓存
+/// 互不串音；去重 / 淘汰逻辑见 TtsCacheManager）。
 ///
 /// 淘汰策略：lastAccessedAt 升序驱逐最旧文件；由 TtsCacheManager 在
 /// 每次写入后检查总大小，超限则逐条删除（DB 行 + 磁盘文件）。
@@ -33,6 +35,9 @@ class TtsCaches extends Table {
 
   /// 语速：0.75 或 1.0。
   RealColumn get speed => real()();
+
+  /// 音色（TtsVoice.dbValue）：缓存键含音色维度，不同音色缓存互不串音
+  TextColumn get voiceId => text()();
 
   /// 缓存文件路径（相对 appSupportDir，如 tts_cache/42_1.0.wav）。
   TextColumn get filePath => text()();

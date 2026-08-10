@@ -474,11 +474,12 @@ void main() {
     test('旧库 PRAGMA 硬编码抽查（与 schema_*_tables_test 同风格断言）', () async {
       final (db, tmp) = await _openLegacy();
       try {
-        // user_settings 8 列（含临时补丁 ALTER 补入的 tts_speed）
+        // user_settings 9 列（Room 原 7 列 + 开发期补入 tts_speed；Task 2 起
+        // beforeOpen 幂等补列再补入 tts_voice_id，带 DEFAULT 'BELLA'）
         final usCols = await db.customSelect(
           "SELECT name, type, \"notnull\", pk FROM pragma_table_info('user_settings')",
         ).get();
-        expect(usCols, hasLength(8));
+        expect(usCols, hasLength(9));
         final byName = {for (final r in usCols) r.read<String>('name'): r};
         expect(byName['id']!.read<String>('type'), 'INTEGER');
         expect(byName['id']!.read<int>('pk'), 1);
@@ -487,6 +488,10 @@ void main() {
         expect(byName['auto_play_audio']!.read<int>('notnull'), 1);
         expect(byName['tts_speed']!.read<String>('type'), 'REAL');
         expect(byName['tts_speed']!.read<int>('notnull'), 1);
+        // beforeOpen 补入的 tts_voice_id（ALTER 追加在表末尾，与建表列序不同）
+        expect(byName['tts_voice_id']!.read<String>('type'), 'TEXT');
+        expect(byName['tts_voice_id']!.read<int>('notnull'), 1);
+        expect(byName['tts_voice_id']!.read<int>('pk'), 0);
 
         // word 表列 + 唯一索引
         final wordCols = await db.customSelect(

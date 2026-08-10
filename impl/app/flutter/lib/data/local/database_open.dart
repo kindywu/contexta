@@ -58,6 +58,10 @@ CREATE TABLE IF NOT EXISTS `db_version` (
           'INSERT OR IGNORE INTO db_version (id, version, updated_at) '
           'VALUES (1, 1, ${DateTime.now().millisecondsSinceEpoch})',
         );
+        // 开发期 v1 结构变更自愈：旧库 / asset 旧库缺失新列时幂等补列，
+        // 保证任何库打开即自洽（与 db_version 自愈同模式；同一 helper 也被
+        // 默认迁移策略调用，见 database.dart selfHealVoiceColumns）。
+        await selfHealVoiceColumns(db);
       },
     ),
   );

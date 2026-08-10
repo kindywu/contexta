@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS `user_settings` (
   `translation_display_mode` TEXT NOT NULL,
   `mastery_threshold_n` INTEGER NOT NULL,
   `auto_play_audio` INTEGER NOT NULL,
-  `tts_speed` REAL NOT NULL
+  `tts_speed` REAL NOT NULL,
+  `tts_voice_id` TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS `config_change_log` (
@@ -189,6 +190,7 @@ CREATE TABLE IF NOT EXISTS `tts_cache` (
   `article_paragraph_id` INTEGER REFERENCES `article_paragraph` (`id`) ON DELETE CASCADE,
   `word_id` INTEGER,
   `speed` REAL NOT NULL,
+  `voice_id` TEXT NOT NULL,
   `file_path` TEXT NOT NULL,
   `file_size` INTEGER NOT NULL,
   `created_at` INTEGER NOT NULL,
