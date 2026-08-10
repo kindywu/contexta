@@ -1,7 +1,7 @@
 # 多源词典导入生成器运行逻辑
 
 生成器：`impl/etl`（Rust，`cargo run --`）
-产物：`temp_docs/import_words.jsonl`（中间数据，不直接写库）
+产物：`impl/etl/tmp/import_words.jsonl`（中间数据，不直接写库；tmp 目录 gitignore）
 导入：`etl import <file> --target-db <path>`（JSONL → app 库三表）
 
 ## 1. 整体流程

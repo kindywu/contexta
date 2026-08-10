@@ -26,7 +26,7 @@ impl std::error::Error for StopLimit {}
 pub fn default_output() -> PathBuf {
     find_repo_root()
         .expect("repo root")
-        .join("impl/app/flutter/temp_docs/import_words.jsonl")
+        .join("impl/etl/tmp/import_words.jsonl")
 }
 
 pub fn run_dump(args: &DumpArgs) -> Result<()> {
