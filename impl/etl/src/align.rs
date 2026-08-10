@@ -65,11 +65,11 @@ pub fn parse_cn_blocks(translation: &str) -> Vec<(String, String)> {
     out
 }
 
-/// 从候选例句里挑出每词 ≤ max_samples 条：sense 0 优先 1 条中英对照（is_primary=true），
+/// 从候选例句里挑出每词 ≤ max_samples 条：sense 0 优先 1 条双语例句（is_primary=true），
 /// 其余义项按序各取 1 条 wn 例句（每义项至多 1 条）。返回 Vec<ExampleSentence>（sense_idx = order_index）
 pub fn allocate_examples(
     senses: &[WordSense],
-    lingua_pair: Option<(&str, &str)>, // (en, cn)，调用方已过含词过滤
+    primary_pair: Option<(&str, &str)>, // (en, cn)，调用方已过含词过滤；无则用 wn 例句
     wn_examples: &[String],
     max_samples: usize,
 ) -> Vec<ExampleSentence> {
@@ -82,9 +82,9 @@ pub fn allocate_examples(
         if out.len() >= max_samples {
             break;
         }
-        // sense 0 优先中英对照
+        // sense 0 优先双语例句
         if sense.order_index == 0 {
-            if let Some((en, cn)) = lingua_pair {
+            if let Some((en, cn)) = primary_pair {
                 out.push(ExampleSentence {
                     sense_idx: sense.order_index,
                     order_index: 1,
@@ -92,17 +92,17 @@ pub fn allocate_examples(
                     sentence_zh: cn.to_string(),
                     is_primary: true,
                 });
-                continue; // 义项 0 已有对照例句，不再取 wn
+                continue; // 义项 0 已有双语例句，不再取 wn
             }
         }
-        // 其余义项（或义项 0 无对照时）各取 1 条 wn 例句
+        // 其余义项（或义项 0 无双语时）各取 1 条 wn 例句；义项 0 的例句标记 is_primary
         if wn_idx < wn_examples.len() {
             out.push(ExampleSentence {
                 sense_idx: sense.order_index,
                 order_index: 1,
                 sentence_en: wn_examples[wn_idx].clone(),
                 sentence_zh: String::new(),
-                is_primary: false,
+                is_primary: sense.order_index == 0,
             });
             wn_idx += 1;
         }

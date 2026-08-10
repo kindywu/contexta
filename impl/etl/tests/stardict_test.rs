@@ -1,4 +1,4 @@
-use etl::{db, lingua, stardict};
+use etl::{db, stardict};
 
 fn open_ref(name: &str) -> rusqlite::Connection {
     let root = db::find_repo_root().expect("repo root");
@@ -28,11 +28,4 @@ fn stream_all_counts_millions() {
     let conn = open_ref("stardict");
     let n = stardict::stream_all(&conn, |_| Ok(())).expect("stream");
     assert!(n > 3_000_000); // 340 万词
-}
-
-#[test]
-fn lingua_load_all_has_30() {
-    let conn = open_ref("lingua");
-    let map = lingua::load_all(&conn).expect("load");
-    assert_eq!(map.len(), 30);
 }

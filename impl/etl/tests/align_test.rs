@@ -56,3 +56,19 @@ fn allocate_examples_respects_max() {
     let ex = allocate_examples(&senses, None, &wn, 2);
     assert_eq!(ex.len(), 2); // 上限 2 条
 }
+
+#[test]
+fn allocate_examples_wn_fallback_primary_on_sense0() {
+    let senses = vec![
+        WordSense { order_index: 0, part_of_speech: "n.".into(), chinese_meaning: "".into(), english_definition: "".into() },
+        WordSense { order_index: 1, part_of_speech: "n.".into(), chinese_meaning: "".into(), english_definition: "".into() },
+    ];
+    let wn = vec!["a wn one".to_string(), "a wn two".to_string()];
+    // 无双语例句时，sense 0 用 wn 例句且标记 is_primary=true
+    let ex = allocate_examples(&senses, None, &wn, 10);
+    assert_eq!(ex.len(), 2);
+    assert_eq!(ex[0].sense_idx, 0);
+    assert!(ex[0].is_primary);
+    assert_eq!(ex[1].sense_idx, 1);
+    assert!(!ex[1].is_primary);
+}
