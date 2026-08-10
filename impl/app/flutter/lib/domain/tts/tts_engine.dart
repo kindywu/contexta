@@ -1,3 +1,5 @@
+import '../model/tts_voice.dart';
+
 /// TTS 引擎接口（对照 Kotlin domain/tts/TtsEngine.kt）。
 ///
 /// 由 data 层实现。消费方（Reading/Reference/Vocabulary 页面）只依赖此接口，
@@ -11,8 +13,10 @@ abstract interface class TtsEngine {
 
   /// 朗读文本（打断当前 utterance）。返回 utterance id；失败返回 null。
   ///
-  /// [speed] 为该引擎的实际语速参数（UI 显示语速经 [TtsSpeedMapper] 映射）。
-  String? speak(String text, {double speed = 1.0});
+  /// [speed] 为该引擎的实际语速参数（UI 显示语速经 [TtsSpeedMapper] 映射）；
+  /// [voice] 为目标音色，null 时用引擎默认音色。系统 TTS 无音色语义，
+  /// 实现忽略该参数。
+  String? speak(String text, {double speed = 1.0, TtsVoice? voice});
 
   /// 停止当前 utterance。
   void stop();

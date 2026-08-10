@@ -1,4 +1,5 @@
 import 'package:contexta/di/providers.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/tts/tts_engine.dart';
 import 'package:contexta/ui/reference/reference_screen.dart';
 import 'package:flutter/material.dart';
@@ -23,7 +24,7 @@ class _TtsStub implements TtsEngine {
   String? unavailabilityReason() => null;
 
   @override
-  String? speak(String text, {double speed = 1.0}) {
+  String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
     spoken.add(text);
     return 'ctx-1';
   }

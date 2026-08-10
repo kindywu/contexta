@@ -4,6 +4,7 @@ import 'package:contexta/core/components/app_modal.dart';
 import 'package:contexta/di/providers.dart';
 import 'package:contexta/domain/llm_client.dart';
 import 'package:contexta/domain/model/article.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/model/vocab_word.dart';
 import 'package:contexta/domain/model/word_detail.dart';
@@ -85,7 +86,7 @@ class _TtsStub implements TtsEngine {
   String? unavailabilityReason() => null;
 
   @override
-  String? speak(String text, {double speed = 1.0}) {
+  String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
     if (!available) return null;
     spoken.add(text);
     _lastId = 'ctx-1';

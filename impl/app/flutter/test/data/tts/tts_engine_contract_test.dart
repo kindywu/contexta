@@ -1,3 +1,4 @@
+import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/tts/tts_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -112,7 +113,7 @@ class _FakeEngine implements TtsEngine {
   String? unavailabilityReason() => failureMessage;
 
   @override
-  String? speak(String text, {double speed = 1.0}) {
+  String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
     if (failNextSpeak) return null;
     currentId = 'ctx-${_counter++}';
     return currentId;

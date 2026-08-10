@@ -1,5 +1,6 @@
 import 'package:flutter_tts/flutter_tts.dart';
 
+import '../../domain/model/tts_voice.dart';
 import '../../domain/tts/tts_engine.dart';
 
 /// 系统 TTS 引擎（flutter_tts），对照 Kotlin TtsEngineImpl 的三重引擎回退链：
@@ -117,7 +118,7 @@ class SystemTtsEngine implements TtsEngine {
   String? unavailabilityReason() => _failureMessage;
 
   @override
-  String? speak(String text, {double speed = 1.0}) {
+  String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
     if (_ready) {
       final id = 'ctx-${_utteranceCounter++}';
       _currentUtteranceId = id;

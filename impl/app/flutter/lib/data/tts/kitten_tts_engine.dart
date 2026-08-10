@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:kittentts/kittentts_flutter.dart' as kit;
 import 'package:path_provider/path_provider.dart';
 
+import '../../domain/model/tts_voice.dart';
 import '../../domain/tts/tts_engine.dart';
 import 'kitten_tts_session.dart';
 import 'tts_cache_manager.dart';
@@ -42,7 +43,7 @@ class KittenTtsEngine implements TtsEngine {
   String? unavailabilityReason() => _failureReason;
 
   @override
-  String? speak(String text, {double speed = 1.0}) {
+  String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
     debugPrint('[KittenTTS.engine] speak: _session=$_session textLen=${text.length}');
     final session = _session;
     if (session == null) {

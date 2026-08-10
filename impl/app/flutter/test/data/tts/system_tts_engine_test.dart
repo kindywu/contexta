@@ -1,4 +1,5 @@
 import 'package:contexta/data/tts/system_tts_engine.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -146,6 +147,20 @@ void main() {
       engine.speak('hello');
 
       expect(tts.languageCalls, ['en']);
+    });
+
+    test('voice 参数被忽略，不影响朗读', () async {
+      final tts = _RecorderFlutterTts(
+        installedEngines: ['com.google.android.tts'],
+      );
+      final engine = SystemTtsEngine(tts: tts);
+      await engine.init();
+
+      final id = engine.speak('hello', voice: TtsVoice.hugo);
+
+      expect(id, 'ctx-0');
+      // 与不带 voice 时行为一致（fake 记录的朗读文本相同）
+      expect(tts.spokenTexts, ['hello']);
     });
   });
 }

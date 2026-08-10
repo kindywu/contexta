@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:contexta/domain/llm_client.dart';
 import 'package:contexta/domain/model/article.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/model/vocab_word.dart';
 import 'package:contexta/domain/model/word_detail.dart';
@@ -130,7 +131,7 @@ class _RecordingTts implements TtsEngine {
   String? unavailabilityReason() => null;
 
   @override
-  String? speak(String text, {double speed = 1.0}) {
+  String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
     if (!available) return null;
     spoken.add(text);
     speeds.add(speed);
