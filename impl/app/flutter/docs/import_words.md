@@ -1,8 +1,11 @@
-# 多源词典导入生成器运行逻辑
+# 词典导入生成器运行逻辑（wn 主源）
 
 生成器：`impl/etl`（Rust，`cargo run --`）
 产物：`impl/etl/tmp/import_words.jsonl`（中间数据，不直接写库；tmp 目录 gitignore）
 导入：`etl import <file> --target-db <path>`（JSONL → app 库三表）
+
+> 2026-08-11 重构：**词集 100% 来自 wn（英文 WordNet）**，stardict 退居中文增强。
+> 动机与数据决策见 `docs/superpowers/specs/2026-08-11-etl-wn-primary-design.md`。
 
 ## 1. 整体流程
 
@@ -10,47 +13,63 @@
 flowchart TD
     A[cli 解析子命令 dump/sample/import] --> B{ref 词典库存在?}
     B -->|否| E[报错退出]
-    B -->|是| C[dump: stardict 流式游标逐词提取]
-    C --> D[wn 按词查询 senses/例句/IPA]
+    B -->|是| C[dump: wn forms 流式游标枚举词集<br/>排除空格/数字词形、按 form 排序]
+    C --> D[每词：stardict 按词查中文增强<br/>wn 按词查 senses/例句/IPA]
     D --> F[align 对齐 → JSONL 每行一词流式写盘]
     F --> G{import 命令}
     G --> H[逐行读 JSONL → 每词事务写 word/word_sense/example_sentence<br/>已存在跳过（保守幂等）]
 ```
 
-- dump 默认不写库，仅产出 `import_words.jsonl`（默认 `temp_docs/`）
+- dump 默认不写库，仅产出 `import_words.jsonl`
 - `sample` = 精选词模式的 dump（默认 serendipity / ephemeral / resilience），快速检查
 - `import` 才写目标库（默认 `assets/contexta.db`）
+- 词在 wn 无义项 → 跳过该词（`--words`/sample 逐词告警，`--all` 只计数）；app 运行时 LLM 兜底覆盖此类词
 
 ## 2. 数据源与字段映射
 
 两个只读源库（`impl/etl/ref/`），全部只 SELECT 不修改：
 
-| 源 | 提供字段 | 目标表 |
-|---|---|---|
-| `stardict.db` | 词形 `word`、音标 `phonetic`（回退）、中文释义 `translation`（按块）、词性 `pos`（回退） | word / word_sense |
-| `wn.db` | 义项 `senses`（词性 + 英文释义 `definitions`）、例句 `synset_examples`（en）、音标 `pronunciations`（IPA，优先） | word_sense / example_sentence |
+| 源 | 角色 | 提供字段 | 目标表 |
+|---|---|---|---|
+| `wn.db` | **主源（词集 + 内容）** | 词形 `forms`（词集，oewn 英文词库）、义项 `senses`（词性 + 英文释义 `definitions`）、例句 `synset_examples`（en）、音标 `pronunciations`（IPA，优先） | word / word_sense / example_sentence |
+| `stardict.db` | 中文增强（备选） | 中文释义 `translation`（按块）、词性 `pos`（回退）、音标 `phonetic`（回退） | word_sense |
 
-## 3. 关键查询（wn.db，按词形找义项）
+**词集三过滤（硬约束）**：
+1. **lexicon 过滤**：`wn.db` 含双词库——oewn（英文 16.6 万 forms）+ omw-cmn（中文词网 6.3 万中文词形，无释义仅概念对齐）。枚举词集必须限定 oewn，否则中文词形混入
+2. **空格过滤**：含空格词形（专有名词/复合词/短语动词，6.7 万条）不进词集——阅读 UI 按单词点选，短语永远查不到
+3. **数字过滤**：含数字词形（数学/计量词网：`115`、`10th`、`.22-caliber`，336 条）不进词集
+
+实测词集规模：**89,553 个英文单词**（oewn 无空格无数字去重 forms）。
+
+## 3. 关键查询（wn.db）
 
 ```sql
--- 义项：senses → forms(entry) → entries(pos) + definitions(by synset)
+-- 词集枚举（stream_forms）：流式游标，走 form_index 排序去重
+SELECT DISTINCT form FROM forms
+WHERE lexicon_rowid = (SELECT rowid FROM lexicons WHERE id LIKE 'oewn%')
+  AND form NOT LIKE '% %' AND form NOT GLOB '*[0-9]*'
+ORDER BY form;
+
+-- 义项：senses → forms(entry) → entries(pos) + definitions(by synset)；限定英文词库
 SELECT e.pos, d.definition
 FROM senses se
 JOIN forms f ON f.entry_rowid = se.entry_rowid
 JOIN entries e ON e.rowid = se.entry_rowid
 LEFT JOIN definitions d ON d.synset_rowid = se.synset_rowid
-WHERE f.form = ? ORDER BY se.entry_rank, se.synset_rank;
+WHERE f.form = ? AND f.lexicon_rowid = (SELECT rowid FROM lexicons WHERE id LIKE 'oewn%')
+ORDER BY se.entry_rank, se.synset_rank;
 
--- 例句：synset_examples（definitions 是 NULL 的按 synset 关联）
+-- 例句：synset_examples（例句按义项集合挂载，生成器只采纳含目标词的）
 SELECT DISTINCT ex.example FROM synset_examples ex
 JOIN senses se ON se.synset_rowid = ex.synset_rowid
 JOIN forms f ON f.entry_rowid = se.entry_rowid
-WHERE f.form = ?;
+WHERE f.form = ? AND f.lexicon_rowid = (SELECT rowid FROM lexicons WHERE id LIKE 'oewn%');
 
--- 音标：IPA 裸值（phonemic=1，notation 恒空），优先于 stardict.phonetic
+-- 音标：IPA 裸值（phonemic=1，variety='en-US' 优先），优先于 stardict.phonetic
 SELECT value FROM pronunciations p
 JOIN forms f ON f.rowid = p.form_rowid
-WHERE f.form = ? AND p.phonemic = 1
+WHERE f.form = ? AND f.lexicon_rowid = (SELECT rowid FROM lexicons WHERE id LIKE 'oewn%')
+  AND p.phonemic = 1
 ORDER BY p.variety = 'en-US' DESC, p.rowid LIMIT 1;
 ```
 
@@ -66,9 +85,10 @@ flowchart LR
     H[stardict.pos] -->|回退| G
 ```
 
-- **词性**：wn `entries.pos`（`a`→`adj.`、`j`→`adj.`、`n`→`n.`、`v`→`v.`，多缩写 `vt./vi.` 取前段），回退 stardict
-- **音标**：wn IPA 优先，stardict.phonetic 回退
-- **中文释义**：stardict.translation 按块；`[医]/[化]` 标注块继承首块词性；块不足用块 0 兜底；再空填「（无中文释义）」
+- **词性**：wn `entries.pos`（`a`→`adj.`、`j`→`adj.`、`n`→`n.`、`v`→`v.`，多缩写 `vt./vi.` 取前段），回退 stardict 块词性
+- **音标**：wn IPA 优先（75.9% 词有 IPA），stardict.phonetic 回退
+- **中文释义**：stardict.translation 按块（99.1% 词首义项有中文）；`[医]/[化]` 标注块继承首块词性；块不足用块 0 兜底；再空填「（无中文释义）」
+- **wn 无义项 → 跳过**（不再用 stardict 造空义项兜底——词集纯 wn 后 stardict 不驱动词条存在性）
 
 ## 5. 例句分配
 
@@ -83,7 +103,7 @@ sense[0]（主义项）→ wn 例句（is_primary = 1）
 - `is_primary`：义项 0 为 1，其余为 0
 - `order_index`：义项内从 1 递增（义项间独立）
 
-**例句质量过滤（硬约束，必须含目标词）**：wn.synset_examples 挂在**词义集合**上，例句不保证含目标词（如 ephemeral 的例句 "a passing fancy" 含 passing 而非 ephemeral，全量统计仅 36.4% 含原形）。生成器只采纳**含目标词原形**的例句（词边界 `\b` + 忽略大小写，预编译正则），不含则该义项无例句。
+**例句质量过滤（硬约束，必须含目标词）**：wn.synset_examples 挂在**词义集合**上，例句不保证含目标词。生成器只采纳**含目标词原形**的例句（词边界 `\b` + 忽略大小写，预编译正则），不含则该义项无例句。实测 21.8% 的词有至少 1 条例句。
 
 ## 6. 中间数据形态（JSONL，每行一词）
 
@@ -103,8 +123,8 @@ sense[0]（主义项）→ wn 例句（is_primary = 1）
 | 命令 | 参数 | 说明 |
 |---|---|---|
 | `dump` | （无） | 默认 3 个精选词 → `import_words.jsonl`，不写库 |
-| `dump` | `--words "a b c"` | 指定单词（空格分隔） |
-| `dump` | `--all` | 全量（stardict 全部词条，340 万，流式） |
+| `dump` | `--words "a b c"` | 指定单词（空格分隔）；wn 无义项的词跳过并告警 |
+| `dump` | `--all` | 全量（wn 词集，≈ 8.9 万词，流式，约 13 秒） |
 | `dump` | `--all --limit N` | 全量模式取前 N 词（测试用） |
 | `dump` | `--max-samples N` | 每词例句上限（默认 10） |
 | `dump` | `--output <路径>` | 覆盖输出文件 |
@@ -123,17 +143,19 @@ sense[0]（主义项）→ wn 例句（is_primary = 1）
 
 | 数据 | 策略 |
 |---|---|
-| stardict（851MB / 340 万行） | 流式游标逐行处理即弃，不物化 |
-| wn（139MB / 23 万 forms） | 不预载，prepared statement 按词查（走 form_index） |
+| wn（139MB / 23 万 forms，含 6.3 万中文词形） | 词集流式游标逐行处理即弃；三连查 prepared statement 按词查（走 form_index） |
+| stardict（851MB / 340 万词条） | 按词 lookup（NOCASE 唯一索引），不流式、不物化 |
 | 目标库已存在词 | 整表 HashSet（当前 ~15 行） |
 | 输出 | BufWriter 逐块写盘；stderr 每 10k 词进度 |
 
-实测：`--all --limit 200000` 峰值内存 **15MB**。
+实测：全量 dump（89,553 词）耗时 **~13 秒**，输出 37MB。
 
 ## 9. 局限与取舍
 
-- **例句缺口**：wn 无例句的义项（如 serendipity / resilience）会缺失
+- **例句缺口**：wn 例句总量有限（含词过滤后 21.8% 的词有例句），无例句的义项缺失
 - **中文例句缺失**：wn 例句仅英文（`sentence_zh` 为空）；原 lingua.db 中英对照数据源已废弃
+- **中文块错位**：stardict 中文块与 wn 义项按序 1:1 映射，两词典义项序不完全一致时中文可能错位到相邻义项（如 water 的 adj. 块）
 - **音标格式**：wn 的 IPA 是含音节点标记（如 `ˌsɛ.ɹən.ˈdɪ.pɪ.ti`），与 app 现有 `ˈprɛmɪsɪz` 风格一致
 - **专业标注**：`[医]` 等块并入同义项（词性继承），不单独成义项
 - **不更新已导入词**：保守策略下，词典数据更新后需手动删除旧词再重导
+- **omw-cmn 中文词网**：wn.db 内含 6.3 万中文词形（无释义、仅概念对齐），曾评估作中文源——覆盖仅 43.7%、无词性分组、同义词冗余、无语境，不如 stardict 的词典级翻译，仅作 lexicon 过滤对象

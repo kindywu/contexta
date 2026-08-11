@@ -22,10 +22,3 @@ fn lookup_missing_returns_none() {
         .expect("lookup")
         .is_none());
 }
-
-#[test]
-fn stream_all_counts_millions() {
-    let conn = open_ref("stardict");
-    let n = stardict::stream_all(&conn, |_| Ok(())).expect("stream");
-    assert!(n > 3_000_000); // 340 万词
-}

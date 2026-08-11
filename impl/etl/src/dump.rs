@@ -8,7 +8,7 @@ use crate::align::{allocate_examples, norm_pos, parse_cn_blocks};
 use crate::cli::DumpArgs;
 use crate::db::{find_repo_root, load_existing_words, open_ro};
 use crate::model::{WordEntry, WordSense};
-use crate::stardict::{lookup_word, stream_all, StardictRow};
+use crate::stardict::{lookup_word, StardictRow};
 use crate::wn;
 
 pub const SAMPLE_WORDS: [&str; 3] = ["serendipity", "ephemeral", "resilience"];
@@ -57,8 +57,10 @@ pub fn run_dump(args: &DumpArgs) -> Result<()> {
     let mut total = 0usize;
     let mut skipped = 0usize;
     let mut written = 0usize;
+    let mut no_sense = 0usize;
 
-    let mut process = |row: &StardictRow| -> Result<()> {
+    // 词集驱动（wn 主源）：每词回调；--all 流式枚举 wn forms，--words/sample 逐个查 wn
+    let mut process = |word: &str| -> Result<bool> {
         total += 1;
         if args.all {
             if let Some(l) = args.limit {
@@ -67,20 +69,25 @@ pub fn run_dump(args: &DumpArgs) -> Result<()> {
                 }
             }
         }
-        if existing.contains(&row.word.to_lowercase()) {
+        if existing.contains(&word.to_lowercase()) {
             skipped += 1;
-            return Ok(());
+            return Ok(false);
         }
-        if let Some(entry) = build_entry(row, &wn_conn, args.max_samples)? {
-            let line = serde_json::to_string(&entry)?;
-            w.write_all(line.as_bytes())?;
-            w.write_all(b"\n")?;
-            written += 1;
+        // stardict 仅作中文增强（查不到 → None，中文走「（无中文释义）」占位）
+        let sd = lookup_word(&stardict, word)?;
+        match build_entry(word, sd.as_ref(), &wn_conn, args.max_samples)? {
+            Some(entry) => {
+                let line = serde_json::to_string(&entry)?;
+                w.write_all(line.as_bytes())?;
+                w.write_all(b"\n")?;
+                written += 1;
+                Ok(true)
+            }
+            None => {
+                no_sense += 1;
+                Ok(false)
+            }
         }
-        if total % 10_000 == 0 {
-            eprintln!("  进度: {total} 词");
-        }
-        Ok(())
     };
 
     match args.words.clone() {
@@ -89,18 +96,13 @@ pub fn run_dump(args: &DumpArgs) -> Result<()> {
                 return Err(anyhow!("--all 与 --words 不能同时使用"));
             }
             for word in &words {
-                let row = match lookup_word(&stardict, word)? {
-                    Some(r) => r,
-                    None => {
-                        eprintln!("⚠️ stardict 无此词，跳过: {word}");
-                        continue;
-                    }
-                };
-                process(&row)?;
+                if !process(&word)? {
+                    eprintln!("⚠️ wn 无义项，跳过: {word}");
+                }
             }
         }
         None if args.all => {
-            match stream_all(&stardict, &mut process) {
+            match wn::stream_forms(&wn_conn, &mut process) {
                 Ok(_) => {}
                 Err(e) if e.downcast_ref::<StopLimit>().is_some() => {} // 正常截断
                 Err(e) => return Err(e),
@@ -109,14 +111,9 @@ pub fn run_dump(args: &DumpArgs) -> Result<()> {
         None => {
             // dump 无 --words 时默认与 sample 相同的精选词
             for word in SAMPLE_WORDS {
-                let row = match lookup_word(&stardict, word)? {
-                    Some(r) => r,
-                    None => {
-                        eprintln!("⚠️ stardict 无此词，跳过: {word}");
-                        continue;
-                    }
-                };
-                process(&row)?;
+                if !process(word)? {
+                    eprintln!("⚠️ wn 无义项，跳过: {word}");
+                }
             }
         }
     }
@@ -124,46 +121,48 @@ pub fn run_dump(args: &DumpArgs) -> Result<()> {
     w.flush()?;
     drop(w);
     println!("✅ 已生成: {}", output.display());
-    println!("   共 {} 词，跳过已存在 {}，写入 {}", total, skipped, written);
+    println!(
+        "   共 {} 词，跳过已存在 {}，wn 无义项 {}，写入 {}",
+        total, skipped, no_sense, written
+    );
     preview(&output)?;
     Ok(())
 }
 
+/// 词条构建：wn 是义项事实主，stardict 仅补中文/词性/音标。
+/// word 在 wn 无义项 → None（跳过，不造空义项；app 运行时 LLM 兜底）
 fn build_entry(
-    row: &StardictRow,
+    word: &str,
+    sd: Option<&StardictRow>,
     wn_conn: &Connection,
     max_samples: usize,
 ) -> Result<Option<WordEntry>> {
-    // 1. stardict：中文释义块（词性继承已内建）
-    let cn_blocks = parse_cn_blocks(&row.translation);
-    let sd_primary_pos = cn_blocks
-        .first()
-        .map(|(p, _)| p.clone())
-        .unwrap_or_default();
-
-    // 2. wn：senses + 例句 + IPA（例句含词过滤在 wn 层完成）
-    let mut wn_senses = wn::senses(wn_conn, &row.word)?;
+    // 1. wn：senses + 例句 + IPA（例句含词过滤在 wn 层完成）——词集 100% 来自 wn
+    let wn_senses = wn::senses(wn_conn, word)?;
     if wn_senses.is_empty() {
-        // 兜底：无 wn sense 时用 stardict pos 造 1 条空释义义项
-        wn_senses.push(wn::WnSense {
-            pos: if row.pos.is_empty() {
-                sd_primary_pos.clone()
-            } else {
-                row.pos.clone()
-            },
-            definition: String::new(),
-        });
+        return Ok(None);
     }
-    let wn_examples = wn::examples(wn_conn, &row.word)?;
-    let phonetic = wn::ipa(wn_conn, &row.word)?.or_else(|| {
-        if row.phonetic.is_empty() {
+    let wn_examples = wn::examples(wn_conn, word)?;
+    let phonetic = wn::ipa(wn_conn, word)?.or_else(|| {
+        let p = sd.map(|r| r.phonetic.as_str()).unwrap_or("");
+        if p.is_empty() {
             None
         } else {
-            Some(row.phonetic.clone())
+            Some(p.to_string())
         }
     });
 
-    // 3. 对齐：word_sense（bash 语义：pos_n = wn pos || 块词性；cn 按块 1:1 → 块 0 兜底 → 占位）
+    // 2. stardict：中文释义块（词性继承已内建）；无 → 全空，走「（无中文释义）」占位
+    let (cn_blocks, sd_primary_pos) = match sd {
+        Some(row) => {
+            let blocks = parse_cn_blocks(&row.translation);
+            let primary = blocks.first().map(|(p, _)| p.clone()).unwrap_or_default();
+            (blocks, primary)
+        }
+        None => (Vec::new(), String::new()),
+    };
+
+    // 3. 对齐：word_sense（pos_n = wn pos || 块词性；cn 按块 1:1 → 块 0 兜底 → 占位）
     let mut senses: Vec<WordSense> = Vec::new();
     for (i, s) in wn_senses.iter().enumerate() {
         let mut pos_n = if s.pos.is_empty() {
@@ -195,16 +194,12 @@ fn build_entry(
         });
     }
 
-    if senses.is_empty() {
-        return Ok(None);
-    }
-
     // 4. 例句分配：sense 0 优先（wn 无双语例句源，全走 wn 含词例句，sense 0 标 is_primary）
     let examples = allocate_examples(&senses, None, &wn_examples, max_samples);
 
     Ok(Some(WordEntry {
-        spelling_normalized: row.word.to_lowercase(),
-        spelling_display: row.word.clone(),
+        spelling_normalized: word.to_lowercase(),
+        spelling_display: word.to_string(),
         phonetic_ipa: phonetic,
         senses,
         examples,
