@@ -13,6 +13,7 @@ import 'package:contexta/data/repository/settings_repository_impl.dart';
 import 'package:contexta/data/repository/stats_repository_impl.dart';
 import 'package:contexta/data/repository/vocabulary_repository_impl.dart';
 import 'package:contexta/data/repository/word_repository_impl.dart';
+import 'package:contexta/domain/inflection/inflection_resolver.dart';
 import 'package:contexta/domain/model/article.dart';
 import 'package:contexta/domain/model/article_batch.dart';
 import 'package:contexta/domain/model/vocab_word.dart';
@@ -317,6 +318,85 @@ void main() {
       final map = await wordRepo.getWordDetails([saved.wordId, 999]);
       expect(map.length, 1);
       expect(map[saved.wordId]!.phoneticIpa, '/kæt/');
+    });
+  });
+
+  group('WordRepository 词形解析（inflection resolution）', () {
+    test('homes 精确 miss 时解析命中 home，不触发 LLM', () async {
+      // 预置 home 词条（saveLlmResult 返回 WordDetail）
+      await wordRepo.saveLlmResult(
+        'home', '/hoʊm/', const [
+          WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
+              chineseMeaning: '家', englishDefinition: 'a place where you live',
+              examples: const []),
+        ],
+      );
+      var llmCalled = 0;
+      final detail = await wordRepo.lookupWord('homes', (_) async {
+        llmCalled++;
+        return null;
+      });
+      expect(llmCalled, 0);
+      expect(detail, isNotNull);
+      expect(detail!.spellingDisplay, 'home');
+      expect(detail.inflection, isNotNull);
+      expect(detail.inflection!.lemma, 'home');
+      expect(detail.inflection!.type, InflectionType.sForm);
+      expect(detail.inflection!.note, 'homes 是 home 的复数形式'); // 仅名词义项
+    });
+
+    test('plays 解析命中 play，义项含名词+动词时标注并列', () async {
+      await wordRepo.saveLlmResult(
+        'play', '/pleɪ/', const [
+          WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
+              chineseMeaning: '戏剧', englishDefinition: 'a stage performance',
+              examples: const []),
+          WordSense(id: 0, orderIndex: 2, partOfSpeech: 'v.',
+              chineseMeaning: '玩耍', englishDefinition: 'to do an activity',
+              examples: const []),
+        ],
+      );
+      final detail = await wordRepo.lookupWord('plays', (_) async => null);
+      expect(detail, isNotNull);
+      expect(detail!.inflection!.note, 'plays 是 play 的复数形式 / 第三人称单数');
+    });
+
+    test('解析命中结果进 LRU 缓存（key=原词，第二次零查询）', () async {
+      await wordRepo.saveLlmResult('box', null, const [
+        WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
+            chineseMeaning: '盒子', englishDefinition: 'a container',
+            examples: const []),
+      ]);
+      final first = await wordRepo.lookupWord('boxes', (_) async => null);
+      expect(first, isNotNull);
+      expect(first!.inflection, isNotNull);
+      // 第二次：LLM 不触发即可（缓存命中无法直接观测，间接验证）
+      final second = await wordRepo.lookupWord('boxes', (_) async {
+        fail('第二次查询不应走到 LLM');
+      });
+      expect(second!.wordId, first.wordId);
+    });
+
+    test('全部候选 miss → 正常走 LLM（含标注为 null）', () async {
+      var llmCalled = 0;
+      final detail = await wordRepo.lookupWord('xyzzy', (_) async {
+        llmCalled++;
+        return null;
+      });
+      expect(llmCalled, 1);
+      expect(detail, isNull); // LLM 失败 → null（现有语义）
+    });
+
+    test('findLocal 同样解析（手动加词入口行为一致）', () async {
+      await wordRepo.saveLlmResult('wife', null, const [
+        WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
+            chineseMeaning: '妻子', englishDefinition: 'a married woman',
+            examples: const []),
+      ]);
+      final detail = await wordRepo.findLocal('wives');
+      expect(detail, isNotNull);
+      expect(detail!.spellingDisplay, 'wife');
+      expect(detail.inflection, isNotNull);
     });
   });
 

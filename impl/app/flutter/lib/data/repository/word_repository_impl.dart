@@ -4,14 +4,16 @@ import 'package:flutter/foundation.dart';
 
 import '../../data/local/database.dart';
 import '../../data/local/daos/word_daos.dart';
+import '../../domain/inflection/inflection_resolver.dart';
 import '../../domain/model/word_detail.dart';
 import '../../domain/repository/word_repository.dart';
 
 /// 词库仓储实现（对照 Kotlin WordRepositoryImpl.kt）。
 ///
-/// 三层查词：
+/// 四层查词：
 /// 1. LRU 缓存（LinkedHashMap 手动实现，上限 50，访问序淘汰最旧）
 /// 2. 本地 DB（word + word_sense + example_sentence 组装 WordDetail）
+/// 2.5 词形解析（精确 miss 后：规则引擎候选逐一查库，命中返回词条 + POS 标注）
 /// 3. [llmFallback] 外部提供的 LLM 调用 → saveLlmResult 落库 → 缓存
 ///
 /// 并发：lookupWord 用信号量限制同时进行的查词数（permits = 3）。
@@ -20,13 +22,15 @@ class WordRepositoryImpl implements WordRepository {
     this._wordDao,
     this._wordSenseDao,
     this._exampleSentenceDao,
-    this._vocabularyEntryDao,
-  );
+    this._vocabularyEntryDao, {
+    InflectionResolver inflectionResolver = const RuleInflectionResolver(),
+  }) : _inflectionResolver = inflectionResolver;
 
   final WordDao _wordDao;
   final WordSenseDao _wordSenseDao;
   final ExampleSentenceDao _exampleSentenceDao;
   final VocabularyEntryDao _vocabularyEntryDao;
+  final InflectionResolver _inflectionResolver;
 
   /// LRU 缓存：按访问序淘汰最旧条目，上限 50。
   final _lruCache = _LruCache<String, WordDetail>(50);
@@ -56,7 +60,26 @@ class WordRepositoryImpl implements WordRepository {
         _lruCache[normalized] = detail;
         return detail;
       }
-      debugPrint('[WordRepo] DB MISS "$normalized" → LLM fallback');
+      debugPrint('[WordRepo] DB MISS "$normalized" → inflection → LLM fallback');
+
+      // 2.5 词形解析：精确 miss 后，规则引擎候选逐一查库
+      final resolved = await _resolveInflection(normalized);
+      if (resolved != null) {
+        final (wordRow, candidate) = resolved;
+        debugPrint('[WordRepo] INFLECTION HIT "$normalized" → ${candidate.lemma} '
+            '(${candidate.type.name}) id=${wordRow.id}');
+        final detail = await _buildWordDetail(wordRow);
+        final withInflection = detail.copyWith(
+          inflection: InflectionResult(
+            lemma: candidate.lemma,
+            type: candidate.type,
+            note: _inflectionNote(
+                normalized, candidate.lemma, candidate.type, detail),
+          ),
+        );
+        _lruCache[normalized] = withInflection;
+        return withInflection;
+      }
 
       // 3. LLM fallback（外部提供调用）；成功后落库回填
       final detail = await llmFallback(spelling);
@@ -76,7 +99,24 @@ class WordRepositoryImpl implements WordRepository {
     final cached = _lruCache[normalized];
     if (cached != null) return cached;
     final existing = await _wordDao.getByNormalized(normalized);
-    if (existing == null) return null;
+    if (existing == null) {
+      final resolved = await _resolveInflection(normalized);
+      if (resolved != null) {
+        final (wordRow, candidate) = resolved;
+        final detail = await _buildWordDetail(wordRow);
+        final withInflection = detail.copyWith(
+          inflection: InflectionResult(
+            lemma: candidate.lemma,
+            type: candidate.type,
+            note: _inflectionNote(
+                normalized, candidate.lemma, candidate.type, detail),
+          ),
+        );
+        _lruCache[normalized] = withInflection;
+        return withInflection;
+      }
+      return null;
+    }
     final detail = await _buildWordDetail(existing);
     _lruCache[normalized] = detail;
     return detail;
@@ -164,6 +204,38 @@ class WordRepositoryImpl implements WordRepository {
   Future<void> invalidateCache(String spelling) {
     _lruCache.remove(WordRepository.normalize(spelling));
     return Future.value();
+  }
+
+  /// 词形解析：候选按序查库，返回第一个命中的 (词条行, 候选)。
+  Future<(WordRow, InflectionCandidate)?> _resolveInflection(
+      String normalized) async {
+    for (final candidate in _inflectionResolver.resolveCandidates(normalized)) {
+      final row = await _wordDao.getByNormalized(candidate.lemma);
+      if (row != null) return (row, candidate);
+    }
+    return null;
+  }
+
+  /// 标注文案：sForm 按词元义项词性区分复数 / 第三人称单数。
+  String _inflectionNote(
+      String source, String lemma, InflectionType type, WordDetail detail) {
+    switch (type) {
+      case InflectionType.sForm:
+        final pos = detail.allSenses.map((s) => s.partOfSpeech).toSet();
+        final hasNoun = pos.any((p) => p.contains('n'));
+        final hasVerb = pos.any((p) => p.contains('v'));
+        if (hasNoun && hasVerb) return '$source 是 $lemma 的复数形式 / 第三人称单数';
+        if (hasVerb) return '$source 是 $lemma 的第三人称单数形式';
+        return '$source 是 $lemma 的复数形式';
+      case InflectionType.pastTense:
+        return '$source 是 $lemma 的过去式/过去分词';
+      case InflectionType.presentParticiple:
+        return '$source 是 $lemma 的现在分词';
+      case InflectionType.comparative:
+        return '$source 是 $lemma 的比较级';
+      case InflectionType.superlative:
+        return '$source 是 $lemma 的最高级';
+    }
   }
 
   /// 组装完整 WordDetail（senses + examples + 生词本状态）。
