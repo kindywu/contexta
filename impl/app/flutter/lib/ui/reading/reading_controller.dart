@@ -143,6 +143,7 @@ class WordSheetData {
     this.isInVocabulary = false,
     this.wordId,
     this.vocabularyEntryId,
+    this.inflectionNote, // ← 新增
   });
 
   final String word;
@@ -152,6 +153,9 @@ class WordSheetData {
   final bool isInVocabulary;
   final int? wordId;
   final int? vocabularyEntryId;
+
+  /// 词形解析标注（"homes 是 home 的复数形式"）。
+  final String? inflectionNote;
 
   static const Object _unset = Object();
 
@@ -163,6 +167,7 @@ class WordSheetData {
     bool? isInVocabulary,
     Object? wordId = _unset,
     Object? vocabularyEntryId = _unset,
+    String? inflectionNote,
   }) =>
       WordSheetData(
         word: word,
@@ -174,6 +179,7 @@ class WordSheetData {
         vocabularyEntryId: identical(vocabularyEntryId, _unset)
             ? this.vocabularyEntryId
             : vocabularyEntryId as int?,
+        inflectionNote: inflectionNote ?? this.inflectionNote,
       );
 }
 
@@ -655,13 +661,15 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     if (detail != null) {
       state = state.copyWith(
         wordSheetData: WordSheetData(
-          word: detail.spellingDisplay,
+          // 解析命中显示原词（homes），精确命中显示词条 spellingDisplay（保持现状）
+          word: detail.inflection == null ? detail.spellingDisplay : normalized,
           isLoading: false,
           phonetic: detail.phoneticIpa,
           senses: _groupSensesByPartOfSpeech(detail.allSenses),
           isInVocabulary: detail.isInVocabulary,
           wordId: detail.wordId,
           vocabularyEntryId: detail.vocabularyEntryId,
+          inflectionNote: detail.inflection?.note,
         ),
         isWordSheetVisible: true,
       );

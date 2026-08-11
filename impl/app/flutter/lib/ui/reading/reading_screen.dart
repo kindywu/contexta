@@ -590,6 +590,16 @@ class _WordSheetBody extends StatelessWidget {
               data!.phonetic!,
               style: AppType.phonetic.copyWith(fontSize: 13),
             ),
+          // 词形解析标注：homes 是 home 的复数形式
+          if (data!.inflectionNote != null && !data!.isLoading)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                data!.inflectionNote!,
+                style: AppType.textTheme.bodySmall
+                    ?.copyWith(color: AppColors.muted),
+              ),
+            ),
           if (data!.isLoading) ...[
             const SizedBox(height: 20),
             Row(
