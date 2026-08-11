@@ -47,10 +47,14 @@ class RuleInflectionResolver implements InflectionResolver {
   ///   cities→city 与 series（剥 ies/es 后 "ser" 与 "cit" 结构相同），只能显式例外；
   /// - "her"/"per" 会经 comparative 的 er 分支误生成 h/he/p（元素符号，均在库）；
   /// - "always" 以 s 结尾的非复数实词，会误生成 alway；
-  /// - "carmen"/"germen" 会经 -men→-man 分支误生成真词 carman/german
-  ///   （均在库），非复合词残余风险的最小黑名单（罕见词，精确 miss 走 LLM）。
+  /// - -men→-man 分支的孪生真词黑名单（词库全量扫描核对）：以下真实词形
+  ///   不在词库（点选进 resolver），其 -man 孪生是库内不同真词，查库滤除失效：
+  ///   "germen"→german、 "somen"（日语借词素面）→soman、 "humen"（虎门）
+  ///   →human、 "yumen"（玉门）→yuman；"carmen"→carman 防御性保留
+  ///   （carman 当前不在库）。罕见词，精确 miss 走 LLM 兜底。
   static const _sExceptionWords = {
-    'news', 'series', 'species', 'her', 'per', 'always', 'carmen', 'germen',
+    'news', 'series', 'species', 'her', 'per', 'always',
+    'carmen', 'germen', 'somen', 'humen', 'yumen',
   };
   static const _minLen = 3;
 
@@ -175,9 +179,10 @@ class RuleInflectionResolver implements InflectionResolver {
         // -man 复合词：airmen→airman、women→woman、men→man。
         // 复合词守卫（评审方案 B）：词长 ≥5 且词干 ≥2 字符——挡 omen→oman
         // （Oman 国名在库）、amen 等 4 字词与单字符词干。残余噪声候选
-        // （speciman/luman/abdoman/hyman/regiman/numan/noman/bituman）均不在
-        // 词库，由仓储层查库滤除；carmen→carman、germen→german 是真词误判，
-        // 已在 _sExceptionWords 早退。men/women 特例在守卫外直接生成。
+        // （speciman/luman/abdoman/hyman/regiman/numan/noman/bituman）不在词库，
+        // 由仓储层查库滤除；库内孪生真词误判（german/soman/yuman/human）
+        // 经 _sExceptionWords 早退拦截（carmen/germen/somen/humen/yumen，
+        // 全量核对见 resolver 头部注释）。men/women 特例在守卫外直接生成。
         if (spelling == 'men' || spelling == 'women') {
           add('${spelling.substring(0, spelling.length - 3)}man', InflectionType.sForm);
         } else if (spelling.length >= 5) {

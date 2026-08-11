@@ -134,9 +134,12 @@ void main() {
 
   /// -men→-man 守卫：非复合词不生成 man 候选。
   /// omen/amen 4 字词被词长守卫拦下（omen→oman 的 Oman 在库）；
-  /// carmen/germen 会误生成真词 carman/german（均在库），已在例外词表入口早退。
+  /// 孪生真词黑名单（词库全量核对，见 resolver 头部注释）：germen→german、
+  /// somen→soman、humen→human、yumen→yuman 的孪生均在库，carmen→carman
+  /// 防御性保留——已在例外词表入口早退，无任何候选。
   /// 注：specimen/abdomen/lumen 等残余词干生成的 speciman/abdoman/luman 噪声
-  /// 候选不在词库，由仓储层查库滤除（守卫方案 B 的既定机制，见 resolver 注释）。
+  /// 候选不在词库，由仓储层查库滤除（守卫方案 B 的既定机制，见 resolver 注释）；
+  /// numen/omen/amen/hymen 等在词库，精确命中先行，到不了解析器。
   group('-men→-man 守卫', () {
     test('omen 不生成 oman（词长守卫）', () {
       final candidates = resolver.resolveCandidates('omen');
@@ -151,8 +154,17 @@ void main() {
     test('carmen 无候选（早退）', () {
       expect(resolver.resolveCandidates('carmen'), isEmpty);
     });
-    test('germen 无候选（早退）', () {
+    test('germen 无候选（早退，孪生 german 在库）', () {
       expect(resolver.resolveCandidates('germen'), isEmpty);
+    });
+    test('somen 无候选（早退，日语借词，孪生 soman 在库）', () {
+      expect(resolver.resolveCandidates('somen'), isEmpty);
+    });
+    test('humen 无候选（早退，Humen 虎门，孪生 human 在库）', () {
+      expect(resolver.resolveCandidates('humen'), isEmpty);
+    });
+    test('yumen 无候选（早退，Yumen 玉门，孪生 yuman 在库）', () {
+      expect(resolver.resolveCandidates('yumen'), isEmpty);
     });
   });
 }
