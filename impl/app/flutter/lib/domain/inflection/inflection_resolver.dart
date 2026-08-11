@@ -1,11 +1,16 @@
 /// 运行时规则型词形解析器（纯函数，无 IO、无第三方依赖）。
 ///
 /// 输入文章点选的词形（如 "homes"），生成候选词元（如 "home"）及其变化类型。
-/// 只处理规则变化：不规则词（children、went、better）在词库中是独立词条，
-/// 由精确匹配先行命中，到不了解析器。
+/// 规则覆盖：复数/三单（-s/-es/-ies/-ves、希腊 -is→-es、拉丁 -ex/-ix/-x、
+/// -men→-man 复合词）、过去式（-ed/-ied、-ck 双写）、现在分词（-ing）、
+/// 比较级/最高级（-er/-ier/-est/-iest）。不规则动词（went、ate）在词库中
+/// 是独立词条，由精确匹配先行命中，到不了解析器；高频拉丁/外来复数
+/// （children→child、data→datum 等）由 [_exceptions] 硬编码表兜底
+/// （由正确性实测驱动补充，见 test/domain/inflection/accuracy_probe_test.dart）。
 ///
 /// 误判防护：候选生成保守（词尾例外表 + 长度下限），实际"是否接受"由
 /// 仓储层的"候选必须存在于 DB"把关（见 WordRepositoryImpl._resolveInflection）。
+/// 生成的候选可能含噪声（如 changes→changx），无害——查库存在性会过滤。
 library;
 
 enum InflectionType { sForm, pastTense, presentParticiple, comparative, superlative }
@@ -45,14 +50,81 @@ class RuleInflectionResolver implements InflectionResolver {
   static const _sExceptionWords = {'news', 'series', 'species', 'her', 'per', 'always'};
   static const _minLen = 3;
 
+  /// 例外表：规则无法还原的高频拉丁/外来复数（实测驱动，纯数据无依赖）。
+  /// stardict exchange 语料实测（accuracy_probe_test）还原率 99.4%，
+  /// 残余 miss 均为不规则动词/生僻外来复数，规则与例外表到此定稿。
+  static const Map<String, String> _exceptions = {
+    // 核心不规则复数（词库中多为独立词条，此处保证无网络兜底）
+    'children': 'child',
+    'brethren': 'brother',
+    'oxen': 'ox',
+    'geese': 'goose',
+    'mice': 'mouse',
+    'feet': 'foot',
+    'teeth': 'tooth',
+    'cherubim': 'cherub',
+    // 拉丁 2 变格 -um→-a
+    'data': 'datum',
+    'phenomena': 'phenomenon',
+    'criteria': 'criterion',
+    'media': 'medium',
+    'bacteria': 'bacterium',
+    'strata': 'stratum',
+    'curricula': 'curriculum',
+    'memoranda': 'memorandum',
+    'genera': 'genus',
+    'spectra': 'spectrum',
+    'aquaria': 'aquarium',
+    'compendia': 'compendium',
+    'crematoria': 'crematorium',
+    'charismata': 'charisma',
+    'schemata': 'schema',
+    // 拉丁 1 变格 -a→-ae
+    'formulae': 'formula',
+    'vertebrae': 'vertebra',
+    'larvae': 'larva',
+    'algae': 'alga',
+    'alumnae': 'alumna',
+    'amoebae': 'amoeba',
+    'minutiae': 'minutia',
+    'abscissae': 'abscissa',
+    'cannulae': 'cannula',
+    // 拉丁/意大利 -us/-o→-i
+    'cacti': 'cactus',
+    'nuclei': 'nucleus',
+    'radii': 'radius',
+    'stimuli': 'stimulus',
+    'fungi': 'fungus',
+    'syllabi': 'syllabus',
+    'cocci': 'coccus',
+    // 法语 -eau→-eaux
+    'chapeaux': 'chapeau',
+    'bureaux': 'bureau',
+    'bandeaux': 'bandeau',
+    'cadeaux': 'cadeau',
+    'bateaux': 'bateau',
+    'tableaux': 'tableau',
+    // 其他
+    'staves': 'staff',
+    'clitorides': 'clitoris',
+  };
+
   @override
   List<InflectionCandidate> resolveCandidates(String spelling) {
+    // 入口小写：生产链路 normalize 已小写（WordRepository.normalize），此处兜底
+    // 大写词形（句首词 Homes→home、语料中的 Amalgamated→amalgamate）
+    spelling = spelling.toLowerCase();
     // 例外词本身是词元，任何段都不解析——her/per 的误判路径在 comparative
     // 的 er 分支（her→h/he、per→p），必须在入口早退而非仅拦 sForm 段
     if (_sExceptionWords.contains(spelling)) {
       return const [];
     }
     final out = <InflectionCandidate>[];
+    // 例外表放最前：data→datum 等规则无法还原，直接给出词元（sForm 语义）
+    final exceptionLemma = _exceptions[spelling];
+    if (exceptionLemma != null) {
+      out.add(InflectionCandidate(exceptionLemma, InflectionType.sForm));
+    }
     void add(String lemma, InflectionType type) {
       // 长度下限作用于输入拼写（保护 "a" 等单字符），而非词元——go→goes、
       // go→going 的词元只有 2 个字符，同样合法
@@ -66,17 +138,38 @@ class RuleInflectionResolver implements InflectionResolver {
       if (spelling.endsWith('ies')) {
         add('${spelling.substring(0, spelling.length - 3)}y', InflectionType.sForm);
         add(spelling.substring(0, spelling.length - 1), InflectionType.sForm); // movies→movie
+        // -nies→-ney：monies→money、euromonies→euromoney（先行的 y/去 s 候选优先命中）
+        add('${spelling.substring(0, spelling.length - 3)}ey', InflectionType.sForm);
       } else if (spelling.endsWith('ves')) {
         add('${spelling.substring(0, spelling.length - 3)}f', InflectionType.sForm); // halves→half
         add('${spelling.substring(0, spelling.length - 3)}fe', InflectionType.sForm); // wives→wife
         add(spelling.substring(0, spelling.length - 1), InflectionType.sForm);
+        // -ves→-vis：pelves→pelvis（拉丁 -is 复数，同 es 段 base+is）
+        add('${spelling.substring(0, spelling.length - 2)}is', InflectionType.sForm);
       } else if (spelling.endsWith('es')) {
-        add(spelling.substring(0, spelling.length - 2), InflectionType.sForm); // boxes→box
-        add('${spelling.substring(0, spelling.length - 2)}e', InflectionType.sForm); // caches→cache
+        final base = spelling.substring(0, spelling.length - 2);
+        add(base, InflectionType.sForm); // boxes→box
+        add('${base}e', InflectionType.sForm); // caches→cache
         // 双写还原：quizzes→quizz→quiz
-        add(_undouble(spelling.substring(0, spelling.length - 2)), InflectionType.sForm);
+        add(_undouble(base), InflectionType.sForm);
+        // 希腊 -is→-es：analyses→analysis、crises→crisis、bases→basis
+        // （噪声候选如 boxis 被查库过滤；bases 的 base 候选先行命中）
+        add('${base}is', InflectionType.sForm);
+        // 拉丁 -ex/-ix→-ices：indices→index、matrices→matrix、appendices→appendix
+        if (base.endsWith('ic')) {
+          final stem = base.substring(0, base.length - 2);
+          add('${stem}ex', InflectionType.sForm);
+          add('${stem}ix', InflectionType.sForm);
+        }
+        // 拉丁 -nx→-nges：larynges→larynx、pharynges→pharynx（g→x 替换）
+        if (base.endsWith('ng')) {
+          add('${base.substring(0, base.length - 1)}x', InflectionType.sForm);
+        }
       } else if (spelling.endsWith('s')) {
         add(spelling.substring(0, spelling.length - 1), InflectionType.sForm);
+      } else if (spelling.endsWith('men')) {
+        // -man 复合词：airmen→airman、women→woman、men→man
+        add('${spelling.substring(0, spelling.length - 3)}man', InflectionType.sForm);
       }
     }
 
@@ -86,11 +179,17 @@ class RuleInflectionResolver implements InflectionResolver {
       // studied→studie 非词，study 兜住（ied→y 兜底）
       add(spelling.substring(0, spelling.length - 1), InflectionType.pastTense); // died→die
       add('${spelling.substring(0, spelling.length - 3)}y', InflectionType.pastTense); // studied→study
+      // 直接去 ed：alibied→alibi、skied→ski（放在最后，不抢 -ie/-y 词族）
+      add(spelling.substring(0, spelling.length - 2), InflectionType.pastTense);
     } else if (spelling.endsWith('ed')) {
       final base = spelling.substring(0, spelling.length - 2);
       add(base, InflectionType.pastTense); // played→play
       add(_undouble(base), InflectionType.pastTense); // stopped→stop
       add('${base}e', InflectionType.pastTense); // iced→ice
+      // -ck→-c：panicked→panic、arcked→arc（plucked 的 pluck 先行命中）
+      if (base.endsWith('ck')) {
+        add(base.substring(0, base.length - 1), InflectionType.pastTense);
+      }
     }
 
     // ── presentParticiple ──
@@ -105,6 +204,10 @@ class RuleInflectionResolver implements InflectionResolver {
       add(_undouble(base), InflectionType.presentParticiple); // running→run
       add('${base}e', InflectionType.presentParticiple); // making→make
       add('${base}y', InflectionType.presentParticiple); // crying→cry
+      // -ck→-c：panicking→panic、arcking→arc
+      if (base.endsWith('ck')) {
+        add(base.substring(0, base.length - 1), InflectionType.presentParticiple);
+      }
     }
 
     // ── comparative / superlative ──

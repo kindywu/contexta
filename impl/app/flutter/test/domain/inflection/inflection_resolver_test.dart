@@ -44,6 +44,65 @@ void main() {
     ('biggest', 'big', InflectionType.superlative),
     ('happiest', 'happy', InflectionType.superlative),
     ('nicest', 'nice', InflectionType.superlative), // +e 还原
+    // 实测驱动新增：希腊 -is→-es 复数（es 段 base+is 候选）
+    ('analyses', 'analysis', InflectionType.sForm),
+    ('crises', 'crisis', InflectionType.sForm),
+    ('theses', 'thesis', InflectionType.sForm),
+    ('hypotheses', 'hypothesis', InflectionType.sForm),
+    ('bases', 'basis', InflectionType.sForm), // base 候选仍在，basis 兜底
+    ('axes', 'axis', InflectionType.sForm),
+    ('synopses', 'synopsis', InflectionType.sForm),
+    ('praxes', 'praxis', InflectionType.sForm),
+    // 拉丁 -ex/-ix→-ices（ices 段 stem+ex/ix 候选）
+    ('indices', 'index', InflectionType.sForm),
+    ('matrices', 'matrix', InflectionType.sForm),
+    ('vertices', 'vertex', InflectionType.sForm),
+    ('appendices', 'appendix', InflectionType.sForm),
+    ('apices', 'apex', InflectionType.sForm),
+    ('codices', 'codex', InflectionType.sForm),
+    ('vortices', 'vortex', InflectionType.sForm),
+    ('latices', 'latex', InflectionType.sForm),
+    ('simplices', 'simplex', InflectionType.sForm),
+    // 拉丁 -nx→-nges（ng 段 g→x 候选）
+    ('larynges', 'larynx', InflectionType.sForm),
+    ('pharynges', 'pharynx', InflectionType.sForm),
+    ('salpinges', 'salpinx', InflectionType.sForm),
+    // -ves→-vis
+    ('pelves', 'pelvis', InflectionType.sForm),
+    // -men→-man 复合词
+    ('airmen', 'airman', InflectionType.sForm),
+    ('women', 'woman', InflectionType.sForm),
+    ('men', 'man', InflectionType.sForm),
+    ('gentlemen', 'gentleman', InflectionType.sForm),
+    // -nies→-ney
+    ('monies', 'money', InflectionType.sForm),
+    // ied 直接去 ed
+    ('alibied', 'alibi', InflectionType.pastTense),
+    ('skied', 'ski', InflectionType.pastTense),
+    // -ck→-c 还原
+    ('panicked', 'panic', InflectionType.pastTense),
+    ('arcked', 'arc', InflectionType.pastTense),
+    ('panicking', 'panic', InflectionType.presentParticiple),
+    // 入口小写（句首词 / 大写词形）
+    ('Homes', 'home', InflectionType.sForm),
+    ('Amalgamated', 'amalgamate', InflectionType.pastTense),
+    ('Running', 'run', InflectionType.presentParticiple),
+    // 例外表（实测驱动硬编码）
+    ('children', 'child', InflectionType.sForm),
+    ('data', 'datum', InflectionType.sForm),
+    ('phenomena', 'phenomenon', InflectionType.sForm),
+    ('criteria', 'criterion', InflectionType.sForm),
+    ('media', 'medium', InflectionType.sForm),
+    ('bacteria', 'bacterium', InflectionType.sForm),
+    ('cacti', 'cactus', InflectionType.sForm),
+    ('nuclei', 'nucleus', InflectionType.sForm),
+    ('feet', 'foot', InflectionType.sForm),
+    ('teeth', 'tooth', InflectionType.sForm),
+    ('geese', 'goose', InflectionType.sForm),
+    ('oxen', 'ox', InflectionType.sForm),
+    ('chapeaux', 'chapeau', InflectionType.sForm),
+    ('formulae', 'formula', InflectionType.sForm),
+    ('staves', 'staff', InflectionType.sForm),
   ];
 
   for (final (input, lemma, type) in cases) {
