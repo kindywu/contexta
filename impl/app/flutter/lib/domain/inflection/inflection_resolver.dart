@@ -46,8 +46,12 @@ class RuleInflectionResolver implements InflectionResolver {
   /// - "series"/"species" 单复数同形（拉丁借词），纯后缀规则无法区分
   ///   cities→city 与 series（剥 ies/es 后 "ser" 与 "cit" 结构相同），只能显式例外；
   /// - "her"/"per" 会经 comparative 的 er 分支误生成 h/he/p（元素符号，均在库）；
-  /// - "always" 以 s 结尾的非复数实词，会误生成 alway。
-  static const _sExceptionWords = {'news', 'series', 'species', 'her', 'per', 'always'};
+  /// - "always" 以 s 结尾的非复数实词，会误生成 alway；
+  /// - "carmen"/"germen" 会经 -men→-man 分支误生成真词 carman/german
+  ///   （均在库），非复合词残余风险的最小黑名单（罕见词，精确 miss 走 LLM）。
+  static const _sExceptionWords = {
+    'news', 'series', 'species', 'her', 'per', 'always', 'carmen', 'germen',
+  };
   static const _minLen = 3;
 
   /// 例外表：规则无法还原的高频拉丁/外来复数（实测驱动，纯数据无依赖）。
@@ -168,8 +172,20 @@ class RuleInflectionResolver implements InflectionResolver {
       } else if (spelling.endsWith('s')) {
         add(spelling.substring(0, spelling.length - 1), InflectionType.sForm);
       } else if (spelling.endsWith('men')) {
-        // -man 复合词：airmen→airman、women→woman、men→man
-        add('${spelling.substring(0, spelling.length - 3)}man', InflectionType.sForm);
+        // -man 复合词：airmen→airman、women→woman、men→man。
+        // 复合词守卫（评审方案 B）：词长 ≥5 且词干 ≥2 字符——挡 omen→oman
+        // （Oman 国名在库）、amen 等 4 字词与单字符词干。残余噪声候选
+        // （speciman/luman/abdoman/hyman/regiman/numan/noman/bituman）均不在
+        // 词库，由仓储层查库滤除；carmen→carman、germen→german 是真词误判，
+        // 已在 _sExceptionWords 早退。men/women 特例在守卫外直接生成。
+        if (spelling == 'men' || spelling == 'women') {
+          add('${spelling.substring(0, spelling.length - 3)}man', InflectionType.sForm);
+        } else if (spelling.length >= 5) {
+          final stem = spelling.substring(0, spelling.length - 3);
+          if (stem.length >= 2) {
+            add('${stem}man', InflectionType.sForm);
+          }
+        }
       }
     }
 

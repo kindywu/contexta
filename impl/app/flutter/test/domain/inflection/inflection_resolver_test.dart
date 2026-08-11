@@ -72,8 +72,10 @@ void main() {
     // -men→-man 复合词
     ('airmen', 'airman', InflectionType.sForm),
     ('women', 'woman', InflectionType.sForm),
-    ('men', 'man', InflectionType.sForm),
+    ('men', 'man', InflectionType.sForm), // 特例：守卫外直接生成
     ('gentlemen', 'gentleman', InflectionType.sForm),
+    ('firemen', 'fireman', InflectionType.sForm),
+    ('policemen', 'policeman', InflectionType.sForm),
     // -nies→-ney
     ('monies', 'money', InflectionType.sForm),
     // ied 直接去 ed
@@ -129,4 +131,28 @@ void main() {
       expect(resolver.resolveCandidates(input), isEmpty);
     });
   }
+
+  /// -men→-man 守卫：非复合词不生成 man 候选。
+  /// omen/amen 4 字词被词长守卫拦下（omen→oman 的 Oman 在库）；
+  /// carmen/germen 会误生成真词 carman/german（均在库），已在例外词表入口早退。
+  /// 注：specimen/abdomen/lumen 等残余词干生成的 speciman/abdoman/luman 噪声
+  /// 候选不在词库，由仓储层查库滤除（守卫方案 B 的既定机制，见 resolver 注释）。
+  group('-men→-man 守卫', () {
+    test('omen 不生成 oman（词长守卫）', () {
+      final candidates = resolver.resolveCandidates('omen');
+      expect(candidates.where((c) => c.lemma == 'oman'), isEmpty,
+          reason: '候选：${candidates.map((c) => '${c.lemma}:${c.type.name}').toList()}');
+    });
+    test('amen 不生成 aman（词长守卫）', () {
+      final candidates = resolver.resolveCandidates('amen');
+      expect(candidates.where((c) => c.lemma == 'aman'), isEmpty,
+          reason: '候选：${candidates.map((c) => '${c.lemma}:${c.type.name}').toList()}');
+    });
+    test('carmen 无候选（早退）', () {
+      expect(resolver.resolveCandidates('carmen'), isEmpty);
+    });
+    test('germen 无候选（早退）', () {
+      expect(resolver.resolveCandidates('germen'), isEmpty);
+    });
+  });
 }

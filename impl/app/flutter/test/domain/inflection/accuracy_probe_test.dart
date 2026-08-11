@@ -23,7 +23,9 @@ void main() {
   // cwd = impl/app/flutter；stardict.db 在仓库 impl/etl/ref/
   final dbPath = '../../etl/ref/stardict.db';
   if (!File(dbPath).existsSync()) {
-    // ref 数据缺失（如 CI 环境）时静默跳过
+    // ref 数据缺失（如 CI 环境）时跳过，但显式提示，防实测形同虚设
+    // ignore: avoid_print
+    print('SKIP: stardict.db 不存在（$dbPath），还原率实测跳过');
     return;
   }
 
