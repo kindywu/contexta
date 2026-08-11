@@ -53,15 +53,15 @@ flowchart TD
 | `RuleInflectionResolver` | 规则实现：后缀剥离 + 拼写还原，每条规则生成多个候选，由调用方按序查库命中第一个 |
 | `InflectionCandidate { lemma, type }` | 候选词元 + 变化类型 |
 | `InflectionType` | `sForm` / `pastTense` / `presentParticiple` / `comparative` / `superlative` |
-| `_exceptions`（例外表） | 规则无法还原的高频拉丁/外来复数，硬编码 47 条纯数据映射（实测驱动） |
-| `_sExceptionWords`（早退词表） | 本身是词元的例外词，入口早退不解析（11 个） |
+| `_exceptions`（例外表） | 规则无法还原的高频拉丁/外来复数 + -es 段 +e 先行的反向遮蔽词，硬编码 63 条纯数据映射（实测驱动） |
+| `_sExceptionWords`（早退词表） | 本身是词元的例外词，入口早退不解析（12 个） |
 
 **规则覆盖**（入口小写兜底句首词 `Homes→home`，长度下限 ≥3 作用于输入拼写）：
 
 | 变化类型 | 规则与示例 |
 |---|---|
 | 复数 / 三单 -s | 去 s：homes→home、plays→play |
-| 复数 -es | 去 es / +e 还原 / 双写还原：boxes→box、caches→cache、quizzes→quiz |
+| 复数 -es | +e 还原先行 / 去 es / 双写还原：uses→use、boxes→box、caches→cache、quizzes→quiz |
 | 复数 -ies | 去 ies 还原 y / 去 s / -nies→-ney：cities→city、movies→movie、monies→money |
 | 复数 -ves | 还原 f/fe / 去 s / -vis：halves→half、wives→wife、pelves→pelvis |
 | 希腊 -is→-es | base+is 候选：analyses→analysis、crises→crisis、bases→basis（base 候选先行命中） |
@@ -73,9 +73,9 @@ flowchart TD
 | 现在分词 -ing | ying→ie 先行 / 去 ing / 双写还原 / +e / →y / -ck→-c：dying→die、going→go、running→run、making→make、crying→cry、panicking→panic |
 | 比较级 -er/-ier | 去 er / 双写 / +e / ier→y：larger→large、bigger→big、happier→happy |
 | 最高级 -est/-iest | 去 est / 双写 / +e / iest→y：nicest→nice、biggest→big、happiest→happy |
-| 例外表 | children→child、data→datum、phenomena→phenomenon、cacti→cactus、chapeaux→chapeau、staves→staff 等 47 条（拉丁 2 变格 -um→-a / 1 变格 -a→-ae / -us→-i、法语 -eau→-eaux、核心不规则复数） |
+| 例外表 | children→child、data→datum、phenomena→phenomenon、cacti→cactus、chapeaux→chapeau、staves→staff 等 63 条（拉丁 2 变格 -um→-a / 1 变格 -a→-ae / -us→-i、法语 -eau→-eaux、核心不规则复数、-es 段 +e 先行的反向遮蔽 16 词形如 passes→pass） |
 
-候选允许含噪声（如 `changes→changx`、`speciman`）——**无害**，仓储层查库存在性会过滤，全部 miss 才落 LLM。
+候选允许含噪声（如 `chanx`、`speciman`）——**无害**，仓储层查库存在性会过滤，全部 miss 才落 LLM。
 
 ### 标注语义（sForm 按 POS 区分）
 
@@ -97,7 +97,7 @@ flowchart TD
 1. **精确匹配先行**——`news`、`bus`、`was` 等库内词直接命中，到不了解析器
 2. **候选必须真实存在于 DB**——仓储层逐候选 `getByNormalized`，`has→[ha]` 因 ha 不在库而不解析
 3. **规则词尾例外**——`-ss`/`-us`/`-is`/`-as` 结尾不去 s（bus、gas、his、analysis 保护）
-4. **入口早退词表**（`_sExceptionWords`）——本身是词元的 11 个词不解析：mass noun `news`；单复数同形拉丁借词 `series`/`species`；comparative 的 er 分支误判源 `her`/`per`（→h/he/p）；`always`；-men 孪生真词黑名单 `carmen`/`germen`/`somen`/`humen`/`yumen`（其 -man 孪生 german/soman/human/yuman/carman 是库内不同真词，查库滤除失效，只能显式早退）
+4. **入口早退词表**（`_sExceptionWords`）——本身是词元的 12 个词不解析：mass noun `news`；单复数同形拉丁借词 `series`/`species`；comparative 的 er 分支误判源 `her`/`per`（→h/he/p）；`always`；所有格 `its`（→it，库内真词）；-men 孪生真词黑名单 `carmen`/`germen`/`somen`/`humen`/`yumen`（其 -man 孪生 german/soman/human/yuman/carman 是库内不同真词，查库滤除失效，只能显式早退）
 5. **长度与复合词守卫**——长度下限 ≥3（保护 `a`）；`-men→-man` 要求词长 ≥5 且词干 ≥2（挡 `omen→oman`、`amen→aman`，Oman 国名在库）
 6. **例外表**——规则无法还原的拉丁/外来复数直接给出词元（放在候选最前）
 
@@ -118,15 +118,15 @@ flowchart TD
 手写规则正确性用数据实测（`test/domain/inflection/accuracy_probe_test.dart`），不靠拍脑袋：
 
 - **语料**：stardict.db `exchange` 字段（变形标注，如 `homes` 行 `1:s3/0:home`）抽取 `(词形, 词元, 类型)` 对——仅测试期使用，不引入运行时依赖；过滤规则：全字母词、排除小写后以 ss/us/is/as 结尾的条目（库内为地名/人名噪声）
-- **指标**：还原率 = 解析器候选命中（lemma 与 type 均匹配）对数 / 总对数；阈值 ≥95%
-- **实测结论：99.4%**（语料 134,764 对，miss 838）。miss 构成：pastTense 556（`ate→eat`、`arose→arise` 等不规则动词——库内独立词条，精确命中先行覆盖，无害）、sForm 255（`Agneaux`、`bassi` 等生僻外来复数）、presentParticiple 26、superlative 1（`furthest→far`）。规则与例外表到此定稿
+- **指标（双口径，与运行时语义对齐）**：候选集还原率（候选包含 lemma/type 的对 / 总对数）+ **first-hit 还原率**（候选按序、用 asset 库 `assets/contexta.db` 做存在性过滤取首个命中，与语料对比较；**子集 = 语料 lemma 在库的对**；阈值均 ≥95%）。运行时 `_resolveInflection` 即"候选按序查库取首个命中"——first-hit 与用户所见行为一致；候选集口径曾掩盖 `uses→us` 类候选序遮蔽（候选含 use 但 us 先行命中，判"还原成功"而运行时错判）
+- **实测结论**：候选集 **99.4%**（语料 134,764 对，miss 838）、first-hit **98.3%**（子集 79,167 对，miss 1,379：sForm 214、pastTense 924、presentParticiple 200、comparative 17、superlative 24；修复前 97.3% / miss 2,113）。修复：-es 段 +e 还原先行（uses→use，实测常见词无回归）+ `its` 早退 + 反方向遮蔽 16 词例外表（passes→pass、crosses→cross、attaches→attach 等）。残余 miss 为不规则动词（库内独立词条、精确命中先行覆盖，无害）、生僻外来复数、库内遮蔽词形（`analyses→analyse`、`axes→axe`——词形本身在库，运行时精确命中先行）。规则与例外表到此定稿
 
 ## 错误处理与边界
 
 | 场景 | 处理 |
 |------|------|
 | 全部候选 miss | 走 LLM fallback（现有链路不变）；LLM 失败 → 既有「仅词头」降级不变 |
-| 解析器输入边界 | 纯函数无 IO 不 throw；空串 / 超长词 / 单字符返回空候选 |
+| 解析器输入边界 | 纯函数无 IO 不 throw；空串 / 单字符返回空候选；无超长上限——超长词按后缀规则正常生成候选，大概率查库 miss 走 LLM |
 | 早退词 / 例外词 | 入口早退不解析 → 精确匹配或 LLM 兜底（如 `somen` 等罕见词走 LLM） |
 | 解析命中但词元义项为空 | 返回词条（无义项时弹窗仅词头），与库内词条行为一致 |
 | 并发超限 | 信号量排队等待（permits = 3），不拒绝不丢弃 |
