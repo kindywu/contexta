@@ -63,23 +63,8 @@ class WordRepositoryImpl implements WordRepository {
       debugPrint('[WordRepo] DB MISS "$normalized" → inflection → LLM fallback');
 
       // 2.5 词形解析：精确 miss 后，规则引擎候选逐一查库
-      final resolved = await _resolveInflection(normalized);
-      if (resolved != null) {
-        final (wordRow, candidate) = resolved;
-        debugPrint('[WordRepo] INFLECTION HIT "$normalized" → ${candidate.lemma} '
-            '(${candidate.type.name}) id=${wordRow.id}');
-        final detail = await _buildWordDetail(wordRow);
-        final withInflection = detail.copyWith(
-          inflection: InflectionResult(
-            lemma: candidate.lemma,
-            type: candidate.type,
-            note: _inflectionNote(
-                normalized, candidate.lemma, candidate.type, detail),
-          ),
-        );
-        _lruCache[normalized] = withInflection;
-        return withInflection;
-      }
+      final withInflection = await _resolveWithInflection(normalized);
+      if (withInflection != null) return withInflection;
 
       // 3. LLM fallback（外部提供调用）；成功后落库回填
       final detail = await llmFallback(spelling);
@@ -100,22 +85,7 @@ class WordRepositoryImpl implements WordRepository {
     if (cached != null) return cached;
     final existing = await _wordDao.getByNormalized(normalized);
     if (existing == null) {
-      final resolved = await _resolveInflection(normalized);
-      if (resolved != null) {
-        final (wordRow, candidate) = resolved;
-        final detail = await _buildWordDetail(wordRow);
-        final withInflection = detail.copyWith(
-          inflection: InflectionResult(
-            lemma: candidate.lemma,
-            type: candidate.type,
-            note: _inflectionNote(
-                normalized, candidate.lemma, candidate.type, detail),
-          ),
-        );
-        _lruCache[normalized] = withInflection;
-        return withInflection;
-      }
-      return null;
+      return _resolveWithInflection(normalized);
     }
     final detail = await _buildWordDetail(existing);
     _lruCache[normalized] = detail;
@@ -216,14 +186,38 @@ class WordRepositoryImpl implements WordRepository {
     return null;
   }
 
+  /// 词形解析命中 → 组装带标注的 WordDetail 并缓存（key=原词）；未命中返回 null。
+  /// lookupWord 与 findLocal 共用，保证两处解析链行为一致（含 INFLECTION HIT 日志）。
+  Future<WordDetail?> _resolveWithInflection(String normalized) async {
+    final resolved = await _resolveInflection(normalized);
+    if (resolved == null) return null;
+    final (wordRow, candidate) = resolved;
+    debugPrint('[WordRepo] INFLECTION HIT "$normalized" → ${candidate.lemma} '
+        '(${candidate.type.name}) id=${wordRow.id}');
+    final detail = await _buildWordDetail(wordRow);
+    final withInflection = detail.copyWith(
+      inflection: InflectionResult(
+        lemma: candidate.lemma,
+        type: candidate.type,
+        note: _inflectionNote(
+            normalized, candidate.lemma, candidate.type, detail),
+      ),
+    );
+    _lruCache[normalized] = withInflection;
+    return withInflection;
+  }
+
   /// 标注文案：sForm 按词元义项词性区分复数 / 第三人称单数。
   String _inflectionNote(
       String source, String lemma, InflectionType type, WordDetail detail) {
     switch (type) {
       case InflectionType.sForm:
         final pos = detail.allSenses.map((s) => s.partOfSpeech).toSet();
-        final hasNoun = pos.any((p) => p.contains('n'));
-        final hasVerb = pos.any((p) => p.contains('v'));
+        // 词性首段精确匹配（I-1）：'n.'/'n' → 名词；'v.'/'vi.'/'vt.'/'v' → 动词。
+        // 'adv.'（含 v）、'pron.'（含 n）、'det./pron.'、'r.'（WordNet 副词）等
+        // 不以 n/v 开头，不会误判；'adv.' 以 a 开头，startsWith('v') 为 false。
+        final hasNoun = pos.any((p) => p.split('.').first.trim() == 'n');
+        final hasVerb = pos.any((p) => p.trim().startsWith('v'));
         if (hasNoun && hasVerb) return '$source 是 $lemma 的复数形式 / 第三人称单数';
         if (hasVerb) return '$source 是 $lemma 的第三人称单数形式';
         return '$source 是 $lemma 的复数形式';

@@ -375,6 +375,8 @@ void main() {
         fail('第二次查询不应走到 LLM');
       });
       expect(second!.wordId, first.wordId);
+      // 缓存命中返回同一实例（M-2）：与"重新解析出的新实例"可区分
+      expect(identical(second, first), isTrue);
     });
 
     test('全部候选 miss → 正常走 LLM（含标注为 null）', () async {
@@ -397,6 +399,56 @@ void main() {
       expect(detail, isNotNull);
       expect(detail!.spellingDisplay, 'wife');
       expect(detail.inflection, isNotNull);
+    });
+
+    test('sForm 仅动词义项：cries → 第三人称单数标注（hasVerb 分支）', () async {
+      await wordRepo.saveLlmResult('cry', null, const [
+        WordSense(id: 0, orderIndex: 1, partOfSpeech: 'v.',
+            chineseMeaning: '哭', englishDefinition: 'to shed tears',
+            examples: const []),
+      ]);
+      final detail = await wordRepo.lookupWord('cries', (_) async => null);
+      expect(detail, isNotNull);
+      expect(detail!.inflection!.lemma, 'cry');
+      expect(detail.inflection!.type, InflectionType.sForm);
+      expect(detail.inflection!.note, 'cries 是 cry 的第三人称单数形式');
+    });
+
+    test('pastTense：played → 过去式/过去分词标注', () async {
+      await wordRepo.saveLlmResult('play', '/pleɪ/', const [
+        WordSense(id: 0, orderIndex: 1, partOfSpeech: 'v.',
+            chineseMeaning: '玩', englishDefinition: 'to do an activity',
+            examples: const []),
+      ]);
+      final detail = await wordRepo.lookupWord('played', (_) async => null);
+      expect(detail, isNotNull);
+      expect(detail!.inflection!.type, InflectionType.pastTense);
+      expect(detail.inflection!.note, 'played 是 play 的过去式/过去分词');
+    });
+
+    test('词元本体（DB 精确命中）不带 inflection 标注（M-4）', () async {
+      await wordRepo.saveLlmResult('home', null, const [
+        WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
+            chineseMeaning: '家', englishDefinition: 'a place where you live',
+            examples: const []),
+      ]);
+      final detail = await wordRepo.lookupWord('home', (_) async => null);
+      expect(detail, isNotNull);
+      expect(detail!.inflection, isNull);
+    });
+
+    test('adv./pron. 等词性不误判为名/动词（I-1 回归）', () async {
+      await wordRepo.saveLlmResult('fast', '/fæst/', const [
+        WordSense(id: 0, orderIndex: 1, partOfSpeech: 'adv.',
+            chineseMeaning: '快速地', englishDefinition: 'quickly',
+            examples: const []),
+        WordSense(id: 0, orderIndex: 2, partOfSpeech: 'pron.',
+            chineseMeaning: '某物', englishDefinition: 'somebody',
+            examples: const []),
+      ]);
+      final detail = await wordRepo.lookupWord('fasts', (_) async => null);
+      expect(detail, isNotNull);
+      expect(detail!.inflection!.note, 'fasts 是 fast 的复数形式');
     });
   });
 
