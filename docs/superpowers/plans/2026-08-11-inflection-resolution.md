@@ -95,7 +95,7 @@ void main() {
   /// 不该生成任何候选（词尾例外 / 单字母 / 规则不适用）
   const noCandidates = <String>[
     'news', 'bus', 'gas', 'his', 'has', 'was', 'is', 'as', // -ss/-us/-is/-as 例外
-    'series', 'species', 'analysis', 'this', 'homes' == '' ? 'x' : 'a', // 单字符
+    'series', 'species', 'analysis', 'this', 'a', // 单字符
     'home', // 本身是词元形式，无变化
   ];
 
