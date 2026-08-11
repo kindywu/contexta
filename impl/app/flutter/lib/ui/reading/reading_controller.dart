@@ -143,7 +143,7 @@ class WordSheetData {
     this.isInVocabulary = false,
     this.wordId,
     this.vocabularyEntryId,
-    this.inflectionNote, // ← 新增
+    this.inflectionNote,
   });
 
   final String word;

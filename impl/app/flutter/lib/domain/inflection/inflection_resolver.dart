@@ -1,4 +1,4 @@
-/// 运行时规则型词形解析器（纯函数，无 IO、无第三方依赖）。
+/// 运行时规则型词形解析器（纯 Dart、无 IO、无第三方依赖）。
 ///
 /// 输入文章点选的词形（如 "homes"），生成候选词元（如 "home"）及其变化类型。
 /// 规则覆盖：复数/三单（-s/-es/-ies/-ves、希腊 -is→-es、拉丁 -ex/-ix/-x、
@@ -10,7 +10,7 @@
 ///
 /// 误判防护：候选生成保守（词尾例外表 + 长度下限），实际"是否接受"由
 /// 仓储层的"候选必须存在于 DB"把关（见 WordRepositoryImpl._resolveInflection）。
-/// 生成的候选可能含噪声（如 changes→changx），无害——查库存在性会过滤。
+/// 生成的候选可能含噪声（如 chanx），无害——查库存在性会过滤。
 library;
 
 enum InflectionType { sForm, pastTense, presentParticiple, comparative, superlative }
@@ -47,20 +47,24 @@ class RuleInflectionResolver implements InflectionResolver {
   ///   cities→city 与 series（剥 ies/es 后 "ser" 与 "cit" 结构相同），只能显式例外；
   /// - "her"/"per" 会经 comparative 的 er 分支误生成 h/he/p（元素符号，均在库）；
   /// - "always" 以 s 结尾的非复数实词，会误生成 alway；
+  /// - "its" 所有格（非复数；ts 结尾不进 -ss/-us/-is/-as 正则），会误生成
+  ///   it（n. 它，在库）；
   /// - -men→-man 分支的孪生真词黑名单（词库全量扫描核对）：以下真实词形
   ///   不在词库（点选进 resolver），其 -man 孪生是库内不同真词，查库滤除失效：
   ///   "germen"→german、 "somen"（日语借词素面）→soman、 "humen"（虎门）
   ///   →human、 "yumen"（玉门）→yuman；"carmen"→carman 防御性保留
   ///   （carman 当前不在库）。罕见词，精确 miss 走 LLM 兜底。
   static const _sExceptionWords = {
-    'news', 'series', 'species', 'her', 'per', 'always',
+    'news', 'series', 'species', 'her', 'per', 'always', 'its',
     'carmen', 'germen', 'somen', 'humen', 'yumen',
   };
   static const _minLen = 3;
 
-  /// 例外表：规则无法还原的高频拉丁/外来复数（实测驱动，纯数据无依赖）。
-  /// stardict exchange 语料实测（accuracy_probe_test）还原率 99.4%，
-  /// 残余 miss 均为不规则动词/生僻外来复数，规则与例外表到此定稿。
+  /// 例外表：规则无法还原的高频拉丁/外来复数 + -es 段 +e 先行的反向遮蔽词
+  /// （实测驱动，纯数据无依赖）。stardict exchange 语料实测
+  /// （accuracy_probe_test）候选集还原率 99.4%、first-hit 还原率 98.3%，
+  /// 残余 miss 均为不规则动词/生僻外来复数/库内遮蔽词形（精确命中先行），
+  /// 规则与例外表到此定稿。
   static const Map<String, String> _exceptions = {
     // 核心不规则复数（词库中多为独立词条，此处保证无网络兜底）
     'children': 'child',
@@ -115,6 +119,28 @@ class RuleInflectionResolver implements InflectionResolver {
     // 其他
     'staves': 'staff',
     'clitorides': 'clitoris',
+    // -es 段 +e 还原先行的反向遮蔽（实测驱动，见 es 分支注释与
+    // accuracy_probe first-hit 口径）：base+e 是库内不同真词、base（去 es）
+    // 才是正确词元，+e 先行命中即遮蔽——passes→passe、crosses→crosse、
+    // attaches→attache、bunches→bunche、pinches→pinche、saxes→saxe 等
+    // 16 词形（词库核对，词形本身不在库、会走到解析器）。axes/marches/
+    // masses/ashes 词形在库、精确命中先行，无需例外。
+    'annexes': 'annex',
+    'arapahoes': 'arapaho',
+    'attaches': 'attach',
+    'breakaxes': 'breakax',
+    'bunches': 'bunch',
+    'cartouches': 'cartouch',
+    'crosses': 'cross',
+    'fesses': 'fess',
+    'largesses': 'largess',
+    'oraches': 'orach',
+    'passes': 'pass',
+    'pickaxes': 'pickax',
+    'pinches': 'pinch',
+    'poleaxes': 'poleax',
+    'precises': 'precis',
+    'saxes': 'sax',
   };
 
   @override
@@ -156,14 +182,24 @@ class RuleInflectionResolver implements InflectionResolver {
         add('${spelling.substring(0, spelling.length - 2)}is', InflectionType.sForm);
       } else if (spelling.endsWith('es')) {
         final base = spelling.substring(0, spelling.length - 2);
-        add(base, InflectionType.sForm); // boxes→box
-        add('${base}e', InflectionType.sForm); // caches→cache
+        // +e 还原放首位：uses→use、caches→cache 先命中（use/cache 在库，
+        // 去 es 的 us/… 是库内不同真词，先行命中即遮蔽正确词元——实测
+        // uses→us、writes→writ 等 10 高频词运行时误判，见 accuracy_probe
+        // first-hit 口径）；boxes→box（boxe 不在库，第 2 位兜住）、goes→go、
+        // churches→church、quizzes→quiz、houses→house、tastes→taste 不受影响。
+        // 反方向遮蔽（base 正确但 base+e 在库：passes→passe、crosses→crosse）
+        // 由 _exceptions 显式兜底（见下）。
+        add('${base}e', InflectionType.sForm);
+        add(base, InflectionType.sForm);
         // 双写还原：quizzes→quizz→quiz
         add(_undouble(base), InflectionType.sForm);
         // 希腊 -is→-es：analyses→analysis、crises→crisis、bases→basis
         // （噪声候选如 boxis 被查库过滤；bases 的 base 候选先行命中）
         add('${base}is', InflectionType.sForm);
-        // 拉丁 -ex/-ix→-ices：indices→index、matrices→matrix、appendices→appendix
+        // 拉丁 -ex/-ix→-ices：indices→index、matrices→matrix、appendices→appendix。
+        // 注：stem+ex/ix 不前置——实测 indic/matric 遮蔽 index/matrix（先有
+        // first-hit miss），但前置会让 vices→vex（vex 在库）、rices→rex 类
+        // 新遮蔽，净效果为负，保持现状由候选集兜底（候选含正确词元）。
         if (base.endsWith('ic')) {
           final stem = base.substring(0, base.length - 2);
           add('${stem}ex', InflectionType.sForm);
@@ -283,4 +319,7 @@ class InflectionResult {
 
   /// 展示文案，如 "homes 是 home 的复数形式"
   final String note;
+
+  @override
+  String toString() => '$lemma:${type.name}:$note';
 }

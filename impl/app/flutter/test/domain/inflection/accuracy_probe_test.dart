@@ -6,6 +6,17 @@ import 'package:contexta/domain/inflection/inflection_resolver.dart';
 /// 正确性实测：从 stardict.db 的 exchange 字段抽取 (词形→词元, 类型) 语料，
 /// 跑规则引擎还原率。语料仅测试期使用（impl/etl/ref/ 数据），不引入运行时依赖。
 ///
+/// 双口径同时报告（运行时行为 = first-hit，见下）：
+/// 1. **候选集还原率**（原口径）：解析器候选包含 (lemma, type) 的对 / 总对数。
+/// 2. **first-hit 还原率**（运行时口径）：候选按序、用 asset 库
+///    （assets/contexta.db）做存在性过滤取首个命中，与语料 (lemma, type) 比较；
+///    子集 = 语料 lemma 在 asset 库中的对（first-hit 只在词元实际在库时可命中）。
+///
+/// 为什么需要双口径：运行时 WordRepositoryImpl._resolveInflection 候选按序逐一
+/// getByNormalized，**首个在真实词库存在的候选即命中**。候选集口径曾掩盖
+/// uses→us 类遮蔽（候选含 use 但 us 先行命中，判"还原成功"而运行时错判），
+/// 故 first-hit 口径直接模拟运行时语义，阈值 ≥95%。
+///
 /// 还原率 <95% 时失败并打印 TOP 失败样本（按类型分组）——用于人工判断：
 /// - 失败样本主要是不规则词（children→child，库内已有精确匹配，无害）→ 规则定稿
 /// - 失败样本暴露系统性规则缺陷（如 analyses→analysis）→ 补硬编码例外表
@@ -42,7 +53,7 @@ void main() {
         _ => null,
       };
 
-  test('stardict exchange 语料还原率 ≥95%', () {
+  test('stardict exchange 语料还原率（候选集 + first-hit 双口径）≥95%', () {
     final db = sqlite3.open(dbPath);
     final rows = db.select(
         "SELECT word, exchange FROM stardict WHERE exchange LIKE '0:%/%' OR exchange LIKE '1:%/%'");
@@ -70,33 +81,94 @@ void main() {
         if (type != null) pairs.add((word, lemma, type));
       }
     }
-    db.dispose();
+    db.close();
 
+    // asset 库词元集合（first-hit 存在性过滤，镜像运行时 getByNormalized 的
+    // WHERE spelling_normalized = ?）。WAL 侧车纪律：asset 库为 WAL 模式，
+    // 直接打开会在 assets/ 重新生成 -shm/-wal（gitignore 会漏掉、静默污染
+    // 仓库），故复制到系统临时目录再打开，副本用完即删。
+    final assetDbPath = 'assets/contexta.db';
+    final assetWords = <String>{};
+    if (File(assetDbPath).existsSync()) {
+      final tempDir = Directory.systemTemp.createTempSync('contexta_probe_');
+      final tempDb = '${tempDir.path}/contexta.db';
+      File(assetDbPath).copySync(tempDb);
+      try {
+        final assetDb = sqlite3.open(tempDb);
+        for (final row in assetDb.select('SELECT spelling_normalized FROM word')) {
+          assetWords.add(row['spelling_normalized'] as String);
+        }
+        assetDb.close();
+      } finally {
+        tempDir.deleteSync(recursive: true);
+      }
+    } else {
+      // ignore: avoid_print
+      print('SKIP: assets/contexta.db 不存在，first-hit 口径跳过（仅候选集口径）');
+    }
+
+    // ── 口径 1：候选集还原率（原口径，全部语料对） ──
     final missed = <(String, String, InflectionType)>[];
     for (final (form, lemma, type) in pairs) {
       final candidates = resolver.resolveCandidates(form);
       final hit = candidates.any((c) => c.lemma == lemma && c.type == type);
       if (!hit) missed.add((form, lemma, type));
     }
+    final candidateRate = (pairs.length - missed.length) / pairs.length;
 
-    final rate = (pairs.length - missed.length) / pairs.length;
-    // 按类型分组的失败样本（人工判读用）
-    final byType = <InflectionType, List<(String, String)>>{};
-    for (final (form, lemma, type) in missed) {
-      byType.putIfAbsent(type, () => []).add((form, lemma));
+    // ── 口径 2：first-hit 还原率（运行时语义，子集 = lemma 在库） ──
+    final subset = pairs.where((p) => assetWords.contains(p.$2)).toList();
+    final firstHitMissed = <(String, String, InflectionType)>[];
+    if (assetWords.isNotEmpty) {
+      for (final (form, lemma, type) in subset) {
+        InflectionCandidate? hit;
+        for (final c in resolver.resolveCandidates(form)) {
+          if (assetWords.contains(c.lemma)) {
+            hit = c;
+            break;
+          }
+        }
+        if (hit == null || hit.lemma != lemma || hit.type != type) {
+          firstHitMissed.add((form, lemma, type));
+        }
+      }
     }
-    for (final entry in byType.entries) {
-      final sample = entry.value.take(20).map((p) => '${p.$1}→${p.$2}').join(', ');
-      // ignore: avoid_print
-      print('[${entry.key.name}] miss ${entry.value.length}: $sample');
+    final firstHitRate =
+        subset.isEmpty ? 1.0 : (subset.length - firstHitMissed.length) / subset.length;
+
+    void printMissSamples(
+        List<(String, String, InflectionType)> miss, String label) {
+      final byType = <InflectionType, List<(String, String)>>{};
+      for (final (form, lemma, type) in miss) {
+        byType.putIfAbsent(type, () => []).add((form, lemma));
+      }
+      for (final entry in byType.entries) {
+        final sample = entry.value.take(20).map((p) => '${p.$1}→${p.$2}').join(', ');
+        // ignore: avoid_print
+        print('[$label ${entry.key.name}] miss ${entry.value.length}: $sample');
+      }
     }
 
-    expect(rate, greaterThanOrEqualTo(0.95),
-        reason: '还原率 ${(rate * 100).toStringAsFixed(1)}% < 95%，'
+    printMissSamples(missed, '候选集');
+    printMissSamples(firstHitMissed, 'first-hit');
+
+    // ignore: avoid_print
+    print('候选集还原率 ${(candidateRate * 100).toStringAsFixed(1)}% '
+        '（语料 ${pairs.length}，miss ${missed.length}）');
+    // ignore: avoid_print
+    print('first-hit 还原率 ${(firstHitRate * 100).toStringAsFixed(1)}% '
+        '（子集 ${subset.length}，miss ${firstHitMissed.length}）');
+
+    expect(candidateRate, greaterThanOrEqualTo(0.95),
+        reason: '候选集还原率 ${(candidateRate * 100).toStringAsFixed(1)}% < 95%，'
             '总语料 ${pairs.length}，miss ${missed.length}。'
             '检查失败样本：若为系统性规则缺陷，补例外表（RuleInflectionResolver 加 _exceptions）。');
-    // ignore: avoid_print
-    print('还原率 ${(rate * 100).toStringAsFixed(1)}% '
-        '（语料 ${pairs.length}，miss ${missed.length}）');
+    if (assetWords.isNotEmpty) {
+      expect(firstHitRate, greaterThanOrEqualTo(0.95),
+          reason: 'first-hit 还原率 ${(firstHitRate * 100).toStringAsFixed(1)}% < 95%，'
+              '子集 ${subset.length}，miss ${firstHitMissed.length}。'
+              'first-hit 暴露新的候选序遮蔽（首个在库候选 ≠ 语料词元），'
+              '按序检查失败样本并修正候选序 / 例外表。');
+    }
   });
 }

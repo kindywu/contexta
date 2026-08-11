@@ -18,6 +18,16 @@ void main() {
     ('churches', 'church', InflectionType.sForm),
     ('caches', 'cache', InflectionType.sForm),
     ('quizzes', 'quiz', InflectionType.sForm), // 双写还原
+    // -es 段 +e 还原先行（first-hit 序修正，锁 uses→us 类遮蔽：实测 asset 库
+    // 运行时首个命中必须是 use/write/bite/ride 而非 us/writ/bit/rid）
+    ('uses', 'use', InflectionType.sForm),
+    ('writes', 'write', InflectionType.sForm),
+    ('bites', 'bite', InflectionType.sForm),
+    ('rides', 'ride', InflectionType.sForm),
+    // 反方向遮蔽例外表（base 正确但 base+e 是库内不同真词：passes→passe、
+    // crosses→crosse，+e 先行会遮蔽，_exceptions 兜底）
+    ('passes', 'pass', InflectionType.sForm),
+    ('crosses', 'cross', InflectionType.sForm),
     // 复数 -ies
     ('cities', 'city', InflectionType.sForm),
     ('movies', 'movie', InflectionType.sForm), // 去 s 而非 ies→y
@@ -122,7 +132,7 @@ void main() {
   const noCandidates = <String>[
     'news', 'bus', 'gas', 'his', 'has', 'was', 'is', 'as', // -ss/-us/-is/-as 例外
     'series', 'species', 'analysis', 'this', 'a', // 单字符
-    'her', 'per', 'always', // 例外词表（her→h/he、per→p 经 er 分支误判）
+    'her', 'per', 'always', 'its', // 例外词表（her→h/he、per→p 经 er 分支误判；its 所有格→it 误判）
     'home', // 本身是词元形式，无变化
   ];
 
