@@ -201,7 +201,7 @@ void main() {
         UserSettings().toString(),
         'UserSettings(id=1, isOnboarded=false, difficultyLevel=MEDIUM, '
         'dailyArticleCount=3, translationDisplayMode=FULL, '
-        'ttsSpeed=1.0, '
+        'ttsSpeed=1.0, ttsVoice=TtsVoice.bella, '
         'masteryThresholdN=1, autoPlayAudio=false)',
       );
     });
