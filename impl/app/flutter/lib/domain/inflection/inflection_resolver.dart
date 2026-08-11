@@ -142,3 +142,21 @@ class RuleInflectionResolver implements InflectionResolver {
 
   static bool _isConsonant(String c) => !'aeiou'.contains(c);
 }
+
+/// 词形解析结果（仓储层组装：候选命中词条后，按义项词性生成展示文案）。
+class InflectionResult {
+  const InflectionResult({
+    required this.lemma,
+    required this.type,
+    required this.note,
+  });
+
+  /// 词元，如 "home"
+  final String lemma;
+
+  /// 变化类型，如 [InflectionType.sForm]
+  final InflectionType type;
+
+  /// 展示文案，如 "homes 是 home 的复数形式"
+  final String note;
+}

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:contexta/domain/inflection/inflection_resolver.dart';
 import 'package:contexta/domain/model/article.dart';
 import 'package:contexta/domain/model/article_batch.dart';
 import 'package:contexta/domain/model/generation_error.dart';
@@ -225,6 +226,37 @@ void main() {
           'generationStartedAt=null, generationCompletedAt=null, retryCount=0, '
           'accumulatedReadSeconds=0, readCompletedAt=null, lastRetryAt=null, '
           'maxRetries=3, nextRetryAt=null, paragraphs=[])');
+    });
+  });
+
+  group('WordDetail.inflection（词形解析标注）', () {
+    test('默认 null', () {
+      final w = WordDetail(
+        wordId: 1,
+        spellingDisplay: 'home',
+        phoneticIpa: null,
+        primarySense: null,
+        allSenses: const [],
+      );
+      expect(w.inflection, isNull);
+    });
+
+    test('copyWith 设置与保留', () {
+      final w = WordDetail(
+        wordId: 1,
+        spellingDisplay: 'home',
+        phoneticIpa: null,
+        primarySense: null,
+        allSenses: const [],
+      );
+      final result = const InflectionResult(
+        lemma: 'home',
+        type: InflectionType.sForm,
+        note: 'homes 是 home 的复数形式',
+      );
+      final withInflection = w.copyWith(inflection: result);
+      expect(withInflection.inflection, same(result));
+      expect(withInflection.copyWith().inflection, same(result)); // 保留
     });
   });
 }
