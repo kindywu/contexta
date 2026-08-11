@@ -17,7 +17,7 @@
 | 系统 TTS 兜底（拼接朗读） | 无（无段落边界信息） | 不滚动 |
 
 - **高亮样式**：仅英文正文文字底色 `Color(0x2ECC785C)`（与生词高亮同色，生词 span 保持原样自然融合）；译文区域不染色；**标题段同样以该色为文字底色**。段落内联播放钮图标（volume_up / stop）沿用 `isSpeaking` 语义驱动，全文朗读中当前段的内联钮同样显示 Stop（点击即停止整篇朗读）。
-- **标题可点击查词**：文章标题由 `_TitleText` 渲染，与正文段落共用 `_clickableWordSpans` 分词——单词可点击查词（`showWordSheet`）、生词标珊瑚色、朗读时整段加底色，与正文段落行为一致。
+- **标题可点击查词**：文章标题由 `_TitleText` 渲染，与正文段落共用 `_clickableWordSpans` 分词——单词可点击查词（`showWordSheet`）、生词标珊瑚色、朗读时整段加底色，与正文段落行为一致。（查词弹窗的数据链路与词形解析标注见 [word-lookup.md](word-lookup.md)。）
 - **播放条进度**：显示「第 N/M 段」，数据源为**播放 worker 发声前上报**的段落位置（`speakingParagraphIndex+1 / 正文总段数`），与高亮同源、与真实发声同步；标题段发声时无段号，显示「正在朗读…」。⚠️ 历史实现曾用生成进度（`setOnProgress`）驱动播放条——生成超前于发声（生成 13 段时播放才到第 4 段），表现为进度数字超前乱跳、首段"一闪而过"；已改为播放位置驱动，生成进度仅保留日志观测。
 - **滚动目标**：段落顶部对齐 ListView 视口（视口高 − 段高）/3 处 —— Flutter 3.44 `getOffsetToReveal` 的 alignment 作用于剩余空间（`leadingScrollOffset − (viewportExtent − objectExtent) × alignment`）。首段目标 offset 为负被 clamp 到 0（列表顶部无法再上滚，天然幂等）。
 
