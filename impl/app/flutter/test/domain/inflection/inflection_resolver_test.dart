@@ -11,6 +11,8 @@ void main() {
     ('books', 'book', InflectionType.sForm),
     ('plays', 'play', InflectionType.sForm), // 也覆盖三单
     ('goes', 'go', InflectionType.sForm),
+    ('cows', 'cow', InflectionType.sForm), // ws 结尾不进例外正则
+    ('shows', 'show', InflectionType.sForm), // ws 结尾不进例外正则
     // 复数 -es
     ('boxes', 'box', InflectionType.sForm),
     ('churches', 'church', InflectionType.sForm),
@@ -27,11 +29,14 @@ void main() {
     ('stopped', 'stop', InflectionType.pastTense), // 双写还原
     ('iced', 'ice', InflectionType.pastTense), // +e 还原
     ('studied', 'study', InflectionType.pastTense), // ied→y
+    ('died', 'die', InflectionType.pastTense), // ied 去 d
+    ('tied', 'tie', InflectionType.pastTense), // ied 去 d
     // 现在分词
     ('going', 'go', InflectionType.presentParticiple),
     ('making', 'make', InflectionType.presentParticiple), // +e 还原
     ('running', 'run', InflectionType.presentParticiple), // 双写还原
     ('crying', 'cry', InflectionType.presentParticiple), // ing→y 还原
+    ('dying', 'die', InflectionType.presentParticiple), // ying→ie 还原
     // 比较级 / 最高级
     ('bigger', 'big', InflectionType.comparative), // 双写还原
     ('happier', 'happy', InflectionType.comparative), // ier→y
@@ -56,6 +61,7 @@ void main() {
   const noCandidates = <String>[
     'news', 'bus', 'gas', 'his', 'has', 'was', 'is', 'as', // -ss/-us/-is/-as 例外
     'series', 'species', 'analysis', 'this', 'a', // 单字符
+    'her', 'per', 'always', // 例外词表（her→h/he、per→p 经 er 分支误判）
     'home', // 本身是词元形式，无变化
   ];
 

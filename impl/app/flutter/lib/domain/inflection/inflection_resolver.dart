@@ -35,16 +35,23 @@ class RuleInflectionResolver implements InflectionResolver {
   /// -ss/-us/-is/-as 结尾不去 s（bus、gas、his、analysis 例外）。
   static final _sException = RegExp(r'(ss|us|is|as)$');
 
-  /// -s 结尾但本身是词元的例外词（整段 sForm 规则跳过）：
+  /// 本身是词元的例外词（入口早退，任何段都不解析）：
   /// - "news" 是 mass noun 非复数；ws 结尾不能整体进正则——cows→cow、
   ///   shows→show 是合法复数规则；
   /// - "series"/"species" 单复数同形（拉丁借词），纯后缀规则无法区分
-  ///   cities→city 与 series（剥 ies/es 后 "ser" 与 "cit" 结构相同），只能显式例外。
-  static const _sExceptionWords = {'news', 'series', 'species'};
+  ///   cities→city 与 series（剥 ies/es 后 "ser" 与 "cit" 结构相同），只能显式例外；
+  /// - "her"/"per" 会经 comparative 的 er 分支误生成 h/he/p（元素符号，均在库）；
+  /// - "always" 以 s 结尾的非复数实词，会误生成 alway。
+  static const _sExceptionWords = {'news', 'series', 'species', 'her', 'per', 'always'};
   static const _minLen = 3;
 
   @override
   List<InflectionCandidate> resolveCandidates(String spelling) {
+    // 例外词本身是词元，任何段都不解析——her/per 的误判路径在 comparative
+    // 的 er 分支（her→h/he、per→p），必须在入口早退而非仅拦 sForm 段
+    if (_sExceptionWords.contains(spelling)) {
+      return const [];
+    }
     final out = <InflectionCandidate>[];
     void add(String lemma, InflectionType type) {
       // 长度下限作用于输入拼写（保护 "a" 等单字符），而非词元——go→goes、
@@ -55,7 +62,7 @@ class RuleInflectionResolver implements InflectionResolver {
     }
 
     // ── sForm：名词复数 / 动词第三人称单数 ──
-    if (!_sException.hasMatch(spelling) && !_sExceptionWords.contains(spelling)) {
+    if (!_sException.hasMatch(spelling)) {
       if (spelling.endsWith('ies')) {
         add('${spelling.substring(0, spelling.length - 3)}y', InflectionType.sForm);
         add(spelling.substring(0, spelling.length - 1), InflectionType.sForm); // movies→movie
@@ -75,6 +82,9 @@ class RuleInflectionResolver implements InflectionResolver {
 
     // ── pastTense：过去式 / 过去分词 ──
     if (spelling.endsWith('ied')) {
+      // -ie 动词词族去 d 放首位：died→die（die 在库先命中）、tied→tie；
+      // studied→studie 非词，study 兜住（ied→y 兜底）
+      add(spelling.substring(0, spelling.length - 1), InflectionType.pastTense); // died→die
       add('${spelling.substring(0, spelling.length - 3)}y', InflectionType.pastTense); // studied→study
     } else if (spelling.endsWith('ed')) {
       final base = spelling.substring(0, spelling.length - 2);
@@ -86,6 +96,11 @@ class RuleInflectionResolver implements InflectionResolver {
     // ── presentParticiple ──
     if (spelling.endsWith('ing')) {
       final base = spelling.substring(0, spelling.length - 3);
+      // -ie 动词词族 ying→ie 放最前：dying→die（die 在库先命中）、lying→lie；
+      // 仅当结尾 4 字符为 'ying' 时追加——playing→playie 非词无害，play 其他候选先命中
+      if (spelling.endsWith('ying')) {
+        add('${spelling.substring(0, spelling.length - 4)}ie', InflectionType.presentParticiple); // dying→die
+      }
       add(base, InflectionType.presentParticiple); // going→go
       add(_undouble(base), InflectionType.presentParticiple); // running→run
       add('${base}e', InflectionType.presentParticiple); // making→make
