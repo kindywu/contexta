@@ -251,6 +251,10 @@ class _ProdTimeProvider implements TimeProvider {
 
   @override
   String todayDateString() => isoLocalDate(DateTime.now());
+
+  @override
+  String nextDateString() =>
+      isoLocalDate(DateTime.now().add(const Duration(days: 1)));
 }
 
 class _ProdAppInfoProvider implements AppInfoProvider {

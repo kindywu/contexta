@@ -646,12 +646,12 @@ void main() {
 
       expect(await articleRepo.getMaxRefBatchDate(), '2026-08-01');
 
-      // afterDate 严格晚于已消费日期 → b2
+      // afterDate 不早于已消费日期（>=，2026-08-12 修复）→ b2
       final next = await articleRepo.findNextReadyBatch('LOW', '2026-08-01');
       expect(next!.id, b2);
-      // 已消费批次不再返回
+      // == afterDate 的未消费批次也可选（批次等得起，断签可自愈）
       final afterB2 = await articleRepo.findNextReadyBatch('LOW', '2026-08-02');
-      expect(afterB2, isNull);
+      expect(afterB2!.id, b2);
     });
 
     test('getAssignedBatchForDate / getAllDailyLearningInfos', () async {
@@ -676,12 +676,14 @@ void main() {
       final b1 = await articleRepo.createBatch('LOW', generatedOn: '2026-08-01');
       await articleRepo.createArticles(b1, ['NEWS']);
       await articleRepo.markBatchReady(b1);
-      // 今天生成的批次同样被排除（generated_on 严格大于 minGeneratedOn）
+      // 2026-08-12 修复（>=）：今天（08-07）生成的未消费批次不再被排除——
+      // 它就是"预生成给下次打开消费"的批次
       final b2 = await articleRepo.createBatch('LOW', generatedOn: '2026-08-07');
       await articleRepo.createArticles(b2, ['NEWS']);
       await articleRepo.markBatchReady(b2);
 
-      expect(await articleRepo.getUnassignedReadyBatches('LOW', null), isEmpty);
+      final unassigned = await articleRepo.getUnassignedReadyBatches('LOW', null);
+      expect(unassigned.map((b) => b.id), [b2]);
 
       // 显式传更早日期 → 两批都返回
       final all = await articleRepo.getUnassignedReadyBatches('LOW', '2026-07-01');

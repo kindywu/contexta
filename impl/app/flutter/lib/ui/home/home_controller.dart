@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/time/iso8601.dart';
 import '../../di/providers.dart';
 import '../../domain/background_work_scheduler.dart';
 import '../../domain/generation/article_prompts.dart';
@@ -249,11 +250,19 @@ class HomeController extends StateNotifier<HomeUiState> {
     }
 
     final hasContent = groups.any((g) => g.articles.isNotEmpty);
+    // 2026-08-12：今天有分配但今天的组为空（文章未生成完成/被过滤）时，
+    // 即使昨天/更早有组也显示"生成中"，避免今天静默缺失。
+    final todayIso = isoLocalDate(DateTime.now());
+    final todayRead = _historyReads.any((r) => r.learningDate == todayIso);
+    final todayGroupShown = groups.any((g) => g.dateLabel == '今天');
+    final todayPending = todayRead && !todayGroupShown;
+
     state = state.copyWith(
       articleGroups: groups,
       isLoading: false,
-      isGenerating: !hasContent,
-      generationMessage: !hasContent ? '当前等级暂无文章' : '',
+      isGenerating: todayPending || !hasContent,
+      generationMessage:
+          (todayPending || !hasContent) ? '文章生成中，请稍候…' : '',
     );
   }
 

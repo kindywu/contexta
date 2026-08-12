@@ -10,4 +10,10 @@ abstract interface class TimeProvider {
 
   /// 当前日期字符串（手机时区，ISO 格式 yyyy-MM-dd）。
   String todayDateString();
+
+  /// 明天日期字符串（手机时区，ISO 格式 yyyy-MM-dd）。
+  /// 2026-08-12：预生成批次打"明天"日期——今天消费的批次（generated_on=今天）
+  /// 仍占用 UNIQUE(difficulty, generated_on)，预生成必须落在不同日期；
+  /// 且"明天"日期天然满足消费规则（>= 最后消费日），断签多天依然可消费。
+  String nextDateString();
 }

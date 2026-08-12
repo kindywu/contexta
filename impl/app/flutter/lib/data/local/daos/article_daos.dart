@@ -49,14 +49,18 @@ class ArticleBatchDao {
 
   /// 查找下一个可用的 READY 批次（消费顺序语义，详见 Kotlin 原版注释）：
   /// - [afterDate] 为 null 时返回最早 READY（首次使用）
-  /// - 否则要求 generated_on 严格晚于 [afterDate]，且未被 daily_learning 引用
+  /// - 否则要求 generated_on 不早于 [afterDate]（>=），且未被 daily_learning 引用。
+  ///   ⚠️ 2026-08-12 修复：原实现用"严格 >"，导致断签一天（某天未打开 app）
+  ///   后预生成批次（generated_on == 最后消费日）被作废，链条永久断裂、
+  ///   每天现场生成。>= 使批次"等得起"（隔多少天打开都可消费），
+  ///   同时 seed 旧批次（generated_on 远早于最后消费日）依然被排除。
   Future<ArticleBatchRow?> findNextReadyBatch(
       String difficulty, String? afterDate) {
     final t = _db.articleBatches;
     final consumedRefs = _db.selectOnly(_db.dailyLearnings)
       ..addColumns([_db.dailyLearnings.refBatchId]);
     final after =
-        afterDate == null ? const Constant(true) : t.generatedOn.isBiggerThanValue(afterDate);
+        afterDate == null ? const Constant(true) : t.generatedOn.isBiggerOrEqualValue(afterDate);
     return (_db.select(t)
           ..where((row) =>
               row.status.equals('READY') &
@@ -77,8 +81,9 @@ class ArticleBatchDao {
             ..orderBy([(t) => OrderingTerm.asc(t.generatedOn)]))
           .get();
 
-  /// 指定难度下未被 daily_learning 引用、且 generated_on 严格晚于
-  /// [minGeneratedOn] 的 READY 批次（忽略旧 seed 数据）。
+  /// 指定难度下未被 daily_learning 引用、且 generated_on 不早于
+  /// [minGeneratedOn]（>=，同 findNextReadyBatch 的 2026-08-12 修复语义）
+  /// 的 READY 批次（忽略旧 seed 数据）。
   Future<List<ArticleBatchRow>> getUnassignedReadyBatches(
       String difficulty, String minGeneratedOn) {
     final t = _db.articleBatches;
@@ -88,10 +93,30 @@ class ArticleBatchDao {
           ..where((row) =>
               row.status.equals('READY') &
               row.difficultyLevelSnapshot.equals(difficulty) &
-              row.generatedOn.isBiggerThanValue(minGeneratedOn) &
+              row.generatedOn.isBiggerOrEqualValue(minGeneratedOn) &
               row.id.isNotInQuery(consumedRefs))
           ..orderBy([(t) => OrderingTerm.asc(t.generatedOn)]))
         .get();
+  }
+
+  /// 指定日期创建且**未被 daily_learning 引用**的批次（防重入检查用）。
+  ///
+  /// ⚠️ 2026-08-12 修复：原 getByDifficultyAndDate 不区分消费状态，当天
+  /// 创建并当天消费的批次会挡住预生成，链条断裂后无法自愈。已消费的
+  /// 批次不算"进行中"，允许再次创建（预生成下一次）。
+  Future<ArticleBatchRow?> getUnassignedByDifficultyAndDate(
+      String difficulty, String date) {
+    final t = _db.articleBatches;
+    final consumedRefs = _db.selectOnly(_db.dailyLearnings)
+      ..addColumns([_db.dailyLearnings.refBatchId]);
+    return (_db.select(t)
+          ..where((row) =>
+              row.difficultyLevelSnapshot.equals(difficulty) &
+              row.generatedOn.equals(date) &
+              row.id.isNotInQuery(consumedRefs))
+          ..orderBy([(t) => OrderingTerm.desc(t.id)])
+          ..limit(1))
+        .getSingleOrNull();
   }
 
   /// REPLACE 语义（按主键 upsert，与 Kotlin OnConflictStrategy.REPLACE 一致）。

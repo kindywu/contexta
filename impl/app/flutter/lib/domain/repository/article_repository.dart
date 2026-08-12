@@ -21,6 +21,12 @@ abstract interface class ArticleRepository {
   Future<ArticleBatch?> getBatchByDifficultyAndDate(
       String difficulty, String date);
 
+  /// 按难度与生成日期查找**未被 daily_learning 引用**的批次（防重入检查）。
+  /// 2026-08-12：当天创建并当天消费的批次不算"进行中"，允许再次创建
+  /// 预生成批次，断签后链条可自愈。
+  Future<ArticleBatch?> getUnassignedBatchByDifficultyAndDate(
+      String difficulty, String date);
+
   /// 查找下一个可用的 READY 批次：
   /// - [afterDate] 为 null 返回最早的 READY（首次使用）
   /// - 否则返回 generated_on 严格晚于 [afterDate] 且未被 daily_learning 引用的批次

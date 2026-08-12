@@ -80,6 +80,11 @@ class FakeArticleRepository implements ArticleRepository {
       throw UnimplementedError();
 
   @override
+  Future<ArticleBatch?> getUnassignedBatchByDifficultyAndDate(
+          String difficulty, String date) =>
+      throw UnimplementedError();
+
+  @override
   Future<List<ArticleBatch>> getUnassignedReadyBatches(
           String difficulty, String? minGeneratedOn) =>
       throw UnimplementedError();
@@ -453,4 +458,8 @@ class FakeTimeProvider implements TimeProvider {
 
   @override
   String todayDateString() => '2026-08-01';
+
+
+  @override
+  String nextDateString() => '2026-08-02';
 }

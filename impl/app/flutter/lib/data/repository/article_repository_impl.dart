@@ -399,6 +399,13 @@ class ArticleRepositoryImpl implements ArticleRepository {
     final row = await _batchDao.getByDifficultyAndDate(difficulty, date);
     return row?.toModel();
   }
+
+  @override
+  Future<ArticleBatch?> getUnassignedBatchByDifficultyAndDate(
+      String difficulty, String date) async {
+    final row = await _batchDao.getUnassignedByDifficultyAndDate(difficulty, date);
+    return row?.toModel();
+  }
 }
 
 extension on ArticleBatchRow {

@@ -25,6 +25,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
+  late final AppLifecycleListener _lifecycleListener;
+
   @override
   void initState() {
     super.initState();
@@ -33,6 +35,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ref.read(homeControllerProvider.notifier).load();
       ref.read(homeControllerProvider.notifier).observeSettingsForRefresh();
     });
+    // 2026-08-12 修复：后台 worker isolate 用独立连接写库，UI 的 drift
+    // watch 收不到变更通知（per-connection），生成完成的文章不会自动出现。
+    // app 回到前台时重新 load()（幂等：已分配则走 Ready 分支，重新订阅
+    // 文章流并拿到当前值）。AppLifecycleListener 只在状态变化时回调，
+    // 首次启动（初始即 resumed）不会重复触发。
+    _lifecycleListener = AppLifecycleListener(
+      onResume: () {
+        ref.read(homeControllerProvider.notifier).load();
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycleListener.dispose();
+    super.dispose();
   }
 
   @override

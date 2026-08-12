@@ -201,6 +201,10 @@ class _NoopTimeProvider implements TimeProvider {
 
   @override
   String todayDateString() => '2026-08-07';
+
+  @override
+  String nextDateString() => '2026-08-02';
+
 }
 
 class _NoopTriggerNextBatch extends TriggerNextBatchUseCase {
@@ -392,6 +396,61 @@ void main() {
       final state = container.read(homeControllerProvider);
       expect(state.isLoading, isFalse);
       expect(state.generationMessage, '生成管道被阻塞，请联系技术支持');
+    });
+
+    test('今天组空但昨天组有文章 → isGenerating=true（生成中提示不静默）',
+        () async {
+      // 2026-08-12：worker 生成期间今天的组被过滤，昨天组存在时也必须
+      // 显示"生成中"，避免今天静默缺失。
+      final yesterdayInfo = DailyLearningInfo(
+        learningDate: dateStr(1),
+        dailyCountSnapshot: 3,
+        batch: ArticleBatch(
+          id: 2,
+          status: BatchStatus.ready,
+          difficultyLevelSnapshot: 'MEDIUM',
+          generatedOn: dateStr(1),
+          lastUpdatedAt: '2026-08-07T12:00:00+08:00',
+          blockedReason: null,
+          blockedAt: null,
+          articles: const [],
+        ),
+      );
+      articleRepo = _FakeArticleRepo(
+        // 今天 + 昨天两条记录；今天批次（id=1）文章流为空（生成中）
+        onAllDailyLearningInfos: () async => [makeInfo(0, 3), yesterdayInfo],
+        onObserveArticles: (batchId) => Stream.value(
+          batchId == 1
+              ? const []
+              : [makeArticle(21, category: 'NEWS', title: '昨天新闻')],
+        ),
+      );
+      final container = makeContainer();
+      final controller = container.read(homeControllerProvider.notifier);
+      await controller.load();
+      await Future<void>.delayed(Duration.zero);
+
+      final state = container.read(homeControllerProvider);
+      expect(state.isGenerating, isTrue);
+      expect(state.generationMessage, '文章生成中，请稍候…');
+      // 昨天的组仍然展示
+      expect(state.articleGroups.any((g) => g.dateLabel == '昨天'), isTrue);
+      expect(state.articleGroups.any((g) => g.dateLabel == '今天'), isFalse);
+    });
+
+    test('今天组有文章 → isGenerating=false', () async {
+      articleRepo = _FakeArticleRepo(
+        onAllDailyLearningInfos: () async => [makeInfo(0, 3)],
+        onObserveArticles: (_) =>
+            Stream.value([makeArticle(11, category: 'NEWS', title: '新闻')]),
+      );
+      final container = makeContainer();
+      final controller = container.read(homeControllerProvider.notifier);
+      await controller.load();
+      await Future<void>.delayed(Duration.zero);
+
+      final state = container.read(homeControllerProvider);
+      expect(state.isGenerating, isFalse);
     });
   });
 

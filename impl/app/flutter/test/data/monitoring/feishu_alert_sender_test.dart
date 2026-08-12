@@ -378,6 +378,9 @@ class _MutableTimeProvider implements TimeProvider {
 
   @override
   String todayDateString() => '2026-08-01';
+
+  @override
+  String nextDateString() => '2026-08-02';
 }
 
 /// 录制型 dio adapter：捕获请求（URL/body），返回 canned 响应。

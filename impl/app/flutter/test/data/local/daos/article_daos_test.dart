@@ -64,8 +64,8 @@ void main() {
       expect(await dao.getByDifficultyAndDate('LOW', '2026-01-01'), isNull);
     });
 
-    test('findNextReadyBatch：afterDate null 返回最早 READY；严格晚于已消费日期', () async {
-      await insertBatch(
+    test('findNextReadyBatch：afterDate null 返回最早 READY；不早于已消费日期（>=，批次等得起）', () async {
+      final earliest = await insertBatch(
           status: 'READY', difficulty: 'LOW', generatedOn: '2026-03-29');
       final later = await insertBatch(
           status: 'READY', difficulty: 'LOW', generatedOn: '2026-04-05');
@@ -74,9 +74,22 @@ void main() {
 
       // 首次使用：返回最早 READY 批次
       expect((await dao.findNextReadyBatch('LOW', null))!.generatedOn, '2026-03-29');
-      // 严格大于 afterDate（不回头分配）
+      // 2026-08-12 修复（>=）：== afterDate 的未消费批次也可选（断签自愈：
+      // 08-07 生成的批次在 08-09 打开时 maxRefDate=08-07 仍可消费），
+      // asc 排序下返回最早的那个
+      expect((await dao.findNextReadyBatch('LOW', '2026-03-29'))!.id, earliest);
+      // 04-05 >= 03-29 且未消费，若 03-29 已被消费则返回 04-05
+      await db.into(db.dailyLearnings).insert(DailyLearningsCompanion.insert(
+            learningDate: '2026-08-01',
+            refBatchDate: '2026-03-29',
+            refBatchId: earliest,
+            dailyCountSnapshot: 3,
+          ));
       expect((await dao.findNextReadyBatch('LOW', '2026-03-29'))!.id, later);
-      expect(await dao.findNextReadyBatch('LOW', '2026-04-10'), isNull);
+      expect((await dao.findNextReadyBatch('LOW', '2026-04-10'))!.generatedOn,
+          '2026-04-10');
+      // 早于 afterDate 的批次不回头分配
+      expect(await dao.findNextReadyBatch('LOW', '2026-04-15'), isNull);
       // 难度不匹配
       expect(await dao.findNextReadyBatch('MEDIUM', null), isNull);
     });
@@ -157,10 +170,51 @@ void main() {
       final ready = await dao.getReadyBatches('LOW');
       expect(ready.map((b) => b.generatedOn), ['2026-03-29', '2026-04-05']);
 
-      // getUnassignedReadyBatches 排除已消费 + 旧 seed 日期
+      // getUnassignedReadyBatches 排除已消费 + 旧 seed 日期；
+      // >= 语义（2026-08-12 修复）：== minGeneratedOn 的批次也算未来可用
       final unassigned = await dao.getUnassignedReadyBatches('LOW', '2026-03-30');
       expect(unassigned.map((b) => b.generatedOn), ['2026-04-05']);
-      expect(await dao.getUnassignedReadyBatches('LOW', '2026-04-05'), isEmpty);
+      expect(
+        (await dao.getUnassignedReadyBatches('LOW', '2026-04-05'))
+            .map((b) => b.generatedOn),
+        ['2026-04-05'],
+      );
+    });
+
+    test('getUnassignedByDifficultyAndDate：已消费的今日批次不算"进行中"', () async {
+      // 2026-08-12 防重入修复：当天创建并当天消费的批次必须允许再创建
+      // 预生成批次，否则断签后链条无法自愈。
+      // （同日同难度批次唯一：防重入保证一天最多一个同难度批次，
+      //  故已消费/未消费两场景用不同日期验证）
+      final consumed = await insertBatch(
+          status: 'READY', difficulty: 'LOW', generatedOn: '2026-08-12');
+
+      // 已消费的批次不返回
+      await db.into(db.dailyLearnings).insert(DailyLearningsCompanion.insert(
+            learningDate: '2026-08-12',
+            refBatchDate: '2026-08-12',
+            refBatchId: consumed,
+            dailyCountSnapshot: 3,
+          ));
+      expect(
+        await dao.getUnassignedByDifficultyAndDate('LOW', '2026-08-12'),
+        isNull,
+      );
+
+      // 未消费的批次返回（Worker 进行中，防重入）
+      final pending = await insertBatch(
+          status: 'PENDING', difficulty: 'LOW', generatedOn: '2026-08-13');
+      expect(
+        (await dao.getUnassignedByDifficultyAndDate('LOW', '2026-08-13'))!
+            .id,
+        pending,
+      );
+
+      // 难度不匹配
+      expect(
+        await dao.getUnassignedByDifficultyAndDate('MEDIUM', '2026-08-13'),
+        isNull,
+      );
     });
 
     test('getReadyUnnotified / markReadyNotified 幂等', () async {

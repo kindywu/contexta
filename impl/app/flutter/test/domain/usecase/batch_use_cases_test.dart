@@ -16,6 +16,7 @@ import 'package:flutter_test/flutter_test.dart';
 class FakeArticleRepository implements ArticleRepository {
   List<ArticleBatch> unassigned = [];
   ArticleBatch? existingToday;
+  ArticleBatch? unassignedToday;
   ArticleBatch? nextReady;
   int nextBatchId = 100;
   final List<String> createCalls = [];
@@ -35,6 +36,16 @@ class FakeArticleRepository implements ArticleRepository {
   }
 
   @override
+  Future<ArticleBatch?> getUnassignedBatchByDifficultyAndDate(
+      String difficulty, String date) async {
+    return unassignedToday;
+  }
+
+  
+  @override
+  Future<List<ArticleBatch>> getPendingBatches() => throw UnimplementedError();
+
+@override
   Future<int> createBatch(String difficulty, {String? generatedOn}) async {
     createCalls.add('$difficulty:$generatedOn');
     return nextBatchId;
@@ -236,8 +247,8 @@ void main() {
       expect(scheduler.scheduled, isEmpty);
     });
 
-    test('今天已为该难度创建过批次时跳过', () async {
-      repo.existingToday = _readyBatch(5);
+    test('今天已有未消费的同难度批次时跳过（防重入）', () async {
+      repo.unassignedToday = _readyBatch(5);
 
       await useCase('LOW', 3);
 
@@ -248,8 +259,20 @@ void main() {
     test('无可用批次时创建新批次并调度 Worker', () async {
       await useCase('LOW', 3);
 
-      expect(repo.createCalls, ['LOW:2026-08-01']);
+      expect(repo.createCalls, ['LOW:2026-08-02']);
       expect(repo.createArticlesCalls, hasLength(1));
+      expect(scheduler.scheduled, [100]);
+    });
+
+    test('今天创建且已消费的批次不挡预生成（防重入修复）', () async {
+      // 2026-08-12：当天创建当天消费后，未消费查询返回 null →
+      // 允许再次创建（预生成下一次），断签后链条可自愈。
+      repo.existingToday = _readyBatch(5); // 旧的"今天已有"查询不再生效
+      repo.unassignedToday = null; // 今天已无未消费批次
+
+      await useCase('LOW', 3);
+
+      expect(repo.createCalls, ['LOW:2026-08-02']);
       expect(scheduler.scheduled, [100]);
     });
 
@@ -359,4 +382,8 @@ class FakeTimeProvider implements TimeProvider {
 
   @override
   String todayDateString() => '2026-08-01';
+
+
+  @override
+  String nextDateString() => '2026-08-02';
 }

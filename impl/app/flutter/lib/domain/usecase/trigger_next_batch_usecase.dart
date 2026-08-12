@@ -55,26 +55,33 @@ class TriggerNextBatchUseCase {
   Future<void> call(String difficulty, int dailyCount) async {
     final today = _timeProvider.todayDateString();
     final maxRefDate = await _articleRepository.getMaxRefBatchDate() ?? today;
-    debugPrint('[TriggerNextBatch] call: difficulty=$difficulty dailyCount=$dailyCount today=$today maxRefDate=$maxRefDate');
+    // 2026-08-12：预生成批次打"明天"日期——今天消费的批次（generated_on=今天）
+    // 仍占用 UNIQUE(difficulty, generated_on)，预生成必须落在不同日期；
+    // 且"明天"日期天然满足消费规则（>= 最后消费日），断签多天依然可消费。
+    final nextDate = _timeProvider.nextDateString();
+    debugPrint('[TriggerNextBatch] call: difficulty=$difficulty dailyCount=$dailyCount today=$today nextDate=$nextDate maxRefDate=$maxRefDate');
 
-    // 1. 检查是否有 generated_on > max(ref_batch_date) 且 difficulty=当前难度的 READY 批次
-    //    忽略旧 seed 数据（generated_on 远早于 maxRefDate，不满足 > 条件）
+    // 1. 检查是否有 generated_on >= max(ref_batch_date) 且 difficulty=当前难度的 READY 批次
+    //    （2026-08-12 修复：>= 使批次等得起，断签一天不作废）
+    //    忽略旧 seed 数据（generated_on 远早于 maxRefDate，不满足 >= 条件）
     final unassigned =
         await _articleRepository.getUnassignedReadyBatches(difficulty, maxRefDate);
     debugPrint('[TriggerNextBatch] unassigned READY batches: ${unassigned.length}');
     if (unassigned.isNotEmpty) return; // 已有比已分配批次更新的可用批次
 
-    // 2. 检查今天是否已为该难度创建过批次（PENDING/GENERATING/READY）。
-    //    避免在一天内产生多个同难度批次。
-    final existing =
-        await _articleRepository.getBatchByDifficultyAndDate(difficulty, today);
-    debugPrint('[TriggerNextBatch] batch for $difficulty/$today: ${existing?.id}');
-    if (existing != null) return; // 今天已为该难度创建过批次，Worker 继续
+    // 2. 检查预生成目标日期（明天）是否已有**未消费**的同难度批次。
+    //    避免在一天内产生多个同难度批次（Worker 进行中的防重入）。
+    //    2026-08-12 修复：已消费的批次不算"进行中"——当天创建当天消费
+    //    后必须允许再创建（预生成下一次），否则断签后链条无法自愈。
+    final existing = await _articleRepository
+        .getUnassignedBatchByDifficultyAndDate(difficulty, nextDate);
+    debugPrint('[TriggerNextBatch] unassigned batch for $difficulty/$nextDate: ${existing?.id}');
+    if (existing != null) return; // 明天已有未消费的同难度批次，Worker 继续
 
     // 3. 没有可用的，创建新批次并调度 Worker
     final batchId = await _articleRepository.createBatch(
       difficulty,
-      generatedOn: today,
+      generatedOn: nextDate,
     );
     debugPrint('[TriggerNextBatch] created batch $batchId');
     await _articleRepository.createArticles(batchId, pickCategories(difficulty));
