@@ -153,11 +153,24 @@ pub async fn articles_reject(
 }
 
 /// 手动补生成指定日期：ensure_daily_generation（幂等，预占行模式）。
+/// 日期先严格校验（垃圾日期原样入库会静默产出 15 行垃圾 target_date，消耗当日预算 +
+/// 15 次 LLM 成本且行永久滞留），失败 → 400 BAD_PARAM。chrono 的 %m/%d 容忍非零填充
+/// （"2026-8-14" 能解析），故用「解析 → 按 %Y-%m-%d 回格式化 → 与输入全等」收紧为
+/// 严格零填充 ISO 格式，同时天然拒绝非法月日（"2026-13-01"/"2026-02-30"）。
 pub async fn articles_generate(
     State(state): State<AppState>,
     _auth: AdminAuth,
     Json(req): Json<ArticleGenerateRequest>,
 ) -> Result<Json<ApiResult<serde_json::Value>>, AppError> {
+    let strict_iso = chrono::NaiveDate::parse_from_str(&req.date, "%Y-%m-%d")
+        .map(|d| d.format("%Y-%m-%d").to_string() == req.date)
+        .unwrap_or(false);
+    if !strict_iso {
+        return Err(AppError::BadRequest(
+            "BAD_PARAM".into(),
+            "invalid date".into(),
+        ));
+    }
     let client = DeepSeekClient::new(&state.cfg)?;
     article_service::ensure_daily_generation(&state.pool, &state.cfg, &client, &req.date).await?;
     Ok(ok(serde_json::json!({})))

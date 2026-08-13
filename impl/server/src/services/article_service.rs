@@ -272,8 +272,15 @@ pub async fn approve_article(pool: &SqlitePool, id: i64) -> Result<(), AppError>
 
 /// 审核拒绝：旧行 → rejected（达补生上限则 rejected_final）；未达上限时同一短事务内
 /// INSERT 补生成预占行（regenerate_count = 父行 regen+1、title NULL）→ 事务外填充——
-/// regenerate_count 预留时定值（无需 MAX(id) 回写，无并发错行风险）。填充失败 → 新行
-/// failed，下次 ensure 补槽位。预算在预留时校验（预占行即消耗每日文章配额）。
+/// regenerate_count 预留时定值（无需 MAX(id) 回写，无并发错行风险）。预算在预留时校验
+/// （预占行即消耗每日文章配额）。守卫与 approve 对称（审查加固）：仅已生成行
+/// （title IS NOT NULL）可拒绝——预占/生成中行管理员看不到内容，误拒只会浪费一次
+/// 补生成，直接 NotFound。
+///
+/// 补生成失败降级决策（T12 审查）：拒绝语义（旧行 rejected + 补生成预占行已提交）在
+/// 事务内即已完成，填充失败不再上抛——否则客户端收到 500/502/504 但拒绝已生效，重试
+/// 撞 404，新行落 failed 也无端点可处置。记 warn 后返回成功；新行保持 failed
+/// （title 仍 NULL），由下次 ensure 自动补预占行替换（预占行自愈，不浪费槽位）。
 pub async fn reject_article(
     pool: &SqlitePool,
     cfg: &Config,
@@ -282,7 +289,7 @@ pub async fn reject_article(
     reason: &str,
 ) -> Result<(), AppError> {
     let row: Option<(String, String, i64, i64)> = sqlx::query_as(
-        "SELECT target_date, difficulty, order_index, regenerate_count FROM article WHERE id = ? AND status = 'pending_review'",
+        "SELECT target_date, difficulty, order_index, regenerate_count FROM article WHERE id = ? AND status = 'pending_review' AND title IS NOT NULL",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -293,8 +300,10 @@ pub async fn reject_article(
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     // F3 守卫：并发双 reject 同一行时，后到者的 UPDATE 条件（仍为 pending_review）不命中
     // （affected=0）→ 不建补生成行，返回 NotFound——避免双插预占行。
+    // title IS NOT NULL 同步进 UPDATE：并发 ensure 在 SELECT 后填充该行（title 置真）时
+    // 本路同样不命中——SELECT/UPDATE 守卫一致（与 approve 的 title 守卫对称）。
     let n = sqlx::query(
-        "UPDATE article SET status = 'rejected', reject_reason = ?, updated_at = ? WHERE id = ? AND status = 'pending_review'",
+        "UPDATE article SET status = 'rejected', reject_reason = ?, updated_at = ? WHERE id = ? AND status = 'pending_review' AND title IS NOT NULL",
     )
     .bind(reason)
     .bind(now)
@@ -321,8 +330,14 @@ pub async fn reject_article(
     let new_id =
         insert_reservation(&mut *tx, &date, &difficulty, category, order, regen + 1).await?;
     tx.commit().await?;
-    // 事务外填充：失败 → 新行 failed，下次 ensure 补槽位
-    generate_one(pool, cfg, api, new_id).await
+    // 事务外填充：失败 → 新行 failed（title NULL），下次 ensure 补预占行替换——
+    // 按降级决策记 warn 返回成功（拒绝语义已完成，错误不上抛）。
+    if let Err(e) = generate_one(pool, cfg, api, new_id).await {
+        tracing::warn!(
+            "article {id} replacement generation failed, reservation {new_id} will be re-reserved by next ensure: {e:?}"
+        );
+    }
+    Ok(())
 }
 
 /// 下发/管理视图：段落已拆分（英文、中文），供 T10 下发与 T12 审核列表复用。

@@ -594,3 +594,95 @@ async fn concurrent_double_reject_creates_single_replacement() {
     assert_eq!(regen, 1, "补生行 regenerate_count = 1");
     cleanup(pool, &db_path).await;
 }
+
+#[tokio::test]
+async fn reject_replacement_failure_degrades_to_ok() {
+    let (pool, cfg, db_path) = setup().await;
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-19")
+        .await
+        .unwrap();
+    let first: i64 = sqlx::query_scalar("SELECT id FROM article ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    // 补生成失败（LLM 首次调用 Fatal）→ reject 仍返回 Ok：拒绝语义（旧行 rejected +
+    // 补生成预占行已提交）已完成，失败不上抛（否则客户端收到 500/502/504 却已生效，
+    // 重试撞 404）；新行 failed（title NULL）由下次 ensure 自动补预占行替换（自愈）。
+    let api = FailingFirstArticleApi {
+        calls: AtomicUsize::new(0),
+    };
+    let r = article_service::reject_article(&pool, &cfg, &api, first, "bad").await;
+    assert!(
+        r.is_ok(),
+        "补生成失败必须降级为 Ok（拒绝已生效，替换行自愈）: {:?}",
+        r.err()
+    );
+    let old_status: String = sqlx::query_scalar("SELECT status FROM article WHERE id = ?")
+        .bind(first)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(old_status, "rejected");
+    let new_id: i64 = sqlx::query_scalar("SELECT MAX(id) FROM article")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(new_id > first, "补生成预占行应已提交（即使填充失败）");
+    let (new_status, new_title): (String, Option<String>) =
+        sqlx::query_as("SELECT status, title FROM article WHERE id = ?")
+            .bind(new_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(new_status, "failed", "填充失败行应为 failed");
+    assert!(new_title.is_none(), "failed 行 title 仍 NULL（可自愈形态）");
+    // 下次 ensure（API 正常）→ LOW 非终结仍 5 篇（4 剩 + 1 新补）
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-19")
+        .await
+        .unwrap();
+    let low: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM article WHERE target_date = '2026-08-19' AND difficulty = 'LOW' AND status IN ('pending_review','approved')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(low, 5, "ensure 自愈后 LOW 仍 5 篇非终结");
+    cleanup(pool, &db_path).await;
+}
+
+#[tokio::test]
+async fn reject_reservation_rows_not_found() {
+    let (pool, cfg, db_path) = setup().await;
+    // 构造预占行（title NULL、pending_review）→ reject 必须 NotFound（与 approve 对称守卫：
+    // 管理员不可拒掉未生成行——看不到内容却误拒 + 浪费一次补生成）
+    let now = Utc::now().timestamp_millis();
+    let id = sqlx::query(
+        "INSERT INTO article (target_date, difficulty, content_category, order_index, title, status, regenerate_count, created_at, updated_at)
+         VALUES ('2026-08-20', 'LOW', 'DAILY_CONVERSATION', 1, NULL, 'pending_review', 0, ?, ?)",
+    )
+    .bind(now)
+    .bind(now)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+    let r = article_service::reject_article(&pool, &cfg, &MockArticleApi, id, "bad").await;
+    assert!(
+        matches!(r, Err(AppError::NotFound(_))),
+        "预占行（title NULL）不可 reject: {:?}",
+        r.err()
+    );
+    // 行未被改动（仍 pending_review 预占形态），且不产生补生成行
+    let st: String = sqlx::query_scalar("SELECT status FROM article WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(st, "pending_review", "reject 失败不得改动原行");
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 1, "reject 预占行不得产生补生成行");
+    cleanup(pool, &db_path).await;
+}

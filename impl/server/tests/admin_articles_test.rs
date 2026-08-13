@@ -371,6 +371,26 @@ async fn manual_generate_for_date() {
         cfg,
     });
     let admin_token = admin_login(&app).await;
+    // 非法日期（"abc"/非零填充 "2026-8-14"）→ 400 BAD_PARAM，且零写入、零 LLM 调用
+    // （否则垃圾 target_date 静默入库 15 行，消耗预算 + LLM 成本且永久滞留）
+    for bad in ["abc", "2026-8-14"] {
+        let (status, json) = send(
+            &app,
+            "POST",
+            "/api/admin/articles/generate",
+            Some(&admin_token),
+            Some(json!({"date": bad})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "非法日期 {bad} 应 400");
+        assert_eq!(json["error_code"], "BAD_PARAM");
+    }
+    let total0: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(total0, 0, "非法日期不得产生任何行");
+    llm.assert_calls(0);
     // 手动生成指定日期 → 15 篇（每难度 5）全部填充（LLM 走 httpmock）
     let (status, json) = send(
         &app,
