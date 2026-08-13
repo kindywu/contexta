@@ -258,6 +258,7 @@ final createInitialBatchUseCaseProvider = Provider<CreateInitialBatchUseCase>((r
 final syncArticlesUseCaseProvider = Provider<SyncArticlesUseCase>((ref) {
   final db = ref.watch(databaseProvider).requireValue;
   return SyncArticlesUseCase(
+    db: db,
     batchDao: ArticleBatchDao(db),
     articleDao: ArticleDao(db),
     paragraphDao: ArticleParagraphDao(db),

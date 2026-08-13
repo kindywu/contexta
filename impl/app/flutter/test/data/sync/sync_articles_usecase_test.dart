@@ -89,6 +89,7 @@ void main() {
     String now = '2026-08-13T09:00:00+08:00',
   }) {
     return SyncArticlesUseCase(
+      db: db,
       batchDao: batchDao,
       articleDao: articleDao,
       paragraphDao: paragraphDao,
@@ -273,12 +274,105 @@ void main() {
     expect(paras6[0].englishText, 'para1-of-6');
   });
 
+  test('段落插入失败 → 整篇事务回滚（title 未更新、旧段落未丢）', () async {
+    // 失败注入（真实 SQLite 约束路径）：english_text = 'boom' 的段落
+    // 被触发器 RAISE(ABORT) 拒绝——比注入 fake hook 更贴近真实约束失败
+    await db.customStatement('''
+      CREATE TRIGGER fail_on_boom_paragraph
+      BEFORE INSERT ON article_paragraph
+      WHEN NEW.english_text = 'boom'
+      BEGIN
+        SELECT RAISE(ABORT, 'injected paragraph failure');
+      END
+    ''');
+
+    var data = buildTodayArticles();
+    final uc = buildUseCase(() async => data);
+    await uc.call();
+
+    // 服务端更新 id=3 的 title，且其段落含 'boom' → 段落插入失败
+    data = [
+      for (final a in data)
+        if (a.id == 3)
+          ArticleDto(
+            id: 3,
+            targetDate: '2026-08-12',
+            difficulty: 'LOW',
+            contentCategory: 'life',
+            orderIndex: 3,
+            title: 'should-not-stick',
+            status: 'SUCCESS',
+            regenerateCount: 0,
+            paragraphs: const [
+              ArticleParagraphDto(
+                orderIndex: 1,
+                englishText: 'boom',
+                chineseTranslation: '触发',
+              ),
+              ArticleParagraphDto(
+                orderIndex: 2,
+                englishText: 'para2-of-3',
+                chineseTranslation: '段落2-3',
+              ),
+            ],
+          )
+        else
+          a,
+    ];
+
+    await expectLater(uc.call(), throwsA(isA<SqliteException>()));
+    // 回滚：title 未更新、段落未丢、无半同步残留
+    final article3 = await articlesByServerId(db, 3);
+    expect(article3!.title, 'title-LOW-3');
+    final paras3 = await paragraphDao.getByArticle(article3.id);
+    expect(paras3, hasLength(2));
+    expect(paras3[0].englishText, 'para1-of-3');
+    expect(paras3[1].englishText, 'para2-of-3');
+    expect(await db.select(db.articles).get(), hasLength(15));
+    expect(await db.select(db.articleParagraphs).get(), hasLength(30));
+  });
+
   test('fetch 失败 → 异常向上抛，不写任何行', () async {
     final uc = buildUseCase(() async => throw StateError('fetch boom'));
     await expectLater(uc.call(), throwsStateError);
     expect(await db.select(db.articleBatches).get(), isEmpty);
     expect(await db.select(db.articles).get(), isEmpty);
     expect(await db.select(db.articleParagraphs).get(), isEmpty);
+  });
+
+  test('并发 call() 单飞：Future.wait 两次 → fetch 只调 1 次、无双插', () async {
+    var fetchCount = 0;
+    final uc = buildUseCase(() async {
+      fetchCount++;
+      return buildTodayArticles();
+    });
+
+    final results = await Future.wait([uc.call(), uc.call()]);
+    expect(fetchCount, 1, reason: '单飞：并发调用复用同一 in-flight Future');
+    expect(results[0].syncedBatches, 3);
+    expect(results[0].syncedArticles, 15);
+    expect(results[1].syncedBatches, 3);
+    expect(results[1].syncedArticles, 15);
+    // 无双插：行数与单次一致（若无双飞保护，双 _ensureBatch 会撞
+    // UNIQUE(difficulty, generated_on) 抛 SqliteException）
+    expect(await db.select(db.articleBatches).get(), hasLength(3));
+    expect(await db.select(db.articles).get(), hasLength(15));
+    expect(await db.select(db.articleParagraphs).get(), hasLength(30));
+  });
+
+  test('fetch 失败后 in-flight 清理：下一次同步恢复正常', () async {
+    var fail = true;
+    final uc = buildUseCase(() async {
+      if (fail) throw StateError('boom');
+      return buildTodayArticles();
+    });
+
+    await expectLater(uc.call(), throwsStateError);
+    fail = false;
+    final result = await uc.call();
+    expect(result.syncedBatches, 3);
+    expect(result.syncedArticles, 15);
+    expect(await db.select(db.articles).get(), hasLength(15));
   });
 
   test('空列表 → 0 批次 0 文章', () async {

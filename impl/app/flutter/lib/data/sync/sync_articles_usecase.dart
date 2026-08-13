@@ -39,15 +39,22 @@ class SyncResult {
 ///   regenerate_count，本任务不落库）；
 /// - **段落**：先删该文章旧段落、再按 order_index 插入（(article_id,
 ///   order_index) 唯一索引保证重复同步不重复）；
+/// - **事务性（2026-08-13 审查修复）**：每篇「文章更新/插入 + 段落先删后插」
+///   包进单个 `db.transaction`——段落插入失败 / 进程中断整体回滚，不残留
+///   「title 已更新、段落丢失」的半同步态（自愈不靠下次同步兜底）；
+/// - **单飞（2026-08-13 审查修复）**：并发 call() 复用同一 in-flight Future
+///   （仿 auth_service.ensureLoggedIn），失败也清理——否则并发双插批次
+///   撞 UNIQUE(difficulty, generated_on) 抛 SqliteException；
 /// - **时区**：generatedOn 用服务端 target_date，不是本地 today（跨日同步
 ///   语义：服务器审核通过日 = 批次日）。
 ///
 /// 注入设计（简报裁定）：**直连 drift DAO**（ArticleBatchDao / ArticleDao /
-/// ArticleParagraphDao），不走 ArticleRepository 大接口（避免为同步加方法
-/// 污染抽象 + 全部 fake）；[fetchToday] 函数注入——测试给假数据，不依赖
-/// 网络 / ServerApiClient。
+/// ArticleParagraphDao）+ [db]（事务容器），不走 ArticleRepository 大接口
+/// （避免为同步加方法污染抽象 + 全部 fake）；[fetchToday] 函数注入——测试
+/// 给假数据，不依赖网络 / ServerApiClient。
 class SyncArticlesUseCase {
   SyncArticlesUseCase({
+    required this.db,
     required this.batchDao,
     required this.articleDao,
     required this.paragraphDao,
@@ -55,13 +62,28 @@ class SyncArticlesUseCase {
     required this.timeProvider,
   });
 
+  /// 事务容器（_upsertArticle 每篇一个事务）。
+  final AppDatabase db;
   final ArticleBatchDao batchDao;
   final ArticleDao articleDao;
   final ArticleParagraphDao paragraphDao;
   final Future<List<ArticleDto>> Function() fetchToday;
   final TimeProvider timeProvider;
 
-  Future<SyncResult> call() async {
+  /// 进行中的 call()（单飞：并发复用，完成后置空，失败同样清理）。
+  Future<SyncResult>? _inflight;
+
+  Future<SyncResult> call() {
+    final inFlight = _inflight;
+    if (inFlight != null) return inFlight;
+    final future = _doCall();
+    _inflight = future;
+    return future.whenComplete(() {
+      if (identical(_inflight, future)) _inflight = null;
+    });
+  }
+
+  Future<SyncResult> _doCall() async {
     final articles = await fetchToday();
     final byDifficulty = <String, List<ArticleDto>>{};
     for (final a in articles) {
@@ -104,33 +126,37 @@ class SyncArticlesUseCase {
   }
 
   /// server_article_id 幂等 upsert（见类注释）。
-  Future<void> _upsertArticle(int batchId, ArticleDto dto) async {
-    final existing = await articleDao.getByServerArticleId(dto.id);
-    if (existing == null) {
-      final articleId = await articleDao.insert(
-        ArticlesCompanion.insert(
-          batchId: batchId,
-          orderIndex: dto.orderIndex,
-          contentCategory: dto.contentCategory,
-          title: Value(dto.title),
-          status: 'SUCCESS',
-          retryCount: 0,
-          accumulatedReadSeconds: 0,
-          maxRetries: 0,
-          serverArticleId: Value(dto.id),
-        ),
-      );
-      await _replaceParagraphs(articleId, dto.paragraphs);
-    } else {
-      await articleDao.updateSyncedArticle(
-        existing.id,
-        title: dto.title,
-        orderIndex: dto.orderIndex,
-        contentCategory: dto.contentCategory,
-      );
-      await _replaceParagraphs(existing.id, dto.paragraphs);
-    }
-  }
+  ///
+  /// 整篇（文章更新/插入 + 段落先删后插）包进单个事务：任一环节失败
+  /// （如段落约束冲突）整体回滚——文章 title 不残留已更新、旧段落不丢失。
+  Future<void> _upsertArticle(int batchId, ArticleDto dto) =>
+      db.transaction(() async {
+        final existing = await articleDao.getByServerArticleId(dto.id);
+        if (existing == null) {
+          final articleId = await articleDao.insert(
+            ArticlesCompanion.insert(
+              batchId: batchId,
+              orderIndex: dto.orderIndex,
+              contentCategory: dto.contentCategory,
+              title: Value(dto.title),
+              status: 'SUCCESS',
+              retryCount: 0,
+              accumulatedReadSeconds: 0,
+              maxRetries: 0,
+              serverArticleId: Value(dto.id),
+            ),
+          );
+          await _replaceParagraphs(articleId, dto.paragraphs);
+        } else {
+          await articleDao.updateSyncedArticle(
+            existing.id,
+            title: dto.title,
+            orderIndex: dto.orderIndex,
+            contentCategory: dto.contentCategory,
+          );
+          await _replaceParagraphs(existing.id, dto.paragraphs);
+        }
+      });
 
   /// 段落先删后插：删除该文章旧段落，再按 order_index 插入新段落。
   Future<void> _replaceParagraphs(
