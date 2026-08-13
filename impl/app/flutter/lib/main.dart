@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:workmanager/workmanager.dart';
 
-import 'core/navigation/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'data/background/background_callback_dispatcher.dart';
+import 'di/providers.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,15 +14,17 @@ void main() {
   runApp(const ProviderScope(child: MainApp()));
 }
 
-class MainApp extends StatelessWidget {
+class MainApp extends ConsumerWidget {
   const MainApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
       title: 'Contexta',
       theme: buildAppTheme(),
-      routerConfig: buildRouter(),
+      // 登录守卫集成在 routerProvider（authServiceProvider 状态变化 →
+      // refreshListenable 重估重定向，无需重建 router）
+      routerConfig: ref.watch(routerProvider),
     );
   }
 }

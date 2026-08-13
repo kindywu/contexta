@@ -1,8 +1,13 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../core/config/app_config.dart';
+import '../core/navigation/app_router.dart';
 import '../core/time/iso8601.dart';
+import '../data/auth/auth_service.dart';
+import '../data/auth/device_id_provider.dart';
+import '../data/auth/native_phone_reader.dart';
 import '../data/background/generation_scheduler.dart';
 import '../data/local/database_open.dart';
 import '../data/local/daos/article_daos.dart';
@@ -10,6 +15,7 @@ import '../data/local/daos/settings_daos.dart';
 import '../data/local/daos/word_daos.dart';
 import '../data/remote/deepseek_api.dart';
 import '../data/remote/llm_caller.dart';
+import '../data/remote/server_api_client.dart';
 import '../data/repository/article_repository_impl.dart';
 import '../data/repository/settings_repository_impl.dart';
 import '../data/repository/stats_repository_impl.dart';
@@ -45,6 +51,59 @@ final databaseProvider = FutureProvider<AppDatabase>((ref) async {
   final db = await buildAppDatabase();
   ref.onDispose(db.close);
   return db;
+});
+
+/// 服务端是否已配置（SERVER_BASE_URL 非空）。
+/// 空 → App 全本地模式：登录页显示配置提示，路由不做登录拦截。测试可 override。
+final serverConfiguredProvider =
+    Provider<bool>((ref) => AppConfig.serverBaseUrl.isNotEmpty);
+
+/// 服务端 API 客户端（认证拦截每次请求从 user_settings 读 token；
+/// 登录/登出/同步共用同一实例——T2 遗留：token 变化自动重置 401 去重）。
+final serverApiClientProvider = Provider<ServerApiClient>((ref) {
+  final dio = Dio(BaseOptions(
+    // 登录 / 同步接口较短：连接 15s / 读 30s / 写 15s（超时统一映射 NETWORK）
+    connectTimeout: const Duration(seconds: 15),
+    receiveTimeout: const Duration(seconds: 30),
+    sendTimeout: const Duration(seconds: 15),
+  ));
+  return ServerApiClient(
+    dio,
+    baseUrl: AppConfig.serverBaseUrl,
+    tokenProvider: () async {
+      final settings = await ref.read(settingsRepositoryProvider).getSettings();
+      return settings?.serverToken;
+    },
+  );
+});
+
+/// 设备标识（shared_preferences 持久化，首次生成后固定；登录/登出请求体）。
+final deviceIdProvider = Provider<DeviceIdProvider>((ref) => DeviceIdProvider());
+
+/// 本机号码读取（MethodChannel `contexta/native`；不可用返回 null 走手动输入）。
+final nativePhoneReaderProvider =
+    Provider<NativePhoneReader>((ref) => NativePhoneReader());
+
+/// 认证状态机（登录/登出/401 恢复）。构造时接线 ServerApiClient 的
+/// authCallback → handleServerFailure（清 token + evicted/banned/loggedOut）。
+final authServiceProvider = StateNotifierProvider<AuthService, AuthState>((ref) {
+  final service = AuthService(
+    api: ref.watch(serverApiClientProvider),
+    settings: ref.watch(settingsRepositoryProvider),
+    deviceId: () => ref.read(deviceIdProvider).getDeviceId(),
+    readPhone: () => ref.read(nativePhoneReaderProvider).readLine1Number(),
+  );
+  ref.read(serverApiClientProvider).setAuthCallback(service.handleServerFailure);
+  return service;
+});
+
+/// 应用路由（登录守卫：服务端配置且未登录 → /login 带来源回跳；
+/// 登录成功（状态变更）经 refreshListenable 自动回跳）。
+final routerProvider = Provider<GoRouter>((ref) {
+  final authService = ref.read(serverConfiguredProvider)
+      ? ref.read(authServiceProvider.notifier)
+      : null;
+  return buildRouter(authService: authService);
 });
 
 /// 时间注入：ISO 偏移日期时间（与 Kotlin TimeProvider.nowDateTimeString 对齐）。

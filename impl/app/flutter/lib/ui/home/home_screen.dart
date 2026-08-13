@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/components/article_card.dart';
 import '../../core/components/loading_indicator.dart';
+import '../../core/navigation/routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
+import '../../data/auth/auth_service.dart';
+import '../../di/providers.dart';
 import 'home_controller.dart';
 
 /// Home 页（对照 Kotlin HomeScreen.kt）：
@@ -65,6 +69,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       padding: EdgeInsets.zero,
       children: [
         const SizedBox(height: AppSpacing.sm),
+        // 服务端已配置但未登录 → 提示条 + 登录入口（本地模式不显示；
+        // 服务端配置时守卫会拦截，此处是「暂不登录」回访入口）
+        if (ref.watch(serverConfiguredProvider) &&
+            ref.watch(authServiceProvider).status != AuthStatus.loggedIn)
+          const _LoginBanner(),
         _HomeHeader(dateLabel: state.dateLabel, streak: state.streak),
         const SizedBox(height: AppSpacing.sm),
         if (state.isGenerating)
@@ -253,6 +262,48 @@ class _ArticleCardView extends StatelessWidget {
         isReadCompleted: article.isReadCompleted,
       ),
       onClick: onClick,
+    );
+  }
+}
+
+/// 未登录提示条 + 登录入口（服务端已配置且未登录时显示）。
+class _LoginBanner extends StatelessWidget {
+  const _LoginBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppPage.horizontalPadding,
+        vertical: AppSpacing.xs,
+      ),
+      child: Material(
+        color: AppColors.surfaceSoft,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.xs,
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.person_outline, size: 18, color: AppColors.muted),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  '未登录',
+                  style: AppType.textTheme.bodyMedium
+                      ?.copyWith(color: AppColors.muted),
+                ),
+              ),
+              TextButton(
+                onPressed: () => context.push(Routes.login),
+                child: const Text('登录'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

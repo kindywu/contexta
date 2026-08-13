@@ -106,6 +106,41 @@ class SettingsRepositoryImpl implements SettingsRepository {
     await _settingsDao
         .upsert(existing.toCompanion(true).copyWith(autoPlayAudio: Value(enabled)));
   }
+
+  @override
+  Future<void> saveAuth({
+    required String phone,
+    required String token,
+    required int tokenExpiresAtMillis,
+  }) async {
+    final existing = await _settingsDao.get();
+    await _settingsDao.upsert((existing ?? const UserSettingsRow(
+      id: 1,
+      isOnboarded: false,
+      difficultyLevel: 'MEDIUM',
+      dailyArticleCount: 3,
+      translationDisplayMode: 'FULL',
+      ttsSpeed: 1.0,
+      ttsVoiceId: 'BELLA',
+      masteryThresholdN: 1,
+      autoPlayAudio: false,
+    )).toCompanion(true).copyWith(
+      serverPhone: Value(phone),
+      serverToken: Value(token),
+      serverTokenExpiresAt: Value(tokenExpiresAtMillis),
+    ));
+  }
+
+  @override
+  Future<void> clearAuth() async {
+    final existing = await _settingsDao.get();
+    if (existing == null) return;
+    await _settingsDao.upsert(existing.toCompanion(true).copyWith(
+      serverPhone: const Value(null),
+      serverToken: const Value(null),
+      serverTokenExpiresAt: const Value(null),
+    ));
+  }
 }
 
 extension on UserSettingsRow {
@@ -119,5 +154,8 @@ extension on UserSettingsRow {
         ttsVoice: TtsVoice.fromDbValue(ttsVoiceId),
         masteryThresholdN: masteryThresholdN,
         autoPlayAudio: autoPlayAudio,
+        serverPhone: serverPhone,
+        serverToken: serverToken,
+        serverTokenExpiresAt: serverTokenExpiresAt,
       );
 }

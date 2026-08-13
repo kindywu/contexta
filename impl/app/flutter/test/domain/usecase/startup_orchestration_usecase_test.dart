@@ -234,6 +234,17 @@ class FakeSettingsRepository implements SettingsRepository {
   @override
   Future<void> updateAutoPlayAudio(bool enabled) =>
       throw UnimplementedError();
+
+  @override
+  Future<void> saveAuth({
+    required String phone,
+    required String token,
+    required int tokenExpiresAtMillis,
+  }) =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> clearAuth() => throw UnimplementedError();
 }
 
 class FakeTriggerNextBatch implements TriggerNextBatchUseCase {

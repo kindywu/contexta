@@ -348,6 +348,32 @@ void main() {
       expect(authCalls, [AuthFailureKind.tokenExpired]);
     });
 
+    test('token 变化（重新登录）后再次 401 → authCallback 重新触发', () async {
+      final authCalls = <AuthFailureKind>[];
+      var token = 'tok-a';
+      final (client, adapter) =
+          _makeClient(tokenProvider: () async => token, onAuth: authCalls.add);
+      adapter.handler = (options) async => _json(401, {
+            'code': 401,
+            'message': 'token expired',
+            'error_code': 'TOKEN_EXPIRED',
+          });
+
+      await expectLater(
+        client.get<dynamic>('/v1/hello'),
+        throwsA(isA<ServerApiException>()),
+      );
+      expect(authCalls, [AuthFailureKind.tokenExpired]);
+
+      // 重新登录换 token（T3 接线：AuthService 登录成功写新 token）
+      token = 'tok-b';
+      await expectLater(
+        client.get<dynamic>('/v1/hello'),
+        throwsA(isA<ServerApiException>()),
+      );
+      expect(authCalls, [AuthFailureKind.tokenExpired, AuthFailureKind.tokenExpired]);
+    });
+
     test('authCallback 抛异常 → 不吞掉原始 ServerApiException', () async {
       final (client, adapter) = _makeClient(
         onAuth: (_) => throw StateError('callback boom'),

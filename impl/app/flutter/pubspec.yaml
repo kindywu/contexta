@@ -19,6 +19,7 @@ dependencies:
   go_router: ^17.4.0
   kittentts: ^0.1.0
   path_provider: ^2.1.6
+  shared_preferences: ^2.3.0
   sqlite3_flutter_libs: ^0.6.0+eol
   url_launcher: ^6.3.2
   wakelock_plus: ^1.7.0

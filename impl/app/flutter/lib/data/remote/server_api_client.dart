@@ -52,6 +52,12 @@ class ServerApiClient {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final token = await tokenProvider();
+        if (token != _lastSeenToken) {
+          // 登录态变更（新 token / 清 token）：重置认证回调去重，
+          // 使重新登录后的 401 能再次触发上层回调
+          _lastSeenToken = token;
+          _notifiedAuthKinds.clear();
+        }
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
         }
@@ -68,9 +74,14 @@ class ServerApiClient {
 
   void Function(AuthFailureKind kind)? _authCallback;
 
-  /// 已触发过认证回调的类别：单实例生命周期内每种只触发一次，
+  /// 已触发过认证回调的类别：单 token 生命周期内每种只触发一次，
   /// 避免并发请求同时 401 时重复弹登出 / 重复调登出接口。
+  /// token 变化（登录 / 重登 / 登出）时清空——重新登录后复用同一实例，
+  /// 再次 401 必须重新触发回调（T3 接线落实）。
   final Set<AuthFailureKind> _notifiedAuthKinds = {};
+
+  /// 最近一次请求携带的 token；变化即视为登录态变更，重置去重。
+  String? _lastSeenToken;
 
   /// 注册认证失败回调（登录失效 / 踢下线 / 封禁 → 由上层决定登出提示等）。
   void setAuthCallback(void Function(AuthFailureKind kind)? cb) => _authCallback = cb;
