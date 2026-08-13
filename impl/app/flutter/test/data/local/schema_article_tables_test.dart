@@ -111,7 +111,7 @@ void main() {
 
     test('article 表结构（对照 ArticleEntity.kt）', () async {
       final cols = await tableInfo('article');
-      expect(cols.length, 14);
+      expect(cols.length, 15);
       expectCol(cols, 'id', type: 'INTEGER', notNull: true, pk: true);
       expectCol(cols, 'batch_id', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'order_index', type: 'INTEGER', notNull: true, pk: false);
@@ -127,6 +127,8 @@ void main() {
       expectCol(cols, 'last_retry_at', type: 'TEXT', notNull: false, pk: false);
       expectCol(cols, 'max_retries', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'next_retry_at', type: 'TEXT', notNull: false, pk: false);
+      // Task 1（计划 B）加列：服务端文章 id（同步幂等键，nullable）
+      expectCol(cols, 'server_article_id', type: 'INTEGER', notNull: false, pk: false);
       expect(await tableSql('article'), contains('AUTOINCREMENT'));
     });
 
@@ -147,6 +149,17 @@ void main() {
     test('article 索引 index_article_batch_id', () async {
       // Room: Index("batch_id") → 自动命名 index_article_batch_id
       expect((await indexList('article'))['index_article_batch_id'], 0);
+    });
+
+    test('article 索引 index_article_server_article_id（同步幂等键，unique）', () async {
+      // Task 1（计划 B）：SQLite UNIQUE 允许多 NULL —— 本地旧文章（无服务端
+      // id）不冲突，服务端文章按 id 幂等 upsert
+      final map = await indexList('article');
+      expect(map['index_article_server_article_id'], 1);
+      expect(
+        await indexInfo('index_article_server_article_id'),
+        ['server_article_id'],
+      );
     });
 
     test('article_paragraph 表结构（对照 ArticleParagraphEntity.kt）', () async {

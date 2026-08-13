@@ -112,6 +112,38 @@ class $UserSettingsTable extends UserSettings
       'CHECK ("auto_play_audio" IN (0, 1))',
     ),
   );
+  static const VerificationMeta _serverPhoneMeta = const VerificationMeta(
+    'serverPhone',
+  );
+  @override
+  late final GeneratedColumn<String> serverPhone = GeneratedColumn<String>(
+    'server_phone',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _serverTokenMeta = const VerificationMeta(
+    'serverToken',
+  );
+  @override
+  late final GeneratedColumn<String> serverToken = GeneratedColumn<String>(
+    'server_token',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _serverTokenExpiresAtMeta =
+      const VerificationMeta('serverTokenExpiresAt');
+  @override
+  late final GeneratedColumn<int> serverTokenExpiresAt = GeneratedColumn<int>(
+    'server_token_expires_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -123,6 +155,9 @@ class $UserSettingsTable extends UserSettings
     ttsVoiceId,
     masteryThresholdN,
     autoPlayAudio,
+    serverPhone,
+    serverToken,
+    serverTokenExpiresAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -224,6 +259,33 @@ class $UserSettingsTable extends UserSettings
     } else if (isInserting) {
       context.missing(_autoPlayAudioMeta);
     }
+    if (data.containsKey('server_phone')) {
+      context.handle(
+        _serverPhoneMeta,
+        serverPhone.isAcceptableOrUnknown(
+          data['server_phone']!,
+          _serverPhoneMeta,
+        ),
+      );
+    }
+    if (data.containsKey('server_token')) {
+      context.handle(
+        _serverTokenMeta,
+        serverToken.isAcceptableOrUnknown(
+          data['server_token']!,
+          _serverTokenMeta,
+        ),
+      );
+    }
+    if (data.containsKey('server_token_expires_at')) {
+      context.handle(
+        _serverTokenExpiresAtMeta,
+        serverTokenExpiresAt.isAcceptableOrUnknown(
+          data['server_token_expires_at']!,
+          _serverTokenExpiresAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -269,6 +331,18 @@ class $UserSettingsTable extends UserSettings
         DriftSqlType.bool,
         data['${effectivePrefix}auto_play_audio'],
       )!,
+      serverPhone: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_phone'],
+      ),
+      serverToken: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_token'],
+      ),
+      serverTokenExpiresAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_token_expires_at'],
+      ),
     );
   }
 
@@ -297,6 +371,16 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
   final String ttsVoiceId;
   final int masteryThresholdN;
   final bool autoPlayAudio;
+
+  /// 登录态：服务端手机号（登录成功后回写；null = 未登录）。
+  /// 仅存本地库，不落代码 / 日志（敏感值纪律）。
+  final String? serverPhone;
+
+  /// 登录态：服务端签发的 token（null = 未登录）。
+  final String? serverToken;
+
+  /// 登录态：token 过期时间（Unix millis；null = 无 token）。
+  final int? serverTokenExpiresAt;
   const UserSettingsRow({
     required this.id,
     required this.isOnboarded,
@@ -307,6 +391,9 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     required this.ttsVoiceId,
     required this.masteryThresholdN,
     required this.autoPlayAudio,
+    this.serverPhone,
+    this.serverToken,
+    this.serverTokenExpiresAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -320,6 +407,15 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     map['tts_voice_id'] = Variable<String>(ttsVoiceId);
     map['mastery_threshold_n'] = Variable<int>(masteryThresholdN);
     map['auto_play_audio'] = Variable<bool>(autoPlayAudio);
+    if (!nullToAbsent || serverPhone != null) {
+      map['server_phone'] = Variable<String>(serverPhone);
+    }
+    if (!nullToAbsent || serverToken != null) {
+      map['server_token'] = Variable<String>(serverToken);
+    }
+    if (!nullToAbsent || serverTokenExpiresAt != null) {
+      map['server_token_expires_at'] = Variable<int>(serverTokenExpiresAt);
+    }
     return map;
   }
 
@@ -334,6 +430,15 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       ttsVoiceId: Value(ttsVoiceId),
       masteryThresholdN: Value(masteryThresholdN),
       autoPlayAudio: Value(autoPlayAudio),
+      serverPhone: serverPhone == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverPhone),
+      serverToken: serverToken == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverToken),
+      serverTokenExpiresAt: serverTokenExpiresAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverTokenExpiresAt),
     );
   }
 
@@ -354,6 +459,11 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       ttsVoiceId: serializer.fromJson<String>(json['ttsVoiceId']),
       masteryThresholdN: serializer.fromJson<int>(json['masteryThresholdN']),
       autoPlayAudio: serializer.fromJson<bool>(json['autoPlayAudio']),
+      serverPhone: serializer.fromJson<String?>(json['serverPhone']),
+      serverToken: serializer.fromJson<String?>(json['serverToken']),
+      serverTokenExpiresAt: serializer.fromJson<int?>(
+        json['serverTokenExpiresAt'],
+      ),
     );
   }
   @override
@@ -371,6 +481,9 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       'ttsVoiceId': serializer.toJson<String>(ttsVoiceId),
       'masteryThresholdN': serializer.toJson<int>(masteryThresholdN),
       'autoPlayAudio': serializer.toJson<bool>(autoPlayAudio),
+      'serverPhone': serializer.toJson<String?>(serverPhone),
+      'serverToken': serializer.toJson<String?>(serverToken),
+      'serverTokenExpiresAt': serializer.toJson<int?>(serverTokenExpiresAt),
     };
   }
 
@@ -384,6 +497,9 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     String? ttsVoiceId,
     int? masteryThresholdN,
     bool? autoPlayAudio,
+    Value<String?> serverPhone = const Value.absent(),
+    Value<String?> serverToken = const Value.absent(),
+    Value<int?> serverTokenExpiresAt = const Value.absent(),
   }) => UserSettingsRow(
     id: id ?? this.id,
     isOnboarded: isOnboarded ?? this.isOnboarded,
@@ -395,6 +511,11 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     ttsVoiceId: ttsVoiceId ?? this.ttsVoiceId,
     masteryThresholdN: masteryThresholdN ?? this.masteryThresholdN,
     autoPlayAudio: autoPlayAudio ?? this.autoPlayAudio,
+    serverPhone: serverPhone.present ? serverPhone.value : this.serverPhone,
+    serverToken: serverToken.present ? serverToken.value : this.serverToken,
+    serverTokenExpiresAt: serverTokenExpiresAt.present
+        ? serverTokenExpiresAt.value
+        : this.serverTokenExpiresAt,
   );
   UserSettingsRow copyWithCompanion(UserSettingsCompanion data) {
     return UserSettingsRow(
@@ -421,6 +542,15 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       autoPlayAudio: data.autoPlayAudio.present
           ? data.autoPlayAudio.value
           : this.autoPlayAudio,
+      serverPhone: data.serverPhone.present
+          ? data.serverPhone.value
+          : this.serverPhone,
+      serverToken: data.serverToken.present
+          ? data.serverToken.value
+          : this.serverToken,
+      serverTokenExpiresAt: data.serverTokenExpiresAt.present
+          ? data.serverTokenExpiresAt.value
+          : this.serverTokenExpiresAt,
     );
   }
 
@@ -435,7 +565,10 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
           ..write('ttsSpeed: $ttsSpeed, ')
           ..write('ttsVoiceId: $ttsVoiceId, ')
           ..write('masteryThresholdN: $masteryThresholdN, ')
-          ..write('autoPlayAudio: $autoPlayAudio')
+          ..write('autoPlayAudio: $autoPlayAudio, ')
+          ..write('serverPhone: $serverPhone, ')
+          ..write('serverToken: $serverToken, ')
+          ..write('serverTokenExpiresAt: $serverTokenExpiresAt')
           ..write(')'))
         .toString();
   }
@@ -451,6 +584,9 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     ttsVoiceId,
     masteryThresholdN,
     autoPlayAudio,
+    serverPhone,
+    serverToken,
+    serverTokenExpiresAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -464,7 +600,10 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
           other.ttsSpeed == this.ttsSpeed &&
           other.ttsVoiceId == this.ttsVoiceId &&
           other.masteryThresholdN == this.masteryThresholdN &&
-          other.autoPlayAudio == this.autoPlayAudio);
+          other.autoPlayAudio == this.autoPlayAudio &&
+          other.serverPhone == this.serverPhone &&
+          other.serverToken == this.serverToken &&
+          other.serverTokenExpiresAt == this.serverTokenExpiresAt);
 }
 
 class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
@@ -477,6 +616,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
   final Value<String> ttsVoiceId;
   final Value<int> masteryThresholdN;
   final Value<bool> autoPlayAudio;
+  final Value<String?> serverPhone;
+  final Value<String?> serverToken;
+  final Value<int?> serverTokenExpiresAt;
   const UserSettingsCompanion({
     this.id = const Value.absent(),
     this.isOnboarded = const Value.absent(),
@@ -487,6 +629,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     this.ttsVoiceId = const Value.absent(),
     this.masteryThresholdN = const Value.absent(),
     this.autoPlayAudio = const Value.absent(),
+    this.serverPhone = const Value.absent(),
+    this.serverToken = const Value.absent(),
+    this.serverTokenExpiresAt = const Value.absent(),
   });
   UserSettingsCompanion.insert({
     this.id = const Value.absent(),
@@ -498,6 +643,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     required String ttsVoiceId,
     required int masteryThresholdN,
     required bool autoPlayAudio,
+    this.serverPhone = const Value.absent(),
+    this.serverToken = const Value.absent(),
+    this.serverTokenExpiresAt = const Value.absent(),
   }) : isOnboarded = Value(isOnboarded),
        difficultyLevel = Value(difficultyLevel),
        dailyArticleCount = Value(dailyArticleCount),
@@ -516,6 +664,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     Expression<String>? ttsVoiceId,
     Expression<int>? masteryThresholdN,
     Expression<bool>? autoPlayAudio,
+    Expression<String>? serverPhone,
+    Expression<String>? serverToken,
+    Expression<int>? serverTokenExpiresAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -528,6 +679,10 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
       if (ttsVoiceId != null) 'tts_voice_id': ttsVoiceId,
       if (masteryThresholdN != null) 'mastery_threshold_n': masteryThresholdN,
       if (autoPlayAudio != null) 'auto_play_audio': autoPlayAudio,
+      if (serverPhone != null) 'server_phone': serverPhone,
+      if (serverToken != null) 'server_token': serverToken,
+      if (serverTokenExpiresAt != null)
+        'server_token_expires_at': serverTokenExpiresAt,
     });
   }
 
@@ -541,6 +696,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     Value<String>? ttsVoiceId,
     Value<int>? masteryThresholdN,
     Value<bool>? autoPlayAudio,
+    Value<String?>? serverPhone,
+    Value<String?>? serverToken,
+    Value<int?>? serverTokenExpiresAt,
   }) {
     return UserSettingsCompanion(
       id: id ?? this.id,
@@ -553,6 +711,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
       ttsVoiceId: ttsVoiceId ?? this.ttsVoiceId,
       masteryThresholdN: masteryThresholdN ?? this.masteryThresholdN,
       autoPlayAudio: autoPlayAudio ?? this.autoPlayAudio,
+      serverPhone: serverPhone ?? this.serverPhone,
+      serverToken: serverToken ?? this.serverToken,
+      serverTokenExpiresAt: serverTokenExpiresAt ?? this.serverTokenExpiresAt,
     );
   }
 
@@ -588,6 +749,17 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     if (autoPlayAudio.present) {
       map['auto_play_audio'] = Variable<bool>(autoPlayAudio.value);
     }
+    if (serverPhone.present) {
+      map['server_phone'] = Variable<String>(serverPhone.value);
+    }
+    if (serverToken.present) {
+      map['server_token'] = Variable<String>(serverToken.value);
+    }
+    if (serverTokenExpiresAt.present) {
+      map['server_token_expires_at'] = Variable<int>(
+        serverTokenExpiresAt.value,
+      );
+    }
     return map;
   }
 
@@ -602,7 +774,10 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
           ..write('ttsSpeed: $ttsSpeed, ')
           ..write('ttsVoiceId: $ttsVoiceId, ')
           ..write('masteryThresholdN: $masteryThresholdN, ')
-          ..write('autoPlayAudio: $autoPlayAudio')
+          ..write('autoPlayAudio: $autoPlayAudio, ')
+          ..write('serverPhone: $serverPhone, ')
+          ..write('serverToken: $serverToken, ')
+          ..write('serverTokenExpiresAt: $serverTokenExpiresAt')
           ..write(')'))
         .toString();
   }
@@ -3698,6 +3873,17 @@ class $ArticlesTable extends Articles
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _serverArticleIdMeta = const VerificationMeta(
+    'serverArticleId',
+  );
+  @override
+  late final GeneratedColumn<int> serverArticleId = GeneratedColumn<int>(
+    'server_article_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -3714,6 +3900,7 @@ class $ArticlesTable extends Articles
     lastRetryAt,
     maxRetries,
     nextRetryAt,
+    serverArticleId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3843,6 +4030,15 @@ class $ArticlesTable extends Articles
         ),
       );
     }
+    if (data.containsKey('server_article_id')) {
+      context.handle(
+        _serverArticleIdMeta,
+        serverArticleId.isAcceptableOrUnknown(
+          data['server_article_id']!,
+          _serverArticleIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -3908,6 +4104,10 @@ class $ArticlesTable extends Articles
         DriftSqlType.string,
         data['${effectivePrefix}next_retry_at'],
       ),
+      serverArticleId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_article_id'],
+      ),
     );
   }
 
@@ -3941,6 +4141,12 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
   final String? lastRetryAt;
   final int maxRetries;
   final String? nextRetryAt;
+
+  /// 服务端文章 id（每日同步幂等键，Task 1 计划 B）。
+  /// nullable + 唯一索引：SQLite UNIQUE 允许多 NULL，本地无服务端对应的
+  /// 旧文章不冲突；同步时按 server_article_id 幂等 upsert。
+  /// 旧库自愈补列见 database.dart selfHealArticleSyncColumn。
+  final int? serverArticleId;
   const ArticleRow({
     required this.id,
     required this.batchId,
@@ -3956,6 +4162,7 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     this.lastRetryAt,
     required this.maxRetries,
     this.nextRetryAt,
+    this.serverArticleId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3985,6 +4192,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     map['max_retries'] = Variable<int>(maxRetries);
     if (!nullToAbsent || nextRetryAt != null) {
       map['next_retry_at'] = Variable<String>(nextRetryAt);
+    }
+    if (!nullToAbsent || serverArticleId != null) {
+      map['server_article_id'] = Variable<int>(serverArticleId);
     }
     return map;
   }
@@ -4017,6 +4227,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
       nextRetryAt: nextRetryAt == null && nullToAbsent
           ? const Value.absent()
           : Value(nextRetryAt),
+      serverArticleId: serverArticleId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverArticleId),
     );
   }
 
@@ -4046,6 +4259,7 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
       lastRetryAt: serializer.fromJson<String?>(json['lastRetryAt']),
       maxRetries: serializer.fromJson<int>(json['maxRetries']),
       nextRetryAt: serializer.fromJson<String?>(json['nextRetryAt']),
+      serverArticleId: serializer.fromJson<int?>(json['serverArticleId']),
     );
   }
   @override
@@ -4068,6 +4282,7 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
       'lastRetryAt': serializer.toJson<String?>(lastRetryAt),
       'maxRetries': serializer.toJson<int>(maxRetries),
       'nextRetryAt': serializer.toJson<String?>(nextRetryAt),
+      'serverArticleId': serializer.toJson<int?>(serverArticleId),
     };
   }
 
@@ -4086,6 +4301,7 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     Value<String?> lastRetryAt = const Value.absent(),
     int? maxRetries,
     Value<String?> nextRetryAt = const Value.absent(),
+    Value<int?> serverArticleId = const Value.absent(),
   }) => ArticleRow(
     id: id ?? this.id,
     batchId: batchId ?? this.batchId,
@@ -4108,6 +4324,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     lastRetryAt: lastRetryAt.present ? lastRetryAt.value : this.lastRetryAt,
     maxRetries: maxRetries ?? this.maxRetries,
     nextRetryAt: nextRetryAt.present ? nextRetryAt.value : this.nextRetryAt,
+    serverArticleId: serverArticleId.present
+        ? serverArticleId.value
+        : this.serverArticleId,
   );
   ArticleRow copyWithCompanion(ArticlesCompanion data) {
     return ArticleRow(
@@ -4145,6 +4364,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
       nextRetryAt: data.nextRetryAt.present
           ? data.nextRetryAt.value
           : this.nextRetryAt,
+      serverArticleId: data.serverArticleId.present
+          ? data.serverArticleId.value
+          : this.serverArticleId,
     );
   }
 
@@ -4164,7 +4386,8 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
           ..write('readCompletedAt: $readCompletedAt, ')
           ..write('lastRetryAt: $lastRetryAt, ')
           ..write('maxRetries: $maxRetries, ')
-          ..write('nextRetryAt: $nextRetryAt')
+          ..write('nextRetryAt: $nextRetryAt, ')
+          ..write('serverArticleId: $serverArticleId')
           ..write(')'))
         .toString();
   }
@@ -4185,6 +4408,7 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     lastRetryAt,
     maxRetries,
     nextRetryAt,
+    serverArticleId,
   );
   @override
   bool operator ==(Object other) =>
@@ -4203,7 +4427,8 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
           other.readCompletedAt == this.readCompletedAt &&
           other.lastRetryAt == this.lastRetryAt &&
           other.maxRetries == this.maxRetries &&
-          other.nextRetryAt == this.nextRetryAt);
+          other.nextRetryAt == this.nextRetryAt &&
+          other.serverArticleId == this.serverArticleId);
 }
 
 class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
@@ -4221,6 +4446,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
   final Value<String?> lastRetryAt;
   final Value<int> maxRetries;
   final Value<String?> nextRetryAt;
+  final Value<int?> serverArticleId;
   const ArticlesCompanion({
     this.id = const Value.absent(),
     this.batchId = const Value.absent(),
@@ -4236,6 +4462,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     this.lastRetryAt = const Value.absent(),
     this.maxRetries = const Value.absent(),
     this.nextRetryAt = const Value.absent(),
+    this.serverArticleId = const Value.absent(),
   });
   ArticlesCompanion.insert({
     this.id = const Value.absent(),
@@ -4252,6 +4479,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     this.lastRetryAt = const Value.absent(),
     required int maxRetries,
     this.nextRetryAt = const Value.absent(),
+    this.serverArticleId = const Value.absent(),
   }) : batchId = Value(batchId),
        orderIndex = Value(orderIndex),
        contentCategory = Value(contentCategory),
@@ -4274,6 +4502,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     Expression<String>? lastRetryAt,
     Expression<int>? maxRetries,
     Expression<String>? nextRetryAt,
+    Expression<int>? serverArticleId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -4293,6 +4522,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
       if (lastRetryAt != null) 'last_retry_at': lastRetryAt,
       if (maxRetries != null) 'max_retries': maxRetries,
       if (nextRetryAt != null) 'next_retry_at': nextRetryAt,
+      if (serverArticleId != null) 'server_article_id': serverArticleId,
     });
   }
 
@@ -4311,6 +4541,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     Value<String?>? lastRetryAt,
     Value<int>? maxRetries,
     Value<String?>? nextRetryAt,
+    Value<int?>? serverArticleId,
   }) {
     return ArticlesCompanion(
       id: id ?? this.id,
@@ -4329,6 +4560,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
       lastRetryAt: lastRetryAt ?? this.lastRetryAt,
       maxRetries: maxRetries ?? this.maxRetries,
       nextRetryAt: nextRetryAt ?? this.nextRetryAt,
+      serverArticleId: serverArticleId ?? this.serverArticleId,
     );
   }
 
@@ -4383,6 +4615,9 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     if (nextRetryAt.present) {
       map['next_retry_at'] = Variable<String>(nextRetryAt.value);
     }
+    if (serverArticleId.present) {
+      map['server_article_id'] = Variable<int>(serverArticleId.value);
+    }
     return map;
   }
 
@@ -4402,7 +4637,8 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
           ..write('readCompletedAt: $readCompletedAt, ')
           ..write('lastRetryAt: $lastRetryAt, ')
           ..write('maxRetries: $maxRetries, ')
-          ..write('nextRetryAt: $nextRetryAt')
+          ..write('nextRetryAt: $nextRetryAt, ')
+          ..write('serverArticleId: $serverArticleId')
           ..write(')'))
         .toString();
   }
@@ -7958,6 +8194,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'index_article_batch_id',
     'CREATE INDEX index_article_batch_id ON article (batch_id)',
   );
+  late final Index indexArticleServerArticleId = Index(
+    'index_article_server_article_id',
+    'CREATE UNIQUE INDEX index_article_server_article_id ON article (server_article_id)',
+  );
   late final Index indexArticleParagraphArticleId = Index(
     'index_article_paragraph_article_id',
     'CREATE INDEX index_article_paragraph_article_id ON article_paragraph (article_id)',
@@ -8020,6 +8260,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     indexArticleBatchGeneratedOn,
     indexArticleBatchDifficultyLevelSnapshotGeneratedOn,
     indexArticleBatchId,
+    indexArticleServerArticleId,
     indexArticleParagraphArticleId,
     indexArticleParagraphArticleIdOrderIndex,
     indexGenerationErrorLogEntityTypeEntityId,
@@ -8095,6 +8336,9 @@ typedef $$UserSettingsTableCreateCompanionBuilder =
       required String ttsVoiceId,
       required int masteryThresholdN,
       required bool autoPlayAudio,
+      Value<String?> serverPhone,
+      Value<String?> serverToken,
+      Value<int?> serverTokenExpiresAt,
     });
 typedef $$UserSettingsTableUpdateCompanionBuilder =
     UserSettingsCompanion Function({
@@ -8107,6 +8351,9 @@ typedef $$UserSettingsTableUpdateCompanionBuilder =
       Value<String> ttsVoiceId,
       Value<int> masteryThresholdN,
       Value<bool> autoPlayAudio,
+      Value<String?> serverPhone,
+      Value<String?> serverToken,
+      Value<int?> serverTokenExpiresAt,
     });
 
 class $$UserSettingsTableFilterComposer
@@ -8160,6 +8407,21 @@ class $$UserSettingsTableFilterComposer
 
   ColumnFilters<bool> get autoPlayAudio => $composableBuilder(
     column: $table.autoPlayAudio,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get serverPhone => $composableBuilder(
+    column: $table.serverPhone,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get serverToken => $composableBuilder(
+    column: $table.serverToken,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverTokenExpiresAt => $composableBuilder(
+    column: $table.serverTokenExpiresAt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -8217,6 +8479,21 @@ class $$UserSettingsTableOrderingComposer
     column: $table.autoPlayAudio,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get serverPhone => $composableBuilder(
+    column: $table.serverPhone,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get serverToken => $composableBuilder(
+    column: $table.serverToken,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get serverTokenExpiresAt => $composableBuilder(
+    column: $table.serverTokenExpiresAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$UserSettingsTableAnnotationComposer
@@ -8268,6 +8545,21 @@ class $$UserSettingsTableAnnotationComposer
     column: $table.autoPlayAudio,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get serverPhone => $composableBuilder(
+    column: $table.serverPhone,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get serverToken => $composableBuilder(
+    column: $table.serverToken,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get serverTokenExpiresAt => $composableBuilder(
+    column: $table.serverTokenExpiresAt,
+    builder: (column) => column,
+  );
 }
 
 class $$UserSettingsTableTableManager
@@ -8310,6 +8602,9 @@ class $$UserSettingsTableTableManager
                 Value<String> ttsVoiceId = const Value.absent(),
                 Value<int> masteryThresholdN = const Value.absent(),
                 Value<bool> autoPlayAudio = const Value.absent(),
+                Value<String?> serverPhone = const Value.absent(),
+                Value<String?> serverToken = const Value.absent(),
+                Value<int?> serverTokenExpiresAt = const Value.absent(),
               }) => UserSettingsCompanion(
                 id: id,
                 isOnboarded: isOnboarded,
@@ -8320,6 +8615,9 @@ class $$UserSettingsTableTableManager
                 ttsVoiceId: ttsVoiceId,
                 masteryThresholdN: masteryThresholdN,
                 autoPlayAudio: autoPlayAudio,
+                serverPhone: serverPhone,
+                serverToken: serverToken,
+                serverTokenExpiresAt: serverTokenExpiresAt,
               ),
           createCompanionCallback:
               ({
@@ -8332,6 +8630,9 @@ class $$UserSettingsTableTableManager
                 required String ttsVoiceId,
                 required int masteryThresholdN,
                 required bool autoPlayAudio,
+                Value<String?> serverPhone = const Value.absent(),
+                Value<String?> serverToken = const Value.absent(),
+                Value<int?> serverTokenExpiresAt = const Value.absent(),
               }) => UserSettingsCompanion.insert(
                 id: id,
                 isOnboarded: isOnboarded,
@@ -8342,6 +8643,9 @@ class $$UserSettingsTableTableManager
                 ttsVoiceId: ttsVoiceId,
                 masteryThresholdN: masteryThresholdN,
                 autoPlayAudio: autoPlayAudio,
+                serverPhone: serverPhone,
+                serverToken: serverToken,
+                serverTokenExpiresAt: serverTokenExpiresAt,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
@@ -10293,6 +10597,7 @@ typedef $$ArticlesTableCreateCompanionBuilder =
       Value<String?> lastRetryAt,
       required int maxRetries,
       Value<String?> nextRetryAt,
+      Value<int?> serverArticleId,
     });
 typedef $$ArticlesTableUpdateCompanionBuilder =
     ArticlesCompanion Function({
@@ -10310,6 +10615,7 @@ typedef $$ArticlesTableUpdateCompanionBuilder =
       Value<String?> lastRetryAt,
       Value<int> maxRetries,
       Value<String?> nextRetryAt,
+      Value<int?> serverArticleId,
     });
 
 final class $$ArticlesTableReferences
@@ -10426,6 +10732,11 @@ class $$ArticlesTableFilterComposer
 
   ColumnFilters<String> get nextRetryAt => $composableBuilder(
     column: $table.nextRetryAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverArticleId => $composableBuilder(
+    column: $table.serverArticleId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10552,6 +10863,11 @@ class $$ArticlesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get serverArticleId => $composableBuilder(
+    column: $table.serverArticleId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$ArticleBatchesTableOrderingComposer get batchId {
     final $$ArticleBatchesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -10641,6 +10957,11 @@ class $$ArticlesTableAnnotationComposer
 
   GeneratedColumn<String> get nextRetryAt => $composableBuilder(
     column: $table.nextRetryAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get serverArticleId => $composableBuilder(
+    column: $table.serverArticleId,
     builder: (column) => column,
   );
 
@@ -10736,6 +11057,7 @@ class $$ArticlesTableTableManager
                 Value<String?> lastRetryAt = const Value.absent(),
                 Value<int> maxRetries = const Value.absent(),
                 Value<String?> nextRetryAt = const Value.absent(),
+                Value<int?> serverArticleId = const Value.absent(),
               }) => ArticlesCompanion(
                 id: id,
                 batchId: batchId,
@@ -10751,6 +11073,7 @@ class $$ArticlesTableTableManager
                 lastRetryAt: lastRetryAt,
                 maxRetries: maxRetries,
                 nextRetryAt: nextRetryAt,
+                serverArticleId: serverArticleId,
               ),
           createCompanionCallback:
               ({
@@ -10768,6 +11091,7 @@ class $$ArticlesTableTableManager
                 Value<String?> lastRetryAt = const Value.absent(),
                 required int maxRetries,
                 Value<String?> nextRetryAt = const Value.absent(),
+                Value<int?> serverArticleId = const Value.absent(),
               }) => ArticlesCompanion.insert(
                 id: id,
                 batchId: batchId,
@@ -10783,6 +11107,7 @@ class $$ArticlesTableTableManager
                 lastRetryAt: lastRetryAt,
                 maxRetries: maxRetries,
                 nextRetryAt: nextRetryAt,
+                serverArticleId: serverArticleId,
               ),
           withReferenceMapper: (p0) => p0
               .map(

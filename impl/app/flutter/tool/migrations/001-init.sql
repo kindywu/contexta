@@ -44,7 +44,10 @@ CREATE TABLE IF NOT EXISTS `user_settings` (
   `mastery_threshold_n` INTEGER NOT NULL,
   `auto_play_audio` INTEGER NOT NULL,
   `tts_speed` REAL NOT NULL,
-  `tts_voice_id` TEXT NOT NULL
+  `tts_voice_id` TEXT NOT NULL,
+  `server_phone` TEXT,
+  `server_token` TEXT,
+  `server_token_expires_at` INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS `config_change_log` (
@@ -111,6 +114,7 @@ CREATE TABLE IF NOT EXISTS `article` (
   `last_retry_at` TEXT,
   `max_retries` INTEGER NOT NULL,
   `next_retry_at` TEXT,
+  `server_article_id` INTEGER,
   FOREIGN KEY(`batch_id`) REFERENCES `article_batch`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
 );
 
@@ -201,6 +205,7 @@ CREATE TABLE IF NOT EXISTS `tts_cache` (
 CREATE UNIQUE INDEX IF NOT EXISTS `index_article_batch_difficulty_level_snapshot_generated_on` ON `article_batch` (`difficulty_level_snapshot`, `generated_on`);
 CREATE INDEX IF NOT EXISTS `index_article_batch_generated_on` ON `article_batch` (`generated_on`);
 CREATE INDEX IF NOT EXISTS `index_article_batch_id` ON `article` (`batch_id`);
+CREATE UNIQUE INDEX IF NOT EXISTS `index_article_server_article_id` ON `article` (`server_article_id`);
 CREATE INDEX IF NOT EXISTS `index_article_paragraph_article_id` ON `article_paragraph` (`article_id`);
 CREATE UNIQUE INDEX IF NOT EXISTS `index_article_paragraph_article_id_order_index` ON `article_paragraph` (`article_id`, `order_index`);
 CREATE INDEX IF NOT EXISTS `index_daily_learning_ref_batch_id` ON `daily_learning` (`ref_batch_id`);

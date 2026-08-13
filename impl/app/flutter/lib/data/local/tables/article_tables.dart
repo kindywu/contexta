@@ -53,6 +53,11 @@ class ArticleBatches extends Table {
   name: 'index_article_batch_id',
   columns: {#batchId},
 )
+@TableIndex(
+  name: 'index_article_server_article_id',
+  columns: {#serverArticleId},
+  unique: true,
+)
 class Articles extends Table {
   /// Room 表名 article（类名复数，必须显式覆盖）
   @override
@@ -91,6 +96,12 @@ class Articles extends Table {
   IntColumn get maxRetries => integer()();
 
   TextColumn? get nextRetryAt => text().nullable()();
+
+  /// 服务端文章 id（每日同步幂等键，Task 1 计划 B）。
+  /// nullable + 唯一索引：SQLite UNIQUE 允许多 NULL，本地无服务端对应的
+  /// 旧文章不冲突；同步时按 server_article_id 幂等 upsert。
+  /// 旧库自愈补列见 database.dart selfHealArticleSyncColumn。
+  IntColumn? get serverArticleId => integer().nullable()();
 }
 
 /// 表 article_paragraph（ArticleParagraphEntity.kt）

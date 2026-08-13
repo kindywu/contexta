@@ -67,7 +67,7 @@ void main() {
 
     test('user_settings 表结构（对照 UserSettingsEntity.kt）', () async {
       final cols = await tableInfo('user_settings');
-      expect(cols.length, 9);
+      expect(cols.length, 12);
       expectCol(cols, 'id', type: 'INTEGER', notNull: true, pk: true);
       expectCol(cols, 'is_onboarded', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'difficulty_level', type: 'TEXT', notNull: true, pk: false);
@@ -78,6 +78,11 @@ void main() {
       expectCol(cols, 'tts_voice_id', type: 'TEXT', notNull: true, pk: false);
       expectCol(cols, 'mastery_threshold_n', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'auto_play_audio', type: 'INTEGER', notNull: true, pk: false);
+      // Task 1（计划 B）加列：登录态 3 列（nullable，无 DEFAULT——旧库自愈
+      // ALTER 补列 + 未登录时无值）
+      expectCol(cols, 'server_phone', type: 'TEXT', notNull: false, pk: false);
+      expectCol(cols, 'server_token', type: 'TEXT', notNull: false, pk: false);
+      expectCol(cols, 'server_token_expires_at', type: 'INTEGER', notNull: false, pk: false);
       // Room: @PrimaryKey val id: Int（无 autoGenerate）→ 无 AUTOINCREMENT
       expect(await tableSql('user_settings'), isNot(contains('AUTOINCREMENT')));
     });
