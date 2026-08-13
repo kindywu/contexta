@@ -358,17 +358,21 @@ pub struct ArticleView {
     pub paragraphs: Vec<(i64, String, String)>,
 }
 
-async fn load_view(
-    pool: &SqlitePool,
-    id: i64,
-    title: Option<String>,
-    date: String,
-    difficulty: String,
-    category: String,
-    order: i64,
-    status: String,
-    regen: i64,
-) -> Result<ArticleView, AppError> {
+/// load_view 的视图字段（元组打包，规避 too_many_arguments / type_complexity）：
+/// (id, title, target_date, difficulty, content_category, order_index, status, regenerate_count)
+type ViewFields = (
+    i64,
+    Option<String>,
+    String,
+    String,
+    String,
+    i64,
+    String,
+    i64,
+);
+
+async fn load_view(pool: &SqlitePool, f: ViewFields) -> Result<ArticleView, AppError> {
+    let (id, title, date, difficulty, category, order, status, regen) = f;
     let rows: Vec<(i64, String)> = sqlx::query_as(
         "SELECT order_index, text FROM article_paragraph WHERE article_id = ? ORDER BY order_index",
     )
@@ -396,7 +400,9 @@ async fn load_view(
 }
 
 pub async fn get_article(pool: &SqlitePool, id: i64) -> Result<ArticleView, AppError> {
-    let row: Option<(Option<String>, String, String, String, i64, String, i64)> = sqlx::query_as(
+    // 行数据元组别名（规避 type_complexity）
+    type ArticleRow = (Option<String>, String, String, String, i64, String, i64);
+    let row: Option<ArticleRow> = sqlx::query_as(
         "SELECT title, target_date, difficulty, content_category, order_index, status, regenerate_count FROM article WHERE id = ?",
     )
     .bind(id)
@@ -404,7 +410,7 @@ pub async fn get_article(pool: &SqlitePool, id: i64) -> Result<ArticleView, AppE
     .await?;
     match row {
         Some((title, date, diff, cat, order, status, regen)) => {
-            load_view(pool, id, title, date, diff, cat, order, status, regen).await
+            load_view(pool, (id, title, date, diff, cat, order, status, regen)).await
         }
         None => Err(AppError::NotFound("article not found".into())),
     }
@@ -427,14 +433,16 @@ pub async fn get_approved_by_date(
         out.push(
             load_view(
                 pool,
-                id,
-                title,
-                date.to_string(),
-                diff,
-                cat,
-                order,
-                "approved".into(),
-                regen,
+                (
+                    id,
+                    title,
+                    date.to_string(),
+                    diff,
+                    cat,
+                    order,
+                    "approved".into(),
+                    regen,
+                ),
             )
             .await?,
         );
@@ -487,7 +495,7 @@ pub async fn list_articles(
     let rows = q.fetch_all(pool).await?;
     let mut out = Vec::new();
     for (id, title, date, diff, cat, order, status, regen) in rows {
-        out.push(load_view(pool, id, title, date, diff, cat, order, status, regen).await?);
+        out.push(load_view(pool, (id, title, date, diff, cat, order, status, regen)).await?);
     }
     Ok(out)
 }

@@ -8,7 +8,7 @@ pub static ARTICLE_SYSTEM: &str = include_str!("prompts/article_system.txt");
 ///
 /// Dart 正则为 `=== (\w+) ===\s*\n?(.*?)(?=\n=== |\Z)`（dotAll）；
 /// 本仓库 regex crate 不支持 look-around，改用等价的两步实现：
-/// 1. 定位所有 `=== NAME ===` 节头；2. 节内容 = 节头到下一节头之间的文本（trim）。
+/// （1）定位所有 `=== NAME ===` 节头；（2）节内容 = 节头到下一节头之间的文本（trim）。
 /// 对编译期嵌入的固定模板，与 Dart 的 lookahead 边界语义等价（节头均独立成行）。
 pub fn load_section(content: &str, sections: &[&str], params: &[(&str, &str)]) -> Option<String> {
     let header_re = Regex::new(r"=== (\w+) ===").unwrap();

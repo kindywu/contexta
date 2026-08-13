@@ -1,0 +1,14 @@
+[Unit]
+Description=Contexta Server
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/contexta/env
+WorkingDirectory=/opt/contexta
+ExecStart=/opt/contexta/server
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

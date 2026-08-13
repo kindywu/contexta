@@ -67,22 +67,21 @@ pub fn parse_word_lookup(content: &str) -> Option<WordLookup> {
     let phonetic = first_match(content, "phonetic").map(str::to_string);
 
     let sense_re = Regex::new(r"<sense>([\s\S]*?)</sense>").unwrap();
+    // 例句正则在义项循环外编译一次（同模式每轮复用）
+    let ex_re = Regex::new(r"<example>([\s\S]*?)</example>").unwrap();
     let mut senses = Vec::new();
-    let mut sense_index = 0i64;
-    for cap in sense_re.captures_iter(content) {
+    for (idx, cap) in sense_re.captures_iter(content).enumerate() {
         let sc = cap[1].to_string();
-        sense_index += 1;
+        let sense_index = idx as i64 + 1;
         let part_of_speech = first_match(&sc, "partOfSpeech").unwrap_or("").to_string();
         let chinese_meaning = first_match(&sc, "chineseMeaning").unwrap_or("").to_string();
         let english_definition = first_match(&sc, "englishDefinition")
             .unwrap_or("")
             .to_string();
         let mut examples = Vec::new();
-        let mut ex_index = 0i64;
-        let ex_re = Regex::new(r"<example>([\s\S]*?)</example>").unwrap();
-        for excap in ex_re.captures_iter(&sc) {
+        for (ex_idx, excap) in ex_re.captures_iter(&sc).enumerate() {
             let ec = excap[1].to_string();
-            ex_index += 1;
+            let ex_index = ex_idx as i64 + 1;
             examples.push(ExampleOut {
                 order_index: ex_index,
                 sentence_en: first_match(&ec, "en").unwrap_or("").to_string(),

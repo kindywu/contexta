@@ -93,27 +93,26 @@ async fn admin_index_served_when_built() {
 
     // 3) 静态资源：dist/assets/ 下首个 .js 文件 → 200 + text/javascript
     let assets_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/admin-ui/dist/assets");
-    if let Ok(entries) = std::fs::read_dir(assets_dir) {
-        if let Some(js) = entries
+    if let Some(js) = std::fs::read_dir(assets_dir).ok().and_then(|entries| {
+        entries
             .flatten()
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .find(|n| n.ends_with(".js"))
-        {
-            let uri = format!("/admin/assets/{js}");
-            let resp = app
-                .clone()
-                .oneshot(Request::builder().uri(&uri).body(Body::empty()).unwrap())
-                .await
-                .unwrap();
-            assert_eq!(resp.status(), StatusCode::OK, "资源 {uri} 应 200");
-            assert!(
-                resp.headers()
-                    .get("content-type")
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("")
-                    .starts_with("text/javascript")
-            );
-        }
+    }) {
+        let uri = format!("/admin/assets/{js}");
+        let resp = app
+            .clone()
+            .oneshot(Request::builder().uri(&uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "资源 {uri} 应 200");
+        assert!(
+            resp.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .starts_with("text/javascript")
+        );
     }
 
     // 4) API 前缀不受静态回退干扰：不存在的 API 路径仍 404（未吞 SPA 回退）

@@ -37,7 +37,16 @@ pub async fn login(
 /// 复用 services::today_start_millis——与 llm_service::check_quota 同一口径）。
 /// 返回 JSON 数组，按 created_at 升序。quota_article_daily 为文章全局池预留列，暂不外露。
 pub async fn list_users(pool: &SqlitePool) -> Result<Vec<serde_json::Value>, AppError> {
-    let rows: Vec<(String, String, Option<String>, i64, Option<i64>, Option<i64>)> = sqlx::query_as(
+    // 行数据元组别名（规避 type_complexity）
+    type UserRow = (
+        String,
+        String,
+        Option<String>,
+        i64,
+        Option<i64>,
+        Option<i64>,
+    );
+    let rows: Vec<UserRow> = sqlx::query_as(
         "SELECT phone, status, banned_reason, created_at, quota_word_daily, quota_article_daily FROM users ORDER BY created_at",
     ).fetch_all(pool).await?;
     let mut out = Vec::new();
