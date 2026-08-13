@@ -8,7 +8,7 @@ pub mod prompts;
 pub mod response;
 pub mod routers;
 pub mod services;
-// 后续任务逐步加入：tasks(T9)
+pub mod tasks;
 
 use axum::Router;
 
