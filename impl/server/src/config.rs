@@ -22,7 +22,7 @@ impl Config {
         let cfg = Config {
             port: env_or("PORT", "8080")?.parse()?,
             db_path: env_or("DB_PATH", "contexta.db")?,
-            jwt_secret: env_or("JWT_SECRET", "dev-secret-change-me")?,
+            jwt_secret: std::env::var("JWT_SECRET").context("JWT_SECRET must be set")?,
             deepseek_api_key: std::env::var("DEEPSEEK_API_KEY")
                 .context("DEEPSEEK_API_KEY must be set")?,
             deepseek_base_url: env_or("DEEPSEEK_BASE_URL", "https://api.deepseek.com")?,
