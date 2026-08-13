@@ -125,12 +125,8 @@ Article makeArticle() => const Article(
       contentCategory: 'NEWS',
       title: 'A Day',
       status: ArticleStatus.success,
-      generationStartedAt: null,
-      generationCompletedAt: '2026-08-07T12:00:00+08:00',
-      retryCount: 0,
       accumulatedReadSeconds: 0,
       readCompletedAt: null,
-      lastRetryAt: null,
       paragraphs: [
         ArticleParagraph(
           orderIndex: 0,
@@ -147,12 +143,8 @@ Article makeLongArticle() => Article(
       contentCategory: 'NEWS',
       title: 'Long Article',
       status: ArticleStatus.success,
-      generationStartedAt: null,
-      generationCompletedAt: '2026-08-07T12:00:00+08:00',
-      retryCount: 0,
       accumulatedReadSeconds: 0,
       readCompletedAt: null,
-      lastRetryAt: null,
       paragraphs: [
         for (var i = 0; i < 8; i++)
           ArticleParagraph(
@@ -307,12 +299,8 @@ void main() {
         contentCategory: 'NEWS',
         title: 'Ocean',
         status: ArticleStatus.success,
-        generationStartedAt: null,
-        generationCompletedAt: '2026-08-07T12:00:00+08:00',
-        retryCount: 0,
         accumulatedReadSeconds: 0,
         readCompletedAt: null,
-        lastRetryAt: null,
         paragraphs: [
           ArticleParagraph(
             orderIndex: 0,

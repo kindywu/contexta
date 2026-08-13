@@ -304,12 +304,8 @@ Article makeArticle({
       contentCategory: 'NEWS',
       title: title,
       status: ArticleStatus.success,
-      generationStartedAt: null,
-      generationCompletedAt: '2026-08-07T12:00:00+08:00',
-      retryCount: 0,
       accumulatedReadSeconds: 0,
       readCompletedAt: readCompletedAt,
-      lastRetryAt: null,
       paragraphs: paragraphs,
     );
 

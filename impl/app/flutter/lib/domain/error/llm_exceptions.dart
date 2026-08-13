@@ -35,7 +35,7 @@ class LlmRecoverableExhaustedException implements Exception {
 /// 与 [LlmRecoverableExhaustedException] 的区别：
 /// - 后者是网络/服务层错误经过重试后耗尽（每次尝试有自己的超时）；
 /// - 本异常是一次调用达到总预算超时，直接放弃。
-/// 由 GenerateArticlesUseCase 分类为 TIMEOUT / LLM_TIMEOUT，而非 UNEXPECTED。
+/// 调用方（查词链路）按 TIMEOUT / LLM_TIMEOUT 语义处理，而非 UNEXPECTED。
 class LlmTimeoutException implements Exception {
   final String message;
   final Object? cause;

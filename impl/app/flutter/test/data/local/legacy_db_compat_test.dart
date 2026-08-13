@@ -20,8 +20,10 @@ import 'package:contexta/data/local/database_open.dart';
 ///    被 drift 忽略；
 /// 2. user_version=1 与 drift schemaVersion=1 匹配 → 不触发迁移/重建
 ///    （不重建证据：sqlite_sequence、rowid、Room 内部表内容打开前后不变）；
-/// 3. 17 张表数据完整可读（行数 + 真实内容抽样，含 Kotlin 大写枚举原样字符串、
-///    generation_error_log.notified_at 的 Unix 毫秒语义）；
+/// 3. 15 张表数据完整可读（行数 + 真实内容抽样，含 Kotlin 大写枚举原样字符串；
+///    2026-08-13 计划 B Task 6 后 drift 不再注册 generation_pipeline_status /
+///    generation_error_log——旧库中这两张遗留表仍存在，drift 忽略不报错，
+///    行数与 sqlite_sequence 基线保持原样）；
 /// 4. PRAGMA 级 schema 语义比对：旧库与 drift 生成的新库逐项一致
 ///    （列名/类型/notnull/pk、索引名/唯一性/列序、FK on_delete；
 ///    DEFAULT 除外——ALTER 补的 tts_speed 带 DEFAULT 1.0 是已知接受差异，
@@ -97,19 +99,18 @@ Map<String, Object?> _rawBaseline(String path) {
 
 void main() {
   group('legacy_db_compat', () {
-    // 17 张业务表（Room 内部表不在内）：16 张业务表 + db_version 版本指针表
+    // 15 张业务表（Room 内部表不在内；2026-08-13 T6 起 drift 不再注册
+    // generation_pipeline_status / generation_error_log）
     const allTables = <String>[
       'user_settings',
       'config_change_log',
       'schema_migration_log',
-      'generation_pipeline_status',
       'daily_learning_log',
       'learning_stats_summary',
       'daily_learning',
       'article_batch',
       'article',
       'article_paragraph',
-      'generation_error_log',
       'word',
       'word_sense',
       'example_sentence',
@@ -119,7 +120,8 @@ void main() {
     ];
 
     // 打开前（sqlite3 只读基线）快照出的 sqlite_sequence：9 张有数据的
-    // AUTOINCREMENT 表（config_change_log / schema_migration_log 0 行无条目）
+    // AUTOINCREMENT 表（config_change_log / schema_migration_log 0 行无条目；
+    // generation_error_log 属 T6 已删除的遗留表，fixture 未动故基线保留）
     const expectedSqliteSequence = <String, int>{
       'article_batch': 12,
       'article': 60,
@@ -140,7 +142,8 @@ void main() {
         expect(version.read<int>('user_version'), 1,
             reason: 'drift schemaVersion=1 与旧库 user_version=1 匹配，不触发迁移');
 
-        // 17 张表行数与备份核验一致（tts_cache 空表、db_version 单例行）
+        // 15 张表行数与备份核验一致（tts_cache 空表、db_version 单例行；
+        // generation 两张遗留表已不在 drift 注册内，跳过——见文件头注释）
         const expectedCounts = <String, int>{
           'article_batch': 12,
           'article': 60,
@@ -151,12 +154,10 @@ void main() {
           'vocabulary_entry': 1,
           'daily_learning': 6,
           'user_settings': 1,
-          'generation_pipeline_status': 0,
           'learning_stats_summary': 1,
           'daily_learning_log': 4,
           'config_change_log': 0,
           'schema_migration_log': 0,
-          'generation_error_log': 3,
           'tts_cache': 0,
           'db_version': 1,
         };
@@ -268,15 +269,13 @@ void main() {
         expect(article.status, 'SUCCESS');
         expect(article.contentCategory, isNotEmpty);
 
-        // article_batch：status 枚举 + ready_notified_at 语义（null）
+        // article_batch：status 枚举（T6 后 ready_notified_at 列已从 drift
+        // 结构删除，旧库列保留但不再读取）
         final batch = (await db.select(db.articleBatches).get())
             .firstWhere((b) => b.id == 1);
         expect(batch.status, 'READY');
         expect(batch.difficultyLevelSnapshot, 'LOW');
         expect(batch.generatedOn, '2026-03-29');
-        expect(batch.readyNotifiedAt, 1785637736683);
-        expect(batch.readyNotifiedAt, greaterThan(1000000000000),
-            reason: 'ready_notified_at 是 Unix 毫秒（13 位），非秒级');
 
         // article_paragraph：正文真实文本
         final para = (await db.select(db.articleParagraphs).get())
@@ -333,20 +332,6 @@ void main() {
         expect(logs, hasLength(4));
         expect(logs.firstWhere((l) => l.id == 1).logDate, '2026-08-03');
 
-        // generation_error_log：notified_at 是 Unix 毫秒（1e12 量级）
-        final errs = await db.select(db.generationErrorLogs).get();
-        expect(errs, hasLength(3));
-        final err1 = errs.firstWhere((e) => e.id == 1);
-        expect(err1.entityType, 'ARTICLE');
-        expect(err1.entityId, 41);
-        expect(err1.errorCode, 'UNEXPECTED');
-        expect(err1.createdAt, '2026-08-04T07:28:51+08:00');
-        expect(err1.notifiedAt, 1785799732040);
-        expect(err1.notifiedAt, greaterThan(1000000000000),
-            reason: 'Unix 毫秒语义（10 位=秒，13 位=毫秒；秒级 1.7e9 会小于 1e12）');
-
-        // generation_pipeline_status：空表可读
-        expect(await db.select(db.generationPipelineStatuses).get(), isEmpty);
         expect(await db.select(db.configChangeLogs).get(), isEmpty);
         expect(await db.select(db.schemaMigrationLogs).get(), isEmpty);
       } finally {
@@ -354,17 +339,20 @@ void main() {
       }
     });
 
-    test('schema 语义比对：旧库 17 张表 PRAGMA 与 drift 生成结构逐项一致', () async {
+    test('schema 语义比对：旧库 15 张表 PRAGMA 与 drift 生成结构逐项一致'
+        '（generation 两张遗留表 drift 不再管理，与 room 内部表同策略排除）', () async {
       final (legacy, tmp) = await _openLegacy();
       // 参照库：同一组 Table 类生成的崭新 drift 库
       final fresh = AppDatabase.forTesting(NativeDatabase.memory());
       try {
-        // 表集合一致（业务表 17 张；旧库另有 room 内部表，drift 忽略）
+        // 表集合一致（业务表 15 张；旧库另有 room 内部表 + T6 已删除的
+        // generation_pipeline_status / generation_error_log 遗留表，drift 忽略）
         Future<Set<String>> tableSet(AppDatabase d) async {
           final rows = await d.customSelect(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name NOT LIKE 'sqlite_%' "
-            "AND name NOT IN ('room_master_table', 'android_metadata')",
+            "AND name NOT IN ('room_master_table', 'android_metadata', "
+            "'generation_pipeline_status', 'generation_error_log')",
           ).get();
           return {for (final r in rows) r.read<String>('name')};
         }
@@ -376,6 +364,19 @@ void main() {
         // 无法去默认值），drift 全新建表无 DEFAULT —— 已知接受差异，见下方专项断言。
         // 按列名排序后再比较：ALTER 追加列必然排在表末尾，与建表顺序不同，
         // 而列序不影响按名访问（drift 全部按名读写）。
+        // T6 已删除的列（本地生成管道状态机/告警列）只在旧库 fixture 中存在，
+        // drift 不再管理——与 room 内部表同策略，比较时从旧库侧排除。
+        const legacyOnlyColumns = <String>{
+          'blocked_reason',
+          'blocked_at',
+          'ready_notified_at',
+          'generation_started_at',
+          'generation_completed_at',
+          'retry_count',
+          'last_retry_at',
+          'max_retries',
+          'next_retry_at',
+        };
         Future<List<List<Object?>>> columnsOf(AppDatabase d, String t) async {
           final rows = await d.customSelect(
             "SELECT name, type, \"notnull\", pk "
@@ -383,12 +384,13 @@ void main() {
           ).get();
           final cols = [
             for (final r in rows)
-              [
-                r.read<String>('name'),
-                r.read<String>('type'),
-                r.read<int>('notnull'),
-                r.read<int>('pk'),
-              ],
+              if (!legacyOnlyColumns.contains(r.read<String>('name')))
+                [
+                  r.read<String>('name'),
+                  r.read<String>('type'),
+                  r.read<int>('notnull'),
+                  r.read<int>('pk'),
+                ],
           ];
           cols.sort((a, b) => (a[0] as String).compareTo(b[0] as String));
           return cols;

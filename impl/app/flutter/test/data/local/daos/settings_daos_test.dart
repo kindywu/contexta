@@ -12,7 +12,7 @@ import 'package:contexta/domain/model/tts_voice.dart';
 ///
 /// 对照 Android 原版 DAO（UserSettingsDao.kt / DailyLearningDao.kt /
 /// LearningStatsSummaryDao.kt / ConfigChangeLogDao.kt /
-/// SchemaMigrationLogDao.kt / GenerationPipelineStatusDao.kt /
+/// SchemaMigrationLogDao.kt /（GenerationPipelineStatusDao 已随 T6 删除）/
 /// DailyLearningLogDao.kt）逐方法验证语义。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -294,49 +294,6 @@ void main() {
       final latest = await dao.getLatest();
       expect(latest!.toVersion, 2);
       expect(await dao.getCurrentVersion(), 2);
-    });
-  });
-
-  group('GenerationPipelineStatusDao', () {
-    late AppDatabase db;
-    late GenerationPipelineStatusDao dao;
-
-    setUp(() {
-      db = AppDatabase.forTesting(NativeDatabase.memory());
-      dao = GenerationPipelineStatusDao(db);
-    });
-
-    tearDown(() async {
-      await db.close();
-    });
-
-    test('upsert / clearBlocked / setBlocked', () async {
-      expect(await dao.get(), isNull);
-
-      await dao.upsert(const GenerationPipelineStatusesCompanion(
-        id: Value(1),
-        isBlocked: Value(true),
-        blockedReason: Value('structural'),
-        blockedAt: Value('2026-08-06T10:00:00+08:00'),
-        blockedAppVersionCode: Value(2),
-      ));
-      var row = await dao.get();
-      expect(row!.isBlocked, true);
-      expect(row.blockedReason, 'structural');
-
-      await dao.setBlocked(
-        reason: 'fatal',
-        now: '2026-08-06T11:00:00+08:00',
-        appVersionCode: 3,
-      );
-      row = await dao.get();
-      expect(row!.isBlocked, true);
-      expect(row.blockedReason, 'fatal');
-      expect(row.blockedAppVersionCode, 3);
-
-      await dao.clearBlocked();
-      row = await dao.get();
-      expect(row!.isBlocked, false);
     });
   });
 

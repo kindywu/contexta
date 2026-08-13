@@ -6,7 +6,6 @@ import 'package:contexta/core/navigation/routes.dart';
 import 'package:contexta/data/auth/auth_service.dart';
 import 'package:contexta/data/auth/native_phone_reader.dart';
 import 'package:contexta/data/remote/server_api_client.dart';
-import 'package:contexta/domain/model/generation_error.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/model/vocab_word.dart';
 import 'package:contexta/domain/repository/article_repository.dart';
@@ -105,13 +104,6 @@ class _FakeSettingsRepo implements SettingsRepository {
 }
 
 class _FakeArticleRepo implements ArticleRepository {
-  @override
-  Future<bool> isPipelineBlocked() async => false;
-
-  @override
-  Stream<List<GenerationError>> observeGenerationErrors() =>
-      const Stream.empty();
-
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }

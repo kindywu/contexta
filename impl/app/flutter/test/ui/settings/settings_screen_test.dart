@@ -6,7 +6,6 @@ import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/repository/stats_repository.dart';
 import 'package:contexta/domain/tts/tts_engine.dart';
-import 'package:contexta/domain/usecase/trigger_next_batch_usecase.dart';
 import 'package:contexta/ui/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -175,13 +174,11 @@ const _stats = DailyStats(
 void main() {
   late _FakeSettingsRepo settingsRepo;
   late _FakeStatsRepo statsRepo;
-  late List<String> triggered;
   late _TtsStub tts;
 
   setUp(() {
     settingsRepo = _FakeSettingsRepo();
     statsRepo = _FakeStatsRepo(stats: _stats);
-    triggered = [];
     tts = _TtsStub();
   });
 
@@ -191,12 +188,6 @@ void main() {
         settingsRepositoryProvider.overrideWithValue(settingsRepo),
         statsRepositoryProvider.overrideWithValue(statsRepo),
         ttsEngineProvider.overrideWith((ref) async => tts),
-        triggerNextBatchUseCaseProvider.overrideWith((ref) {
-          return TriggerNextBatchStub(
-            onCall: (difficulty, dailyCount) async =>
-                triggered.add('$difficulty:$dailyCount'),
-          );
-        }),
       ],
       child: const MaterialApp(home: SettingsScreen()),
     ));
@@ -267,7 +258,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(settingsRepo.updates, contains('level:HIGH'));
-      expect(triggered, ['HIGH:3']);
       expect(find.text('修改英文水平'), findsNothing);
       expect(find.text('高级'), findsOneWidget); // picker 值已更新
     });
@@ -284,7 +274,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(settingsRepo.updates, isEmpty);
-      expect(triggered, isEmpty);
       expect(find.text('中级'), findsOneWidget);
     });
   });
@@ -303,7 +292,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(settingsRepo.updates, contains('count:4'));
-      expect(triggered, isEmpty); // 篇数不触发生成
       expect(find.text('4'), findsOneWidget);
     });
   });
@@ -392,18 +380,4 @@ void main() {
       expect(settingsRepo.updates, contains('voice:LUNA'));
     });
   });
-}
-
-/// TriggerNextBatchUseCase 桩（记录调用参数）。
-class TriggerNextBatchStub implements TriggerNextBatchUseCase {
-  TriggerNextBatchStub({required this.onCall});
-
-  final Future<void> Function(String difficulty, int dailyCount) onCall;
-
-  @override
-  Future<void> call(String difficulty, int dailyCount) =>
-      onCall(difficulty, dailyCount);
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }

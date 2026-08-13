@@ -98,7 +98,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: EmptyState(
                 icon: Icons.menu_book_outlined,
                 message: '暂无文章',
-                subMessage: '请等待文章生成',
+                // 2026-08-13（计划 B T5 carry / T6 落地）：同步模型下文章来自
+                // 服务端，空态语义从「等待本地生成」改为「同步失败可重试」
+                subMessage: '暂时没有文章，下拉刷新试试',
               ),
             )
           else

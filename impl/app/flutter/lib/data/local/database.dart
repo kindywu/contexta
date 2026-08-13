@@ -1,6 +1,6 @@
 import 'package:drift/drift.dart';
 
-import 'tables/article_tables.dart'; // 文章表组 4 张
+import 'tables/article_tables.dart'; // 文章表组 3 张
 import 'tables/settings_tables.dart';
 import 'tables/tts_cache_tables.dart';
 import 'tables/word_tables.dart'; // 词库表组 4 张
@@ -10,21 +10,21 @@ part 'database.g.dart';
 /// Contexta 主数据库（drift 侧）。
 ///
 /// 表结构逐列对照 Android Room schema（Task 8 用真机旧库逐列比对验证）。
-/// 已注册 17 张表：基础表组 8 张 + 文章表组 4 张 + 词库表组 4 张 + TTS 缓存 1 张
+/// 已注册 15 张表：基础表组 7 张 + 文章表组 3 张 + 词库表组 4 张 + TTS 缓存 1 张
 /// （DbVersion 为数据库结构版本指针表，见 tables/settings_tables.dart 注释）。
+/// 2026-08-13（计划 B Task 6）：本地生成管道移除——generation_pipeline_status /
+/// generation_error_log 两表注册删除，文章表组从 4 张减到 3 张。
 @DriftDatabase(
   tables: [
     UserSettings,
     ConfigChangeLogs,
     SchemaMigrationLogs,
-    GenerationPipelineStatuses,
     DailyLearningLogs,
     LearningStatsSummaries,
     DailyLearnings,
     ArticleBatches,
     Articles,
     ArticleParagraphs,
-    GenerationErrorLogs,
     Words,
     WordSenses,
     ExampleSentences,

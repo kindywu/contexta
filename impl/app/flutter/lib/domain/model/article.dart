@@ -1,4 +1,6 @@
-/// 文章领域模型（对齐 Kotlin Article.kt）
+/// 文章领域模型（对齐 Kotlin Article.kt；2026-08-13 计划 B Task 6 移除
+/// 本地生成管道后删去生成状态机字段 generationStartedAt/generationCompletedAt/
+/// retryCount/lastRetryAt/maxRetries/nextRetryAt）。
 class Article {
   final int id;
   final int batchId;
@@ -6,14 +8,8 @@ class Article {
   final String contentCategory;
   final String? title;
   final ArticleStatus status;
-  final String? generationStartedAt;
-  final String? generationCompletedAt;
-  final int retryCount;
   final int accumulatedReadSeconds;
   final String? readCompletedAt;
-  final String? lastRetryAt;
-  final int maxRetries;
-  final String? nextRetryAt;
   final List<ArticleParagraph> paragraphs;
 
   const Article({
@@ -23,14 +19,8 @@ class Article {
     required this.contentCategory,
     required this.title,
     required this.status,
-    required this.generationStartedAt,
-    required this.generationCompletedAt,
-    required this.retryCount,
     required this.accumulatedReadSeconds,
     required this.readCompletedAt,
-    required this.lastRetryAt,
-    this.maxRetries = 3,
-    this.nextRetryAt,
     this.paragraphs = const [],
   });
 
@@ -38,11 +28,8 @@ class Article {
   @override
   String toString() => 'Article(id=$id, batchId=$batchId, orderIndex=$orderIndex, '
       'contentCategory=$contentCategory, title=$title, status=$status, '
-      'generationStartedAt=$generationStartedAt, '
-      'generationCompletedAt=$generationCompletedAt, retryCount=$retryCount, '
       'accumulatedReadSeconds=$accumulatedReadSeconds, '
-      'readCompletedAt=$readCompletedAt, lastRetryAt=$lastRetryAt, '
-      'maxRetries=$maxRetries, nextRetryAt=$nextRetryAt, paragraphs=$paragraphs)';
+      'readCompletedAt=$readCompletedAt, paragraphs=$paragraphs)';
 }
 
 /// 文章生成状态（存储层用大写枚举名 TEXT，如 'TIMEOUT'）。

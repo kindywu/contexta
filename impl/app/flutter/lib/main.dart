@@ -3,15 +3,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'core/theme/app_theme.dart';
-import 'data/background/background_callback_dispatcher.dart';
 import 'di/providers.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // 注册后台任务回调（Task 18）：后台 isolate 通过该顶层函数执行
-  // 批次生成；多次调用是幂等的（平台层只注册一次）
+  // 2026-08-13（计划 B Task 6）：本地生成管道移除，workmanager 初始化保留
+  // （后台调度能力 T8 换每日同步任务）；占位 dispatcher 不注册任何任务，
+  // 未知任务记日志返回成功（避免后台 isolate 崩溃）。
   Workmanager().initialize(backgroundCallbackDispatcher);
   runApp(const ProviderScope(child: MainApp()));
+}
+
+/// workmanager 回调派发器（T8 将在此注册每日同步任务）。
+///
+/// 必须保持顶层函数 + `@pragma('vm:entry-point')`（后台 isolate 通过
+/// entry point 发现它，不能被 tree-shake 掉）。
+@pragma('vm:entry-point')
+void backgroundCallbackDispatcher() {
+  Workmanager().executeTask((taskName, inputData) async {
+    debugPrint('[WorkerDispatcher] executeTask taskName=$taskName inputData=$inputData');
+    return true;
+  });
 }
 
 class MainApp extends ConsumerWidget {

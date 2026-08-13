@@ -101,28 +101,6 @@ class SchemaMigrationLogs extends Table {
   TextColumn get createdAt => text()();
 }
 
-/// 表 generation_pipeline_status（GenerationPipelineStatusEntity.kt：单例行 id=1）
-@DataClassName('GenerationPipelineStatusRow')
-class GenerationPipelineStatuses extends Table {
-  /// Room 表名 generation_pipeline_status（类名复数，必须显式覆盖）
-  @override
-  String get tableName => 'generation_pipeline_status';
-
-  /// Room: @PrimaryKey val id: Int（无 autoGenerate）
-  IntColumn get id => integer()();
-
-  BoolColumn get isBlocked => boolean()();
-
-  TextColumn? get blockedReason => text().nullable()();
-
-  TextColumn? get blockedAt => text().nullable()();
-
-  IntColumn? get blockedAppVersionCode => integer().nullable()();
-
-  @override
-  Set<Column> get primaryKey => {id};
-}
-
 /// 表 daily_learning_log（DailyLearningLogEntity.kt）
 @DataClassName('DailyLearningLogRow')
 class DailyLearningLogs extends Table {

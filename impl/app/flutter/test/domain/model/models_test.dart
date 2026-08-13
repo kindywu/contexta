@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:contexta/domain/inflection/inflection_resolver.dart';
 import 'package:contexta/domain/model/article.dart';
 import 'package:contexta/domain/model/article_batch.dart';
-import 'package:contexta/domain/model/generation_error.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/model/vocab_word.dart';
 import 'package:contexta/domain/model/word_detail.dart';
@@ -124,7 +123,7 @@ void main() {
   });
 
   group('模型默认值', () {
-    test('Article：maxRetries=3、nextRetryAt=null、paragraphs=[]', () {
+    test('Article：paragraphs=[]（生成状态机字段已随 T6 删除）', () {
       final a = Article(
         id: 1,
         batchId: 2,
@@ -132,19 +131,13 @@ void main() {
         contentCategory: 'NEWS',
         title: null,
         status: ArticleStatus.success,
-        generationStartedAt: null,
-        generationCompletedAt: null,
-        retryCount: 0,
         accumulatedReadSeconds: 0,
         readCompletedAt: null,
-        lastRetryAt: null,
       );
-      expect(a.maxRetries, 3);
-      expect(a.nextRetryAt, isNull);
       expect(a.paragraphs, isEmpty);
     });
 
-    test('ArticleBatch：blockedReason=null、blockedAt=null、articles=[]', () {
+    test('ArticleBatch：articles=[]（blocked 字段已随 T6 删除）', () {
       final b = ArticleBatch(
         id: 1,
         status: BatchStatus.generating,
@@ -152,8 +145,6 @@ void main() {
         generatedOn: null,
         lastUpdatedAt: '2026-08-07T10:00:00+08:00',
       );
-      expect(b.blockedReason, isNull);
-      expect(b.blockedAt, isNull);
       expect(b.articles, isEmpty);
     });
 
@@ -180,19 +171,6 @@ void main() {
       expect(s.autoPlayAudio, isFalse);
     });
 
-    test('GenerationError：entityType=ARTICLE、status=null', () {
-      final e = GenerationError(
-        id: 1,
-        entityId: 1,
-        errorCode: 'E1',
-        errorMessage: 'm',
-        errorHelp: null,
-        retryCount: 0,
-        createdAt: '2026-08-07T10:00:00+08:00',
-      );
-      expect(e.entityType, 'ARTICLE');
-      expect(e.status, isNull);
-    });
   });
 
   group('toString 语义（对齐 Kotlin data class）', () {
@@ -214,18 +192,12 @@ void main() {
         contentCategory: 'NEWS',
         title: 'T',
         status: ArticleStatus.success,
-        generationStartedAt: null,
-        generationCompletedAt: null,
-        retryCount: 0,
         accumulatedReadSeconds: 0,
         readCompletedAt: null,
-        lastRetryAt: null,
       );
       expect(a.toString(), 'Article(id=1, batchId=2, orderIndex=3, '
           'contentCategory=NEWS, title=T, status=SUCCESS, '
-          'generationStartedAt=null, generationCompletedAt=null, retryCount=0, '
-          'accumulatedReadSeconds=0, readCompletedAt=null, lastRetryAt=null, '
-          'maxRetries=3, nextRetryAt=null, paragraphs=[])');
+          'accumulatedReadSeconds=0, readCompletedAt=null, paragraphs=[])');
     });
   });
 

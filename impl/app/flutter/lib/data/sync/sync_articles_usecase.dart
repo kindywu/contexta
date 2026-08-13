@@ -34,9 +34,9 @@ class SyncResult {
 ///   管道语义），直连 DAO 显式写 CURRENT；
 /// - **文章**：按 server_article_id = dto.id 查本地行 → 有则更新
 ///   title/orderIndex/contentCategory（**不重置** accumulatedReadSeconds 等
-///   本地阅读状态）→ 无则 INSERT（status 'SUCCESS'、accumulatedReadSeconds 0、
-///   retryCount/maxRetries 0——同步文章不做本地重试，重试语义在服务端
-///   regenerate_count，本任务不落库）；
+///   本地阅读状态）→ 无则 INSERT（status 'SUCCESS'、accumulatedReadSeconds 0；
+///   2026-08-13 T6 起 retry_count/max_retries 列已随本地生成管道删除，
+///   重试语义在服务端 regenerate_count）；
 /// - **段落**：先删该文章旧段落、再按 order_index 插入（(article_id,
 ///   order_index) 唯一索引保证重复同步不重复）；
 /// - **事务性（2026-08-13 审查修复）**：每篇「文章更新/插入 + 段落先删后插」
@@ -140,9 +140,7 @@ class SyncArticlesUseCase {
               contentCategory: dto.contentCategory,
               title: Value(dto.title),
               status: 'SUCCESS',
-              retryCount: 0,
               accumulatedReadSeconds: 0,
-              maxRetries: 0,
               serverArticleId: Value(dto.id),
             ),
           );

@@ -168,7 +168,6 @@ const _stats = DailyStats(
 void main() {
   late _FakeSettingsRepo settingsRepo;
   late _FakeStatsRepo statsRepo;
-  late List<String> triggered;
   late SettingsController controller;
 
   Future<SettingsController> createController({
@@ -178,13 +177,9 @@ void main() {
   }) async {
     settingsRepo = _FakeSettingsRepo(settings: settings);
     statsRepo = _FakeStatsRepo(stats: stats);
-    triggered = [];
     final c = SettingsController(
       settingsRepository: settingsRepo,
       statsRepository: statsRepo,
-      triggerNextBatch: (String difficulty, int dailyCount) async {
-        triggered.add('$difficulty:$dailyCount');
-      },
       ttsEngineFuture: Future.value(_FakeTtsEngine()),
       onTtsVoiceChanged: onTtsVoiceChanged,
     );
@@ -279,13 +274,12 @@ void main() {
       expect(controller.state.pendingLevel, isNull);
     });
 
-    test('确认修改 → 持久化 + 触发生成 + 关闭弹窗', () async {
+    test('确认修改 → 持久化 + 关闭弹窗（不再触发生成，T6 同步模型）', () async {
       controller = await createController();
       controller.requestLevelChange('HIGH');
       await controller.confirmLevelChange();
 
       expect(settingsRepo.updates, contains('level:HIGH'));
-      expect(triggered, ['HIGH:3']); // dailyCount 3
       expect(controller.state.level, 'HIGH');
       expect(controller.state.showLevelConfirmDialog, isFalse);
       expect(controller.state.pendingLevel, isNull);
@@ -301,7 +295,6 @@ void main() {
       expect(controller.state.pendingLevel, isNull);
       expect(controller.state.level, 'MEDIUM');
       expect(settingsRepo.updates, isEmpty);
-      expect(triggered, isEmpty);
     });
   });
 
@@ -340,7 +333,6 @@ void main() {
       await controller.confirmCountChange();
 
       expect(settingsRepo.updates, contains('count:5'));
-      expect(triggered, isEmpty); // 篇数不触发新批次
       expect(controller.state.dailyCount, 5);
       expect(controller.state.showCountConfirmDialog, isFalse);
       expect(controller.state.pendingCount, isNull);

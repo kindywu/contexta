@@ -127,18 +127,6 @@ void main() {
       expect(await tableSql('schema_migration_log'), contains('AUTOINCREMENT'));
     });
 
-    test('generation_pipeline_status 表结构（对照 GenerationPipelineStatusEntity.kt）', () async {
-      final cols = await tableInfo('generation_pipeline_status');
-      expect(cols.length, 5);
-      expectCol(cols, 'id', type: 'INTEGER', notNull: true, pk: true);
-      expectCol(cols, 'is_blocked', type: 'INTEGER', notNull: true, pk: false);
-      expectCol(cols, 'blocked_reason', type: 'TEXT', notNull: false, pk: false);
-      expectCol(cols, 'blocked_at', type: 'TEXT', notNull: false, pk: false);
-      expectCol(cols, 'blocked_app_version_code', type: 'INTEGER', notNull: false, pk: false);
-      // Room: @PrimaryKey val id: Int（无 autoGenerate）
-      expect(await tableSql('generation_pipeline_status'), isNot(contains('AUTOINCREMENT')));
-    });
-
     test('daily_learning_log 表结构（对照 DailyLearningLogEntity.kt）', () async {
       final cols = await tableInfo('daily_learning_log');
       expect(cols.length, 5);
@@ -211,20 +199,20 @@ void main() {
       expect(sql.toUpperCase(), isNot(contains('AUTOINCREMENT')));
     });
 
-    test('注册 9 张基础表（article_batch 由 FK 引用自动包含，本任务显式注册）', () async {
+    test('注册 8 张基础表（article_batch 由 FK 引用自动包含，本任务显式注册；'
+        'generation_pipeline_status 已随 T6 删除）', () async {
       final rows = await db.customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
       ).get();
       final names = {for (final r in rows) r.read<String>('name')};
-      // 文章表组（article / article_paragraph / generation_error_log）由
-      // schema_article_tables_test.dart 的注册表集合测试断言完整集合。
+      // 文章表组（article / article_paragraph）由 schema_article_tables_test.dart
+      // 的注册表集合测试断言完整集合。
       expect(
         names,
         containsAll({
           'user_settings',
           'config_change_log',
           'schema_migration_log',
-          'generation_pipeline_status',
           'daily_learning_log',
           'learning_stats_summary',
           'daily_learning',

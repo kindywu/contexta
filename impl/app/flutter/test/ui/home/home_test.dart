@@ -12,7 +12,6 @@ import 'package:contexta/domain/model/article.dart';
 import 'package:contexta/domain/model/article_batch.dart';
 import 'package:contexta/domain/model/daily_learning_info.dart';
 import 'package:contexta/domain/model/daily_stats.dart';
-import 'package:contexta/domain/model/generation_error.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/repository/article_repository.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
@@ -51,19 +50,11 @@ class _FakeArticleRepo implements ArticleRepository {
   }
 
   @override
-  Stream<List<GenerationError>> observeGenerationErrors() =>
-      const Stream.empty();
-
-  @override
   dynamic noSuchMethod(Invocation invocation) {
-    if (invocation.memberName == #isPipelineBlocked) return Future.value(false);
     if (invocation.memberName == #getAssignedBatchForDate) {
       return Future.value(null);
     }
     if (invocation.memberName == #getSettings) return Future.value(null);
-    if (invocation.memberName == #getGeneratingBatches) {
-      return Future.value(<ArticleBatch>[]);
-    }
     if (invocation.memberName == #findNextReadyBatch) {
       return Future.value(null);
     }
@@ -199,14 +190,8 @@ Article makeArticle(
   contentCategory: category,
   title: title,
   status: ArticleStatus.success,
-  generationStartedAt: null,
-  generationCompletedAt: '2026-08-07T12:00:00+08:00',
-  retryCount: 0,
   accumulatedReadSeconds: 0,
   readCompletedAt: readAt,
-  lastRetryAt: null,
-  maxRetries: 3,
-  nextRetryAt: null,
   paragraphs: const [],
 );
 
@@ -226,8 +211,6 @@ DailyLearningInfo makeInfo(int daysAgo, int dailyCount) => DailyLearningInfo(
     difficultyLevelSnapshot: 'MEDIUM',
     generatedOn: dateStr(daysAgo),
     lastUpdatedAt: '2026-08-07T12:00:00+08:00',
-    blockedReason: null,
-    blockedAt: null,
     articles: const [],
   ),
 );
@@ -345,8 +328,6 @@ void main() {
           difficultyLevelSnapshot: 'MEDIUM',
           generatedOn: dateStr(0),
           lastUpdatedAt: '2026-08-07T12:00:00+08:00',
-          blockedReason: null,
-          blockedAt: null,
           articles: const [],
         ),
       );
@@ -379,8 +360,6 @@ void main() {
           difficultyLevelSnapshot: 'MEDIUM',
           generatedOn: dateStr(1),
           lastUpdatedAt: '2026-08-07T12:00:00+08:00',
-          blockedReason: null,
-          blockedAt: null,
           articles: const [],
         ),
       );
@@ -470,11 +449,12 @@ void main() {
       expect(find.text('文章生成中'), findsOneWidget);
     });
 
-    testWidgets('空态显示暂无文章', (tester) async {
+    testWidgets('空态显示暂无文章 + 同步失败副文案（B-T5 carry）', (tester) async {
       final container = makeContainer();
       await pumpHome(tester, container);
 
       expect(find.text('暂无文章'), findsOneWidget);
+      expect(find.text('暂时没有文章，下拉刷新试试'), findsOneWidget);
     });
 
     testWidgets('streak>0 显示胶囊', (tester) async {

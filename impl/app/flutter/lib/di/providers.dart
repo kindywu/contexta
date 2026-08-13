@@ -8,7 +8,6 @@ import '../core/time/iso8601.dart';
 import '../data/auth/auth_service.dart';
 import '../data/auth/device_id_provider.dart';
 import '../data/auth/native_phone_reader.dart';
-import '../data/background/generation_scheduler.dart';
 import '../data/local/database_open.dart';
 import '../data/local/daos/article_daos.dart';
 import '../data/local/daos/settings_daos.dart';
@@ -25,9 +24,6 @@ import '../data/repository/vocabulary_repository_impl.dart';
 import '../data/repository/word_repository_impl.dart';
 import '../data/tts/tts_cache_manager.dart';
 import '../data/tts/tts_engine_factory.dart';
-import '../domain/app_info_provider.dart';
-import '../domain/background_work_scheduler.dart';
-import '../domain/developer_alert_sender.dart';
 import '../domain/llm_client.dart';
 import '../domain/repository/article_repository.dart';
 import '../domain/repository/settings_repository.dart';
@@ -39,14 +35,9 @@ import '../domain/time/time_provider.dart';
 import '../domain/tts/tts_engine.dart';
 import '../domain/usecase/activate_seed_batch_usecase.dart';
 import '../domain/usecase/add_word_usecase.dart';
-import '../domain/usecase/create_initial_batch_usecase.dart';
-import '../domain/usecase/generate_articles_usecase.dart';
 import '../domain/usecase/get_home_articles_usecase.dart';
-import '../domain/usecase/resend_pending_alerts_usecase.dart';
 import '../domain/usecase/startup_orchestration_usecase.dart';
-import '../domain/usecase/trigger_next_batch_usecase.dart';
 import '../data/local/database.dart';
-import '../data/monitoring/feishu_alert_sender.dart';
 
 /// 数据库（生产路径：打开时 onCreate 建表 + 种子写入）。
 final databaseProvider = FutureProvider<AppDatabase>((ref) async {
@@ -138,20 +129,6 @@ final todayProvider = Provider<String Function()>(
 /// 时间抽象（Kotlin TimeProvider 对应物）。
 final timeProvider = Provider<TimeProvider>((ref) => _ProdTimeProvider());
 
-/// 应用信息（版本号/型号；Kotlin AppInfoProvider 对应物）。
-final appInfoProvider = Provider<AppInfoProvider>(
-  (ref) => _ProdAppInfoProvider(),
-);
-
-/// 后台生成调度器（Kotlin BackgroundWorkScheduler 对应物；
-/// 对照 Kotlin GenerationScheduler：workmanager 网关 + KEEP 策略 +
-/// 指数退避 + expedited 前台通知）。
-final backgroundWorkSchedulerProvider = Provider<BackgroundWorkScheduler>((
-  ref,
-) {
-  return GenerationScheduler(gateway: RealWorkmanagerGateway());
-});
-
 /// DeepSeek HTTP 客户端（dio；对照 Kotlin NetworkModule：连接 30s、
 /// 读超时 = LLM 超时 + 60s 宽限，协程级超时确定性先触发）。
 final deepSeekApiProvider = Provider<DeepSeekApi>((ref) {
@@ -202,12 +179,9 @@ final wordRepositoryProvider = Provider<WordRepository>((ref) {
 final articleRepositoryProvider = Provider<ArticleRepository>((ref) {
   final db = ref.watch(databaseProvider).requireValue;
   return ArticleRepositoryImpl(
-    db,
     ArticleBatchDao(db),
     ArticleDao(db),
     ArticleParagraphDao(db),
-    GenerationPipelineStatusDao(db),
-    GenerationErrorLogDao(db),
     DailyLearningDao(db),
     ref.watch(nowIsoProvider),
     ref.watch(todayProvider),
@@ -246,31 +220,11 @@ final statsRepositoryProvider = Provider<StatsRepository>((ref) {
 
 // ─── Use cases ─────────────────────────────────────────────────────────
 
-final triggerNextBatchUseCaseProvider = Provider<TriggerNextBatchUseCase>((
-  ref,
-) {
-  return TriggerNextBatchUseCase(
-    articleRepository: ref.watch(articleRepositoryProvider),
-    generationScheduler: ref.watch(backgroundWorkSchedulerProvider),
-    timeProvider: ref.watch(timeProvider),
-  );
-});
-
 final activateSeedBatchUseCaseProvider = Provider<ActivateSeedBatchUseCase>((
   ref,
 ) {
   return ActivateSeedBatchUseCase(
     articleRepository: ref.watch(articleRepositoryProvider),
-    timeProvider: ref.watch(timeProvider),
-  );
-});
-
-final createInitialBatchUseCaseProvider = Provider<CreateInitialBatchUseCase>((
-  ref,
-) {
-  return CreateInitialBatchUseCase(
-    articleRepository: ref.watch(articleRepositoryProvider),
-    triggerNextBatch: ref.watch(triggerNextBatchUseCaseProvider),
     timeProvider: ref.watch(timeProvider),
   );
 });
@@ -289,32 +243,9 @@ final syncArticlesUseCaseProvider = Provider<SyncArticlesUseCase>((ref) {
   );
 });
 
-final generateArticlesUseCaseProvider = Provider<GenerateArticlesUseCase>((
-  ref,
-) {
-  return GenerateArticlesUseCase(
-    articleRepository: ref.watch(articleRepositoryProvider),
-    llmClient: ref.watch(llmClientProvider),
-    timeProvider: ref.watch(timeProvider),
-    appInfo: ref.watch(appInfoProvider),
-    alertSender: ref.watch(developerAlertSenderProvider),
-  );
-});
-
 final getHomeArticlesUseCaseProvider = Provider<GetHomeArticlesUseCase>((ref) {
   return GetHomeArticlesUseCase();
 });
-
-final resendPendingAlertsUseCaseProvider = Provider<ResendPendingAlertsUseCase>(
-  (ref) {
-    return ResendPendingAlertsUseCase(
-      articleRepository: ref.watch(articleRepositoryProvider),
-      alertSender: ref.watch(developerAlertSenderProvider),
-      timeProvider: ref.watch(timeProvider),
-      appInfo: ref.watch(appInfoProvider),
-    );
-  },
-);
 
 /// 启动编排（服务端同步模型，2026-08-13 计划 B Task 5）：
 /// onboarding → 登录检查 → SyncArticlesUseCase 每日同步（失败降级不阻塞首页）
@@ -338,17 +269,7 @@ final addWordUseCaseProvider = Provider<AddWordUseCase>((ref) {
   );
 });
 
-/// 开发告警发送器（飞书 webhook；对照 Kotlin DomainModule 绑定
-/// FeishuAlertSender → DeveloperAlertSender）。
-final developerAlertSenderProvider = Provider<DeveloperAlertSender>((ref) {
-  return FeishuAlertSender(
-    timeProvider: ref.watch(timeProvider),
-    webhookUrl: AppConfig.feishuWebhookUrl,
-    signSecret: AppConfig.feishuSignSecret,
-  );
-});
-
-// ─── 生产实现（AppInfoProvider / TimeProvider） ────────────────────────
+// ─── 生产实现（TimeProvider） ─────────────────────────────────────────
 
 class _ProdTimeProvider implements TimeProvider {
   @override
@@ -363,15 +284,4 @@ class _ProdTimeProvider implements TimeProvider {
   @override
   String nextDateString() =>
       isoLocalDate(DateTime.now().add(const Duration(days: 1)));
-}
-
-class _ProdAppInfoProvider implements AppInfoProvider {
-  @override
-  int get versionCode => 1;
-
-  @override
-  String get versionName => '1.0';
-
-  @override
-  String get deviceModel => 'unknown';
 }

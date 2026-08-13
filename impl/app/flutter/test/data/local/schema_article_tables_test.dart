@@ -4,9 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:contexta/data/local/database.dart';
 
 /// 对照 Android Room schema（impl/app/android/.../data/local/entity/*.kt）：
-/// 文章表组 4 张（article_batch / article / article_paragraph / generation_error_log）
-/// 逐列断言（列名 / 类型 / notnull / pk / 无 DEFAULT）、
-/// 外键 ON DELETE CASCADE、索引名与唯一性（Room 自动命名规则逐条一致）。
+/// 文章表组 3 张（article_batch / article / article_paragraph；2026-08-13
+/// 计划 B Task 6 起 generation_error_log 表删除）逐列断言（列名 / 类型 /
+/// notnull / pk / 无 DEFAULT）、外键 ON DELETE CASCADE、索引名与唯一性
+/// （Room 自动命名规则逐条一致）。
 ///
 /// Room 建表规则（drift 必须逐条一致）：
 /// - Long/Int → INTEGER、String → TEXT
@@ -82,18 +83,14 @@ void main() {
       return [for (final r in rows) r.read<String>('name')];
     }
 
-    test('article_batch 表结构（对照 ArticleBatchEntity.kt）', () async {
+    test('article_batch 表结构（T6 后 5 列：blocked_reason/blocked_at/ready_notified_at 已删）', () async {
       final cols = await tableInfo('article_batch');
-      expect(cols.length, 8);
+      expect(cols.length, 5);
       expectCol(cols, 'id', type: 'INTEGER', notNull: true, pk: true);
       expectCol(cols, 'status', type: 'TEXT', notNull: true, pk: false);
       expectCol(cols, 'difficulty_level_snapshot', type: 'TEXT', notNull: true, pk: false);
       expectCol(cols, 'generated_on', type: 'TEXT', notNull: true, pk: false);
       expectCol(cols, 'last_updated_at', type: 'TEXT', notNull: true, pk: false);
-      expectCol(cols, 'blocked_reason', type: 'TEXT', notNull: false, pk: false);
-      expectCol(cols, 'blocked_at', type: 'TEXT', notNull: false, pk: false);
-      // Room: ready_notified_at: Long?（Unix millis）
-      expectCol(cols, 'ready_notified_at', type: 'INTEGER', notNull: false, pk: false);
       expect(await tableSql('article_batch'), contains('AUTOINCREMENT'));
     });
 
@@ -109,9 +106,9 @@ void main() {
       );
     });
 
-    test('article 表结构（对照 ArticleEntity.kt）', () async {
+    test('article 表结构（T6 后 9 列：生成状态机 6 列已删，status 保留）', () async {
       final cols = await tableInfo('article');
-      expect(cols.length, 15);
+      expect(cols.length, 9);
       expectCol(cols, 'id', type: 'INTEGER', notNull: true, pk: true);
       expectCol(cols, 'batch_id', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'order_index', type: 'INTEGER', notNull: true, pk: false);
@@ -119,14 +116,8 @@ void main() {
       // populated after generation succeeds
       expectCol(cols, 'title', type: 'TEXT', notNull: false, pk: false);
       expectCol(cols, 'status', type: 'TEXT', notNull: true, pk: false);
-      expectCol(cols, 'generation_started_at', type: 'TEXT', notNull: false, pk: false);
-      expectCol(cols, 'generation_completed_at', type: 'TEXT', notNull: false, pk: false);
-      expectCol(cols, 'retry_count', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'accumulated_read_seconds', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'read_completed_at', type: 'TEXT', notNull: false, pk: false);
-      expectCol(cols, 'last_retry_at', type: 'TEXT', notNull: false, pk: false);
-      expectCol(cols, 'max_retries', type: 'INTEGER', notNull: true, pk: false);
-      expectCol(cols, 'next_retry_at', type: 'TEXT', notNull: false, pk: false);
       // Task 1（计划 B）加列：服务端文章 id（同步幂等键，nullable）
       expectCol(cols, 'server_article_id', type: 'INTEGER', notNull: false, pk: false);
       expect(await tableSql('article'), contains('AUTOINCREMENT'));
@@ -199,31 +190,8 @@ void main() {
       );
     });
 
-    test('generation_error_log 表结构（对照 GenerationErrorLogEntity.kt）', () async {
-      final cols = await tableInfo('generation_error_log');
-      expect(cols.length, 9);
-      expectCol(cols, 'id', type: 'INTEGER', notNull: true, pk: true);
-      expectCol(cols, 'entity_type', type: 'TEXT', notNull: true, pk: false);
-      expectCol(cols, 'entity_id', type: 'INTEGER', notNull: true, pk: false);
-      expectCol(cols, 'error_code', type: 'TEXT', notNull: true, pk: false);
-      expectCol(cols, 'error_message', type: 'TEXT', notNull: true, pk: false);
-      expectCol(cols, 'error_help', type: 'TEXT', notNull: false, pk: false);
-      expectCol(cols, 'retry_count', type: 'INTEGER', notNull: true, pk: false);
-      expectCol(cols, 'created_at', type: 'TEXT', notNull: true, pk: false);
-      // Room: notified_at: Long?（Unix millis）
-      expectCol(cols, 'notified_at', type: 'INTEGER', notNull: false, pk: false);
-      expect(await tableSql('generation_error_log'), contains('AUTOINCREMENT'));
-    });
-
-    test('generation_error_log 索引（名字与 Room 自动命名一致）', () async {
-      final map = await indexList('generation_error_log');
-      // Room: Index(value = ["entity_type", "entity_id"])
-      expect(map['index_generation_error_log_entity_type_entity_id'], 0);
-      // Room: Index(value = ["created_at"])
-      expect(map['index_generation_error_log_created_at'], 0);
-    });
-
-    test('注册表集合：全部 17 张（16 张业务表 + db_version 版本指针表）', () async {
+    test('注册表集合：全部 15 张（14 张业务表 + db_version 版本指针表；'
+        'generation_pipeline_status / generation_error_log 已随 T6 删除）', () async {
       final rows = await db.customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
       ).get();
@@ -234,14 +202,12 @@ void main() {
           'user_settings',
           'config_change_log',
           'schema_migration_log',
-          'generation_pipeline_status',
           'daily_learning_log',
           'learning_stats_summary',
           'daily_learning',
           'article_batch',
           'article',
           'article_paragraph',
-          'generation_error_log',
           'word',
           'word_sense',
           'example_sentence',

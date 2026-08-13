@@ -23,7 +23,6 @@ class HomeUiState {
     this.isLoading = true,
     this.isGenerating = false,
     this.generationMessage = '',
-    this.generationErrors = const [],
   });
 
   final String dateLabel;
@@ -32,7 +31,6 @@ class HomeUiState {
   final bool isLoading;
   final bool isGenerating;
   final String generationMessage;
-  final List<ErrorUi> generationErrors;
 
   HomeUiState copyWith({
     String? dateLabel,
@@ -41,7 +39,6 @@ class HomeUiState {
     bool? isLoading,
     bool? isGenerating,
     String? generationMessage,
-    List<ErrorUi>? generationErrors,
   }) => HomeUiState(
     dateLabel: dateLabel ?? this.dateLabel,
     streak: streak ?? this.streak,
@@ -49,24 +46,7 @@ class HomeUiState {
     isLoading: isLoading ?? this.isLoading,
     isGenerating: isGenerating ?? this.isGenerating,
     generationMessage: generationMessage ?? this.generationMessage,
-    generationErrors: generationErrors ?? this.generationErrors,
   );
-}
-
-class ErrorUi {
-  const ErrorUi({
-    required this.articleId,
-    required this.errorCode,
-    required this.errorMessage,
-    required this.errorHelp,
-    required this.canRetry,
-  });
-
-  final int articleId;
-  final String errorCode;
-  final String errorMessage;
-  final String errorHelp;
-  final bool canRetry;
 }
 
 class ArticleGroupUi {
@@ -99,8 +79,10 @@ class ArticleItemUi {
 /// - refresh：下拉刷新 → 重跑同步编排 + 重载文章流（幂等）
 /// - observeArticles：GetHomeArticlesUseCase 过滤（按用户难度 + 每日篇数
 ///   snapshot）+ 按日期分组；批次流 combine 后过滤空组
-/// - observeErrors：生成错误 → ErrorUi（FAILED/TIMEOUT/FATAL 可重试）
 /// - observeSettingsForRefresh：设置变更 → 重新观察文章流
+///
+/// 2026-08-13（计划 B Task 6）：observeErrors（生成错误订阅）随本地生成
+/// 管道删除——generationErrors/ErrorUi 状态与 UI 一并移除。
 class HomeController extends StateNotifier<HomeUiState> {
   HomeController({
     required this._articleRepository,
@@ -116,7 +98,6 @@ class HomeController extends StateNotifier<HomeUiState> {
   final StartupOrchestrationUseCase _startupOrch;
   final GetHomeArticlesUseCase _getHomeArticles;
 
-  StreamSubscription<void>? _errorsSub;
   StreamSubscription<UserSettings?>? _settingsSub;
   final _batchSubs = <int, StreamSubscription<List<Article>>>{};
   final _latestArticles = <int, List<Article>>{};
@@ -129,8 +110,6 @@ class HomeController extends StateNotifier<HomeUiState> {
 
     final stats = await _statsRepository.getStats();
     state = state.copyWith(streak: stats?.currentStreak ?? 0);
-
-    _observeErrors();
 
     final result = await _startupOrch();
     switch (result) {
@@ -157,27 +136,6 @@ class HomeController extends StateNotifier<HomeUiState> {
     _settingsSub?.cancel();
     _settingsSub = _settingsRepository.observeSettings().listen((_) {
       _observeArticles();
-    });
-  }
-
-  void _observeErrors() {
-    _errorsSub?.cancel();
-    _errorsSub = _articleRepository.observeGenerationErrors().listen((errors) {
-      state = state.copyWith(
-        generationErrors: [
-          for (final e in errors)
-            ErrorUi(
-              articleId: e.entityId,
-              errorCode: e.errorCode,
-              errorMessage: e.errorMessage,
-              errorHelp: e.errorHelp ?? '',
-              canRetry:
-                  e.status == 'FAILED' ||
-                  e.status == 'TIMEOUT' ||
-                  e.status == 'FATAL',
-            ),
-        ],
-      );
     });
   }
 
@@ -290,7 +248,6 @@ class HomeController extends StateNotifier<HomeUiState> {
 
   @override
   void dispose() {
-    _errorsSub?.cancel();
     _settingsSub?.cancel();
     for (final sub in _batchSubs.values) {
       sub.cancel();
