@@ -1,8 +1,7 @@
 pub mod admin_service;
+pub mod article_service;
 pub mod auth_service;
 pub mod llm_service;
-// article_service 在后续任务（T8）实现，届时恢复声明
-// pub mod article_service;
 
 use chrono::{Local, TimeZone};
 
