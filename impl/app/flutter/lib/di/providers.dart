@@ -13,9 +13,11 @@ import '../data/local/database_open.dart';
 import '../data/local/daos/article_daos.dart';
 import '../data/local/daos/settings_daos.dart';
 import '../data/local/daos/word_daos.dart';
+import '../data/remote/article_api.dart';
 import '../data/remote/deepseek_api.dart';
 import '../data/remote/llm_caller.dart';
 import '../data/remote/server_api_client.dart';
+import '../data/sync/sync_articles_usecase.dart';
 import '../data/repository/article_repository_impl.dart';
 import '../data/repository/settings_repository_impl.dart';
 import '../data/repository/stats_repository_impl.dart';
@@ -75,6 +77,11 @@ final serverApiClientProvider = Provider<ServerApiClient>((ref) {
       return settings?.serverToken;
     },
   );
+});
+
+/// 服务端文章 API（今日已审核文章拉取；与登录共用同一 ServerApiClient）。
+final articleApiProvider = Provider<ArticleApi>((ref) {
+  return ArticleApi(ref.watch(serverApiClientProvider));
 });
 
 /// 设备标识（shared_preferences 持久化，首次生成后固定；登录/登出请求体）。
@@ -242,6 +249,19 @@ final createInitialBatchUseCaseProvider = Provider<CreateInitialBatchUseCase>((r
   return CreateInitialBatchUseCase(
     articleRepository: ref.watch(articleRepositoryProvider),
     triggerNextBatch: ref.watch(triggerNextBatchUseCaseProvider),
+    timeProvider: ref.watch(timeProvider),
+  );
+});
+
+/// 每日文章同步用例（fetchToday 经 ArticleApi；T6 编排在登录后触发）。
+/// 直连 DAO（简报裁定）：不经过 ArticleRepository 大接口。
+final syncArticlesUseCaseProvider = Provider<SyncArticlesUseCase>((ref) {
+  final db = ref.watch(databaseProvider).requireValue;
+  return SyncArticlesUseCase(
+    batchDao: ArticleBatchDao(db),
+    articleDao: ArticleDao(db),
+    paragraphDao: ArticleParagraphDao(db),
+    fetchToday: () => ref.read(articleApiProvider).fetchTodayArticles(),
     timeProvider: ref.watch(timeProvider),
   );
 });

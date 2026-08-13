@@ -210,6 +210,28 @@ class ArticleDao {
   Future<int> insert(ArticlesCompanion article) =>
       _db.into(_db.articles).insertOnConflictUpdate(article);
 
+  /// 按服务端文章 id 查本地行（每日同步幂等键；server_article_id 唯一索引，
+  /// SQLite UNIQUE 允许多 NULL——本地无服务端对应的旧文章不受影响）。
+  Future<ArticleRow?> getByServerArticleId(int serverArticleId) =>
+      (_db.select(_db.articles)
+            ..where((t) => t.serverArticleId.equals(serverArticleId)))
+          .getSingleOrNull();
+
+  /// 同步更新服务端文章内容：title / orderIndex / contentCategory。
+  /// 不触碰 status / accumulatedReadSeconds 等本地状态（阅读进度不因
+  /// 服务端修订而重置）；段落由调用方先删后插（见 SyncArticlesUseCase）。
+  Future<void> updateSyncedArticle(
+      int articleId,
+      {required String title,
+      required int orderIndex,
+      required String contentCategory}) =>
+      (_db.update(_db.articles)..where((t) => t.id.equals(articleId)))
+          .write(ArticlesCompanion(
+        title: Value(title),
+        orderIndex: Value(orderIndex),
+        contentCategory: Value(contentCategory),
+      ));
+
   /// REPLACE 语义批量插入（Kotlin insertAll 忽略返回值，故返回 void）。
   Future<void> insertAll(List<ArticlesCompanion> articles) =>
       _db.batch((b) => b.insertAll(_db.articles, articles, mode: InsertMode.replace));
