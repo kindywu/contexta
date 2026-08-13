@@ -37,9 +37,12 @@ enum AuthFailureKind { tokenExpired, evicted, banned }
 /// - 业务错误：2xx + `code != 0` → 解包 `{message, error_code}` 抛 [ServerApiException]；
 /// - 协议错误：非 2xx + `{code, message, error_code}` → 同上；
 /// - 认证失败：TOKEN_EXPIRED / EVICTED / BANNED 额外触发 [setAuthCallback] 回调
-///   （上层据此登出 / 提示），不吞掉异常；
-/// - 网络错误（连接失败 / 连接超时）→ errorCode 'NETWORK'（调用点经
-///   [mapErrorCodeToException] 按 LlmTimeoutException 处理，与服务端超时同语义）。
+///   （上层据此登出 / 提示），不吞掉异常；单实例生命周期内每个 kind 只触发一次
+///   （并发请求同时 401 不会重复弹登出），回调自身异常也不得覆盖原始异常；
+/// - 网络错误（连接失败 / 连接 / 发送 / 接收超时）→ errorCode 'NETWORK'（调用点经
+///   [mapErrorCodeToException] 按 LlmTimeoutException 处理，与服务端超时同语义）；
+/// - 畸形响应防御：200 但 body 非 JSON 对象（HTML / 数组 / 空体）、或
+///   code==0 但 data 缺失 / 类型不符 → errorCode 'UNKNOWN'，不让 TypeError 裸逃逸。
 ///
 /// [baseUrl] 为服务端 origin（无尾斜杠，见 AppConfig.serverBaseUrl），[path] 以
 /// `/` 开头；拼接方式 `'$baseUrl$path'`。Bearer 头经拦截器注入：每次请求从
@@ -65,6 +68,10 @@ class ServerApiClient {
 
   void Function(AuthFailureKind kind)? _authCallback;
 
+  /// 已触发过认证回调的类别：单实例生命周期内每种只触发一次，
+  /// 避免并发请求同时 401 时重复弹登出 / 重复调登出接口。
+  final Set<AuthFailureKind> _notifiedAuthKinds = {};
+
   /// 注册认证失败回调（登录失效 / 踢下线 / 封禁 → 由上层决定登出提示等）。
   void setAuthCallback(void Function(AuthFailureKind kind)? cb) => _authCallback = cb;
 
@@ -88,19 +95,42 @@ class ServerApiClient {
   ) async {
     try {
       final resp = await send();
-      final json = resp.data as Map<String, dynamic>;
-      if (json['code'] == 0) {
-        final data = json['data'];
-        return parser != null ? parser(data) : data as T;
+      final body = resp.data;
+      if (body is! Map<String, dynamic>) {
+        // 200 + HTML / 数组 / 空体：强转会裸抛 TypeError 绕过统一错误映射，
+        // 此处显式转 UNKNOWN（调用点 mapErrorCodeToException 兜底致命错误）。
+        throw ServerApiException(
+          errorCode: 'UNKNOWN',
+          message: '响应不是 JSON 对象（envelope 解包失败）',
+          statusCode: resp.statusCode,
+        );
+      }
+      if (body['code'] == 0) {
+        final data = body['data'];
+        if (parser != null) {
+          return parser(data);
+        }
+        if (data == null || data is! T) {
+          throw ServerApiException(
+            errorCode: 'UNKNOWN',
+            message: '成功 envelope 但 data 缺失或类型不符（期望 $T，'
+                '实际 ${data.runtimeType}）',
+            statusCode: resp.statusCode,
+          );
+        }
+        // data is T 已保证（Dart 3.2+ 类型参数提升），可直接返回
+        return data;
       }
       throw ServerApiException(
-        errorCode: json['error_code']?.toString() ?? 'UNKNOWN',
-        message: json['message']?.toString() ?? '',
+        errorCode: body['error_code']?.toString() ?? 'UNKNOWN',
+        message: body['message']?.toString() ?? '',
         statusCode: resp.statusCode,
       );
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionError ||
-          e.type == DioExceptionType.connectionTimeout) {
+          e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.sendTimeout ||
+          e.type == DioExceptionType.receiveTimeout) {
         throw ServerApiException(
           errorCode: 'NETWORK',
           message: e.message ?? '',
@@ -116,11 +146,18 @@ class ServerApiClient {
           statusCode: e.response?.statusCode,
         );
         if (code == 'TOKEN_EXPIRED' || code == 'EVICTED' || code == 'BANNED') {
-          _authCallback?.call(code == 'EVICTED'
+          final kind = code == 'EVICTED'
               ? AuthFailureKind.evicted
               : code == 'BANNED'
                   ? AuthFailureKind.banned
-                  : AuthFailureKind.tokenExpired);
+                  : AuthFailureKind.tokenExpired;
+          if (_notifiedAuthKinds.add(kind)) {
+            try {
+              _authCallback?.call(kind);
+            } catch (_) {
+              // 回调自身异常不得覆盖原始 ServerApiException
+            }
+          }
         }
         throw ex;
       }

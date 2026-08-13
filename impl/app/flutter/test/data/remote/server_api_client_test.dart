@@ -218,6 +218,23 @@ void main() {
       );
     });
 
+    test('发送超时（sendTimeout）→ ServerApiException(NETWORK)', () async {
+      final (client, adapter) = _makeClient();
+      adapter.handler = (options) async {
+        throw DioException(
+          requestOptions: options,
+          type: DioExceptionType.sendTimeout,
+          message: 'send timeout',
+        );
+      };
+
+      await expectLater(
+        client.get<dynamic>('/v1/hello'),
+        throwsA(isA<ServerApiException>()
+            .having((e) => e.errorCode, 'errorCode', 'NETWORK')),
+      );
+    });
+
     test('2xx + code!=0 → ServerApiException（envelope 业务错误，不触发 authCallback）',
         () async {
       final authCalls = <AuthFailureKind>[];
@@ -236,6 +253,53 @@ void main() {
             .having((e) => e.statusCode, 'statusCode', 200)),
       );
       expect(authCalls, isEmpty);
+    });
+  });
+
+  group('ServerApiClient 解包防御（200 但响应畸形）', () {
+    test('200 + HTML body（非 JSON 对象）→ ServerApiException(UNKNOWN)，而非 TypeError', () async {
+      final (client, adapter) = _makeClient();
+      adapter.handler = (options) async => ResponseBody.fromString(
+            '<html><body>gateway error</body></html>',
+            200,
+            headers: {
+              Headers.contentTypeHeader: ['text/html; charset=utf-8'],
+            },
+          );
+
+      await expectLater(
+        client.get<dynamic>('/v1/hello'),
+        throwsA(isA<ServerApiException>()
+            .having((e) => e.errorCode, 'errorCode', 'UNKNOWN')),
+      );
+    });
+
+    test('200 + code==0 + data 类型不符（数组）→ ServerApiException(UNKNOWN)', () async {
+      final (client, adapter) = _makeClient();
+      adapter.handler = (options) async => _json(200, {
+            'code': 0,
+            'data': [1, 2, 3],
+          });
+
+      await expectLater(
+        client.get<Map<String, dynamic>>('/v1/hello'),
+        throwsA(isA<ServerApiException>()
+            .having((e) => e.errorCode, 'errorCode', 'UNKNOWN')),
+      );
+    });
+
+    test('200 + code==0 + data null → ServerApiException(UNKNOWN)', () async {
+      final (client, adapter) = _makeClient();
+      adapter.handler = (options) async => _json(200, {
+            'code': 0,
+            'data': null,
+          });
+
+      await expectLater(
+        client.get<Map<String, dynamic>>('/v1/hello'),
+        throwsA(isA<ServerApiException>()
+            .having((e) => e.errorCode, 'errorCode', 'UNKNOWN')),
+      );
     });
   });
 
@@ -262,6 +326,43 @@ void main() {
       await client.get<dynamic>('/v1/hello');
 
       expect(adapter.lastRequest!.headers.containsKey('Authorization'), isFalse);
+    });
+
+    test('并发两个 401 → authCallback 只触发 1 次（按 kind 去重）', () async {
+      final authCalls = <AuthFailureKind>[];
+      final (client, adapter) = _makeClient(onAuth: authCalls.add);
+      adapter.handler = (options) async => _json(401, {
+            'code': 401,
+            'message': 'token expired',
+            'error_code': 'TOKEN_EXPIRED',
+          });
+
+      await expectLater(
+        Future.wait([
+          client.get<dynamic>('/v1/hello'),
+          client.get<dynamic>('/v1/hello'),
+        ]),
+        throwsA(isA<ServerApiException>()),
+      );
+
+      expect(authCalls, [AuthFailureKind.tokenExpired]);
+    });
+
+    test('authCallback 抛异常 → 不吞掉原始 ServerApiException', () async {
+      final (client, adapter) = _makeClient(
+        onAuth: (_) => throw StateError('callback boom'),
+      );
+      adapter.handler = (options) async => _json(401, {
+            'code': 401,
+            'message': 'token expired',
+            'error_code': 'TOKEN_EXPIRED',
+          });
+
+      await expectLater(
+        client.get<dynamic>('/v1/hello'),
+        throwsA(isA<ServerApiException>()
+            .having((e) => e.errorCode, 'errorCode', 'TOKEN_EXPIRED')),
+      );
     });
   });
 
