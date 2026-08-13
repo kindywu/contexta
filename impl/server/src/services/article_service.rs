@@ -6,8 +6,8 @@ use crate::config::Config;
 use crate::drivers::deepseek::DeepSeekApi;
 use crate::response::AppError;
 use crate::services::{llm_service, today_start_millis};
-use chrono::Utc;
-use sqlx::SqlitePool;
+use chrono::{Datelike, NaiveDate, Utc};
+use sqlx::{SqliteConnection, SqlitePool};
 
 pub const ARTICLES_PER_DIFFICULTY: i64 = 5;
 pub const DIFFICULTIES: [&str; 3] = ["LOW", "MEDIUM", "HIGH"];
@@ -32,19 +32,30 @@ fn categories_for(difficulty: &str) -> &'static [&'static str] {
     }
 }
 
-/// 题材轮换：以 target_date 为种子轮转分类，保证连续两天不重复。
+/// 题材轮换：以 target_date 的 epoch 天数（自 0001-01-01 起，连续两天恒差 1）为种子轮转分类，
+/// 相邻两天同一 order 的分类 mod 3/4/5 均不碰撞——保证连续两天不重复。
+/// （yyyyMMdd 数字种子在 31 天月末差 70、年末差 8870，对 HIGH 的 mod 5 撞 0，会连续两天同分类，弃用。）
+/// 同日补生成（reject 重试）以 order+regen+1 轮换到下一分类；LOW 仅 3 类而上限 3 次补生成
+/// （共 4 代），第 4 代必然回到原分类——同日同类可重复，属 3 类 4 代固有行为，非种子缺陷。
 fn category_for(difficulty: &str, target_date: &str, order_index: i64) -> &'static str {
     let cats = categories_for(difficulty);
-    let seed: u32 = target_date.replace('-', "").parse().unwrap_or(0);
+    let seed = NaiveDate::parse_from_str(target_date, "%Y-%m-%d")
+        .map(|d| d.num_days_from_ce())
+        .unwrap_or(0);
     cats[(seed as usize + order_index as usize) % cats.len()]
 }
 
 /// 每日预算：今日（本地语义，today_start_millis）已生成文章数 >= 预算 → QuotaExceeded。
-pub async fn check_daily_budget(pool: &SqlitePool, cfg: &Config) -> Result<(), AppError> {
+/// executor 泛型：事务内（ensure_daily_generation）须用事务连接计数（含本事务未提交行），
+/// 事务外（reject 补生成 / 外部调用）传 &SqlitePool。
+pub async fn check_daily_budget<'e, E>(exec: E, cfg: &Config) -> Result<(), AppError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
     let today = today_start_millis();
     let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article WHERE created_at >= ?")
         .bind(today)
-        .fetch_one(pool)
+        .fetch_one(exec)
         .await?;
     if n >= cfg.article_budget_daily {
         return Err(AppError::QuotaExceeded(
@@ -56,19 +67,26 @@ pub async fn check_daily_budget(pool: &SqlitePool, cfg: &Config) -> Result<(), A
 
 /// 幂等：每难度已有 ≥5 条非终结（pending_review/approved）则跳过；否则补到 5。
 /// 补生成延续 MAX(order_index) 起新 order，题材按日期种子轮换。
+///
+/// 并发安全（审查修复）：整个「查 existing + 生成循环」包进 BEGIN IMMEDIATE 事务——
+/// SQLite 单写者下并发的 ensure 调用（T9 定时 + 手动触发）在 BEGIN 处排队，后到者的计数
+/// 必然发生在先到者 COMMIT 之后，不会双生成。sqlx 默认 begin() 是 DEFERRED（先 SELECT 后
+/// INSERT 的窗口内两会话同见 0），故用 begin_with 显式指定 IMMEDIATE；出错时 tx 自动回滚
+/// （sqlx Transaction drop 语义），全批不落半成品。
 pub async fn ensure_daily_generation(
     pool: &SqlitePool,
     cfg: &Config,
     api: &dyn DeepSeekApi,
     target_date: &str,
 ) -> Result<(), AppError> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     for difficulty in DIFFICULTIES {
         let existing: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM article WHERE target_date = ? AND difficulty = ? AND status IN ('pending_review','approved')",
         )
         .bind(target_date)
         .bind(difficulty)
-        .fetch_one(pool)
+        .fetch_one(&mut *tx)
         .await?;
         let mut need = ARTICLES_PER_DIFFICULTY - existing;
         if need <= 0 {
@@ -79,21 +97,23 @@ pub async fn ensure_daily_generation(
         )
         .bind(target_date)
         .bind(difficulty)
-        .fetch_one(pool)
+        .fetch_one(&mut *tx)
         .await?;
         let mut order = max_order;
         while need > 0 {
-            check_daily_budget(pool, cfg).await?;
+            check_daily_budget(&mut *tx, cfg).await?;
             order += 1;
             let category = category_for(difficulty, target_date, order);
-            generate_one(pool, cfg, api, target_date, difficulty, category, order).await?;
+            generate_conn(&mut tx, cfg, api, target_date, difficulty, category, order).await?;
             need -= 1;
         }
     }
+    tx.commit().await?;
     Ok(())
 }
 
-/// 单篇生成：LLM 出稿 → 写 article（pending_review）+ 段落（`英文|||中文` 单列）→ 记用量。
+/// 单篇生成（pool 入口）：预算校验 + LLM 出稿 + 落库 + 记用量，返回新行 id。
+/// 返回 id 供 reject_article 精确对补生成行记账（审查修复：不再依赖 MAX(id)）。
 pub async fn generate_one(
     pool: &SqlitePool,
     cfg: &Config,
@@ -102,25 +122,52 @@ pub async fn generate_one(
     difficulty: &str,
     category: &str,
     order_index: i64,
-) -> Result<(), AppError> {
-    check_daily_budget(pool, cfg).await?;
+) -> Result<i64, AppError> {
+    let mut conn = pool.acquire().await?;
+    generate_conn(
+        &mut conn,
+        cfg,
+        api,
+        target_date,
+        difficulty,
+        category,
+        order_index,
+    )
+    .await
+}
+
+/// 在指定连接上执行单篇生成：预算校验 + LLM 出稿 → 写 article（pending_review，
+/// prompt/completion_tokens 记真值）+ 段落（`英文|||中文` 单列）→ 记用量（真值 token）。
+/// 事务内（ensure_daily_generation）与单发（generate_one）共用；返回新行 id。
+async fn generate_conn(
+    conn: &mut SqliteConnection,
+    cfg: &Config,
+    api: &dyn DeepSeekApi,
+    target_date: &str,
+    difficulty: &str,
+    category: &str,
+    order_index: i64,
+) -> Result<i64, AppError> {
+    check_daily_budget(&mut *conn, cfg).await?;
     let started = tokio::time::Instant::now();
-    let (title, paragraphs) =
+    let (title, paragraphs, prompt_tokens, completion_tokens) =
         llm_service::generate_article_content(api, cfg, difficulty, category, order_index).await?;
     let latency = started.elapsed().as_millis() as i64;
     let now = Utc::now().timestamp_millis();
     let id = sqlx::query(
         "INSERT INTO article (target_date, difficulty, content_category, order_index, title, status, prompt_tokens, completion_tokens, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'pending_review', 0, 0, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ?)",
     )
     .bind(target_date)
     .bind(difficulty)
     .bind(category)
     .bind(order_index)
     .bind(&title)
+    .bind(prompt_tokens as i64)
+    .bind(completion_tokens as i64)
     .bind(now)
     .bind(now)
-    .execute(pool)
+    .execute(&mut *conn)
     .await?
     .last_insert_rowid();
     let mut o = 0i64;
@@ -132,19 +179,22 @@ pub async fn generate_one(
         .bind(id)
         .bind(o)
         .bind(format!("{en}|||{zh}"))
-        .execute(pool)
+        .execute(&mut *conn)
         .await?;
     }
     // 段落文本格式：`英文|||中文`（下发时拆分；服务端不存第二列避免 1NF 争议）
-    record_generation_usage(pool, cfg, &title, latency).await;
-    Ok(())
-}
-
-async fn record_generation_usage(pool: &SqlitePool, _cfg: &Config, _title: &str, latency: i64) {
-    // token 数在 generate_article_content 未回传——简化为 endpoint 计数（0 token）：
-    llm_service::record_usage(pool, None, "article_generate", 0, 0, latency)
-        .await
-        .ok();
+    // 用量记账失败不阻断生成（成本统计尽力而为，不因 usage_log 问题丢弃已生成的稿件）
+    llm_service::record_usage(
+        &mut *conn,
+        None,
+        "article_generate",
+        prompt_tokens,
+        completion_tokens,
+        latency,
+    )
+    .await
+    .ok();
+    Ok(id)
 }
 
 /// 审核通过：仅 pending_review 可 approve，其余（含重复）→ NotFound。
@@ -198,16 +248,16 @@ pub async fn reject_article(
             .await?;
         return Ok(());
     }
-    // 补生成（预算内）：新行 pending_review，regenerate_count = regen+1
+    // 补生成（预算内）：新行 pending_review，regenerate_count = 父行 regen+1。
+    // 审查修复：generate_one 返回新行 id，直接对刚生成行记账——
+    // 不再用 MAX(id)（INSERT 与 UPDATE 之间有 await 点，并发下 MAX(id) 可能命中错行）。
     check_daily_budget(pool, cfg).await?;
     let category = category_for(&difficulty, &date, order + regen + 1);
-    generate_one(pool, cfg, api, &date, &difficulty, category, order).await?;
-    // 更新刚生成行的 regenerate_count（= 父行 regen+1）。
-    // 简报写法 MAX(id) 依赖服务端任务串行执行（单任务线程内无并发插入），此处沿用；
-    // 若未来并发生成同一日期，应改为按 (target_date, difficulty, order_index) 精确锁定最后一行。
-    sqlx::query("UPDATE article SET regenerate_count = ?, updated_at = ? WHERE id = (SELECT MAX(id) FROM article)")
+    let new_id = generate_one(pool, cfg, api, &date, &difficulty, category, order).await?;
+    sqlx::query("UPDATE article SET regenerate_count = ?, updated_at = ? WHERE id = ?")
         .bind(regen + 1)
         .bind(Utc::now().timestamp_millis())
+        .bind(new_id)
         .execute(pool)
         .await?;
     Ok(())

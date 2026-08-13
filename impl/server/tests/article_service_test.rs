@@ -109,6 +109,51 @@ async fn ensure_generation_creates_15_articles_idempotent() {
         .await
         .unwrap();
     assert_eq!(para, "P1.|||译1。");
+    // token 真值落库（审查修复：成本换算）——mock 固定返回 1/1
+    let (pt, ct): (i64, i64) =
+        sqlx::query_as("SELECT prompt_tokens, completion_tokens FROM article ORDER BY id LIMIT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(pt, 1, "prompt_tokens 应记真值");
+    assert_eq!(ct, 1, "completion_tokens 应记真值");
+    // usage_log 记 article_generate（真值 token）
+    let usage: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM usage_log WHERE endpoint = 'article_generate'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(usage, 15, "每篇生成各记一条用量");
+    cleanup(pool, &db_path).await;
+}
+
+#[tokio::test]
+async fn concurrent_ensure_generation_is_idempotent() {
+    let (pool, cfg, db_path) = setup().await;
+    // BEGIN IMMEDIATE 序列化：两次并发 ensure 仍只生成 15 篇（每难度 5）
+    let (r1, r2) = tokio::join!(
+        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-15"),
+        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-15"),
+    );
+    assert!(r1.is_ok(), "并发调用 1 失败: {:?}", r1.err());
+    assert!(r2.is_ok(), "并发调用 2 失败: {:?}", r2.err());
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        total, 15,
+        "并发 ensure 必须幂等（后到者等待先到者提交后计数）"
+    );
+    let per: Vec<(String, i64)> =
+        sqlx::query_as("SELECT difficulty, COUNT(*) FROM article GROUP BY difficulty")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(per.len(), 3);
+    for (d, n) in &per {
+        assert_eq!(*n, 5, "difficulty {d} 并发后仍应 5 篇");
+    }
     cleanup(pool, &db_path).await;
 }
 

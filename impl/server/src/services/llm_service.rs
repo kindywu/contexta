@@ -32,14 +32,19 @@ async fn user_quota(pool: &SqlitePool, cfg: &Config, phone: &str) -> Result<i64,
     Ok(override_q.flatten().unwrap_or(cfg.word_quota_daily))
 }
 
-pub async fn record_usage(
-    pool: &SqlitePool,
+/// executor 泛型：&SqlitePool 与 &mut SqliteConnection 均可执行——
+/// 文章生成（T8）在 BEGIN IMMEDIATE 事务内记账时须用事务连接，事务外/查词用 pool。
+pub async fn record_usage<'e, E>(
+    exec: E,
     phone: Option<&str>,
     endpoint: &str,
     prompt_tokens: u64,
     completion_tokens: u64,
     latency_ms: i64,
-) -> Result<(), AppError> {
+) -> Result<(), AppError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
     sqlx::query(
         "INSERT INTO usage_log (phone, endpoint, prompt_tokens, completion_tokens, latency_ms, created_at)
          VALUES (?, ?, ?, ?, ?, ?)",
@@ -50,7 +55,7 @@ pub async fn record_usage(
     .bind(completion_tokens as i64)
     .bind(latency_ms)
     .bind(Utc::now().timestamp_millis())
-    .execute(pool)
+    .execute(exec)
     .await?;
     Ok(())
 }
@@ -124,19 +129,24 @@ pub async fn word_lookup(
     Ok(parsed)
 }
 
-// 供文章任务（T8）复用
+// 供文章任务（T8）复用；回传 token 数（审查要求：成本换算）
 pub async fn generate_article_content(
     api: &dyn DeepSeekApi,
     cfg: &Config,
     difficulty: &str,
     category: &str,
     order_index: i64,
-) -> Result<(String, Vec<(i64, String, String)>), AppError> {
+) -> Result<(String, Vec<(i64, String, String)>, u64, u64), AppError> {
     let system = build_article_system(difficulty)
         .ok_or_else(|| AppError::PipelineBlocking("missing article prompt".into()))?;
     let user = build_article_user(category, order_index)
         .ok_or_else(|| AppError::PipelineBlocking("missing article user prompt".into()))?;
     let resp = call_with_retry(api, &system, &user, cfg.llm_timeout_secs).await?;
     let draft = crate::llm::parser::parse_article(&resp.content);
-    Ok((draft.title, draft.paragraphs))
+    Ok((
+        draft.title,
+        draft.paragraphs,
+        resp.prompt_tokens,
+        resp.completion_tokens,
+    ))
 }
