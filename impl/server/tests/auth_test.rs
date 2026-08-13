@@ -1,0 +1,176 @@
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
+use http_body_util::BodyExt;
+use serde_json::{Value, json};
+use server::db;
+use server::{AppState, build_router, config::Config};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use tower::ServiceExt;
+
+// T2 审查遗留：同进程并行测试共享 `/tmp/ctx-auth-{pid}.db` 会碰撞，
+// 用静态原子计数器给每个测试唯一后缀；收尾删除主文件 + -wal/-shm 侧车文件。
+static DB_SEQ: AtomicU64 = AtomicU64::new(0);
+
+fn unique_db_path() -> String {
+    let n = DB_SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("/tmp/ctx-auth-{}-{}.db", std::process::id(), n)
+}
+
+fn test_cfg(db_path: &str) -> Config {
+    // 直接构造，避免依赖 env；JWT_SECRET 用固定值
+    Config {
+        port: 0,
+        db_path: db_path.to_string(),
+        jwt_secret: "test-secret".into(),
+        deepseek_api_key: "sk-test".into(),
+        deepseek_base_url: "https://api.deepseek.com".into(),
+        deepseek_model: "deepseek-v4-flash".into(),
+        word_quota_daily: 200,
+        article_budget_daily: 100,
+        cache_ttl_days: 30,
+        cache_max_rows: 5000,
+        daily_generate_hour: 3,
+        admin_init_password: None,
+        llm_timeout_secs: 90,
+    }
+}
+
+/// 收尾：先 drop 连接池（最后连接关闭时 SQLite 会折掉 WAL），再删主文件与侧车文件。
+fn cleanup(db_path: &str) {
+    for suffix in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{db_path}{suffix}"));
+    }
+}
+
+async fn setup() -> (axum::Router, String) {
+    let db_path = unique_db_path();
+    let cfg = Arc::new(test_cfg(&db_path));
+    let pool = db::init_pool(&db_path).await.unwrap();
+    db::migrate(&pool).await.unwrap();
+    (build_router(AppState { pool, cfg }), db_path)
+}
+
+async fn post(app: &axum::Router, uri: &str, body: Value) -> (StatusCode, Value) {
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(uri)
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = resp.status();
+    let json: Value =
+        serde_json::from_slice(&resp.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    (status, json)
+}
+
+async fn get_with_token(app: &axum::Router, uri: &str, token: &str) -> (StatusCode, Value) {
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri(uri)
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = resp.status();
+    let json: Value =
+        serde_json::from_slice(&resp.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    (status, json)
+}
+
+#[tokio::test]
+async fn login_registers_and_issues_token() {
+    let (app, db_path) = setup().await;
+    let (status, json) = post(
+        &app,
+        "/api/auth/login",
+        json!({"phone": "13800000001", "device_id": "dev-1"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["data"]["token"].as_str().unwrap().len() > 20);
+    drop(app);
+    cleanup(&db_path);
+}
+
+#[tokio::test]
+async fn second_device_evicts_oldest_when_two_active() {
+    let (app, db_path) = setup().await;
+    let (_, j1) = post(
+        &app,
+        "/api/auth/login",
+        json!({"phone": "13800000002", "device_id": "dev-a"}),
+    )
+    .await;
+    let t1 = j1["data"]["token"].as_str().unwrap().to_string();
+    let (_, j2) = post(
+        &app,
+        "/api/auth/login",
+        json!({"phone": "13800000002", "device_id": "dev-b"}),
+    )
+    .await;
+    let t2 = j2["data"]["token"].as_str().unwrap().to_string();
+    // dev-a 仍在
+    let (s1, _) = get_with_token(&app, "/api/auth/me", &t1).await;
+    assert_eq!(s1, StatusCode::OK);
+    // 第三台 dev-c → 挤掉 dev-a（最旧）
+    let (_, j3) = post(
+        &app,
+        "/api/auth/login",
+        json!({"phone": "13800000002", "device_id": "dev-c"}),
+    )
+    .await;
+    let t3 = j3["data"]["token"].as_str().unwrap().to_string();
+    let (s1, _) = get_with_token(&app, "/api/auth/me", &t1).await;
+    assert_eq!(s1, StatusCode::UNAUTHORIZED, "oldest should be evicted");
+    assert_eq!(
+        json_get_code(&s1, &get_with_token(&app, "/api/auth/me", &t1).await.1),
+        "EVICTED"
+    );
+    let (s2, _) = get_with_token(&app, "/api/auth/me", &t2).await;
+    assert_eq!(s2, StatusCode::OK);
+    let (s3, _) = get_with_token(&app, "/api/auth/me", &t3).await;
+    assert_eq!(s3, StatusCode::OK);
+    drop(app);
+    cleanup(&db_path);
+}
+
+#[tokio::test]
+async fn same_device_relogin_replaces_own_session() {
+    let (app, db_path) = setup().await;
+    for _ in 0..4 {
+        let (_, j) = post(
+            &app,
+            "/api/auth/login",
+            json!({"phone": "13800000003", "device_id": "dev-x"}),
+        )
+        .await;
+        assert!(j["data"]["token"].as_str().is_some());
+    }
+    let (_, j) = post(
+        &app,
+        "/api/auth/login",
+        json!({"phone": "13800000003", "device_id": "dev-y"}),
+    )
+    .await;
+    let ty = j["data"]["token"].as_str().unwrap().to_string();
+    let (s, _) = get_with_token(&app, "/api/auth/me", &ty).await;
+    assert_eq!(s, StatusCode::OK);
+    drop(app);
+    cleanup(&db_path);
+}
+
+fn json_get_code(_s: &StatusCode, json: &Value) -> String {
+    json["error_code"].as_str().unwrap_or("").to_string()
+}

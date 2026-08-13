@@ -1,8 +1,11 @@
 pub mod config;
 pub mod db;
+pub mod extractors;
+pub mod jwt;
 pub mod response;
 pub mod routers;
-// 后续任务逐步加入：jwt(T3), extractors(T3), drivers(T5), prompts(T6), llm(T5/T7), services(T8), tasks(T9)
+pub mod services;
+// 后续任务逐步加入：drivers(T5), prompts(T6), llm(T5/T7), tasks(T9)
 
 use axum::Router;
 
