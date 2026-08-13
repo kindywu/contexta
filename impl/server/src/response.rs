@@ -13,38 +13,59 @@ pub struct ApiResult<T: Serialize> {
 pub struct ApiErrorBody {
     pub code: i32,
     pub message: String,
-    pub error_code: &'static str,
+    pub error_code: String,
 }
 
+#[derive(Debug)]
 pub enum AppError {
-    BadRequest(&'static str, &'static str),
-    QuotaExceeded(&'static str),
-    Unauthorized(&'static str),
-    Banned(&'static str),
-    LlmFatal(&'static str),
-    LlmRecoverableExhausted(&'static str),
-    LlmTimeout(&'static str),
-    PipelineBlocking(&'static str),
+    BadRequest(String, String),
+    QuotaExceeded(String),
+    Unauthorized(String),
+    Banned(String),
+    LlmFatal(String),
+    LlmRecoverableExhausted(String),
+    LlmTimeout(String),
+    PipelineBlocking(String),
     Internal(anyhow::Error),
-    NotFound(&'static str),
+    NotFound(String),
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, error_code, message) = match self {
             AppError::BadRequest(ec, msg) => (StatusCode::BAD_REQUEST, 400, ec, msg),
-            AppError::QuotaExceeded(m) => (StatusCode::BAD_REQUEST, 40001, "QUOTA_EXCEEDED", m),
-            AppError::Unauthorized(ec) => (StatusCode::UNAUTHORIZED, 401, ec, "unauthorized"),
-            AppError::Banned(m) => (StatusCode::FORBIDDEN, 403, "BANNED", m),
-            AppError::LlmFatal(m) => (StatusCode::INTERNAL_SERVER_ERROR, 500, "LLM_FATAL", m),
-            AppError::LlmRecoverableExhausted(m) => {
-                (StatusCode::BAD_GATEWAY, 502, "LLM_RECOVERABLE_EXHAUSTED", m)
+            AppError::QuotaExceeded(m) => (
+                StatusCode::BAD_REQUEST,
+                40001,
+                "QUOTA_EXCEEDED".to_string(),
+                m,
+            ),
+            AppError::Unauthorized(ec) => {
+                (StatusCode::UNAUTHORIZED, 401, ec, "unauthorized".into())
             }
-            AppError::LlmTimeout(m) => (StatusCode::GATEWAY_TIMEOUT, 504, "LLM_TIMEOUT", m),
+            AppError::Banned(m) => (StatusCode::FORBIDDEN, 403, "BANNED".to_string(), m),
+            AppError::LlmFatal(m) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                500,
+                "LLM_FATAL".to_string(),
+                m,
+            ),
+            AppError::LlmRecoverableExhausted(m) => (
+                StatusCode::BAD_GATEWAY,
+                502,
+                "LLM_RECOVERABLE_EXHAUSTED".to_string(),
+                m,
+            ),
+            AppError::LlmTimeout(m) => (
+                StatusCode::GATEWAY_TIMEOUT,
+                504,
+                "LLM_TIMEOUT".to_string(),
+                m,
+            ),
             AppError::PipelineBlocking(m) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 500,
-                "PIPELINE_BLOCKING",
+                "PIPELINE_BLOCKING".to_string(),
                 m,
             ),
             AppError::Internal(e) => {
@@ -52,17 +73,17 @@ impl IntoResponse for AppError {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     500,
-                    "INTERNAL",
-                    "internal error",
+                    "INTERNAL".to_string(),
+                    "internal error".to_string(),
                 )
             }
-            AppError::NotFound(m) => (StatusCode::NOT_FOUND, 404, "NOT_FOUND", m),
+            AppError::NotFound(m) => (StatusCode::NOT_FOUND, 404, "NOT_FOUND".to_string(), m),
         };
         (
             status,
             Json(ApiErrorBody {
                 code,
-                message: message.to_string(),
+                message,
                 error_code,
             }),
         )

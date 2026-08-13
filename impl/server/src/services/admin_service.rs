@@ -19,13 +19,14 @@ pub async fn login(
             .bind(username)
             .fetch_optional(pool)
             .await?;
-    let (hash,) = row.ok_or(AppError::Unauthorized("TOKEN_EXPIRED"))?;
-    let parsed = PasswordHash::new(&hash).map_err(|_| AppError::Unauthorized("TOKEN_EXPIRED"))?;
+    let (hash,) = row.ok_or(AppError::Unauthorized("TOKEN_EXPIRED".into()))?;
+    let parsed =
+        PasswordHash::new(&hash).map_err(|_| AppError::Unauthorized("TOKEN_EXPIRED".into()))?;
     if Argon2::default()
         .verify_password(password.as_bytes(), &parsed)
         .is_err()
     {
-        return Err(AppError::Unauthorized("TOKEN_EXPIRED"));
+        return Err(AppError::Unauthorized("TOKEN_EXPIRED".into()));
     }
     Ok(jwt::issue_admin_token(cfg, username)?)
 }

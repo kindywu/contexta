@@ -24,7 +24,7 @@ pub async fn login(
     .execute(pool)
     .await?;
     if is_banned(pool, phone).await? {
-        return Err(AppError::Banned("account banned"));
+        return Err(AppError::Banned("account banned".into()));
     }
     // I1（审查返工）：issued_at 按 phone 全局单调——新行 INSERT 与重登 DO UPDATE 两路
     // 都取「全局 MAX(issued_at) + 1」（与墙钟 now 取大，防时钟回拨），同毫秒并发登录

@@ -26,8 +26,8 @@ pub async fn login(
 ) -> Result<Json<ApiResult<LoginData>>, AppError> {
     if req.phone.is_empty() || req.device_id.is_empty() {
         return Err(AppError::BadRequest(
-            "BAD_PARAM",
-            "phone and device_id required",
+            "BAD_PARAM".into(),
+            "phone and device_id required".into(),
         ));
     }
     let token = auth_service::login(&state.pool, &state.cfg, &req.phone, &req.device_id).await?;
