@@ -427,3 +427,170 @@ async fn approved_articles_visible_others_not() {
     assert_eq!(none.len(), 15, "无过滤返回全部");
     cleanup(pool, &db_path).await;
 }
+
+#[tokio::test]
+async fn fill_is_transactional_and_recovers() {
+    let (pool, cfg, db_path) = setup().await;
+    // 直接构造预占行（模拟 insert_reservation：title NULL、pending_review、regen=0）
+    let now = Utc::now().timestamp_millis();
+    let id = sqlx::query(
+        "INSERT INTO article (target_date, difficulty, content_category, order_index, title, status, regenerate_count, created_at, updated_at)
+         VALUES ('2026-08-17', 'LOW', 'DAILY_CONVERSATION', 1, NULL, 'pending_review', 0, ?, ?)",
+    )
+    .bind(now)
+    .bind(now)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+    // 预插冲突段落（同 order_index=1）→ generate_one 段落 INSERT 触发 UNIQUE 违例
+    sqlx::query(
+        "INSERT INTO article_paragraph (article_id, order_index, text) VALUES (?, 1, 'conflict')",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let r = article_service::generate_one(&pool, &cfg, &MockArticleApi, id).await;
+    assert!(
+        r.is_err(),
+        "段落 INSERT 失败应返回错误（F1 事务回滚）: {:?}",
+        r.err()
+    );
+    // 事务性：title 回滚为 NULL、status 仍 pending_review、无半写段落（仅冲突预插行）
+    let title_null: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM article WHERE id = ? AND title IS NULL")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        title_null, 1,
+        "段落失败后 title 必须回滚为 NULL（否则悬挂无法自愈）"
+    );
+    let status: String = sqlx::query_scalar("SELECT status FROM article WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "pending_review");
+    let paras: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM article_paragraph WHERE article_id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(paras, 1, "无半写段落（仅冲突预插行保留）");
+    // 移除冲突源（模拟瞬时故障解除）→ ensure 重填该预占行（自愈：title 非空、段落完整）
+    sqlx::query("DELETE FROM article_paragraph WHERE article_id = ?")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let r2 =
+        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-17").await;
+    assert!(r2.is_ok(), "重填必须成功: {:?}", r2.err());
+    let title_null2: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM article WHERE id = ? AND title IS NULL")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(title_null2, 0, "自愈后 title 非空");
+    let paras2: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM article_paragraph WHERE article_id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(paras2, 1, "自愈后段落完整");
+    let para: String =
+        sqlx::query_scalar("SELECT text FROM article_paragraph WHERE article_id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(para, "P1.|||译1。");
+    cleanup(pool, &db_path).await;
+}
+
+#[tokio::test]
+async fn approve_rejects_reservation_rows() {
+    let (pool, cfg, db_path) = setup().await;
+    // 构造预占行（title NULL）→ 不可 approve（F2：否则 T10 下发空标题）
+    let now = Utc::now().timestamp_millis();
+    let id = sqlx::query(
+        "INSERT INTO article (target_date, difficulty, content_category, order_index, title, status, regenerate_count, created_at, updated_at)
+         VALUES ('2026-08-17', 'MEDIUM', 'NEWS', 1, NULL, 'pending_review', 0, ?, ?)",
+    )
+    .bind(now)
+    .bind(now)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+    let r = article_service::approve_article(&pool, id).await;
+    assert!(
+        matches!(r, Err(AppError::NotFound(_))),
+        "预占行（title NULL）不可 approve: {:?}",
+        r.err()
+    );
+    // 填充后仍可正常 approve
+    article_service::generate_one(&pool, &cfg, &MockArticleApi, id)
+        .await
+        .unwrap();
+    article_service::approve_article(&pool, id).await.unwrap();
+    let st: String = sqlx::query_scalar("SELECT status FROM article WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(st, "approved");
+    cleanup(pool, &db_path).await;
+}
+
+#[tokio::test]
+async fn concurrent_double_reject_creates_single_replacement() {
+    let (pool, cfg, db_path) = setup().await;
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-18")
+        .await
+        .unwrap();
+    let id: i64 = sqlx::query_scalar("SELECT id FROM article ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    // 并发双 reject 同一行（F3）：后到者的 UPDATE 条件（仍 pending_review）不命中 →
+    // 不建补生成行；恰好一个成功、另一个 NotFound
+    let (r1, r2) = tokio::join!(
+        article_service::reject_article(&pool, &cfg, &MockArticleApi, id, "bad"),
+        article_service::reject_article(&pool, &cfg, &MockArticleApi, id, "also bad"),
+    );
+    let ok = r1.is_ok() as i32 + r2.is_ok() as i32;
+    assert_eq!(ok, 1, "双 reject 恰好一个成功");
+    let nf = matches!(r1, Err(AppError::NotFound(_))) as i32
+        + matches!(r2, Err(AppError::NotFound(_))) as i32;
+    assert_eq!(nf, 1, "另一个必须 NotFound（不建行）");
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        total, 16,
+        "只产生 1 个补生成预占行（15 + 1，双 reject 不得双插）"
+    );
+    let rejected: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM article WHERE id = ? AND status = 'rejected'")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rejected, 1, "父行最终 rejected");
+    let regen: i64 = sqlx::query_scalar(
+        "SELECT regenerate_count FROM article WHERE status = 'pending_review' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(regen, 1, "补生行 regenerate_count = 1");
+    cleanup(pool, &db_path).await;
+}

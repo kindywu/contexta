@@ -203,7 +203,11 @@ pub async fn generate_one(
             return Err(e);
         }
     };
-    // 成功：填 title/tokens（条件 UPDATE 防并发双填——另一路已填充则本路跳过，不插重复段落）
+    // 成功：填 title/tokens + 段落——包进短事务（毫秒级、无 LLM 调用，不违反预占行原则）。
+    // 段落 INSERT 失败整体回滚 → title 仍 NULL → 下次 ensure 重填；不留「title 非空 +
+    // 0~k 段」的半写态（F1：无自愈路径的永久悬挂）。条件 UPDATE 防并发双填——
+    // 另一路已填充则本路 affected=0，跳过段落写入幂等返回。
+    let mut tx = pool.begin().await?;
     let n = sqlx::query(
         "UPDATE article SET title = ?, prompt_tokens = ?, completion_tokens = ?, updated_at = ?
          WHERE id = ? AND status = 'pending_review' AND title IS NULL",
@@ -213,10 +217,11 @@ pub async fn generate_one(
     .bind(completion_tokens as i64)
     .bind(Utc::now().timestamp_millis())
     .bind(article_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?
     .rows_affected();
     if n == 0 {
+        tx.commit().await?;
         return Ok(());
     }
     let mut o = 0i64;
@@ -228,9 +233,10 @@ pub async fn generate_one(
         .bind(article_id)
         .bind(o)
         .bind(format!("{en}|||{zh}"))
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
+    tx.commit().await?;
     // 段落文本格式：`英文|||中文`（下发时拆分；服务端不存第二列避免 1NF 争议）
     llm_service::record_usage(
         pool,
@@ -245,11 +251,12 @@ pub async fn generate_one(
     Ok(())
 }
 
-/// 审核通过：仅 pending_review 可 approve，其余（含重复）→ NotFound。
+/// 审核通过：仅已生成的 pending_review（title 非空）可 approve——预占/生成中行（title NULL）
+/// 不可过审（F2：否则 approved + title NULL → T10 下发空标题）。其余（含重复）→ NotFound。
 pub async fn approve_article(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
     let now = Utc::now().timestamp_millis();
     let n = sqlx::query(
-        "UPDATE article SET status = 'approved', updated_at = ? WHERE id = ? AND status = 'pending_review'",
+        "UPDATE article SET status = 'approved', updated_at = ? WHERE id = ? AND status = 'pending_review' AND title IS NOT NULL",
     )
     .bind(now)
     .bind(id)
@@ -283,14 +290,21 @@ pub async fn reject_article(
         row.ok_or(AppError::NotFound("article not pending_review".into()))?;
     let now = Utc::now().timestamp_millis();
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    sqlx::query(
-        "UPDATE article SET status = 'rejected', reject_reason = ?, updated_at = ? WHERE id = ?",
+    // F3 守卫：并发双 reject 同一行时，后到者的 UPDATE 条件（仍为 pending_review）不命中
+    // （affected=0）→ 不建补生成行，返回 NotFound——避免双插预占行。
+    let n = sqlx::query(
+        "UPDATE article SET status = 'rejected', reject_reason = ?, updated_at = ? WHERE id = ? AND status = 'pending_review'",
     )
     .bind(reason)
     .bind(now)
     .bind(id)
     .execute(&mut *tx)
-    .await?;
+    .await?
+    .rows_affected();
+    if n == 0 {
+        // 另一路已先行处理（或行已非 pending）：本路不建任何行（tx 丢弃即回滚）
+        return Err(AppError::NotFound("article not pending_review".into()));
+    }
     if regen >= REGENERATE_CAP {
         sqlx::query("UPDATE article SET status = 'rejected_final', updated_at = ? WHERE id = ?")
             .bind(now)
