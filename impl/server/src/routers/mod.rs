@@ -1,8 +1,9 @@
 pub mod admin;
+pub mod articles;
 pub mod auth;
 pub mod health;
 pub mod llm;
-// 后续任务逐步加入：articles(T10)；admin 用户管理/文章审核路由 T11/T12 填充
+// 后续任务逐步加入：admin 用户管理/文章审核路由 T11/T12 填充
 
 use crate::AppState;
 use axum::Router;
@@ -26,5 +27,7 @@ pub fn api_routes(state: AppState) -> Router {
             "/api/llm/word-lookup",
             axum::routing::post(llm::word_lookup),
         )
+        .route("/api/articles/today", axum::routing::get(articles::today))
+        .route("/api/articles", axum::routing::get(articles::by_date))
         .with_state(state)
 }
