@@ -35,16 +35,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    // 被踢下线 / 封禁进入本页时给一次性提示
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final status = ref.read(authServiceProvider).status;
-      if (status == AuthStatus.evicted) {
-        _snack('登录已失效，请重新登录');
-      } else if (status == AuthStatus.banned) {
-        _snack('账号已被封禁，无法登录');
-      }
-    });
+    // 注：被踢/封禁的一次性提示已移除——守卫遇到 kicked 状态即清为
+    // loggedOut（refreshListenable 重估，先于任何页面挂载），本页无法
+    // 再观察到 evicted/banned；封禁提示由登录请求的 BANNED 结果承载。
   }
 
   @override
@@ -83,14 +76,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     setState(() => _loading = false);
     switch (result) {
       case AuthResult.success:
-        // 无需手动导航：守卫（refreshListenable）按 from 参数自动回跳来源页
-        break;
+        _navigateAfterLogin();
       case AuthResult.banned:
         _snack('账号已被封禁，无法登录');
       case AuthResult.networkError:
         _snack('网络不可用，请检查网络后重试');
       case AuthResult.serverError:
         _snack('登录失败，请稍后重试');
+    }
+  }
+
+  /// 登录成功后的回跳。守卫的 refreshListenable 重定向对 push 进入的
+  /// /login 不生效（go_router 17 行为），故本页显式导航；目标与守卫
+  /// 分支一致（from 校验逻辑相同）：
+  /// - 有效 from（非空、以 / 开头、非 /login）→ go(from)；
+  /// - 否则可 pop（首页横幅 push 进入）→ pop 回来源；
+  /// - 否则 → go(home)。
+  void _navigateAfterLogin() {
+    final from = GoRouterState.of(context).uri.queryParameters['from'];
+    final validFrom = from != null &&
+        from.isNotEmpty &&
+        from.startsWith('/') &&
+        from != Routes.login;
+    if (validFrom) {
+      context.go(from);
+    } else if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(Routes.home);
     }
   }
 

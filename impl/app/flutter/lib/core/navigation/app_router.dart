@@ -27,8 +27,8 @@ import 'routes.dart';
 /// 登录守卫（[authService] 非 null 时启用，服务端未配置 / 测试不启用）：
 /// - onboarding 不拦截（首次引导先于登录）
 /// - 状态 unknown → 先 ensureLoggedIn（本地 token 恢复 / 过期静默重登）
-/// - 未登录访问内容页 → 重定向 /login?from=<原位置>（登录成功回跳）
-/// - 已登录访问 /login → 回 from / 首页
+/// - 未登录 / 被踢 / 封禁 → 放行（本地路由全部可浏览；被踢清为 loggedOut）
+/// - 已登录访问 /login → 回 from（校验后）/ 首页（登录成功回跳）
 /// 经 [_AuthRefreshListenable] 桥接为 GoRouter.refreshListenable：登录 /
 /// 登出 / 被踢状态变更时立即重估重定向，无需手动导航。
 GoRouter buildRouter({AuthService? authService}) {
@@ -100,7 +100,11 @@ GoRouter buildRouter({AuthService? authService}) {
 
 /// AuthService（riverpod StateNotifier 的 Listenable 非 Flutter Listenable）
 /// → GoRouter.refreshListenable 桥接：状态变更时通知 router 重估重定向。
-/// 订阅在 [dispose] 时解除（GoRouter 重建场景避免残留监听）。
+///
+/// 生命周期：GoRouter 持有该对象但不负责 dispose；生产单例路由随 App
+/// 生命周期常驻，订阅与路由同生共死，无泄漏。测试多实例重建场景下，
+/// 即使对象未被显式 dispose，被销毁的 StateNotifier 也不会再 notify
+/// （残留监听无害）。[dispose] 仅在手动手回收时调用。
 class _AuthRefreshListenable extends ChangeNotifier {
   _AuthRefreshListenable(AuthService service) {
     _removeListener = service.addListener((_) => notifyListeners());
@@ -116,6 +120,14 @@ class _AuthRefreshListenable extends ChangeNotifier {
 }
 
 /// 登录守卫（[auth] 为 null = 本地模式 / 测试，直接放行）。
+///
+/// 裁定（2026-08 审查）：**未登录可浏览所有本地路由**（阅读/词汇/参考均
+/// 本地可用，唯一需登录的是同步与远程查词，各自有降级）——
+/// - loggedOut / unknown → 放行，不再重定向 /login；
+/// - evicted / banned → 清状态为 loggedOut（clearKickedStatus）后放行，
+///   不强制重定向；登录页保持可达（首页横幅 / 按钮驱动）；
+/// - loggedIn 访问 /login → 回跳 from（校验：非空、以 / 开头、且非 /login，
+///   防手工构造无限重定向循环），否则回首页。
 Future<String?> _authRedirect(AuthService? auth, GoRouterState state) async {
   if (auth == null) return null;
   if (state.matchedLocation == Routes.onboarding) return null;
@@ -123,15 +135,23 @@ Future<String?> _authRedirect(AuthService? auth, GoRouterState state) async {
     // 启动 / 冷启动首跳：恢复本地登录态（读库快；过期静默重登失败也尽快落态）
     await auth.ensureLoggedIn();
   }
-  final isLoginPage = state.matchedLocation == Routes.login;
-  if (auth.status != AuthStatus.loggedIn) {
-    // 未登录访问内容页 → 登录页（带来源，登录成功回跳）
-    if (isLoginPage) return null;
-    return '${Routes.login}?from=${Uri.encodeComponent(state.matchedLocation)}';
+  if (auth.status == AuthStatus.evicted || auth.status == AuthStatus.banned) {
+    // 被踢 / 封禁：清为 loggedOut 放行（本地浏览不受限）
+    auth.clearKickedStatus();
+    return null;
   }
-  if (isLoginPage) {
+  if (auth.status == AuthStatus.loggedIn &&
+      state.matchedLocation == Routes.login) {
+    // 已登录访问登录页 → 回跳 from（校验：非空、以 / 开头、且非 /login，
+    // 防手工构造无限重定向循环），否则回首页。注：go_router 17 的
+    // refresh 重定向对 push 进入的 /login 不生效，push 场景的回跳由
+    // LoginScreen._navigateAfterLogin 显式导航（目标与此分支一致）。
     final from = state.uri.queryParameters['from'];
-    return (from == null || from.isEmpty) ? Routes.home : from;
+    final validFrom = from != null &&
+        from.isNotEmpty &&
+        from.startsWith('/') &&
+        from != Routes.login;
+    return validFrom ? from : Routes.home;
   }
   return null;
 }

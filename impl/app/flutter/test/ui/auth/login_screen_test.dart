@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:contexta/core/components/app_button.dart';
+import 'package:contexta/core/navigation/routes.dart';
 import 'package:contexta/data/auth/auth_service.dart';
 import 'package:contexta/data/auth/native_phone_reader.dart';
 import 'package:contexta/data/remote/server_api_client.dart';
@@ -13,6 +14,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 /// 登录页测试：快速登录（本机号码）→ 自动登录；读不到号码 → 手动输入；
 /// 错误 SnackBar（BANNED / 网络失败）；服务端未配置提示。
@@ -119,7 +121,23 @@ void main() {
         nativePhoneReaderProvider.overrideWithValue(_FakePhoneReader(line1)),
         authServiceProvider.overrideWith((ref) => service),
       ],
-      child: const MaterialApp(home: LoginScreen()),
+      child: MaterialApp.router(
+        routerConfig: GoRouter(
+          initialLocation: Routes.login,
+          routes: [
+            GoRoute(
+              path: Routes.login,
+              builder: (context, state) => const LoginScreen(),
+            ),
+            // 登录成功回跳目标（登录页不手动导航，此路由仅承接 go(home)）
+            GoRoute(
+              path: Routes.home,
+              builder: (context, state) =>
+                  const Scaffold(body: Center(child: Text('home'))),
+            ),
+          ],
+        ),
+      ),
     ));
     await tester.pumpAndSettle();
   }
@@ -168,11 +186,12 @@ void main() {
       expect(adapter.lastRequest!.uri.path, '/api/auth/login');
       expect(adapter.lastRequest!.data,
           {'phone': '13800000000', 'device_id': 'dev-1'});
-      // 成功 → 无错误 SnackBar，登录态写入
+      // 成功 → 无错误 SnackBar，登录态写入，回跳 home
       expect(find.byType(SnackBar), findsNothing);
       expect(service.state.status, AuthStatus.loggedIn);
       expect(settings.settings.serverToken, 'tok-1');
       expect(settings.settings.serverTokenExpiresAt, 9999999999 * 1000);
+      expect(find.text('home'), findsOneWidget);
     });
 
     testWidgets('读不到号码 → 展开手动输入框（不调接口）', (tester) async {
@@ -243,6 +262,7 @@ void main() {
           {'phone': '13912345678', 'device_id': 'dev-1'});
       expect(service.state.status, AuthStatus.loggedIn);
       expect(service.state.phone, '13912345678');
+      expect(find.text('home'), findsOneWidget);
     });
 
     testWidgets('非法手机号 → 提示且不调接口', (tester) async {

@@ -91,7 +91,23 @@ class AuthService extends StateNotifier<AuthState> {
 
   /// 启动 / 401 恢复：token 有效直接 loggedIn；过期且可读号码 → 静默重登；
   /// 否则 loggedOut（静默失败不抛）。
-  Future<void> ensureLoggedIn() async {
+  ///
+  /// 单飞保护：并发调用（守卫 + 页面同时触发）复用同一 in-flight Future，
+  /// 避免双调 login API 双写 token。
+  Future<void> ensureLoggedIn() {
+    final inFlight = _inflightEnsure;
+    if (inFlight != null) return inFlight;
+    final future = _doEnsureLoggedIn();
+    _inflightEnsure = future;
+    return future.whenComplete(() {
+      if (identical(_inflightEnsure, future)) _inflightEnsure = null;
+    });
+  }
+
+  /// 进行中的 ensureLoggedIn（单飞：进行中复用，完成后置空）。
+  Future<void>? _inflightEnsure;
+
+  Future<void> _doEnsureLoggedIn() async {
     final settings = await _settings.getSettings();
     final token = settings?.serverToken;
     final expiresAt = settings?.serverTokenExpiresAt;
@@ -118,6 +134,15 @@ class AuthService extends StateNotifier<AuthState> {
     }
     final result = await loginWithPhone(nativePhone);
     if (result != AuthResult.success) {
+      state = const AuthState(status: AuthStatus.loggedOut);
+    }
+  }
+
+  /// 被踢 / 封禁后的收尾：状态清为 loggedOut（token 已在 handleServerFailure
+  /// 清除）。路由守卫遇到 evicted/banned 时调用——本地浏览不受影响，
+  /// 仅消除「被踢」残留态；幂等（非 kicked 状态无操作）。
+  void clearKickedStatus() {
+    if (state.status == AuthStatus.evicted || state.status == AuthStatus.banned) {
       state = const AuthState(status: AuthStatus.loggedOut);
     }
   }

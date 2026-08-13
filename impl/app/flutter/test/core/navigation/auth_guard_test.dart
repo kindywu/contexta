@@ -14,11 +14,15 @@ import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/repository/stats_repository.dart';
 import 'package:contexta/domain/repository/vocabulary_repository.dart';
 import 'package:contexta/domain/repository/word_repository.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
+import 'package:contexta/domain/tts/tts_engine.dart';
 import 'package:contexta/data/local/database.dart';
 import 'package:contexta/domain/llm_client.dart';
 import 'package:contexta/di/providers.dart';
 import 'package:contexta/ui/auth/login_screen.dart';
 import 'package:contexta/ui/home/home_screen.dart';
+import 'package:contexta/ui/reading/reading_screen.dart';
+import 'package:contexta/ui/settings/settings_screen.dart';
 import 'package:dio/dio.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -135,6 +139,31 @@ class _FakeLlmClient implements LlmClient {
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
 
+/// TTS 桩：reading/settings 页会 watch ttsEngineProvider，真实工厂
+/// （kittentts 模型安装）在测试环境残留 Timer。
+class _TtsStub implements TtsEngine {
+  @override
+  bool isAvailable() => true;
+
+  @override
+  String? unavailabilityReason() => null;
+
+  @override
+  String? speak(String text, {double speed = 1.0, TtsVoice? voice}) => 'id';
+
+  @override
+  void stop() {}
+
+  @override
+  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
+
+  @override
+  void setOnParagraphStarted(
+    void Function(String? utteranceId, int paragraphIndex, int total)?
+        callback,
+  ) {}
+}
+
 void main() {
   late _StubAdapter adapter;
   late _FakeSettingsRepo settings;
@@ -176,6 +205,8 @@ void main() {
         vocabularyRepositoryProvider.overrideWithValue(_FakeVocabRepo()),
         wordRepositoryProvider.overrideWithValue(_FakeWordRepo()),
         llmClientProvider.overrideWithValue(_FakeLlmClient()),
+        // reading/settings 页会 watch TTS：真实工厂在测试环境残留 Timer
+        ttsEngineProvider.overrideWith((ref) async => _TtsStub()),
       ],
       child: MaterialApp.router(routerConfig: router),
     ));
@@ -187,20 +218,31 @@ void main() {
       .map((m) => m.matchedLocation)
       .toList();
 
-  group('登录守卫', () {
-    testWidgets('未登录访问 /home → 重定向 /login（带 from 回跳参数）',
+  group('登录守卫（本地浏览豁免）', () {
+    testWidgets('未登录访问 /home → 放行，横幅「未登录」+ 登录入口可见',
         (tester) async {
       await pumpApp(tester);
       router.go(Routes.home);
       await tester.pumpAndSettle();
 
-      expect(stackLocations(), ['/login']);
-      expect(find.byType(LoginScreen), findsOneWidget);
-      expect(find.byType(HomeScreen), findsNothing);
+      expect(stackLocations(), ['/home']);
+      expect(find.byType(HomeScreen), findsOneWidget);
+      // 未登录横幅（服务端已配置）可访问：登录页由横幅/按钮驱动
+      expect(find.text('未登录'), findsOneWidget);
+      expect(find.text('登录'), findsOneWidget);
+      expect(find.byType(LoginScreen), findsNothing);
     });
 
-    testWidgets('登录成功 → 自动回跳来源页（from=/home → /home）',
-        (tester) async {
+    testWidgets('未登录访问 /reading/:id → 放行（本地阅读可用）', (tester) async {
+      await pumpApp(tester);
+      router.go(Routes.readingRoute(7));
+      await tester.pumpAndSettle();
+
+      expect(stackLocations(), ['/reading/7']);
+      expect(find.byType(ReadingScreen), findsOneWidget);
+    });
+
+    testWidgets('横幅 → 登录页 → 快速登录成功 → 回 home', (tester) async {
       line1 = '13800000000';
       adapter.handler = (options) async => _json(200, {
             'code': 0,
@@ -210,14 +252,36 @@ void main() {
       await pumpApp(tester);
       router.go(Routes.home);
       await tester.pumpAndSettle();
+
+      // 首页横幅 → 登录页
+      await tester.tap(find.text('登录'));
+      await tester.pumpAndSettle();
       expect(find.byType(LoginScreen), findsOneWidget);
 
+      // 快速登录成功 → 守卫回跳 home
       await tester.tap(find.text('本机号码快速登录'));
       await tester.pumpAndSettle();
 
       expect(stackLocations(), ['/home']);
       expect(find.byType(HomeScreen), findsOneWidget);
       expect(service.state.status, AuthStatus.loggedIn);
+    });
+
+    testWidgets('登录页「暂不登录，先逛逛」→ 回 home（不再被弹回）',
+        (tester) async {
+      await pumpApp(tester);
+      router.go(Routes.home);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('登录'));
+      await tester.pumpAndSettle();
+      expect(find.byType(LoginScreen), findsOneWidget);
+
+      await tester.tap(find.text('暂不登录，先逛逛'));
+      await tester.pumpAndSettle();
+
+      expect(stackLocations(), ['/home']);
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(service.state.status, AuthStatus.loggedOut);
     });
 
     testWidgets('本地 token 有效 → 放行（不回登录页）', (tester) async {
@@ -234,9 +298,11 @@ void main() {
 
       expect(stackLocations(), ['/home']);
       expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.text('未登录'), findsNothing);
     });
 
-    testWidgets('被踢（evicted）→ 自动重定向 /login', (tester) async {
+    testWidgets('被踢（evicted）→ 清为 loggedOut，留在当前页不跳登录',
+        (tester) async {
       settings.settings = UserSettings(
         serverPhone: '13800000000',
         serverToken: 'tok-x',
@@ -251,8 +317,52 @@ void main() {
       await service.handleServerFailure(AuthFailureKind.evicted);
       await tester.pumpAndSettle();
 
-      expect(stackLocations(), ['/login']);
-      expect(find.byType(LoginScreen), findsOneWidget);
+      // 不强制重定向：本地浏览不受影响；状态清为 loggedOut + 横幅出现
+      expect(stackLocations(), ['/home']);
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(service.state.status, AuthStatus.loggedOut);
+      expect(settings.settings.serverToken, isNull);
+      expect(find.text('未登录'), findsOneWidget);
+    });
+  });
+
+  group('已登录访问登录页（from 校验）', () {
+    setUp(() {
+      // 已登录态：有效 token
+      settings.settings = UserSettings(
+        serverPhone: '13800000000',
+        serverToken: 'tok-valid',
+        serverTokenExpiresAt:
+            DateTime.now().millisecondsSinceEpoch + 3600000,
+      );
+    });
+
+    testWidgets('/login?from=/login → 忽略 from 回 home（防重定向循环）',
+        (tester) async {
+      await pumpApp(tester);
+      router.go('${Routes.login}?from=/login');
+      await tester.pumpAndSettle();
+
+      expect(stackLocations(), ['/home']);
+      expect(find.byType(HomeScreen), findsOneWidget);
+    });
+
+    testWidgets('/login?from=/settings → 回跳 settings', (tester) async {
+      await pumpApp(tester);
+      router.go('${Routes.login}?from=${Uri.encodeComponent(Routes.settings)}');
+      await tester.pumpAndSettle();
+
+      expect(stackLocations(), ['/settings']);
+      expect(find.byType(SettingsScreen), findsOneWidget);
+    });
+
+    testWidgets('/login 无 from → 回 home', (tester) async {
+      await pumpApp(tester);
+      router.go(Routes.login);
+      await tester.pumpAndSettle();
+
+      expect(stackLocations(), ['/home']);
+      expect(find.byType(HomeScreen), findsOneWidget);
     });
   });
 }

@@ -170,6 +170,32 @@ void main() {
       expect(row.serverPhone, '13800000000');
     });
 
+    test('并发两次 ensureLoggedIn → login API 只调 1 次（单飞）', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await _seedAuth(
+        db,
+        phone: '13800000000',
+        token: 'tok-stale',
+        expiresAtMillis: now - 1000,
+      );
+      line1Number = '13800000000';
+      var loginCalls = 0;
+      adapter.handler = (options) async {
+        loginCalls++;
+        return _json(200, {
+          'code': 0,
+          'data': {'token': 'tok-fresh', 'expires_at': 9999999999},
+        });
+      };
+
+      await Future.wait([service.ensureLoggedIn(), service.ensureLoggedIn()]);
+
+      expect(loginCalls, 1); // 双调 login 会双写 token
+      expect(service.state.status, AuthStatus.loggedIn);
+      final row = await dao.get();
+      expect(row!.serverToken, 'tok-fresh');
+    });
+
     test('token 过期但本机号码读不到 → loggedOut（静默失败不抛）', () async {
       final now = DateTime.now().millisecondsSinceEpoch;
       await _seedAuth(
