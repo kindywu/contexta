@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8"
-tokio = { version = "1", features = ["full", "test-util"] }
+tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "fs"] }
 http-body-util = "0.1"
@@ -29,4 +29,6 @@ rust-embed = "8"
 async-trait = "0.1"
 
 [dev-dependencies]
+# 仅供集成测试的暂停时钟（pause/advance，task_test 用）；feature unify 使测试构建生效，生产构建不受影响
+tokio = { version = "1", features = ["test-util"] }
 httpmock = "0.8"
