@@ -22,7 +22,17 @@ impl Config {
         let cfg = Config {
             port: env_or("PORT", "8080")?.parse()?,
             db_path: env_or("DB_PATH", "contexta.db")?,
-            jwt_secret: std::env::var("JWT_SECRET").context("JWT_SECRET must be set")?,
+            // I3（审查）：JWT_SECRET 最小长度校验（HS256 安全下限）。测试直接构造 Config，不经 load，不受影响。
+            jwt_secret: {
+                let s = std::env::var("JWT_SECRET").context("JWT_SECRET must be set")?;
+                if s.len() < 32 {
+                    return Err(anyhow::anyhow!(
+                        "JWT_SECRET must be at least 32 characters, got {}",
+                        s.len()
+                    ));
+                }
+                s
+            },
             deepseek_api_key: std::env::var("DEEPSEEK_API_KEY")
                 .context("DEEPSEEK_API_KEY must be set")?,
             deepseek_base_url: env_or("DEEPSEEK_BASE_URL", "https://api.deepseek.com")?,

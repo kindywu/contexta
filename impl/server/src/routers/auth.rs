@@ -1,5 +1,6 @@
 use crate::AppState;
 use crate::extractors::AuthUser;
+use crate::jwt;
 use crate::response::{ApiResult, AppError, ok};
 use crate::services::auth_service;
 use axum::Json;
@@ -30,7 +31,8 @@ pub async fn login(
         ));
     }
     let token = auth_service::login(&state.pool, &state.cfg, &req.phone, &req.device_id).await?;
-    let expires_at = chrono::Utc::now().timestamp() + 30 * 24 * 3600;
+    // M2（审查）：引用 jwt::APP_TOKEN_TTL_SECS，消除魔法数字重复
+    let expires_at = chrono::Utc::now().timestamp() + jwt::APP_TOKEN_TTL_SECS;
     Ok(ok(LoginData { token, expires_at }))
 }
 

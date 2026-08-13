@@ -171,6 +171,86 @@ async fn same_device_relogin_replaces_own_session() {
     cleanup(&db_path);
 }
 
+#[tokio::test]
+async fn relogin_refreshes_eviction_order() {
+    let (app, db_path) = setup().await;
+    // A 登 → B 登 → A 重登（刷新 issued_at）→ C 登：应挤掉 B，保留最近活跃的 A 与 C
+    let (_, j1) = post(
+        &app,
+        "/api/auth/login",
+        json!({"phone": "13800000004", "device_id": "dev-a"}),
+    )
+    .await;
+    let t1 = j1["data"]["token"].as_str().unwrap().to_string();
+    let (_, j2) = post(
+        &app,
+        "/api/auth/login",
+        json!({"phone": "13800000004", "device_id": "dev-b"}),
+    )
+    .await;
+    let t2 = j2["data"]["token"].as_str().unwrap().to_string();
+    let (_, j3) = post(
+        &app,
+        "/api/auth/login",
+        json!({"phone": "13800000004", "device_id": "dev-a"}),
+    )
+    .await;
+    let t3 = j3["data"]["token"].as_str().unwrap().to_string();
+    let (_, j4) = post(
+        &app,
+        "/api/auth/login",
+        json!({"phone": "13800000004", "device_id": "dev-c"}),
+    )
+    .await;
+    let t4 = j4["data"]["token"].as_str().unwrap().to_string();
+    // A 重登后的新 token 有效，B（未再活跃）被挤掉，C 有效
+    let (s, _) = get_with_token(&app, "/api/auth/me", &t3).await;
+    assert_eq!(s, StatusCode::OK, "relogined device should stay");
+    let (s, j) = get_with_token(&app, "/api/auth/me", &t2).await;
+    assert_eq!(
+        s,
+        StatusCode::UNAUTHORIZED,
+        "inactive device should be evicted"
+    );
+    assert_eq!(j["error_code"], "EVICTED");
+    let (s, _) = get_with_token(&app, "/api/auth/me", &t4).await;
+    assert_eq!(s, StatusCode::OK);
+    // A 的旧 token（重登前签发）同步失效
+    let (s, j) = get_with_token(&app, "/api/auth/me", &t1).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    assert_eq!(j["error_code"], "EVICTED");
+    drop(app);
+    cleanup(&db_path);
+}
+
+#[tokio::test]
+async fn relogin_invalidates_old_token() {
+    let (app, db_path) = setup().await;
+    let (_, j1) = post(
+        &app,
+        "/api/auth/login",
+        json!({"phone": "13800000005", "device_id": "dev-1"}),
+    )
+    .await;
+    let t1 = j1["data"]["token"].as_str().unwrap().to_string();
+    let (_, j2) = post(
+        &app,
+        "/api/auth/login",
+        json!({"phone": "13800000005", "device_id": "dev-1"}),
+    )
+    .await;
+    let t2 = j2["data"]["token"].as_str().unwrap().to_string();
+    // 旧 token：会话 issued_at 已被重登刷新（严格单调递增）→ iat 不匹配 → 401 EVICTED
+    let (s, j) = get_with_token(&app, "/api/auth/me", &t1).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+    assert_eq!(j["error_code"], "EVICTED");
+    // 新 token 有效
+    let (s, _) = get_with_token(&app, "/api/auth/me", &t2).await;
+    assert_eq!(s, StatusCode::OK);
+    drop(app);
+    cleanup(&db_path);
+}
+
 fn json_get_code(_s: &StatusCode, json: &Value) -> String {
     json["error_code"].as_str().unwrap_or("").to_string()
 }

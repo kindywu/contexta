@@ -3,7 +3,6 @@ pub mod health;
 // 后续任务逐步加入：admin(T11/T12), articles(T10), llm(T7)
 
 use crate::AppState;
-use crate::services;
 use axum::Router;
 
 /// 无状态路由（测试/静态页）。泛型化：Router<S> 的 S 在 merge 前保持自由，

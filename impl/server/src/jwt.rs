@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 pub struct AppClaims {
     pub sub: String, // phone
     pub device_id: String,
+    // I2（审查）：签发时刻（毫秒），与会话行 device_sessions.issued_at 精确一致。
+    // 说明：JWT 惯例 iat 用秒，但重登校验要求 `claims.iat == issued_at` 精确相等——
+    // 秒粒度无法区分同秒内的两次重登（测试与真实快速重登都会踩中），故用毫秒对齐。
+    pub iat: i64,
     pub exp: i64,
 }
 
@@ -17,12 +21,20 @@ pub struct AdminClaims {
     pub exp: i64,
 }
 
-const APP_TOKEN_TTL_SECS: i64 = 30 * 24 * 3600;
+pub const APP_TOKEN_TTL_SECS: i64 = 30 * 24 * 3600;
 
-pub fn issue_app_token(cfg: &Config, phone: &str, device_id: &str) -> anyhow::Result<String> {
+/// iat 由调用方传入（login 内会话行 issued_at 的回读值，同一毫秒读数）：
+/// 保证 `claims.iat == issued_at` 精确成立；重登刷新 issued_at 即令旧 token 失效。
+pub fn issue_app_token(
+    cfg: &Config,
+    phone: &str,
+    device_id: &str,
+    issued_at_ms: i64,
+) -> anyhow::Result<String> {
     let claims = AppClaims {
         sub: phone.to_string(),
         device_id: device_id.to_string(),
+        iat: issued_at_ms,
         exp: Utc::now().timestamp() + APP_TOKEN_TTL_SECS,
     };
     Ok(encode(

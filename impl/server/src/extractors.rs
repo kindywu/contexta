@@ -2,8 +2,7 @@ use crate::AppState;
 use crate::jwt;
 use crate::response::AppError;
 use crate::services::auth_service;
-use axum::extract::{FromRequestParts, State};
-use axum::http::StatusCode;
+use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 
 pub struct AuthUser {
@@ -25,11 +24,15 @@ impl FromRequestParts<AppState> for AuthUser {
             .ok_or(AppError::Unauthorized("TOKEN_EXPIRED"))?;
         let claims: jwt::AppClaims = jwt::verify_token(&state.cfg, header)
             .map_err(|_| AppError::Unauthorized("TOKEN_EXPIRED"))?;
-        if !auth_service::session_alive(&state.pool, &claims.sub, &claims.device_id).await? {
-            return Err(AppError::Unauthorized("EVICTED"));
-        }
+        // M4（审查）：先封禁后会话——被封禁账号应得 403 BANNED，而非 401 EVICTED
         if auth_service::is_banned(&state.pool, &claims.sub).await? {
             return Err(AppError::Banned("account banned"));
+        }
+        // I2（审查）：会话行 issued_at（毫秒）必须与 token 的 iat 完全一致。
+        // 行不存在（登出/被挤掉）或 iat 落后（重登刷新了 issued_at）→ 一律 EVICTED
+        match auth_service::session_issued_at(&state.pool, &claims.sub, &claims.device_id).await? {
+            Some(issued_at) if issued_at == claims.iat => {}
+            _ => return Err(AppError::Unauthorized("EVICTED")),
         }
         Ok(AuthUser {
             phone: claims.sub,
@@ -62,12 +65,5 @@ impl FromRequestParts<AppState> for AdminAuth {
         Ok(AdminAuth {
             username: claims.sub,
         })
-    }
-}
-
-// 显式声明 rejection 状态码（axum 要求 IntoResponse）
-impl From<AppError> for StatusCode {
-    fn from(_: AppError) -> Self {
-        StatusCode::UNAUTHORIZED
     }
 }

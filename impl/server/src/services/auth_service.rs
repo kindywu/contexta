@@ -26,11 +26,15 @@ pub async fn login(
     if is_banned(pool, phone).await? {
         return Err(AppError::Banned("account banned"));
     }
-    // 同一设备重登 → 替换自身会话（UNIQUE(phone, device_id) 冲突即更新）
+    // I1（审查）：同一设备重登 → 替换自身会话并刷新 issued_at（挤掉次序按最近活跃重排）。
+    // max(旧 issued_at + 1, now) 保证 issued_at 严格单调递增：同毫秒重登也不会产生相同值，
+    // 与 I2 的 `iat == issued_at` 精确校验配合，旧 token 必然失效。
     sqlx::query(
         "INSERT INTO device_sessions (phone, device_id, issued_at, last_active_at)
          VALUES (?, ?, ?, ?)
-         ON CONFLICT(phone, device_id) DO UPDATE SET last_active_at = excluded.last_active_at",
+         ON CONFLICT(phone, device_id) DO UPDATE SET
+             last_active_at = excluded.last_active_at,
+             issued_at = max(device_sessions.issued_at + 1, excluded.issued_at)",
     )
     .bind(phone)
     .bind(device_id)
@@ -51,7 +55,16 @@ pub async fn login(
     .bind(MAX_ACTIVE_DEVICES)
     .execute(pool)
     .await?;
-    Ok(jwt::issue_app_token(cfg, phone, device_id)?)
+    // I2（审查）：token 的 iat 取会话行实际落库的 issued_at（upsert 可能被 +1 单调化），
+    // 保证 `claims.iat == issued_at` 精确成立
+    let issued_at: i64 = sqlx::query_scalar(
+        "SELECT issued_at FROM device_sessions WHERE phone = ? AND device_id = ?",
+    )
+    .bind(phone)
+    .bind(device_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(jwt::issue_app_token(cfg, phone, device_id, issued_at)?)
 }
 
 pub async fn logout(pool: &SqlitePool, phone: &str, device_id: &str) -> Result<(), AppError> {
@@ -63,19 +76,21 @@ pub async fn logout(pool: &SqlitePool, phone: &str, device_id: &str) -> Result<(
     Ok(())
 }
 
-pub async fn session_alive(
+/// 会话行的 issued_at（毫秒，签发时刻）；None = 无会话（登出/被挤掉）。
+/// 替代原 session_alive：AuthUser 提取器需要行值做 `iat == issued_at` 精确校验（I2）。
+pub async fn session_issued_at(
     pool: &SqlitePool,
     phone: &str,
     device_id: &str,
-) -> Result<bool, AppError> {
-    let n: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM device_sessions WHERE phone = ? AND device_id = ?",
+) -> Result<Option<i64>, AppError> {
+    let issued: Option<i64> = sqlx::query_scalar(
+        "SELECT issued_at FROM device_sessions WHERE phone = ? AND device_id = ?",
     )
     .bind(phone)
     .bind(device_id)
-    .fetch_one(pool)
+    .fetch_optional(pool)
     .await?;
-    Ok(n > 0)
+    Ok(issued)
 }
 
 pub async fn is_banned(pool: &SqlitePool, phone: &str) -> Result<bool, AppError> {
