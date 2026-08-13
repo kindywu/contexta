@@ -2086,6 +2086,7 @@ dependencies = [
  "http-body-util",
  "httpmock",
  "jsonwebtoken",
+ "mime_guess",
  "rand_core 0.6.4",
  "regex",
  "reqwest",

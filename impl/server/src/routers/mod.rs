@@ -4,13 +4,23 @@ pub mod auth;
 pub mod health;
 pub mod llm;
 
+use crate::static_assets;
+
 use crate::AppState;
 use axum::Router;
 
 /// 无状态路由（测试/静态页）。泛型化：Router<S> 的 S 在 merge 前保持自由，
 /// 供 api_routes 在注入 AppState 后统一，避免复制路由源。
 pub fn no_state_routes<S: Clone + Send + Sync + 'static>() -> Router<S> {
-    Router::new().route("/api/health", axum::routing::get(health::health))
+    Router::new()
+        .route("/api/health", axum::routing::get(health::health))
+        // 管理页静态资源（rust-embed 嵌入 admin-ui/dist/）。/admin 与 /admin/{*path}
+        // 双挂：axum 0.8 的 {*path} 通配可匹配空段，但显式 /admin 更稳，SPA 路由回退 index.html。
+        .route("/admin", axum::routing::get(static_assets::serve_admin))
+        .route(
+            "/admin/{*path}",
+            axum::routing::get(static_assets::serve_admin),
+        )
 }
 
 /// 完整路由（AppState 注入）。
