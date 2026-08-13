@@ -74,7 +74,7 @@ pub async fn word_lookup(
             "empty word".into(),
         ));
     }
-    // 缓存
+    // 缓存（命中但反序列化失败 = 坏缓存：删行自愈，继续走 LLM）
     let cached: Option<String> = sqlx::query_scalar(
         "SELECT result_json FROM word_lookup_cache WHERE word = ? AND created_at >= ?",
     )
@@ -83,8 +83,21 @@ pub async fn word_lookup(
     .fetch_optional(pool)
     .await?;
     if let Some(json) = cached {
-        return serde_json::from_str(&json)
-            .map_err(|_| AppError::PipelineBlocking("corrupt cache".into()));
+        match serde_json::from_str(&json) {
+            Ok(v) => return Ok(v),
+            Err(_) => {
+                tracing::warn!(
+                    "corrupt word_lookup_cache row for {key:?}, deleting and re-generating"
+                );
+                if let Err(e) = sqlx::query("DELETE FROM word_lookup_cache WHERE word = ?")
+                    .bind(&key)
+                    .execute(pool)
+                    .await
+                {
+                    tracing::warn!("failed to delete corrupt cache row {key:?}: {e:?}");
+                }
+            }
+        }
     }
     // 配额
     check_quota(pool, cfg, phone).await?;
@@ -98,9 +111,40 @@ pub async fn word_lookup(
     )
     .await?;
     let latency = started.elapsed().as_millis() as i64;
+    // 用量记账：LLM 调用成功（真实花钱）即记账，无论解析/写缓存结果如何——
+    // 解析失败也计配额，堵住"易触发解析失败的词无限烧钱"的绕过口。
+    // 记账失败仅降级告警（磁盘满/写繁忙时不得把成功查词变 500）。
+    if let Err(e) = record_usage(
+        pool,
+        Some(phone),
+        "word_lookup",
+        resp.prompt_tokens,
+        resp.completion_tokens,
+        latency,
+    )
+    .await
+    {
+        tracing::warn!("record_usage failed for word_lookup {key:?}: {e:?}");
+    }
     let parsed = parse_word_lookup(&resp.content)
         .ok_or_else(|| AppError::PipelineBlocking("unparseable LLM response".into()))?;
-    // 写缓存（容量上限：超则删最旧一条）
+    // 写缓存：spelling 与请求词不一致（LLM 输出变体/屈折）不入缓存，
+    // 否则请求词 key 会向全用户共享缓存写入错误词条；写失败仅降级告警（结果仍返回）。
+    if parsed.spelling.to_lowercase() == key
+        && let Err(e) = write_cache(pool, cfg, &key, &parsed).await
+    {
+        tracing::warn!("word_lookup cache write failed for {key:?}: {e:?}");
+    }
+    Ok(parsed)
+}
+
+/// 写缓存（容量上限：超则删最旧一条）。
+async fn write_cache(
+    pool: &SqlitePool,
+    cfg: &Config,
+    key: &str,
+    parsed: &WordLookup,
+) -> Result<(), AppError> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM word_lookup_cache")
         .fetch_one(pool)
         .await?;
@@ -112,21 +156,12 @@ pub async fn word_lookup(
     sqlx::query(
         "INSERT OR REPLACE INTO word_lookup_cache (word, result_json, created_at) VALUES (?, ?, ?)",
     )
-    .bind(&key)
-    .bind(serde_json::to_string(&parsed)?)
+    .bind(key)
+    .bind(serde_json::to_string(parsed)?)
     .bind(Utc::now().timestamp_millis())
     .execute(pool)
     .await?;
-    record_usage(
-        pool,
-        Some(phone),
-        "word_lookup",
-        resp.prompt_tokens,
-        resp.completion_tokens,
-        latency,
-    )
-    .await?;
-    Ok(parsed)
+    Ok(())
 }
 
 // 供文章任务（T8）复用；回传 token 数（审查要求：成本换算）

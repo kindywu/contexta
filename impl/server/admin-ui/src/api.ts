@@ -140,7 +140,11 @@ export const api = {
     http.post<unknown, unknown>(`/articles/${id}/approve`, {}),
 
   rejectArticle: (id: number, reason: string) =>
-    http.post<unknown, unknown>(`/articles/${id}/reject`, { reason }),
+    http.post<unknown, unknown>(
+      `/articles/${id}/reject`,
+      { reason },
+      { timeout: 300_000 }, // 拒绝触发补生成可达 90s+（LLM 预算），与服务端契约一致的 5 分钟超时
+    ),
 
   // 手动生成可达分钟级（15 篇 × LLM 串行），axios timeout 放宽到 5 分钟
   generateArticles: (date: string, opts?: AxiosRequestConfig) =>

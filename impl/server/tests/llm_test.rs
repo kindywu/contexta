@@ -1,3 +1,4 @@
+use chrono::Utc;
 use server::config::Config;
 use server::db;
 use server::drivers::deepseek::{DeepSeekApi, DeepSeekResponse, LlmCallError};
@@ -71,6 +72,20 @@ const VALID_XML: &str = "<spelling>ocean</spelling><phonetic>/ˈoʊʃən/</phone
 <sense><partOfSpeech>n.</partOfSpeech><chineseMeaning>海洋</chineseMeaning>\
 <englishDefinition>a very large expanse of sea</englishDefinition>\
 <example><en>The ocean is deep and wide.</en><zh>海洋又深又宽。</zh></example></sense>";
+
+/// 合法但 spelling 与请求词（"running"）不一致的 XML（LLM 输出屈折归一形态）。
+const RUN_XML: &str = "<spelling>run</spelling><phonetic>/rʌn/</phonetic>\
+<sense><partOfSpeech>v.</partOfSpeech><chineseMeaning>跑</chineseMeaning>\
+<englishDefinition>to move quickly on foot</englishDefinition>\
+<example><en>She runs every morning.</en><zh>她每天早上跑步。</zh></example></sense>";
+
+/// 统计 word_lookup 用量行数。
+async fn usage_rows(pool: &sqlx::SqlitePool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM usage_log WHERE endpoint = 'word_lookup'")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
 
 #[tokio::test]
 async fn first_call_hits_llm_second_call_cached() {
@@ -148,6 +163,148 @@ async fn parse_failure_returns_pipeline_blocking() {
     assert!(
         matches!(r, Err(AppError::PipelineBlocking(_))),
         "unparseable LLM output must be PipelineBlocking"
+    );
+    cleanup(pool, &db_path).await;
+}
+
+/// I1：LLM 调用成功但解析失败时也必须记账——解析失败路径同样消耗配额，
+/// 否则恶意用户可无限用易触发解析失败的词绕过配额烧钱。
+#[tokio::test]
+async fn parse_failure_still_records_usage() {
+    let (pool, cfg, db_path) = setup().await;
+    let mock = MockDeepSeek {
+        calls: Arc::new(AtomicUsize::new(0)),
+        content: "not xml at all".to_string(),
+    };
+    let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
+    assert!(matches!(r, Err(AppError::PipelineBlocking(_))));
+    assert_eq!(
+        usage_rows(&pool).await,
+        1,
+        "parse failure must still record usage (real LLM call spent money)"
+    );
+    // 配额口径统一：失败解析同样占用配额，第二次（不同词）不应被重复放行
+    let r2 = llm_service::word_lookup(&pool, &cfg, &mock, "138", "river").await;
+    assert!(matches!(r2, Err(AppError::PipelineBlocking(_))));
+    assert_eq!(usage_rows(&pool).await, 2);
+    cleanup(pool, &db_path).await;
+}
+
+/// I2a：缓存写入失败必须降级——查词结果仍返回（不 500），用量照记。
+#[tokio::test]
+async fn cache_write_failure_still_returns_result() {
+    let (pool, cfg, db_path) = setup().await;
+    // SQLite 触发器注入写失败：INSERT 到 word_lookup_cache 一律 ABORT
+    sqlx::query(
+        "CREATE TRIGGER fail_cache_insert BEFORE INSERT ON word_lookup_cache \
+         BEGIN SELECT RAISE(ABORT, 'injected cache write failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mock = MockDeepSeek {
+        calls: Arc::new(AtomicUsize::new(0)),
+        content: VALID_XML.to_string(),
+    };
+    let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
+    let w = r.expect("cache write failure must degrade, not fail the lookup");
+    assert_eq!(w.spelling, "ocean");
+    assert_eq!(
+        usage_rows(&pool).await,
+        1,
+        "usage must still be recorded when cache write fails"
+    );
+    cleanup(pool, &db_path).await;
+}
+
+/// I2b：用量写入失败必须降级——查词结果仍返回（不 500）。
+#[tokio::test]
+async fn usage_write_failure_still_returns_result() {
+    let (pool, cfg, db_path) = setup().await;
+    // SQLite 触发器注入写失败：INSERT 到 usage_log 一律 ABORT
+    sqlx::query(
+        "CREATE TRIGGER fail_usage_insert BEFORE INSERT ON usage_log \
+         BEGIN SELECT RAISE(ABORT, 'injected usage write failure'); END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mock = MockDeepSeek {
+        calls: Arc::new(AtomicUsize::new(0)),
+        content: VALID_XML.to_string(),
+    };
+    let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
+    let w = r.expect("usage write failure must degrade, not fail the lookup");
+    assert_eq!(w.spelling, "ocean");
+    cleanup(pool, &db_path).await;
+}
+
+/// I3：LLM 返回的 spelling 与请求词不一致（变体/屈折归一）时不得写入共享缓存——
+/// 否则全用户 30 天都会查到错误词条；结果仍返回请求者，下次调用重新走 LLM。
+#[tokio::test]
+async fn spelling_mismatch_not_cached() {
+    let (pool, cfg, db_path) = setup().await;
+    let mock = MockDeepSeek {
+        calls: Arc::new(AtomicUsize::new(0)),
+        content: RUN_XML.to_string(),
+    };
+    // 请求 "running"，LLM 返回 spelling "run"
+    let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "running").await;
+    let w = r.expect("spelling mismatch must still return the result to requester");
+    assert_eq!(w.spelling, "run");
+    let cached: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM word_lookup_cache WHERE word = 'running'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        cached, 0,
+        "mismatched spelling must not pollute shared cache"
+    );
+    // 第二次调用：未入缓存 → 重新走 LLM（调用计数 +1）
+    let r2 = llm_service::word_lookup(&pool, &cfg, &mock, "138", "running").await;
+    assert!(r2.is_ok());
+    assert_eq!(
+        mock.calls.load(Ordering::SeqCst),
+        2,
+        "uncached word must hit LLM again"
+    );
+    cleanup(pool, &db_path).await;
+}
+
+/// 顺带：缓存命中但反序列化失败（corrupt cache）时删行自愈并继续走 LLM，而非永久 500。
+#[tokio::test]
+async fn corrupt_cache_row_self_heals() {
+    let (pool, cfg, db_path) = setup().await;
+    // 手工写坏 JSON 到缓存表
+    sqlx::query(
+        "INSERT OR REPLACE INTO word_lookup_cache (word, result_json, created_at) \
+         VALUES ('ocean', '{not-valid-json', ?)",
+    )
+    .bind(Utc::now().timestamp_millis())
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mock = MockDeepSeek {
+        calls: Arc::new(AtomicUsize::new(0)),
+        content: VALID_XML.to_string(),
+    };
+    let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
+    let w = r.expect("corrupt cache row must self-heal, not 500");
+    assert_eq!(w.spelling, "ocean");
+    assert_eq!(mock.calls.load(Ordering::SeqCst), 1);
+    // 坏行已删除，且以新查询结果重写
+    let stored: String =
+        sqlx::query_scalar("SELECT result_json FROM word_lookup_cache WHERE word = 'ocean'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        serde_json::from_str::<server::llm::parser::WordLookup>(&stored)
+            .unwrap()
+            .spelling,
+        "ocean",
+        "cache row must be rewritten with valid JSON"
     );
     cleanup(pool, &db_path).await;
 }
