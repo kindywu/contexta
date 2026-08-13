@@ -1,7 +1,8 @@
 pub mod admin;
 pub mod auth;
 pub mod health;
-// 后续任务逐步加入：articles(T10), llm(T7)；admin 用户管理/文章审核路由 T11/T12 填充
+pub mod llm;
+// 后续任务逐步加入：articles(T10)；admin 用户管理/文章审核路由 T11/T12 填充
 
 use crate::AppState;
 use axum::Router;
@@ -21,5 +22,9 @@ pub fn api_routes(state: AppState) -> Router {
         .route("/api/auth/me", axum::routing::get(auth::me))
         .route("/api/admin/login", axum::routing::post(admin::login))
         .route("/api/admin/users", axum::routing::get(admin::users_list))
+        .route(
+            "/api/llm/word-lookup",
+            axum::routing::post(llm::word_lookup),
+        )
         .with_state(state)
 }

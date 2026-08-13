@@ -103,6 +103,12 @@ impl From<sqlx::Error> for AppError {
     }
 }
 
+impl From<serde_json::Error> for AppError {
+    fn from(e: serde_json::Error) -> Self {
+        AppError::Internal(anyhow::anyhow!(e))
+    }
+}
+
 pub fn ok<T: Serialize>(data: T) -> Json<ApiResult<T>> {
     Json(ApiResult { code: 0, data })
 }

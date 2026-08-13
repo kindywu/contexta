@@ -1,6 +1,8 @@
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
-/// 移植 WordDetail 解析结果（无 DB ID 部分）。
+/// 移植 WordDetail 解析结果（无 DB ID 部分）。字段名即 App 端 JSON 契约。
+#[derive(Serialize, Deserialize, Debug)]
 pub struct ExampleOut {
     pub order_index: i64,
     pub sentence_en: String,
@@ -8,6 +10,7 @@ pub struct ExampleOut {
     pub is_primary: bool,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SenseOut {
     pub order_index: i64,
     pub part_of_speech: String,
@@ -16,6 +19,7 @@ pub struct SenseOut {
     pub examples: Vec<ExampleOut>,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
 pub struct WordLookup {
     pub spelling: String,
     pub phonetic: Option<String>,
