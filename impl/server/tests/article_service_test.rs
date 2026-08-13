@@ -68,6 +68,27 @@ impl DeepSeekApi for MockArticleApi {
     }
 }
 
+// 首次调用失败（Fatal 立即失败、无退避等待——Recoverable 耗尽需 2+4+8s 退避拖慢测试；
+// 不可解析内容在当前 parse_article 下不报错，无法触发失败分支），其余调用成功。
+struct FailingFirstArticleApi {
+    calls: AtomicUsize,
+}
+#[async_trait]
+impl DeepSeekApi for FailingFirstArticleApi {
+    async fn chat(&self, _s: &str, u: &str) -> Result<DeepSeekResponse, LlmCallError> {
+        if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            return Err(LlmCallError::Fatal("mock first call failure".into()));
+        }
+        Ok(DeepSeekResponse {
+            content: format!(
+                "<title>T{u}</title><paragraph>P1.</paragraph><translation>译1。</translation>"
+            ),
+            prompt_tokens: 1,
+            completion_tokens: 1,
+        })
+    }
+}
+
 #[tokio::test]
 async fn ensure_generation_creates_15_articles_idempotent() {
     let (pool, cfg, db_path) = setup().await;
@@ -254,16 +275,9 @@ async fn budget_blocks_generation() {
         .await
         .unwrap();
     }
-    let r = article_service::generate_one(
-        &pool,
-        &cfg,
-        &MockArticleApi,
-        "2026-08-14",
-        "LOW",
-        "DAILY_CONVERSATION",
-        99,
-    )
-    .await;
+    // 预算在预留阶段校验（预占行即消耗每日文章配额）——ensure 阶段 1 即被拒，无任何写入
+    let r =
+        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-14").await;
     assert!(
         matches!(r, Err(AppError::QuotaExceeded(_))),
         "预算耗尽必须 QuotaExceeded: {:?}",
@@ -273,7 +287,70 @@ async fn budget_blocks_generation() {
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(n, 10, "超预算不得写入新行");
+    assert_eq!(n, 10, "超预算不得写入预占行");
+    cleanup(pool, &db_path).await;
+}
+
+#[tokio::test]
+async fn failed_generation_recovers_on_next_ensure() {
+    let (pool, cfg, db_path) = setup().await;
+    let api = FailingFirstArticleApi {
+        calls: AtomicUsize::new(0),
+    };
+    // 第 1 篇失败：该行标记 failed（title 仍 NULL = 预占形态），其余 14 篇正常填充，
+    // 整批不中断、不回滚（单篇失败不影响其余稿件，LLM 费用不浪费）
+    let r1 = article_service::ensure_daily_generation(&pool, &cfg, &api, "2026-08-16").await;
+    assert!(r1.is_ok(), "单篇失败不应阻断整批: {:?}", r1.err());
+    let failed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article WHERE status = 'failed'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(failed, 1, "仅第 1 篇失败");
+    // 失败行保留预占形态（title NULL）——预占行可见性断言
+    let failed_null: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM article WHERE status = 'failed' AND title IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        failed_null, 1,
+        "失败行 title 仍为 NULL（预占/生成中/失败三态同形）"
+    );
+    let filled: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM article WHERE status = 'pending_review' AND title IS NOT NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(filled, 14, "其余 14 篇已填充");
+    // 再跑 ensure（API 正常）：failed 槽位被新预占行替换并成功生成，每难度仍 5 篇非终结
+    let r2 = article_service::ensure_daily_generation(&pool, &cfg, &api, "2026-08-16").await;
+    assert!(r2.is_ok(), "恢复跑必须成功: {:?}", r2.err());
+    let per: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT difficulty, COUNT(*) FROM article WHERE status IN ('pending_review','approved') GROUP BY difficulty",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(per.len(), 3);
+    for (d, n) in &per {
+        assert_eq!(*n, 5, "difficulty {d} 恢复后仍应 5 篇非终结");
+    }
+    // failed 行保留（不计入非终结），无悬挂预占行
+    let failed_after: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM article WHERE status = 'failed'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(failed_after, 1);
+    let null_pending: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM article WHERE status = 'pending_review' AND title IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(null_pending, 0, "恢复后不应有未填充的预占行");
     cleanup(pool, &db_path).await;
 }
 

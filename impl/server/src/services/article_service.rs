@@ -1,13 +1,17 @@
 //! 文章生成/审核状态机（T8）：每日每难度 5 篇幂等生成、单篇生成、审核
 //! （拒绝自动补生成，上限 REGENERATE_CAP 次）、每日预算、列表/详情/按日下发查询。
 //! 段落以 `英文|||中文` 单列存储（下发时拆分，T10 消费）。
+//!
+//! 预占行模式（审查重构）：生成 = 短事务预留（预占行，title NULL）→ 锁外 LLM 填充。
+//! 状态机：pending_review（预占/已生成）→ approved / rejected / rejected_final / failed；
+//! failed（生成失败，title 仍 NULL）不计入非终结，下次 ensure 补预占行替换。
 
 use crate::config::Config;
 use crate::drivers::deepseek::DeepSeekApi;
 use crate::response::AppError;
 use crate::services::{llm_service, today_start_millis};
 use chrono::{Datelike, NaiveDate, Utc};
-use sqlx::{SqliteConnection, SqlitePool};
+use sqlx::SqlitePool;
 
 pub const ARTICLES_PER_DIFFICULTY: i64 = 5;
 pub const DIFFICULTIES: [&str; 3] = ["LOW", "MEDIUM", "HIGH"];
@@ -46,8 +50,7 @@ fn category_for(difficulty: &str, target_date: &str, order_index: i64) -> &'stat
 }
 
 /// 每日预算：今日（本地语义，today_start_millis）已生成文章数 >= 预算 → QuotaExceeded。
-/// executor 泛型：事务内（ensure_daily_generation）须用事务连接计数（含本事务未提交行），
-/// 事务外（reject 补生成 / 外部调用）传 &SqlitePool。
+/// executor 泛型：预留事务（ensure 阶段 1 / reject）内用事务连接计数（含本事务未提交行）。
 pub async fn check_daily_budget<'e, E>(exec: E, cfg: &Config) -> Result<(), AppError>
 where
     E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
@@ -65,20 +68,56 @@ where
     Ok(())
 }
 
-/// 幂等：每难度已有 ≥5 条非终结（pending_review/approved）则跳过；否则补到 5。
-/// 补生成延续 MAX(order_index) 起新 order，题材按日期种子轮换。
+/// 插入预占行（事务内调用）：title NULL、status=pending_review、regenerate_count 定值、
+/// tokens 0——预占行计入非终结（并发 ensure 看到即跳过），LLM 填充在锁外进行。
+async fn insert_reservation<'e, E>(
+    exec: E,
+    target_date: &str,
+    difficulty: &str,
+    category: &str,
+    order_index: i64,
+    regenerate_count: i64,
+) -> Result<i64, AppError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+{
+    let now = Utc::now().timestamp_millis();
+    let id = sqlx::query(
+        "INSERT INTO article (target_date, difficulty, content_category, order_index, title, status, regenerate_count, prompt_tokens, completion_tokens, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, 'pending_review', ?, 0, 0, ?, ?)",
+    )
+    .bind(target_date)
+    .bind(difficulty)
+    .bind(category)
+    .bind(order_index)
+    .bind(regenerate_count)
+    .bind(now)
+    .bind(now)
+    .execute(exec)
+    .await?
+    .last_insert_rowid();
+    Ok(id)
+}
+
+/// 幂等 + 并发安全（预占行模式，写锁不跨 LLM 调用）：
+/// 阶段 1（BEGIN IMMEDIATE 短事务，毫秒级）：每难度统计非终结行（pending_review/approved），
+/// 缺失槽位 INSERT 预占行（title NULL、regenerate_count=0）→ COMMIT。并发 ensure 的计数
+/// 发生在先到者 COMMIT 后，看到预占行即跳过——幂等成立。sqlx 默认 begin() 是 DEFERRED
+/// （先 SELECT 后 INSERT 的窗口内两会话同见 0），故用 begin_with 显式指定 IMMEDIATE。
+/// 阶段 2（无锁）：逐行填充 pending_review AND title IS NULL 的预占行（LLM → UPDATE +
+/// 段落 INSERT）；单篇失败标记 failed（title 仍 NULL）并继续处理其余行，下次 ensure 补新
+/// 预占行替换——单篇失败不回滚整批、不浪费其余稿件。
 ///
-/// 并发安全（审查修复）：整个「查 existing + 生成循环」包进 BEGIN IMMEDIATE 事务——
-/// SQLite 单写者下并发的 ensure 调用（T9 定时 + 手动触发）在 BEGIN 处排队，后到者的计数
-/// 必然发生在先到者 COMMIT 之后，不会双生成。sqlx 默认 begin() 是 DEFERRED（先 SELECT 后
-/// INSERT 的窗口内两会话同见 0），故用 begin_with 显式指定 IMMEDIATE；出错时 tx 自动回滚
-/// （sqlx Transaction drop 语义），全批不落半成品。
+/// 若把 LLM 调用放进持有写锁的事务（15 次真实调用每次可达 90s，整批分钟级），并发第二
+/// ensure 在 sqlx 默认 5s busy_timeout 后报 SQLITE_BUSY，且批处理窗口内所有写入方
+/// （T12 审核、查词 usage_log/cache）全被阻塞——故预留与填充必须分离。
 pub async fn ensure_daily_generation(
     pool: &SqlitePool,
     cfg: &Config,
     api: &dyn DeepSeekApi,
     target_date: &str,
 ) -> Result<(), AppError> {
+    // 阶段 1：短事务预留缺失槽位（锁毫秒级；出错自动回滚，不落半成品）
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     for difficulty in DIFFICULTIES {
         let existing: i64 = sqlx::query_scalar(
@@ -104,88 +143,97 @@ pub async fn ensure_daily_generation(
             check_daily_budget(&mut *tx, cfg).await?;
             order += 1;
             let category = category_for(difficulty, target_date, order);
-            generate_conn(&mut tx, cfg, api, target_date, difficulty, category, order).await?;
+            insert_reservation(&mut *tx, target_date, difficulty, category, order, 0).await?;
             need -= 1;
         }
     }
     tx.commit().await?;
+    // 阶段 2：无锁填充预占行（LLM 调用不持写锁）
+    let pending: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM article WHERE target_date = ? AND status = 'pending_review' AND title IS NULL ORDER BY id",
+    )
+    .bind(target_date)
+    .fetch_all(pool)
+    .await?;
+    for id in pending {
+        if let Err(e) = generate_one(pool, cfg, api, id).await {
+            // 单篇失败不阻断整批：行已标记 failed，下次 ensure 自动补预占行替换
+            tracing::warn!("article {id} generation failed, will be re-reserved next run: {e:?}");
+        }
+    }
     Ok(())
 }
 
-/// 单篇生成（pool 入口）：预算校验 + LLM 出稿 + 落库 + 记用量，返回新行 id。
-/// 返回 id 供 reject_article 精确对补生成行记账（审查修复：不再依赖 MAX(id)）。
+/// 单篇生成（填充模式）：只处理预占行（status=pending_review AND title IS NULL）——
+/// LLM 出稿 → UPDATE 该行（title/tokens 真值）+ INSERT 段落（`英文|||中文` 单列）；
+/// 生成失败 → UPDATE status='failed'（title 仍 NULL），failed 不计入非终结。
+/// 不再负责建行（预占行由 ensure 阶段 1 / reject 短事务创建）；已填充/已终结/不存在的行
+/// 幂等跳过（并发下另一路已处理则不重复写入）。用量记账失败不阻断生成（成本统计尽力而为）。
 pub async fn generate_one(
     pool: &SqlitePool,
     cfg: &Config,
     api: &dyn DeepSeekApi,
-    target_date: &str,
-    difficulty: &str,
-    category: &str,
-    order_index: i64,
-) -> Result<i64, AppError> {
-    let mut conn = pool.acquire().await?;
-    generate_conn(
-        &mut conn,
-        cfg,
-        api,
-        target_date,
-        difficulty,
-        category,
-        order_index,
+    article_id: i64,
+) -> Result<(), AppError> {
+    let row: Option<(String, String, i64)> = sqlx::query_as(
+        "SELECT difficulty, content_category, order_index FROM article WHERE id = ? AND status = 'pending_review' AND title IS NULL",
     )
-    .await
-}
-
-/// 在指定连接上执行单篇生成：预算校验 + LLM 出稿 → 写 article（pending_review，
-/// prompt/completion_tokens 记真值）+ 段落（`英文|||中文` 单列）→ 记用量（真值 token）。
-/// 事务内（ensure_daily_generation）与单发（generate_one）共用；返回新行 id。
-async fn generate_conn(
-    conn: &mut SqliteConnection,
-    cfg: &Config,
-    api: &dyn DeepSeekApi,
-    target_date: &str,
-    difficulty: &str,
-    category: &str,
-    order_index: i64,
-) -> Result<i64, AppError> {
-    check_daily_budget(&mut *conn, cfg).await?;
+    .bind(article_id)
+    .fetch_optional(pool)
+    .await?;
+    let (difficulty, category, order_index) = match row {
+        Some(r) => r,
+        None => return Ok(()), // 已填充/已终结/不存在：幂等跳过（并发下另一路已处理）
+    };
     let started = tokio::time::Instant::now();
-    let (title, paragraphs, prompt_tokens, completion_tokens) =
-        llm_service::generate_article_content(api, cfg, difficulty, category, order_index).await?;
+    let generated =
+        llm_service::generate_article_content(api, cfg, &difficulty, &category, order_index).await;
     let latency = started.elapsed().as_millis() as i64;
-    let now = Utc::now().timestamp_millis();
-    let id = sqlx::query(
-        "INSERT INTO article (target_date, difficulty, content_category, order_index, title, status, prompt_tokens, completion_tokens, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'pending_review', ?, ?, ?, ?)",
+    let (title, paragraphs, prompt_tokens, completion_tokens) = match generated {
+        Ok(r) => r,
+        Err(e) => {
+            // 生成失败：标记 failed（title 仍 NULL），下次 ensure 补预占行替换
+            sqlx::query(
+                "UPDATE article SET status = 'failed', updated_at = ? WHERE id = ? AND status = 'pending_review' AND title IS NULL",
+            )
+            .bind(Utc::now().timestamp_millis())
+            .bind(article_id)
+            .execute(pool)
+            .await?;
+            return Err(e);
+        }
+    };
+    // 成功：填 title/tokens（条件 UPDATE 防并发双填——另一路已填充则本路跳过，不插重复段落）
+    let n = sqlx::query(
+        "UPDATE article SET title = ?, prompt_tokens = ?, completion_tokens = ?, updated_at = ?
+         WHERE id = ? AND status = 'pending_review' AND title IS NULL",
     )
-    .bind(target_date)
-    .bind(difficulty)
-    .bind(category)
-    .bind(order_index)
     .bind(&title)
     .bind(prompt_tokens as i64)
     .bind(completion_tokens as i64)
-    .bind(now)
-    .bind(now)
-    .execute(&mut *conn)
+    .bind(Utc::now().timestamp_millis())
+    .bind(article_id)
+    .execute(pool)
     .await?
-    .last_insert_rowid();
+    .rows_affected();
+    if n == 0 {
+        return Ok(());
+    }
     let mut o = 0i64;
     for (_, en, zh) in &paragraphs {
         o += 1;
         sqlx::query(
             "INSERT INTO article_paragraph (article_id, order_index, text) VALUES (?, ?, ?)",
         )
-        .bind(id)
+        .bind(article_id)
         .bind(o)
         .bind(format!("{en}|||{zh}"))
-        .execute(&mut *conn)
+        .execute(pool)
         .await?;
     }
     // 段落文本格式：`英文|||中文`（下发时拆分；服务端不存第二列避免 1NF 争议）
-    // 用量记账失败不阻断生成（成本统计尽力而为，不因 usage_log 问题丢弃已生成的稿件）
     llm_service::record_usage(
-        &mut *conn,
+        pool,
         None,
         "article_generate",
         prompt_tokens,
@@ -194,7 +242,7 @@ async fn generate_conn(
     )
     .await
     .ok();
-    Ok(id)
+    Ok(())
 }
 
 /// 审核通过：仅 pending_review 可 approve，其余（含重复）→ NotFound。
@@ -214,8 +262,10 @@ pub async fn approve_article(pool: &SqlitePool, id: i64) -> Result<(), AppError>
     Ok(())
 }
 
-/// 审核拒绝：旧行 → rejected（达补生上限则 rejected_final），未达上限时预算内补生成新行
-/// （regenerate_count = 父行 +1），题材轮换到下一分类。
+/// 审核拒绝：旧行 → rejected（达补生上限则 rejected_final）；未达上限时同一短事务内
+/// INSERT 补生成预占行（regenerate_count = 父行 regen+1、title NULL）→ 事务外填充——
+/// regenerate_count 预留时定值（无需 MAX(id) 回写，无并发错行风险）。填充失败 → 新行
+/// failed，下次 ensure 补槽位。预算在预留时校验（预占行即消耗每日文章配额）。
 pub async fn reject_article(
     pool: &SqlitePool,
     cfg: &Config,
@@ -232,38 +282,37 @@ pub async fn reject_article(
     let (date, difficulty, order, regen) =
         row.ok_or(AppError::NotFound("article not pending_review".into()))?;
     let now = Utc::now().timestamp_millis();
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         "UPDATE article SET status = 'rejected', reject_reason = ?, updated_at = ? WHERE id = ?",
     )
     .bind(reason)
     .bind(now)
     .bind(id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
     if regen >= REGENERATE_CAP {
         sqlx::query("UPDATE article SET status = 'rejected_final', updated_at = ? WHERE id = ?")
             .bind(now)
             .bind(id)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
+        tx.commit().await?;
         return Ok(());
     }
-    // 补生成（预算内）：新行 pending_review，regenerate_count = 父行 regen+1。
-    // 审查修复：generate_one 返回新行 id，直接对刚生成行记账——
-    // 不再用 MAX(id)（INSERT 与 UPDATE 之间有 await 点，并发下 MAX(id) 可能命中错行）。
-    check_daily_budget(pool, cfg).await?;
+    // 预算内预留补生成槽位（短事务持锁，LLM 填充在事务外）
+    check_daily_budget(&mut *tx, cfg).await?;
     let category = category_for(&difficulty, &date, order + regen + 1);
-    let new_id = generate_one(pool, cfg, api, &date, &difficulty, category, order).await?;
-    sqlx::query("UPDATE article SET regenerate_count = ?, updated_at = ? WHERE id = ?")
-        .bind(regen + 1)
-        .bind(Utc::now().timestamp_millis())
-        .bind(new_id)
-        .execute(pool)
-        .await?;
-    Ok(())
+    let new_id =
+        insert_reservation(&mut *tx, &date, &difficulty, category, order, regen + 1).await?;
+    tx.commit().await?;
+    // 事务外填充：失败 → 新行 failed，下次 ensure 补槽位
+    generate_one(pool, cfg, api, new_id).await
 }
 
 /// 下发/管理视图：段落已拆分（英文、中文），供 T10 下发与 T12 审核列表复用。
+/// title 语义：NULL title（预占/生成中/失败行）映射为空串 ""——空 title = 预占/生成中/失败；
+/// T10 只下发 approved（title 必非空），不受影响。
 pub struct ArticleView {
     pub id: i64,
     pub target_date: String,
@@ -279,7 +328,7 @@ pub struct ArticleView {
 async fn load_view(
     pool: &SqlitePool,
     id: i64,
-    title: String,
+    title: Option<String>,
     date: String,
     difficulty: String,
     category: String,
@@ -306,7 +355,7 @@ async fn load_view(
         difficulty,
         content_category: category,
         order_index: order,
-        title,
+        title: title.unwrap_or_default(),
         status,
         regenerate_count: regen,
         paragraphs,
@@ -314,7 +363,7 @@ async fn load_view(
 }
 
 pub async fn get_article(pool: &SqlitePool, id: i64) -> Result<ArticleView, AppError> {
-    let row: Option<(String, String, String, String, i64, String, i64)> = sqlx::query_as(
+    let row: Option<(Option<String>, String, String, String, i64, String, i64)> = sqlx::query_as(
         "SELECT title, target_date, difficulty, content_category, order_index, status, regenerate_count FROM article WHERE id = ?",
     )
     .bind(id)
@@ -333,7 +382,7 @@ pub async fn get_approved_by_date(
     pool: &SqlitePool,
     date: &str,
 ) -> Result<Vec<ArticleView>, AppError> {
-    let rows: Vec<(i64, String, String, String, i64, i64)> = sqlx::query_as(
+    let rows: Vec<(i64, Option<String>, String, String, i64, i64)> = sqlx::query_as(
         "SELECT id, title, difficulty, content_category, order_index, regenerate_count FROM article
          WHERE target_date = ? AND status = 'approved' ORDER BY difficulty, order_index",
     )
@@ -386,9 +435,19 @@ pub async fn list_articles(
         sql.push_str(&conds.join(" AND "));
     }
     sql.push_str(" ORDER BY target_date DESC, difficulty, order_index");
-    let mut q = sqlx::query_as::<_, (i64, String, String, String, String, i64, String, i64)>(
-        sqlx::AssertSqlSafe(sql),
-    );
+    let mut q = sqlx::query_as::<
+        _,
+        (
+            i64,
+            Option<String>,
+            String,
+            String,
+            String,
+            i64,
+            String,
+            i64,
+        ),
+    >(sqlx::AssertSqlSafe(sql));
     for a in &args {
         q = q.bind(a);
     }

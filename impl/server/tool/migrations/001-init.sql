@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS article (
     content_category TEXT NOT NULL,
     order_index INTEGER NOT NULL,
     title TEXT,
-    status TEXT NOT NULL DEFAULT 'pending_review',      -- pending_review | approved | rejected | rejected_final
+    status TEXT NOT NULL DEFAULT 'pending_review',      -- pending_review | approved | rejected | rejected_final | failed（failed=生成失败，title 为 NULL，不计入非终结）
     reject_reason TEXT,
     regenerate_count INTEGER NOT NULL DEFAULT 0,
     prompt_tokens INTEGER NOT NULL DEFAULT 0,
