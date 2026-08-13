@@ -1,9 +1,10 @@
 use crate::AppState;
+use crate::drivers::deepseek::DeepSeekClient;
 use crate::extractors::AdminAuth;
 use crate::response::{ApiResult, AppError, ok};
-use crate::services::admin_service;
+use crate::services::{admin_service, article_service};
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -78,4 +79,86 @@ pub async fn usage(
 ) -> Result<Json<ApiResult<Vec<serde_json::Value>>>, AppError> {
     let report = admin_service::usage_report(&state.pool).await?;
     Ok(ok(report))
+}
+
+// ---------- 文章审核（T12） ----------
+// 全部挂 AdminAuth。列表/详情 title 语义：空串 = 预占/生成中/失败，管理页显示时处理
+// （T13 显示「生成中」），本层不改变字段语义。
+
+#[derive(Deserialize)]
+pub struct ArticleListQuery {
+    pub date: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ArticleRejectRequest {
+    pub reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ArticleGenerateRequest {
+    pub date: String,
+}
+
+/// 待审列表：status/date 可选过滤（article_service::list_articles 白名单列 + 全绑参）。
+pub async fn articles_list(
+    State(state): State<AppState>,
+    _auth: AdminAuth,
+    Query(q): Query<ArticleListQuery>,
+) -> Result<Json<ApiResult<serde_json::Value>>, AppError> {
+    let rows =
+        article_service::list_articles(&state.pool, q.date.as_deref(), q.status.as_deref()).await?;
+    Ok(ok(serde_json::to_value(rows)?))
+}
+
+/// 文章详情（含段落，英文/中文已拆分）。
+pub async fn articles_get(
+    State(state): State<AppState>,
+    _auth: AdminAuth,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResult<serde_json::Value>>, AppError> {
+    let view = article_service::get_article(&state.pool, id).await?;
+    Ok(ok(serde_json::to_value(view)?))
+}
+
+/// 审核通过：status → approved（仅已生成行可过审，预占/生成中行 404）。
+pub async fn articles_approve(
+    State(state): State<AppState>,
+    _auth: AdminAuth,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResult<serde_json::Value>>, AppError> {
+    article_service::approve_article(&state.pool, id).await?;
+    Ok(ok(serde_json::json!({})))
+}
+
+/// 审核拒绝：原行 → rejected（reason 落库），内部触发补生成（未达上限时新行 pending_review，
+/// 达到 REGENERATE_CAP 则 rejected_final）；补生成 LLM 调用由本层注入 DeepSeekClient。
+pub async fn articles_reject(
+    State(state): State<AppState>,
+    _auth: AdminAuth,
+    Path(id): Path<i64>,
+    Json(req): Json<ArticleRejectRequest>,
+) -> Result<Json<ApiResult<serde_json::Value>>, AppError> {
+    let client = DeepSeekClient::new(&state.cfg)?;
+    article_service::reject_article(
+        &state.pool,
+        &state.cfg,
+        &client,
+        id,
+        req.reason.as_deref().unwrap_or(""),
+    )
+    .await?;
+    Ok(ok(serde_json::json!({})))
+}
+
+/// 手动补生成指定日期：ensure_daily_generation（幂等，预占行模式）。
+pub async fn articles_generate(
+    State(state): State<AppState>,
+    _auth: AdminAuth,
+    Json(req): Json<ArticleGenerateRequest>,
+) -> Result<Json<ApiResult<serde_json::Value>>, AppError> {
+    let client = DeepSeekClient::new(&state.cfg)?;
+    article_service::ensure_daily_generation(&state.pool, &state.cfg, &client, &req.date).await?;
+    Ok(ok(serde_json::json!({})))
 }

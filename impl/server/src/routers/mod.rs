@@ -3,7 +3,6 @@ pub mod articles;
 pub mod auth;
 pub mod health;
 pub mod llm;
-// 后续任务逐步加入：admin 文章审核路由 T12 填充
 
 use crate::AppState;
 use axum::Router;
@@ -36,6 +35,26 @@ pub fn api_routes(state: AppState) -> Router {
             axum::routing::put(admin::set_quota),
         )
         .route("/api/admin/usage", axum::routing::get(admin::usage))
+        .route(
+            "/api/admin/articles",
+            axum::routing::get(admin::articles_list),
+        )
+        .route(
+            "/api/admin/articles/{id}",
+            axum::routing::get(admin::articles_get),
+        )
+        .route(
+            "/api/admin/articles/{id}/approve",
+            axum::routing::post(admin::articles_approve),
+        )
+        .route(
+            "/api/admin/articles/{id}/reject",
+            axum::routing::post(admin::articles_reject),
+        )
+        .route(
+            "/api/admin/articles/generate",
+            axum::routing::post(admin::articles_generate),
+        )
         .route(
             "/api/llm/word-lookup",
             axum::routing::post(llm::word_lookup),

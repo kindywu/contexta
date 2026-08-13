@@ -11,6 +11,7 @@ use crate::drivers::deepseek::DeepSeekApi;
 use crate::response::AppError;
 use crate::services::{llm_service, today_start_millis};
 use chrono::{Datelike, NaiveDate, Utc};
+use serde::Serialize;
 use sqlx::SqlitePool;
 
 pub const ARTICLES_PER_DIFFICULTY: i64 = 5;
@@ -327,6 +328,9 @@ pub async fn reject_article(
 /// 下发/管理视图：段落已拆分（英文、中文），供 T10 下发与 T12 审核列表复用。
 /// title 语义：NULL title（预占/生成中/失败行）映射为空串 ""——空 title = 预占/生成中/失败；
 /// T10 只下发 approved（title 必非空），不受影响。
+/// Serialize：T12 管理端点经 `serde_json::to_value` 直出（段落序列化为
+/// `[[order, 英文, 中文], ...]` 数组形态）；T10 下发仍走 ArticleJson 嵌套对象，互不影响。
+#[derive(Serialize)]
 pub struct ArticleView {
     pub id: i64,
     pub target_date: String,
