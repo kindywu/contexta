@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/time/iso8601.dart';
 import '../../di/providers.dart';
-import '../../domain/background_work_scheduler.dart';
 import '../../domain/generation/article_prompts.dart';
 import '../../domain/model/article.dart';
 import '../../domain/model/daily_learning_info.dart';
@@ -12,7 +11,6 @@ import '../../domain/model/user_settings.dart';
 import '../../domain/repository/article_repository.dart';
 import '../../domain/repository/settings_repository.dart';
 import '../../domain/repository/stats_repository.dart';
-import '../../domain/usecase/create_initial_batch_usecase.dart';
 import '../../domain/usecase/get_home_articles_usecase.dart';
 import '../../domain/usecase/startup_orchestration_usecase.dart';
 
@@ -44,16 +42,15 @@ class HomeUiState {
     bool? isGenerating,
     String? generationMessage,
     List<ErrorUi>? generationErrors,
-  }) =>
-      HomeUiState(
-        dateLabel: dateLabel ?? this.dateLabel,
-        streak: streak ?? this.streak,
-        articleGroups: articleGroups ?? this.articleGroups,
-        isLoading: isLoading ?? this.isLoading,
-        isGenerating: isGenerating ?? this.isGenerating,
-        generationMessage: generationMessage ?? this.generationMessage,
-        generationErrors: generationErrors ?? this.generationErrors,
-      );
+  }) => HomeUiState(
+    dateLabel: dateLabel ?? this.dateLabel,
+    streak: streak ?? this.streak,
+    articleGroups: articleGroups ?? this.articleGroups,
+    isLoading: isLoading ?? this.isLoading,
+    isGenerating: isGenerating ?? this.isGenerating,
+    generationMessage: generationMessage ?? this.generationMessage,
+    generationErrors: generationErrors ?? this.generationErrors,
+  );
 }
 
 class ErrorUi {
@@ -98,7 +95,8 @@ class ArticleItemUi {
 }
 
 /// Home 页控制器（对照 Kotlin HomeViewModel）：
-/// - loadHome：日期头 + streak → startupOrch 三分支
+/// - loadHome：日期头 + streak → startupOrch 分支（同步模型）
+/// - refresh：下拉刷新 → 重跑同步编排 + 重载文章流（幂等）
 /// - observeArticles：GetHomeArticlesUseCase 过滤（按用户难度 + 每日篇数
 ///   snapshot）+ 按日期分组；批次流 combine 后过滤空组
 /// - observeErrors：生成错误 → ErrorUi（FAILED/TIMEOUT/FATAL 可重试）
@@ -109,18 +107,14 @@ class HomeController extends StateNotifier<HomeUiState> {
     required this._settingsRepository,
     required this._statsRepository,
     required this._startupOrch,
-    required this._createInitialBatch,
     required this._getHomeArticles,
-    required this._generationScheduler,
   }) : super(const HomeUiState());
 
   final ArticleRepository _articleRepository;
   final SettingsRepository _settingsRepository;
   final StatsRepository _statsRepository;
   final StartupOrchestrationUseCase _startupOrch;
-  final CreateInitialBatchUseCase _createInitialBatch;
   final GetHomeArticlesUseCase _getHomeArticles;
-  final BackgroundWorkScheduler _generationScheduler;
 
   StreamSubscription<void>? _errorsSub;
   StreamSubscription<UserSettings?>? _settingsSub;
@@ -138,29 +132,25 @@ class HomeController extends StateNotifier<HomeUiState> {
 
     _observeErrors();
 
-    final result = await _startupOrch(1);
+    final result = await _startupOrch();
     switch (result) {
-      case StartupNeedsInitialBatch(
-          difficulty: final difficulty,
-          dailyCount: final dailyCount,
-        ):
-        state = state.copyWith(
-          isGenerating: true,
-          generationMessage: '正在准备文章…',
-        );
-        final batchId = await _createInitialBatch(difficulty, dailyCount);
-        await _generationScheduler.scheduleBatchGeneration(batchId);
-        await _observeArticles();
-      case StartupReady():
-        await _observeArticles();
-      case StartupPipelineBlocked():
-        state = state.copyWith(
-          isLoading: false,
-          generationMessage: '生成管道被阻塞，请联系技术支持',
-        );
+      // 未 onboarding：等引导页接管，首页仅收尾 loading
       case StartupNeedsOnboarding():
         state = state.copyWith(isLoading: false);
+      // 未登录：同步跳过，本地文章照常加载（横幅提供登录入口）
+      case StartupNeedsLogin():
+        await _observeArticles();
+      // 同步已执行（失败则 syncedBatches=0）：正常加载本地文章
+      case StartupReady():
+        await _observeArticles();
     }
+  }
+
+  /// 下拉刷新：重跑启动编排（同步 + 今日分配，幂等——已分配过不重复）
+  /// 并重新订阅文章流。
+  Future<void> refresh() async {
+    await _startupOrch();
+    await _observeArticles();
   }
 
   void observeSettingsForRefresh() {
@@ -181,7 +171,8 @@ class HomeController extends StateNotifier<HomeUiState> {
               errorCode: e.errorCode,
               errorMessage: e.errorMessage,
               errorHelp: e.errorHelp ?? '',
-              canRetry: e.status == 'FAILED' ||
+              canRetry:
+                  e.status == 'FAILED' ||
                   e.status == 'TIMEOUT' ||
                   e.status == 'FATAL',
             ),
@@ -210,8 +201,9 @@ class HomeController extends StateNotifier<HomeUiState> {
 
     for (final readInfo in _historyReads) {
       final batchId = readInfo.batch.id;
-      _batchSubs[batchId] =
-          _articleRepository.observeArticles(batchId).listen((articles) {
+      _batchSubs[batchId] = _articleRepository.observeArticles(batchId).listen((
+        articles,
+      ) {
         _latestArticles[batchId] = articles;
         _recomputeGroups();
       });
@@ -233,20 +225,22 @@ class HomeController extends StateNotifier<HomeUiState> {
         readInfo.dailyCountSnapshot,
       );
       if (shown.isEmpty) continue;
-      groups.add(ArticleGroupUi(
-        dateLabel: _dateLabelFor(readInfo.learningDate),
-        articles: [
-          for (final article in shown)
-            ArticleItemUi(
-              id: article.id,
-              title: article.title,
-              description: article.contentCategory,
-              difficultyLabel: _difficultyLabel(article.contentCategory),
-              categoryLabel: article.contentCategory.replaceAll('_', ' '),
-              isReadCompleted: article.readCompletedAt != null,
-            ),
-        ],
-      ));
+      groups.add(
+        ArticleGroupUi(
+          dateLabel: _dateLabelFor(readInfo.learningDate),
+          articles: [
+            for (final article in shown)
+              ArticleItemUi(
+                id: article.id,
+                title: article.title,
+                description: article.contentCategory,
+                difficultyLabel: _difficultyLabel(article.contentCategory),
+                categoryLabel: article.contentCategory.replaceAll('_', ' '),
+                isReadCompleted: article.readCompletedAt != null,
+              ),
+          ],
+        ),
+      );
     }
 
     final hasContent = groups.any((g) => g.articles.isNotEmpty);
@@ -261,8 +255,7 @@ class HomeController extends StateNotifier<HomeUiState> {
       articleGroups: groups,
       isLoading: false,
       isGenerating: todayPending || !hasContent,
-      generationMessage:
-          (todayPending || !hasContent) ? '文章生成中，请稍候…' : '',
+      generationMessage: (todayPending || !hasContent) ? '文章生成中，请稍候…' : '',
     );
   }
 
@@ -310,13 +303,11 @@ class HomeController extends StateNotifier<HomeUiState> {
 /// Home 控制器 Provider。
 final homeControllerProvider =
     StateNotifierProvider<HomeController, HomeUiState>((ref) {
-  return HomeController(
-    articleRepository: ref.watch(articleRepositoryProvider),
-    settingsRepository: ref.watch(settingsRepositoryProvider),
-    statsRepository: ref.watch(statsRepositoryProvider),
-    startupOrch: ref.watch(startupOrchestrationUseCaseProvider),
-    createInitialBatch: ref.watch(createInitialBatchUseCaseProvider),
-    getHomeArticles: ref.watch(getHomeArticlesUseCaseProvider),
-    generationScheduler: ref.watch(backgroundWorkSchedulerProvider),
-  );
-});
+      return HomeController(
+        articleRepository: ref.watch(articleRepositoryProvider),
+        settingsRepository: ref.watch(settingsRepositoryProvider),
+        statsRepository: ref.watch(statsRepositoryProvider),
+        startupOrch: ref.watch(startupOrchestrationUseCaseProvider),
+        getHomeArticles: ref.watch(getHomeArticlesUseCaseProvider),
+      );
+    });

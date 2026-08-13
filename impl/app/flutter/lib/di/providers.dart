@@ -57,18 +57,21 @@ final databaseProvider = FutureProvider<AppDatabase>((ref) async {
 
 /// 服务端是否已配置（SERVER_BASE_URL 非空）。
 /// 空 → App 全本地模式：登录页显示配置提示，路由不做登录拦截。测试可 override。
-final serverConfiguredProvider =
-    Provider<bool>((ref) => AppConfig.serverBaseUrl.isNotEmpty);
+final serverConfiguredProvider = Provider<bool>(
+  (ref) => AppConfig.serverBaseUrl.isNotEmpty,
+);
 
 /// 服务端 API 客户端（认证拦截每次请求从 user_settings 读 token；
 /// 登录/登出/同步共用同一实例——T2 遗留：token 变化自动重置 401 去重）。
 final serverApiClientProvider = Provider<ServerApiClient>((ref) {
-  final dio = Dio(BaseOptions(
-    // 登录 / 同步接口较短：连接 15s / 读 30s / 写 15s（超时统一映射 NETWORK）
-    connectTimeout: const Duration(seconds: 15),
-    receiveTimeout: const Duration(seconds: 30),
-    sendTimeout: const Duration(seconds: 15),
-  ));
+  final dio = Dio(
+    BaseOptions(
+      // 登录 / 同步接口较短：连接 15s / 读 30s / 写 15s（超时统一映射 NETWORK）
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 30),
+      sendTimeout: const Duration(seconds: 15),
+    ),
+  );
   return ServerApiClient(
     dio,
     baseUrl: AppConfig.serverBaseUrl,
@@ -85,22 +88,29 @@ final articleApiProvider = Provider<ArticleApi>((ref) {
 });
 
 /// 设备标识（shared_preferences 持久化，首次生成后固定；登录/登出请求体）。
-final deviceIdProvider = Provider<DeviceIdProvider>((ref) => DeviceIdProvider());
+final deviceIdProvider = Provider<DeviceIdProvider>(
+  (ref) => DeviceIdProvider(),
+);
 
 /// 本机号码读取（MethodChannel `contexta/native`；不可用返回 null 走手动输入）。
-final nativePhoneReaderProvider =
-    Provider<NativePhoneReader>((ref) => NativePhoneReader());
+final nativePhoneReaderProvider = Provider<NativePhoneReader>(
+  (ref) => NativePhoneReader(),
+);
 
 /// 认证状态机（登录/登出/401 恢复）。构造时接线 ServerApiClient 的
 /// authCallback → handleServerFailure（清 token + evicted/banned/loggedOut）。
-final authServiceProvider = StateNotifierProvider<AuthService, AuthState>((ref) {
+final authServiceProvider = StateNotifierProvider<AuthService, AuthState>((
+  ref,
+) {
   final service = AuthService(
     api: ref.watch(serverApiClientProvider),
     settings: ref.watch(settingsRepositoryProvider),
     deviceId: () => ref.read(deviceIdProvider).getDeviceId(),
     readPhone: () => ref.read(nativePhoneReaderProvider).readLine1Number(),
   );
-  ref.read(serverApiClientProvider).setAuthCallback(service.handleServerFailure);
+  ref
+      .read(serverApiClientProvider)
+      .setAuthCallback(service.handleServerFailure);
   return service;
 });
 
@@ -114,15 +124,19 @@ final routerProvider = Provider<GoRouter>((ref) {
 });
 
 /// 时间注入：ISO 偏移日期时间（与 Kotlin TimeProvider.nowDateTimeString 对齐）。
-final nowIsoProvider = Provider<String Function()>((ref) => () => isoOffsetDateTime(DateTime.now()));
+final nowIsoProvider = Provider<String Function()>(
+  (ref) =>
+      () => isoOffsetDateTime(DateTime.now()),
+);
 
 /// 日期注入：yyyy-MM-dd（与 Kotlin Converter.currentDateString 对齐）。
-final todayProvider = Provider<String Function()>((ref) => () => isoLocalDate(DateTime.now()));
+final todayProvider = Provider<String Function()>(
+  (ref) =>
+      () => isoLocalDate(DateTime.now()),
+);
 
 /// 时间抽象（Kotlin TimeProvider 对应物）。
-final timeProvider = Provider<TimeProvider>(
-  (ref) => _ProdTimeProvider(),
-);
+final timeProvider = Provider<TimeProvider>((ref) => _ProdTimeProvider());
 
 /// 应用信息（版本号/型号；Kotlin AppInfoProvider 对应物）。
 final appInfoProvider = Provider<AppInfoProvider>(
@@ -132,7 +146,9 @@ final appInfoProvider = Provider<AppInfoProvider>(
 /// 后台生成调度器（Kotlin BackgroundWorkScheduler 对应物；
 /// 对照 Kotlin GenerationScheduler：workmanager 网关 + KEEP 策略 +
 /// 指数退避 + expedited 前台通知）。
-final backgroundWorkSchedulerProvider = Provider<BackgroundWorkScheduler>((ref) {
+final backgroundWorkSchedulerProvider = Provider<BackgroundWorkScheduler>((
+  ref,
+) {
   return GenerationScheduler(gateway: RealWorkmanagerGateway());
 });
 
@@ -230,7 +246,9 @@ final statsRepositoryProvider = Provider<StatsRepository>((ref) {
 
 // ─── Use cases ─────────────────────────────────────────────────────────
 
-final triggerNextBatchUseCaseProvider = Provider<TriggerNextBatchUseCase>((ref) {
+final triggerNextBatchUseCaseProvider = Provider<TriggerNextBatchUseCase>((
+  ref,
+) {
   return TriggerNextBatchUseCase(
     articleRepository: ref.watch(articleRepositoryProvider),
     generationScheduler: ref.watch(backgroundWorkSchedulerProvider),
@@ -238,14 +256,18 @@ final triggerNextBatchUseCaseProvider = Provider<TriggerNextBatchUseCase>((ref) 
   );
 });
 
-final activateSeedBatchUseCaseProvider = Provider<ActivateSeedBatchUseCase>((ref) {
+final activateSeedBatchUseCaseProvider = Provider<ActivateSeedBatchUseCase>((
+  ref,
+) {
   return ActivateSeedBatchUseCase(
     articleRepository: ref.watch(articleRepositoryProvider),
     timeProvider: ref.watch(timeProvider),
   );
 });
 
-final createInitialBatchUseCaseProvider = Provider<CreateInitialBatchUseCase>((ref) {
+final createInitialBatchUseCaseProvider = Provider<CreateInitialBatchUseCase>((
+  ref,
+) {
   return CreateInitialBatchUseCase(
     articleRepository: ref.watch(articleRepositoryProvider),
     triggerNextBatch: ref.watch(triggerNextBatchUseCaseProvider),
@@ -267,7 +289,9 @@ final syncArticlesUseCaseProvider = Provider<SyncArticlesUseCase>((ref) {
   );
 });
 
-final generateArticlesUseCaseProvider = Provider<GenerateArticlesUseCase>((ref) {
+final generateArticlesUseCaseProvider = Provider<GenerateArticlesUseCase>((
+  ref,
+) {
   return GenerateArticlesUseCase(
     articleRepository: ref.watch(articleRepositoryProvider),
     llmClient: ref.watch(llmClientProvider),
@@ -281,25 +305,29 @@ final getHomeArticlesUseCaseProvider = Provider<GetHomeArticlesUseCase>((ref) {
   return GetHomeArticlesUseCase();
 });
 
-final resendPendingAlertsUseCaseProvider = Provider<ResendPendingAlertsUseCase>((ref) {
-  return ResendPendingAlertsUseCase(
-    articleRepository: ref.watch(articleRepositoryProvider),
-    alertSender: ref.watch(developerAlertSenderProvider),
-    timeProvider: ref.watch(timeProvider),
-    appInfo: ref.watch(appInfoProvider),
-  );
-});
+final resendPendingAlertsUseCaseProvider = Provider<ResendPendingAlertsUseCase>(
+  (ref) {
+    return ResendPendingAlertsUseCase(
+      articleRepository: ref.watch(articleRepositoryProvider),
+      alertSender: ref.watch(developerAlertSenderProvider),
+      timeProvider: ref.watch(timeProvider),
+      appInfo: ref.watch(appInfoProvider),
+    );
+  },
+);
 
-final startupOrchestrationUseCaseProvider = Provider<StartupOrchestrationUseCase>((ref) {
-  return StartupOrchestrationUseCase(
-    articleRepository: ref.watch(articleRepositoryProvider),
-    settingsRepository: ref.watch(settingsRepositoryProvider),
-    timeProvider: ref.watch(timeProvider),
-    triggerNextBatch: ref.watch(triggerNextBatchUseCaseProvider),
-    generationScheduler: ref.watch(backgroundWorkSchedulerProvider),
-    resendPendingAlerts: ref.watch(resendPendingAlertsUseCaseProvider),
-  );
-});
+/// 启动编排（服务端同步模型，2026-08-13 计划 B Task 5）：
+/// onboarding → 登录检查 → SyncArticlesUseCase 每日同步（失败降级不阻塞首页）
+/// → 今天无 daily_learning 时按用户难度分配今天批次。
+final startupOrchestrationUseCaseProvider =
+    Provider<StartupOrchestrationUseCase>((ref) {
+      return StartupOrchestrationUseCase(
+        articleRepository: ref.watch(articleRepositoryProvider),
+        settingsRepository: ref.watch(settingsRepositoryProvider),
+        timeProvider: ref.watch(timeProvider),
+        syncArticles: ref.watch(syncArticlesUseCaseProvider),
+      );
+    });
 
 final addWordUseCaseProvider = Provider<AddWordUseCase>((ref) {
   return AddWordUseCase(

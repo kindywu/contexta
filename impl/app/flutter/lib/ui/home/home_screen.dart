@@ -65,49 +65,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return const SizedBox.expand(child: LoadingIndicator());
     }
 
-    return ListView(
-      padding: EdgeInsets.zero,
-      children: [
-        const SizedBox(height: AppSpacing.sm),
-        // 服务端已配置但未登录 → 提示条 + 登录入口（本地模式不显示；
-        // 服务端配置时守卫会拦截，此处是「暂不登录」回访入口）
-        if (ref.watch(serverConfiguredProvider) &&
-            ref.watch(authServiceProvider).status != AuthStatus.loggedIn)
-          const _LoginBanner(),
-        _HomeHeader(dateLabel: state.dateLabel, streak: state.streak),
-        const SizedBox(height: AppSpacing.sm),
-        if (state.isGenerating)
-          Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.xxl),
-            child: EmptyState(
-              icon: Icons.settings_outlined,
-              message: '文章生成中',
-              subMessage: state.generationMessage.isEmpty
-                  ? '首次生成需要一些时间，请稍候…'
-                  : state.generationMessage,
-            ),
-          )
-        else if (state.articleGroups.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: AppSpacing.xxl),
-            child: EmptyState(
-              icon: Icons.menu_book_outlined,
-              message: '暂无文章',
-              subMessage: '请等待文章生成',
-            ),
-          )
-        else
-          for (final group in state.articleGroups)
-            Material(
-              color: Colors.transparent,
-              child: _DayGroup(
-                dateLabel: group.dateLabel,
-                articles: group.articles,
-                onArticleClick: widget.onArticleClick,
+    // 下拉刷新：重跑同步编排（同步 + 今日分配）+ 重载文章流；
+    // AlwaysScrollableScrollPhysics 保证内容不满屏时也可下拉（含空态）。
+    return RefreshIndicator(
+      onRefresh: () => ref.read(homeControllerProvider.notifier).refresh(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        children: [
+          const SizedBox(height: AppSpacing.sm),
+          // 服务端已配置但未登录 → 提示条 + 登录入口（本地模式不显示；
+          // 服务端配置时守卫会拦截，此处是「暂不登录」回访入口）
+          if (ref.watch(serverConfiguredProvider) &&
+              ref.watch(authServiceProvider).status != AuthStatus.loggedIn)
+            const _LoginBanner(),
+          _HomeHeader(dateLabel: state.dateLabel, streak: state.streak),
+          const SizedBox(height: AppSpacing.sm),
+          if (state.isGenerating)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xxl),
+              child: EmptyState(
+                icon: Icons.settings_outlined,
+                message: '文章生成中',
+                subMessage: state.generationMessage.isEmpty
+                    ? '首次生成需要一些时间，请稍候…'
+                    : state.generationMessage,
               ),
-            ),
-        const SizedBox(height: 24),
-      ],
+            )
+          else if (state.articleGroups.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: AppSpacing.xxl),
+              child: EmptyState(
+                icon: Icons.menu_book_outlined,
+                message: '暂无文章',
+                subMessage: '请等待文章生成',
+              ),
+            )
+          else
+            for (final group in state.articleGroups)
+              Material(
+                color: Colors.transparent,
+                child: _DayGroup(
+                  dateLabel: group.dateLabel,
+                  articles: group.articles,
+                  onArticleClick: widget.onArticleClick,
+                ),
+              ),
+          const SizedBox(height: 24),
+        ],
+      ),
     );
   }
 }
@@ -165,8 +171,9 @@ class _StreakBadge extends StatelessWidget {
           const SizedBox(width: AppSpacing.xxs),
           Text(
             '连续 $streak 天',
-            style: AppType.textTheme.labelMedium
-                ?.copyWith(color: AppColors.primary),
+            style: AppType.textTheme.labelMedium?.copyWith(
+              color: AppColors.primary,
+            ),
           ),
         ],
       ),
@@ -201,7 +208,9 @@ class _DayGroupState extends State<_DayGroup> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppPage.horizontalPadding),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppPage.horizontalPadding,
+          ),
           child: InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
             child: Padding(
@@ -223,7 +232,9 @@ class _DayGroupState extends State<_DayGroup> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppPage.horizontalPadding),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppPage.horizontalPadding,
+          ),
           child: Column(
             children: [
               for (final article in widget.articles)
@@ -292,8 +303,9 @@ class _LoginBanner extends StatelessWidget {
               Expanded(
                 child: Text(
                   '未登录',
-                  style: AppType.textTheme.bodyMedium
-                      ?.copyWith(color: AppColors.muted),
+                  style: AppType.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.muted,
+                  ),
                 ),
               ),
               TextButton(
