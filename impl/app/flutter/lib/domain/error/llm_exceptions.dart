@@ -45,3 +45,44 @@ class LlmTimeoutException implements Exception {
   @override
   String toString() => 'LlmTimeoutException: $message';
 }
+
+/// 服务端配额耗尽（error_code = QUOTA_EXCEEDED）。
+/// 由 ServerApiClient.mapErrorCodeToException 映射产生。
+class QuotaExceededException implements Exception {
+  final String message;
+
+  const QuotaExceededException(this.message);
+
+  @override
+  String toString() => 'QuotaExceededException: $message';
+}
+
+/// 认证失败：登录态过期（error_code = TOKEN_EXPIRED），需重新登录。
+class AuthRequiredException implements Exception {
+  final String message;
+
+  const AuthRequiredException(this.message);
+
+  @override
+  String toString() => 'AuthRequiredException: $message';
+}
+
+/// 认证失败：账号被踢下线（error_code = EVICTED）。
+class AuthEvictedException implements Exception {
+  final String message;
+
+  const AuthEvictedException(this.message);
+
+  @override
+  String toString() => 'AuthEvictedException: $message';
+}
+
+/// 认证失败：账号被封禁（error_code = BANNED）。
+class AuthBannedException implements Exception {
+  final String message;
+
+  const AuthBannedException(this.message);
+
+  @override
+  String toString() => 'AuthBannedException: $message';
+}
