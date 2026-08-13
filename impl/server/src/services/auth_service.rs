@@ -26,24 +26,28 @@ pub async fn login(
     if is_banned(pool, phone).await? {
         return Err(AppError::Banned("account banned"));
     }
-    // I1（审查）：同一设备重登 → 替换自身会话并刷新 issued_at（挤掉次序按最近活跃重排）。
-    // max(旧 issued_at + 1, now) 保证 issued_at 严格单调递增：同毫秒重登也不会产生相同值，
-    // 与 I2 的 `iat == issued_at` 精确校验配合，旧 token 必然失效。
+    // I1（审查返工）：issued_at 按 phone 全局单调——新行 INSERT 与重登 DO UPDATE 两路
+    // 都取「全局 MAX(issued_at) + 1」（与墙钟 now 取大，防时钟回拨），同毫秒并发登录
+    // 也不产生平局；挤掉次序严格等于最近活跃顺序。单条 INSERT...SELECT 在 SQLite 写锁
+    // 内原子求 MAX，无事务竞态；id DESC 降级为永不到达的兜底。
+    // 与 I2 的 `iat == issued_at` 精确校验配合，重登即令旧 token 失效。
     sqlx::query(
         "INSERT INTO device_sessions (phone, device_id, issued_at, last_active_at)
-         VALUES (?, ?, ?, ?)
+         SELECT ?, ?, max(COALESCE(MAX(issued_at), 0) + 1, ?), ?
+         FROM device_sessions WHERE phone = ?
          ON CONFLICT(phone, device_id) DO UPDATE SET
-             last_active_at = excluded.last_active_at,
-             issued_at = max(device_sessions.issued_at + 1, excluded.issued_at)",
+             issued_at = excluded.issued_at,
+             last_active_at = excluded.last_active_at",
     )
     .bind(phone)
     .bind(device_id)
     .bind(now)
     .bind(now)
+    .bind(phone)
     .execute(pool)
     .await?;
-    // 挤掉：保留按 issued_at 最新的 2 条（含刚插入的）；
-    // 适配（T3 记录）：同毫秒 issued_at 平局时按 id DESC 兜底，保证淘汰确定性（id 单调递增）
+    // 挤掉：保留按 issued_at 最新的 2 条（含刚插入的）。
+    // issued_at 全局单调后无平局，id DESC 仅作永不到达的兜底。
     sqlx::query(
         "DELETE FROM device_sessions
          WHERE phone = ? AND id NOT IN (
@@ -55,7 +59,7 @@ pub async fn login(
     .bind(MAX_ACTIVE_DEVICES)
     .execute(pool)
     .await?;
-    // I2（审查）：token 的 iat 取会话行实际落库的 issued_at（upsert 可能被 +1 单调化），
+    // I2（审查）：token 的 iat 取会话行实际落库的 issued_at（可能被全局 MAX+1 单调化），
     // 保证 `claims.iat == issued_at` 精确成立
     let issued_at: i64 = sqlx::query_scalar(
         "SELECT issued_at FROM device_sessions WHERE phone = ? AND device_id = ?",

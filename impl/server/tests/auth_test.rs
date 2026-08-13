@@ -36,19 +36,27 @@ fn test_cfg(db_path: &str) -> Config {
     }
 }
 
-/// 收尾：先 drop 连接池（最后连接关闭时 SQLite 会折掉 WAL），再删主文件与侧车文件。
-fn cleanup(db_path: &str) {
+/// 收尾：drop 路由 → 显式 close 连接池（等待连接真正关闭，SQLite 清洁关闭会折掉 WAL）
+/// → 删除主文件与 -wal/-shm 侧车文件。仅 drop 不 close 时，池的异步关连接任务
+/// 可能与删除竞态（关连接时的 checkpoint 会重建 -wal/-shm），留下 /tmp 残留。
+async fn cleanup(app: axum::Router, pool: sqlx::SqlitePool, db_path: &str) {
+    drop(app);
+    pool.close().await;
     for suffix in ["", "-wal", "-shm"] {
         let _ = std::fs::remove_file(format!("{db_path}{suffix}"));
     }
 }
 
-async fn setup() -> (axum::Router, String) {
+async fn setup() -> (axum::Router, sqlx::SqlitePool, String) {
     let db_path = unique_db_path();
     let cfg = Arc::new(test_cfg(&db_path));
     let pool = db::init_pool(&db_path).await.unwrap();
     db::migrate(&pool).await.unwrap();
-    (build_router(AppState { pool, cfg }), db_path)
+    let app = build_router(AppState {
+        pool: pool.clone(),
+        cfg,
+    });
+    (app, pool, db_path)
 }
 
 async fn post(app: &axum::Router, uri: &str, body: Value) -> (StatusCode, Value) {
@@ -91,7 +99,7 @@ async fn get_with_token(app: &axum::Router, uri: &str, token: &str) -> (StatusCo
 
 #[tokio::test]
 async fn login_registers_and_issues_token() {
-    let (app, db_path) = setup().await;
+    let (app, pool, db_path) = setup().await;
     let (status, json) = post(
         &app,
         "/api/auth/login",
@@ -100,13 +108,12 @@ async fn login_registers_and_issues_token() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert!(json["data"]["token"].as_str().unwrap().len() > 20);
-    drop(app);
-    cleanup(&db_path);
+    cleanup(app, pool, &db_path).await;
 }
 
 #[tokio::test]
 async fn second_device_evicts_oldest_when_two_active() {
-    let (app, db_path) = setup().await;
+    let (app, pool, db_path) = setup().await;
     let (_, j1) = post(
         &app,
         "/api/auth/login",
@@ -142,13 +149,12 @@ async fn second_device_evicts_oldest_when_two_active() {
     assert_eq!(s2, StatusCode::OK);
     let (s3, _) = get_with_token(&app, "/api/auth/me", &t3).await;
     assert_eq!(s3, StatusCode::OK);
-    drop(app);
-    cleanup(&db_path);
+    cleanup(app, pool, &db_path).await;
 }
 
 #[tokio::test]
 async fn same_device_relogin_replaces_own_session() {
-    let (app, db_path) = setup().await;
+    let (app, pool, db_path) = setup().await;
     for _ in 0..4 {
         let (_, j) = post(
             &app,
@@ -167,13 +173,12 @@ async fn same_device_relogin_replaces_own_session() {
     let ty = j["data"]["token"].as_str().unwrap().to_string();
     let (s, _) = get_with_token(&app, "/api/auth/me", &ty).await;
     assert_eq!(s, StatusCode::OK);
-    drop(app);
-    cleanup(&db_path);
+    cleanup(app, pool, &db_path).await;
 }
 
 #[tokio::test]
 async fn relogin_refreshes_eviction_order() {
-    let (app, db_path) = setup().await;
+    let (app, pool, db_path) = setup().await;
     // A 登 → B 登 → A 重登（刷新 issued_at）→ C 登：应挤掉 B，保留最近活跃的 A 与 C
     let (_, j1) = post(
         &app,
@@ -219,13 +224,12 @@ async fn relogin_refreshes_eviction_order() {
     let (s, j) = get_with_token(&app, "/api/auth/me", &t1).await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
     assert_eq!(j["error_code"], "EVICTED");
-    drop(app);
-    cleanup(&db_path);
+    cleanup(app, pool, &db_path).await;
 }
 
 #[tokio::test]
 async fn relogin_invalidates_old_token() {
-    let (app, db_path) = setup().await;
+    let (app, pool, db_path) = setup().await;
     let (_, j1) = post(
         &app,
         "/api/auth/login",
@@ -247,8 +251,7 @@ async fn relogin_invalidates_old_token() {
     // 新 token 有效
     let (s, _) = get_with_token(&app, "/api/auth/me", &t2).await;
     assert_eq!(s, StatusCode::OK);
-    drop(app);
-    cleanup(&db_path);
+    cleanup(app, pool, &db_path).await;
 }
 
 fn json_get_code(_s: &StatusCode, json: &Value) -> String {
