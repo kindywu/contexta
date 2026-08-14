@@ -455,7 +455,12 @@ async fn edit_pending_review_article() {
         .await
         .unwrap();
     let id = first_editable_id(&pool).await;
-    // PUT 编辑：新标题 + 2 段 → 200
+    let regen_before: i64 = sqlx::query_scalar("SELECT regenerate_count FROM article WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    // PUT 编辑：新标题 + 2 段 → 200。客户端 order_index 乱序（9/3）——服务端按请求序重编 1..n
     let (status, json) = send(
         &app,
         "PUT",
@@ -464,8 +469,8 @@ async fn edit_pending_review_article() {
         Some(json!({
             "title": "新标题",
             "paragraphs": [
-                {"order_index": 1, "english_text": "New EN 1.", "chinese_translation": "新中文1。"},
-                {"order_index": 2, "english_text": "New EN 2.", "chinese_translation": "新中文2。"},
+                {"order_index": 9, "english_text": "New EN 1.", "chinese_translation": "新中文1。"},
+                {"order_index": 3, "english_text": "New EN 2.", "chinese_translation": "新中文2。"},
             ],
         })),
     )
@@ -507,6 +512,12 @@ async fn edit_pending_review_article() {
         .await
         .unwrap();
     assert_eq!(st, "pending_review");
+    let regen_after: i64 = sqlx::query_scalar("SELECT regenerate_count FROM article WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(regen_after, regen_before, "编辑不得改动 regenerate_count");
     cleanup(app, pool, &db_path).await;
 }
 
@@ -540,6 +551,60 @@ async fn edit_approved_article_returns_404() {
         .await
         .unwrap();
     assert_ne!(title, "不应生效", "已过审文章内容不得被编辑");
+    cleanup(app, pool, &db_path).await;
+}
+
+#[tokio::test]
+async fn edit_reservation_row_returns_404() {
+    let (app, pool, cfg, db_path, _server) = setup().await;
+    let admin_token = admin_login(&app).await;
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &today)
+        .await
+        .unwrap();
+    // 手工造预占行：status=pending_review + title NULL（生成管线拥有——若编辑命中该行，
+    // 后续 generate_one 填充（守卫 AND title IS NULL）affected=0 静默跳过，LLM 出稿白耗）
+    let now = chrono::Utc::now().timestamp_millis();
+    let reserve_id: i64 = sqlx::query(
+        "INSERT INTO article (target_date, difficulty, content_category, order_index, title, status, regenerate_count, prompt_tokens, completion_tokens, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, 'pending_review', 0, 0, 0, ?, ?)",
+    )
+    .bind(&today)
+    .bind("LOW")
+    .bind("DAILY_CONVERSATION")
+    .bind(20)
+    .bind(now)
+    .bind(now)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_rowid();
+    // PUT 预占行 → 404，title 保持 NULL、零段落
+    let (status, json) = send(
+        &app,
+        "PUT",
+        &format!("/api/admin/articles/{reserve_id}"),
+        Some(&admin_token),
+        Some(json!({
+            "title": "不应写入",
+            "paragraphs": [{"order_index": 1, "english_text": "E", "chinese_translation": "C"}],
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["error_code"], "NOT_FOUND");
+    let title: Option<String> = sqlx::query_scalar("SELECT title FROM article WHERE id = ?")
+        .bind(reserve_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(title.is_none(), "预占行 title 必须保持 NULL");
+    let paras: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article_paragraph WHERE article_id = ?")
+        .bind(reserve_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(paras, 0, "预占行不得被写入段落");
     cleanup(app, pool, &db_path).await;
 }
 
@@ -584,6 +649,36 @@ async fn edit_invalid_params_rejected() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(json["error_code"], "BAD_PARAM");
+    // 段落 en 与 zh 全空（含纯空白）→ 400 BAD_PARAM（否则落库 `|||` 读回两条空串）
+    for (en, zh) in [("", ""), ("   ", ""), ("", "  ")] {
+        let (status, json) = send(
+            &app,
+            "PUT",
+            &format!("/api/admin/articles/{id}"),
+            Some(&admin_token),
+            Some(json!({
+                "title": "ok",
+                "paragraphs": [{"order_index": 1, "english_text": en, "chinese_translation": zh}],
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "段落 en/zh 全空（{en:?}/{zh:?}）应 400");
+        assert_eq!(json["error_code"], "BAD_PARAM");
+    }
+    // 不存在 id → 404 NOT_FOUND（合法 body 走到 UPDATE 守卫）
+    let (status, json) = send(
+        &app,
+        "PUT",
+        "/api/admin/articles/999999",
+        Some(&admin_token),
+        Some(json!({
+            "title": "ok",
+            "paragraphs": [{"order_index": 1, "english_text": "E", "chinese_translation": "C"}],
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["error_code"], "NOT_FOUND");
     // 校验失败零写入：title 不变
     let after: String = sqlx::query_scalar("SELECT title FROM article WHERE id = ?")
         .bind(id)

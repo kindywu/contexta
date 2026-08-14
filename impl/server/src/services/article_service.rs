@@ -340,10 +340,14 @@ pub async fn reject_article(
     Ok(())
 }
 
-/// 审核期编辑文章内容（仅 pending_review；title 非空；paragraphs ≥1）。
+/// 审核期编辑文章内容（仅已生成 pending_review：status + title IS NOT NULL 双守卫，与
+/// approve/reject/填充对称——预占/生成中行（title NULL）归生成管线所有，PUT 直接 404；
+/// 否则管理员内容写进预占行会被后续 generate_one 填充（守卫 AND title IS NULL）affected=0
+/// 静默跳过，LLM 出稿白耗预算被丢弃）。title 非空；paragraphs ≥1；每段 en/zh 至少一个非空
+/// （否则落库 `|||` 读回两条空串）。
 /// 事务内：UPDATE title → DELETE 旧段落 → INSERT 新段落（`英文|||中文` 单列，与生成一致）。
-/// 并发编辑：UPDATE 以 status 条件为守卫，后到者 affected=0 → NotFound（last-write-wins 不成立，
-/// 同行竞态按先到者为准）；校验失败在事务前返回，零写入。
+/// order_index 由服务端按请求序重编 1..n（忽略客户端值——生成路径同规，客户端序号不可信）。
+/// 并发编辑：UPDATE 以 status+title 条件为守卫，后到者 affected=0 → NotFound；校验失败零写入。
 pub async fn update_article_content(
     pool: &SqlitePool,
     id: i64,
@@ -359,9 +363,18 @@ pub async fn update_article_content(
             "paragraphs required".into(),
         ));
     }
+    if paragraphs
+        .iter()
+        .any(|(_, en, zh)| en.trim().is_empty() && zh.trim().is_empty())
+    {
+        return Err(AppError::BadRequest(
+            "BAD_PARAM".into(),
+            "paragraph text required".into(),
+        ));
+    }
     let mut tx = pool.begin().await?;
     let n = sqlx::query(
-        "UPDATE article SET title = ?, updated_at = ? WHERE id = ? AND status = 'pending_review'",
+        "UPDATE article SET title = ?, updated_at = ? WHERE id = ? AND status = 'pending_review' AND title IS NOT NULL",
     )
     .bind(title.trim())
     .bind(Utc::now().timestamp_millis())
@@ -376,10 +389,10 @@ pub async fn update_article_content(
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    for (order, en, zh) in paragraphs {
+    for (i, (_, en, zh)) in paragraphs.iter().enumerate() {
         sqlx::query("INSERT INTO article_paragraph (article_id, order_index, text) VALUES (?, ?, ?)")
             .bind(id)
-            .bind(order)
+            .bind((i + 1) as i64)
             .bind(format!("{en}|||{zh}"))
             .execute(&mut *tx)
             .await?;

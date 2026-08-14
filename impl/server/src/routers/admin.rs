@@ -135,8 +135,9 @@ pub async fn articles_get(
     Ok(ok(serde_json::to_value(view)?))
 }
 
-/// 审核期文章编辑：仅 pending_review；title 非空、paragraphs ≥1（校验失败 400），
-/// 其余（不存在/已过审/已拒绝）→ 404。事务内标题 + 段落整体替换。
+/// 审核期文章编辑：仅已生成 pending_review（status + title IS NOT NULL 双守卫）；
+/// title 非空、paragraphs ≥1、每段 en/zh 至少一个非空（校验失败 400），其余
+/// （不存在/预占/已过审/已拒绝）→ 404。段落 order_index 由服务端按请求序重编（忽略客户端值）。
 pub async fn article_edit(
     State(state): State<AppState>,
     _auth: AdminAuth,
