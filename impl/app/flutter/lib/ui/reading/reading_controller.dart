@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/remote/llm_api.dart';
 import '../../data/remote/server_api_client.dart';
 import '../../di/providers.dart';
+import '../../domain/error/llm_exceptions.dart';
 import '../../domain/model/article.dart';
 import '../../domain/model/tts_voice.dart';
 import '../../domain/model/word_detail.dart';
@@ -699,8 +700,14 @@ class ReadingController extends StateNotifier<ReadingUiState> {
         normalized: WordRepository.normalize(detail.spellingDisplay),
       );
     } on ServerApiException catch (e) {
-      // 统一错误映射后抛出：上层（_lookupWord）既有 catch 降级「仅词头」
-      throw mapErrorCodeToException(e);
+      final mapped = mapErrorCodeToException(e);
+      if (mapped is QuotaExceededException) {
+        // 配额用尽：仍降级「仅词头」，但 toast 告知原因（配额不会因重试恢复）
+        state = state.copyWith(snackbarMessage: '今日查词次数已用完');
+        return null;
+      }
+      // 其余错误统一抛出：上层（_lookupWord）既有 catch 降级「仅词头」
+      throw mapped;
     } catch (e) {
       debugPrint('[ReadingCtrl] _llmFallback ERROR: $e');
       return null;

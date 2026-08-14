@@ -18,7 +18,10 @@ class LlmApi {
   ///
   /// 服务端保证返回 ≥ 1 个义项；data 非对象 / 义项为空视为解析失败
   /// （前者 [ServerApiException] UNKNOWN，后者 [FormatException]），
-  /// 均由调用点既有降级路径处理，不让 TypeError 裸逃逸。
+  /// 均由调用点既有降级路径处理。
+  /// 注意：此处的 parser 仅拦截「data 不是 JSON 对象」一层；字段级类型不符
+  /// （fromJson 内的 as String / as int）仍抛 [TypeError]，由调用点
+  /// generic catch 兜底降级，行为安全。
   Future<WordDetail> wordLookup(String word) async {
     final dto = await _client.post<WordLookupDto>(
       '/api/llm/word-lookup',

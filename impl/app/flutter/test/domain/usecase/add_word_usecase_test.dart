@@ -281,6 +281,22 @@ void main() {
     expect((result as AddWordResultFailed).message, contains('AI 服务暂不可用'));
   });
 
+  test('查词配额用尽 → 配额专用提示（非通用失败文案）', () async {
+    words.findLocalResult = null;
+    llm.throwError = const ServerApiException(
+      errorCode: 'QUOTA_EXCEEDED',
+      message: 'quota',
+      statusCode: 429,
+    );
+
+    final result = await useCase('serendipity');
+
+    expect(result, isA<AddWordResultFailed>());
+    expect((result as AddWordResultFailed).message, '今日查词次数已用完');
+    expect(vocab.addWordCalls, 0);
+    expect(stats.recordWordAddedCalls, 0);
+  });
+
   test('LlmFatalException 映射为 AI 服务不可用', () async {
     words.findLocalResult = null;
     llm.throwError = LlmFatalException('auth failed');

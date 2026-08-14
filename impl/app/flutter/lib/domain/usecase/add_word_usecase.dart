@@ -123,6 +123,9 @@ class AddWordUseCase {
     } on LlmRecoverableExhaustedException {
       return const AddWordResultFailed(
           message: '网络不稳定，AI 多次重试后仍未成功，请稍后重试');
+    } on QuotaExceededException {
+      // 配额用尽：独立提示（配额每日重置，不误导用户重试）
+      return const AddWordResultFailed(message: '今日查词次数已用完');
     } on PipelineBlockingException {
       return const AddWordResultFailed(message: '系统暂时无法生成单词信息，请稍后重试');
     } catch (_) {

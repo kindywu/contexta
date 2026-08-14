@@ -943,6 +943,37 @@ void main() {
       expect(saved, isFalse);
     });
 
+    test('查词配额用尽 → 降级「仅词头」并 toast 提示今日次数已用完', () async {
+      var saved = false;
+      llmApi = _FakeLlmApi(
+        onLookup: (_) async => throw ServerApiException(
+          errorCode: 'QUOTA_EXCEEDED',
+          message: 'quota',
+          statusCode: 429,
+        ),
+      );
+      wordRepo = _FakeWordRepo(
+        onLookupWord: (spelling, llmFallback) => llmFallback(spelling),
+        onSaveLlmResult: (spelling, phonetic, senses) async {
+          saved = true;
+          return detailOf(wordId: 42);
+        },
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+
+      controller.showWordSheet('hello');
+      await Future<void>.delayed(Duration.zero);
+
+      final data = controller.state.wordSheetData!;
+      expect(data.isLoading, isFalse);
+      expect(data.word, 'hello');
+      expect(data.senses, isEmpty);
+      expect(saved, isFalse);
+      // 配额专用提示（区别于其他错误：toast 告知原因，而非静默降级）
+      expect(controller.state.snackbarMessage, '今日查词次数已用完');
+    });
+
     test('同词性义项相邻排列（组序 = 首次出现序）', () async {
       wordRepo = _FakeWordRepo(
         onLookupWord: (spelling, _) async => detailOf(
