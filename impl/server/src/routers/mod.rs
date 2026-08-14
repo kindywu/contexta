@@ -46,6 +46,14 @@ pub fn api_routes(state: AppState) -> Router {
         )
         .route("/api/admin/usage", axum::routing::get(admin::usage))
         .route(
+            "/api/admin/prompts",
+            axum::routing::get(admin::prompts_list),
+        )
+        .route(
+            "/api/admin/prompts/{key}",
+            axum::routing::put(admin::prompt_update),
+        )
+        .route(
             "/api/admin/articles",
             axum::routing::get(admin::articles_list),
         )

@@ -8,12 +8,28 @@
 //! is_primary）、parseArticleLlmResponse（title 默认/翻译配对/空白规范化）、
 //! categoryToDifficulty、_categoryGuideline、buildArticleSystemPrompt/
 //! buildArticleUserPrompt、PromptLoader.loadSection。
+//!
+//! Task 2：build_* 构建函数 DB 化（签名 +pool，DB 行优先/缺行回退嵌入默认）——
+//! 相关用例改为 tokio::test + 内存库（migrate 自带 7 行种子，走 DB 路径）；
+//! load_section/category_guideline 等纯函数用例保持同步。
 
 use server::llm::parser::{parse_article, parse_word_lookup};
 use server::prompts::{
     ARTICLE_SYSTEM, build_article_system, build_article_user, build_word_lookup_system,
-    category_guideline, category_to_difficulty, load_section,
+    build_word_lookup_user, category_guideline, category_to_difficulty, load_section,
 };
+
+/// Task 2：构建函数走 DB——内存库单连接池（max_connections=1 使 `sqlite::memory:`
+/// 在池生命周期内保持同一库），migrate 后 prompt 表自带 7 行种子。
+async fn prompt_db() -> sqlx::SqlitePool {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    server::db::migrate(&pool).await.unwrap();
+    pool
+}
 
 // ---------- parseWordLlmResponse（对拍 word_prompts_test.dart） ----------
 
@@ -251,31 +267,41 @@ fn category_guideline_covers_all_known_categories() {
 }
 
 // ---------- buildArticleSystemPrompt / buildArticleUserPrompt ----------
+// Task 2 起构建函数 DB 化（pool + migrate 种子），语义不变：common + 难度节 `\n\n`
+// 连接、{{title}} 替换、USER_PROMPT 占位替换 + 分类指南追加。
 
-#[test]
-fn build_article_system_low_combines_common_and_low() {
-    let prompt = build_article_system("LOW").unwrap();
+#[tokio::test]
+async fn build_article_system_low_combines_common_and_low() {
+    let pool = prompt_db().await;
+    let prompt = build_article_system(&pool, "LOW").await.unwrap();
     assert!(prompt.contains("You are an English language learning content creator."));
     assert!(prompt.contains("Article length: total English word count must be 50-100 words."));
     assert!(prompt.contains("Output only the XML"));
+    pool.close().await;
 }
 
-#[test]
-fn build_article_system_medium_contains_100_300_words() {
+#[tokio::test]
+async fn build_article_system_medium_contains_100_300_words() {
+    let pool = prompt_db().await;
     assert!(
-        build_article_system("MEDIUM")
+        build_article_system(&pool, "MEDIUM")
+            .await
             .unwrap()
             .contains("Article length: total English word count must be 100-300 words.")
     );
+    pool.close().await;
 }
 
-#[test]
-fn build_article_system_high_contains_300_600_words() {
+#[tokio::test]
+async fn build_article_system_high_contains_300_600_words() {
+    let pool = prompt_db().await;
     assert!(
-        build_article_system("HIGH")
+        build_article_system(&pool, "HIGH")
+            .await
             .unwrap()
             .contains("Article length: total English word count must be 300-600 words.")
     );
+    pool.close().await;
 }
 
 /// Dart「难度为 null 时只含 COMMON」：Rust 接口 difficulty 为 &str（无 null），
@@ -292,30 +318,54 @@ fn build_article_system_common_only_without_difficulty_section() {
     assert!(!prompt.contains("Article length:"));
 }
 
-#[test]
-fn build_article_system_replaces_title_placeholder() {
-    let prompt = build_article_system("LOW").unwrap();
+#[tokio::test]
+async fn build_article_system_replaces_title_placeholder() {
+    let pool = prompt_db().await;
+    let prompt = build_article_system(&pool, "LOW").await.unwrap();
     assert!(!prompt.contains("{{title}}"));
     assert!(prompt.contains("The Article Title"));
+    pool.close().await;
 }
 
-#[test]
-fn build_article_user_includes_order_index_and_category() {
-    let prompt = build_article_user("NEWS", 3).unwrap();
+#[tokio::test]
+async fn build_article_user_includes_order_index_and_category() {
+    let pool = prompt_db().await;
+    let prompt = build_article_user(&pool, "NEWS", 3).await.unwrap();
     assert!(prompt.contains("Create article #3 in the category: NEWS"));
+    pool.close().await;
 }
 
-#[test]
-fn build_article_user_appends_category_guideline() {
-    let prompt = build_article_user("NEWS", 1).unwrap();
+#[tokio::test]
+async fn build_article_user_appends_category_guideline() {
+    let pool = prompt_db().await;
+    let prompt = build_article_user(&pool, "NEWS", 1).await.unwrap();
     assert!(prompt.contains("Guidelines for NEWS:"));
     assert!(prompt.contains("A brief news-style report on a current or hypothetical event."));
+    pool.close().await;
 }
 
-#[test]
-fn build_article_user_unknown_category_omits_guideline() {
-    let prompt = build_article_user("UNKNOWN_CATEGORY", 1).unwrap();
+#[tokio::test]
+async fn build_article_user_unknown_category_omits_guideline() {
+    let pool = prompt_db().await;
+    let prompt = build_article_user(&pool, "UNKNOWN_CATEGORY", 1).await.unwrap();
     assert!(!prompt.contains("Guidelines"));
+    pool.close().await;
+}
+
+/// Task 2：缺行回退嵌入默认——删光 prompt 种子后构建函数仍可用（运行时语义不因缺行变 500）。
+#[tokio::test]
+async fn build_functions_fall_back_to_embedded_defaults_without_seed_rows() {
+    let pool = prompt_db().await;
+    sqlx::query("DELETE FROM prompt").execute(&pool).await.unwrap();
+    let system = build_article_system(&pool, "MEDIUM").await.unwrap();
+    assert!(system.contains("100-300 words"));
+    let user = build_article_user(&pool, "NEWS", 3).await.unwrap();
+    assert!(user.contains("Create article #3 in the category: NEWS"));
+    let wl = build_word_lookup_system(&pool).await.unwrap();
+    assert!(wl.contains("You are an English-Chinese dictionary assistant."));
+    let wl_user = build_word_lookup_user(&pool, "ocean").await.unwrap();
+    assert!(wl_user.starts_with("Look up the word: ocean"));
+    pool.close().await;
 }
 
 // ---------- PromptLoader.loadSection ----------
@@ -337,9 +387,23 @@ fn load_section_returns_none_when_no_section_matches() {
 
 // ---------- buildWordLookupSystemPrompt ----------
 
-#[test]
-fn build_word_lookup_system_returns_embedded_template() {
-    let s = build_word_lookup_system();
+#[tokio::test]
+async fn build_word_lookup_system_returns_embedded_template() {
+    let pool = prompt_db().await;
+    let s = build_word_lookup_system(&pool).await.unwrap();
     assert!(s.contains("You are an English-Chinese dictionary assistant."));
     assert!(s.contains("<spelling>TheWord</spelling>"));
+    pool.close().await;
+}
+
+/// Task 2：word_lookup_user 占位替换——{{word}} 换成实际词，其余逐字不变。
+#[tokio::test]
+async fn build_word_lookup_user_replaces_word_placeholder() {
+    let pool = prompt_db().await;
+    let s = build_word_lookup_user(&pool, "ocean").await.unwrap();
+    assert_eq!(
+        s,
+        "Look up the word: ocean\n\nProvide the spelling, phonetic transcription (if known), and all common senses with example sentences."
+    );
+    pool.close().await;
 }

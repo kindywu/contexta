@@ -2,6 +2,7 @@ pub mod admin_service;
 pub mod article_service;
 pub mod auth_service;
 pub mod llm_service;
+pub mod prompt_service;
 
 use chrono::{Local, TimeZone};
 

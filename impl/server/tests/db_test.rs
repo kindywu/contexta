@@ -58,9 +58,16 @@ async fn migrate_is_idempotent_and_creates_tables() {
         "usage_log",
         "word_lookup_cache",
         "schema_migration_log",
+        "prompt",
     ] {
         assert!(tables.contains(&t.to_string()), "missing table {t}");
     }
+    // Task 2：prompt 种子——双 migrate 后仍 7 行（INSERT OR IGNORE 幂等，不重复插入）
+    let seed_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM prompt")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(seed_rows, 7, "prompt 种子应恰好 7 行，重复 migrate 不得重复插入");
     cleanup(pool, &path).await;
 }
 

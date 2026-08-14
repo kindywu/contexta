@@ -1,4 +1,7 @@
+use crate::response::AppError;
+use crate::services::prompt_service;
 use regex::Regex;
+use sqlx::SqlitePool;
 use std::collections::HashMap;
 
 pub static WORD_LOOKUP_SYSTEM: &str = include_str!("prompts/word_lookup_system.txt");
@@ -41,9 +44,16 @@ pub fn load_section(content: &str, sections: &[&str], params: &[(&str, &str)]) -
     Some(result)
 }
 
-/// 移植 buildWordLookupSystemPrompt：查词 system prompt（模板编译期嵌入，无缺失路径）。
-pub fn build_word_lookup_system() -> &'static str {
-    WORD_LOOKUP_SYSTEM
+/// 移植 buildWordLookupSystemPrompt：查词 system prompt（DB 优先，缺行回退嵌入默认）。
+pub async fn build_word_lookup_system(pool: &SqlitePool) -> Result<String, AppError> {
+    prompt_service::get_prompt(pool, "word_lookup_system").await
+}
+
+/// Task 2：查词 user prompt（原 llm_service 内联字符串 DB 化）：{{word}} 占位替换。
+pub async fn build_word_lookup_user(pool: &SqlitePool, word: &str) -> Result<String, AppError> {
+    Ok(prompt_service::get_prompt(pool, "word_lookup_user")
+        .await?
+        .replace("{{word}}", word))
 }
 
 /// 移植 categoryToDifficulty：内容分类 → 难度映射。
@@ -79,26 +89,30 @@ pub fn category_guideline(category: &str) -> Option<&'static str> {
     })
 }
 
-/// 移植 buildArticleSystemPrompt：COMMON + <难度> 节拼接，{{title}} 保留为 LLM 填写标题。
-pub fn build_article_system(difficulty: &str) -> Option<String> {
-    load_section(
-        ARTICLE_SYSTEM,
-        &["COMMON", difficulty],
-        &[("title", "The Article Title")],
-    )
+/// 移植 buildArticleSystemPrompt：COMMON + <难度> 节以 `\n\n` 拼接（DB 读取，
+/// 缺行回退嵌入默认），{{title}} 替换为 The Article Title（语义与嵌入版 load_section 等价）。
+pub async fn build_article_system(
+    pool: &SqlitePool,
+    difficulty: &str,
+) -> Result<String, AppError> {
+    let common = prompt_service::get_prompt(pool, "article_common").await?;
+    let diff = prompt_service::get_prompt(pool, &format!("article_{}", difficulty.to_lowercase()))
+        .await?;
+    Ok(format!("{common}\n\n{diff}").replace("{{title}}", "The Article Title"))
 }
 
-/// 移植 buildArticleUserPrompt：USER_PROMPT 节 + 分类指南追加。
-pub fn build_article_user(category: &str, order_index: i64) -> Option<String> {
-    let base = load_section(
-        ARTICLE_SYSTEM,
-        &["USER_PROMPT"],
-        &[
-            ("orderIndex", &order_index.to_string()),
-            ("category", category),
-        ],
-    )?;
-    Some(match category_guideline(category) {
+/// 移植 buildArticleUserPrompt：USER_PROMPT 节占位替换（{{orderIndex}}/{{category}}，
+/// DB 读取，缺行回退嵌入默认）+ 分类指南追加。
+pub async fn build_article_user(
+    pool: &SqlitePool,
+    category: &str,
+    order_index: i64,
+) -> Result<String, AppError> {
+    let base = prompt_service::get_prompt(pool, "article_user_prompt")
+        .await?
+        .replace("{{orderIndex}}", &order_index.to_string())
+        .replace("{{category}}", category);
+    Ok(match category_guideline(category) {
         Some(g) => format!("{base}\n\nGuidelines for {category}:\n{g}"),
         None => base,
     })

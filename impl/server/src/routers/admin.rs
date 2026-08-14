@@ -2,7 +2,7 @@ use crate::AppState;
 use crate::drivers::deepseek::DeepSeekClient;
 use crate::extractors::AdminAuth;
 use crate::response::{ApiResult, AppError, ok};
-use crate::services::{admin_service, article_service};
+use crate::services::{admin_service, article_service, prompt_service};
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use serde::Deserialize;
@@ -180,6 +180,35 @@ pub async fn articles_reject(
         req.reason.as_deref().unwrap_or(""),
     )
     .await?;
+    Ok(ok(serde_json::json!({})))
+}
+
+// ---------- Prompt 管理（Task 2） ----------
+// 全部挂 AdminAuth。GET 全量列表（key/content/updated_at）；PUT 单 key 更新
+// （白名单 + 非空校验，失败 400 BAD_PARAM；成功后运行时立即生效——LLM 调用逐次读库）。
+
+#[derive(Deserialize)]
+pub struct PromptUpdateRequest {
+    pub content: String,
+}
+
+/// prompt 列表：7 个 key 的 content + updated_at（updated_at=0 表示种子默认）。
+pub async fn prompts_list(
+    State(state): State<AppState>,
+    _auth: AdminAuth,
+) -> Result<Json<ApiResult<serde_json::Value>>, AppError> {
+    let rows = prompt_service::get_all_prompts(&state.pool).await?;
+    Ok(ok(serde_json::to_value(rows)?))
+}
+
+/// 更新单 key：白名单校验（未知 key 400）+ 非空校验（400），UPSERT 刷新 updated_at。
+pub async fn prompt_update(
+    State(state): State<AppState>,
+    _auth: AdminAuth,
+    Path(key): Path<String>,
+    Json(req): Json<PromptUpdateRequest>,
+) -> Result<Json<ApiResult<serde_json::Value>>, AppError> {
+    prompt_service::update_prompt(&state.pool, &key, &req.content).await?;
     Ok(ok(serde_json::json!({})))
 }
 

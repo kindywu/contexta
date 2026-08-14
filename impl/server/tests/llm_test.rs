@@ -5,6 +5,7 @@ use server::drivers::deepseek::{DeepSeekApi, DeepSeekResponse, LlmCallError};
 use server::response::AppError;
 use server::services::llm_service;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 // T7：查词服务集成测试。mock 状态注入：llm_service::word_lookup 接受 &dyn DeepSeekApi——
@@ -54,11 +55,28 @@ async fn setup() -> (sqlx::SqlitePool, Config, String) {
 struct MockDeepSeek {
     calls: Arc<AtomicUsize>,
     content: String,
+    /// 最近一次 LLM 调用的 system/user（Task 2 DB 化断言：验证 LLM 收到 DB 修改后的内容）。
+    captured_system: Arc<Mutex<Option<String>>>,
+    captured_user: Arc<Mutex<Option<String>>>,
 }
+
+impl MockDeepSeek {
+    fn new(content: &str) -> Self {
+        Self {
+            calls: Arc::new(AtomicUsize::new(0)),
+            content: content.to_string(),
+            captured_system: Arc::new(Mutex::new(None)),
+            captured_user: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl DeepSeekApi for MockDeepSeek {
-    async fn chat(&self, _s: &str, _u: &str) -> Result<DeepSeekResponse, LlmCallError> {
+    async fn chat(&self, s: &str, u: &str) -> Result<DeepSeekResponse, LlmCallError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        *self.captured_system.lock().unwrap() = Some(s.to_string());
+        *self.captured_user.lock().unwrap() = Some(u.to_string());
         Ok(DeepSeekResponse {
             content: self.content.clone(),
             prompt_tokens: 5,
@@ -90,10 +108,7 @@ async fn usage_rows(pool: &sqlx::SqlitePool) -> i64 {
 #[tokio::test]
 async fn first_call_hits_llm_second_call_cached() {
     let (pool, cfg, db_path) = setup().await;
-    let mock = MockDeepSeek {
-        calls: Arc::new(AtomicUsize::new(0)),
-        content: VALID_XML.to_string(),
-    };
+    let mock = MockDeepSeek::new(VALID_XML);
     let w1 = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
     assert!(w1.is_ok(), "first call should hit LLM: {:?}", w1.err());
     assert_eq!(w1.unwrap().spelling, "ocean");
@@ -112,10 +127,7 @@ async fn first_call_hits_llm_second_call_cached() {
 async fn cache_hit_does_not_consume_quota() {
     let (pool, mut cfg, db_path) = setup().await;
     cfg.word_quota_daily = 2;
-    let mock = MockDeepSeek {
-        calls: Arc::new(AtomicUsize::new(0)),
-        content: VALID_XML.to_string(),
-    };
+    let mock = MockDeepSeek::new(VALID_XML);
     for _ in 0..5 {
         let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
         assert!(
@@ -136,10 +148,7 @@ async fn cache_hit_does_not_consume_quota() {
 async fn quota_exceeded_rejected() {
     let (pool, mut cfg, db_path) = setup().await;
     cfg.word_quota_daily = 2;
-    let mock = MockDeepSeek {
-        calls: Arc::new(AtomicUsize::new(0)),
-        content: VALID_XML.to_string(),
-    };
+    let mock = MockDeepSeek::new(VALID_XML);
     for word in ["alpha", "beta"] {
         let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", word).await;
         assert!(r.is_ok(), "{word} should be within quota: {:?}", r.err());
@@ -155,10 +164,7 @@ async fn quota_exceeded_rejected() {
 #[tokio::test]
 async fn parse_failure_returns_pipeline_blocking() {
     let (pool, cfg, db_path) = setup().await;
-    let mock = MockDeepSeek {
-        calls: Arc::new(AtomicUsize::new(0)),
-        content: "not xml at all".to_string(),
-    };
+    let mock = MockDeepSeek::new("not xml at all");
     let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
     assert!(
         matches!(r, Err(AppError::PipelineBlocking(_))),
@@ -172,10 +178,7 @@ async fn parse_failure_returns_pipeline_blocking() {
 #[tokio::test]
 async fn parse_failure_still_records_usage() {
     let (pool, cfg, db_path) = setup().await;
-    let mock = MockDeepSeek {
-        calls: Arc::new(AtomicUsize::new(0)),
-        content: "not xml at all".to_string(),
-    };
+    let mock = MockDeepSeek::new("not xml at all");
     let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
     assert!(matches!(r, Err(AppError::PipelineBlocking(_))));
     assert_eq!(
@@ -202,10 +205,7 @@ async fn cache_write_failure_still_returns_result() {
     .execute(&pool)
     .await
     .unwrap();
-    let mock = MockDeepSeek {
-        calls: Arc::new(AtomicUsize::new(0)),
-        content: VALID_XML.to_string(),
-    };
+    let mock = MockDeepSeek::new(VALID_XML);
     let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
     let w = r.expect("cache write failure must degrade, not fail the lookup");
     assert_eq!(w.spelling, "ocean");
@@ -229,10 +229,7 @@ async fn usage_write_failure_still_returns_result() {
     .execute(&pool)
     .await
     .unwrap();
-    let mock = MockDeepSeek {
-        calls: Arc::new(AtomicUsize::new(0)),
-        content: VALID_XML.to_string(),
-    };
+    let mock = MockDeepSeek::new(VALID_XML);
     let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
     let w = r.expect("usage write failure must degrade, not fail the lookup");
     assert_eq!(w.spelling, "ocean");
@@ -244,10 +241,7 @@ async fn usage_write_failure_still_returns_result() {
 #[tokio::test]
 async fn spelling_mismatch_not_cached() {
     let (pool, cfg, db_path) = setup().await;
-    let mock = MockDeepSeek {
-        calls: Arc::new(AtomicUsize::new(0)),
-        content: RUN_XML.to_string(),
-    };
+    let mock = MockDeepSeek::new(RUN_XML);
     // 请求 "running"，LLM 返回 spelling "run"
     let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "running").await;
     let w = r.expect("spelling mismatch must still return the result to requester");
@@ -285,10 +279,7 @@ async fn corrupt_cache_row_self_heals() {
     .execute(&pool)
     .await
     .unwrap();
-    let mock = MockDeepSeek {
-        calls: Arc::new(AtomicUsize::new(0)),
-        content: VALID_XML.to_string(),
-    };
+    let mock = MockDeepSeek::new(VALID_XML);
     let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
     let w = r.expect("corrupt cache row must self-heal, not 500");
     assert_eq!(w.spelling, "ocean");
@@ -305,6 +296,34 @@ async fn corrupt_cache_row_self_heals() {
             .spelling,
         "ocean",
         "cache row must be rewritten with valid JSON"
+    );
+    cleanup(pool, &db_path).await;
+}
+
+/// Task 2：word_lookup 的 system/user prompt 改从 DB 读取——更新 prompt 表后，
+/// LLM 必须收到修改后的内容（DB 化生效的关键用例）。
+#[tokio::test]
+async fn word_lookup_uses_db_modified_system_prompt() {
+    let (pool, cfg, db_path) = setup().await;
+    let modified = "You are a modified dictionary assistant.\nRules: strict XML output.";
+    sqlx::query("UPDATE prompt SET content = ?, updated_at = ? WHERE key = 'word_lookup_system'")
+        .bind(modified)
+        .bind(Utc::now().timestamp_millis())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mock = MockDeepSeek::new(VALID_XML);
+    let r = llm_service::word_lookup(&pool, &cfg, &mock, "138", "ocean").await;
+    assert!(r.is_ok(), "DB 修改后查词应成功: {:?}", r.err());
+    assert_eq!(
+        mock.captured_system.lock().unwrap().as_deref(),
+        Some(modified),
+        "LLM 收到的 system 必须是 DB 修改后的内容"
+    );
+    let user = mock.captured_user.lock().unwrap().clone().unwrap();
+    assert!(
+        user.starts_with("Look up the word: ocean"),
+        "user prompt 占位替换（{{word}}）: {user}"
     );
     cleanup(pool, &db_path).await;
 }

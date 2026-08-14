@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::drivers::deepseek::{DeepSeekApi, call_with_retry};
 use crate::llm::parser::{WordLookup, parse_word_lookup};
-use crate::prompts::{build_article_system, build_article_user, build_word_lookup_system};
+use crate::prompts::{build_article_system, build_article_user, build_word_lookup_system, build_word_lookup_user};
 use crate::response::AppError;
 use crate::services::today_start_millis;
 use chrono::Utc;
@@ -101,15 +101,11 @@ pub async fn word_lookup(
     }
     // 配额
     check_quota(pool, cfg, phone).await?;
-    // LLM
+    // LLM（Task 2：prompt DB 化——system/user 均从 prompt 表读取，缺行回退嵌入默认）
+    let system = build_word_lookup_system(pool).await?;
+    let user = build_word_lookup_user(pool, word).await?;
     let started = tokio::time::Instant::now();
-    let resp = call_with_retry(
-        api,
-        build_word_lookup_system(),
-        &format!("Look up the word: {word}\n\nProvide the spelling, phonetic transcription (if known), and all common senses with example sentences."),
-        cfg.llm_timeout_secs,
-    )
-    .await?;
+    let resp = call_with_retry(api, &system, &user, cfg.llm_timeout_secs).await?;
     let latency = started.elapsed().as_millis() as i64;
     // 用量记账：LLM 调用成功（真实花钱）即记账，无论解析/写缓存结果如何——
     // 解析失败也计配额，堵住"易触发解析失败的词无限烧钱"的绕过口。
@@ -165,17 +161,18 @@ async fn write_cache(
 }
 
 // 供文章任务（T8）复用；回传 token 数（审查要求：成本换算）
+// Task 2：prompt DB 化——新增 pool 参数（system/user 从 prompt 表读取，缺行回退嵌入默认；
+// 未知 key → BadRequest 直接上抛，difficulty 由 DIFFICULTIES 白名单保证不会触发）。
 pub async fn generate_article_content(
+    pool: &SqlitePool,
     api: &dyn DeepSeekApi,
     cfg: &Config,
     difficulty: &str,
     category: &str,
     order_index: i64,
 ) -> Result<(String, Vec<(i64, String, String)>, u64, u64), AppError> {
-    let system = build_article_system(difficulty)
-        .ok_or_else(|| AppError::PipelineBlocking("missing article prompt".into()))?;
-    let user = build_article_user(category, order_index)
-        .ok_or_else(|| AppError::PipelineBlocking("missing article user prompt".into()))?;
+    let system = build_article_system(pool, difficulty).await?;
+    let user = build_article_user(pool, category, order_index).await?;
     let resp = call_with_retry(api, &system, &user, cfg.llm_timeout_secs).await?;
     let draft = crate::llm::parser::parse_article(&resp.content);
     Ok((
