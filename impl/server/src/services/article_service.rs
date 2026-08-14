@@ -340,6 +340,54 @@ pub async fn reject_article(
     Ok(())
 }
 
+/// 审核期编辑文章内容（仅 pending_review；title 非空；paragraphs ≥1）。
+/// 事务内：UPDATE title → DELETE 旧段落 → INSERT 新段落（`英文|||中文` 单列，与生成一致）。
+/// 并发编辑：UPDATE 以 status 条件为守卫，后到者 affected=0 → NotFound（last-write-wins 不成立，
+/// 同行竞态按先到者为准）；校验失败在事务前返回，零写入。
+pub async fn update_article_content(
+    pool: &SqlitePool,
+    id: i64,
+    title: &str,
+    paragraphs: &[(i64, String, String)],
+) -> Result<(), AppError> {
+    if title.trim().is_empty() {
+        return Err(AppError::BadRequest("BAD_PARAM".into(), "title required".into()));
+    }
+    if paragraphs.is_empty() {
+        return Err(AppError::BadRequest(
+            "BAD_PARAM".into(),
+            "paragraphs required".into(),
+        ));
+    }
+    let mut tx = pool.begin().await?;
+    let n = sqlx::query(
+        "UPDATE article SET title = ?, updated_at = ? WHERE id = ? AND status = 'pending_review'",
+    )
+    .bind(title.trim())
+    .bind(Utc::now().timestamp_millis())
+    .bind(id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if n == 0 {
+        return Err(AppError::NotFound("article not pending_review".into()));
+    }
+    sqlx::query("DELETE FROM article_paragraph WHERE article_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    for (order, en, zh) in paragraphs {
+        sqlx::query("INSERT INTO article_paragraph (article_id, order_index, text) VALUES (?, ?, ?)")
+            .bind(id)
+            .bind(order)
+            .bind(format!("{en}|||{zh}"))
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
 /// 下发/管理视图：段落已拆分（英文、中文），供 T10 下发与 T12 审核列表复用。
 /// title 语义：NULL title（预占/生成中/失败行）映射为空串 ""——空 title = 预占/生成中/失败；
 /// T10 只下发 approved（title 必非空），不受影响。

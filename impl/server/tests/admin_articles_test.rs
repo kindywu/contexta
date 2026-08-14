@@ -434,6 +434,166 @@ async fn manual_generate_for_date() {
     cleanup(app, pool, &db_path).await;
 }
 
+// ---- 审核期文章编辑（PUT /api/admin/articles/{id}） ----
+
+/// 取一篇已生成（title 非空）的待审文章 id（edit 测试共用）。
+async fn first_editable_id(pool: &sqlx::SqlitePool) -> i64 {
+    sqlx::query_scalar(
+        "SELECT id FROM article WHERE status = 'pending_review' AND title IS NOT NULL ORDER BY id LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn edit_pending_review_article() {
+    let (app, pool, cfg, db_path, _server) = setup().await;
+    let admin_token = admin_login(&app).await;
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &today)
+        .await
+        .unwrap();
+    let id = first_editable_id(&pool).await;
+    // PUT 编辑：新标题 + 2 段 → 200
+    let (status, json) = send(
+        &app,
+        "PUT",
+        &format!("/api/admin/articles/{id}"),
+        Some(&admin_token),
+        Some(json!({
+            "title": "新标题",
+            "paragraphs": [
+                {"order_index": 1, "english_text": "New EN 1.", "chinese_translation": "新中文1。"},
+                {"order_index": 2, "english_text": "New EN 2.", "chinese_translation": "新中文2。"},
+            ],
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["code"], 0);
+    // GET 详情 → 新标题 + 新段落（顺序、英文/中文拆分正确）
+    let (status, json) = send(
+        &app,
+        "GET",
+        &format!("/api/admin/articles/{id}"),
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["data"]["title"], "新标题");
+    let paras = json["data"]["paragraphs"].as_array().unwrap();
+    assert_eq!(paras.len(), 2, "编辑后应恰好 2 段（旧段全部替换）");
+    assert_eq!(paras[0][0], 1);
+    assert_eq!(paras[0][1], "New EN 1.");
+    assert_eq!(paras[0][2], "新中文1。");
+    assert_eq!(paras[1][0], 2);
+    assert_eq!(paras[1][1], "New EN 2.");
+    assert_eq!(paras[1][2], "新中文2。");
+    // 库内段落格式：`英文|||中文` 单列（与生成一致）
+    let stored: Vec<String> = sqlx::query_scalar(
+        "SELECT text FROM article_paragraph WHERE article_id = ? ORDER BY order_index",
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(stored, vec!["New EN 1.|||新中文1。", "New EN 2.|||新中文2。"]);
+    // 编辑不改变状态：仍为 pending_review
+    let st: String = sqlx::query_scalar("SELECT status FROM article WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(st, "pending_review");
+    cleanup(app, pool, &db_path).await;
+}
+
+#[tokio::test]
+async fn edit_approved_article_returns_404() {
+    let (app, pool, cfg, db_path, _server) = setup().await;
+    let admin_token = admin_login(&app).await;
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &today)
+        .await
+        .unwrap();
+    let id = first_editable_id(&pool).await;
+    article_service::approve_article(&pool, id).await.unwrap();
+    // 已过审文章 PUT → 404 NOT_FOUND，内容不得改动
+    let (status, json) = send(
+        &app,
+        "PUT",
+        &format!("/api/admin/articles/{id}"),
+        Some(&admin_token),
+        Some(json!({
+            "title": "不应生效",
+            "paragraphs": [{"order_index": 1, "english_text": "X", "chinese_translation": "Y"}],
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["error_code"], "NOT_FOUND");
+    let title: String = sqlx::query_scalar("SELECT title FROM article WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_ne!(title, "不应生效", "已过审文章内容不得被编辑");
+    cleanup(app, pool, &db_path).await;
+}
+
+#[tokio::test]
+async fn edit_invalid_params_rejected() {
+    let (app, pool, cfg, db_path, _server) = setup().await;
+    let admin_token = admin_login(&app).await;
+    let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &today)
+        .await
+        .unwrap();
+    let id = first_editable_id(&pool).await;
+    let before: String = sqlx::query_scalar("SELECT title FROM article WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    // title 空（含纯空白）→ 400 BAD_PARAM
+    for bad_title in ["", "   "] {
+        let (status, json) = send(
+            &app,
+            "PUT",
+            &format!("/api/admin/articles/{id}"),
+            Some(&admin_token),
+            Some(json!({
+                "title": bad_title,
+                "paragraphs": [{"order_index": 1, "english_text": "E", "chinese_translation": "C"}],
+            })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "title 空应 400");
+        assert_eq!(json["error_code"], "BAD_PARAM");
+    }
+    // paragraphs 空数组 → 400 BAD_PARAM
+    let (status, json) = send(
+        &app,
+        "PUT",
+        &format!("/api/admin/articles/{id}"),
+        Some(&admin_token),
+        Some(json!({"title": "ok", "paragraphs": []})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["error_code"], "BAD_PARAM");
+    // 校验失败零写入：title 不变
+    let after: String = sqlx::query_scalar("SELECT title FROM article WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after, before, "校验失败不得改动文章");
+    cleanup(app, pool, &db_path).await;
+}
+
 #[tokio::test]
 async fn app_token_cannot_access_admin() {
     let (app, pool, _cfg, db_path, _server) = setup().await;

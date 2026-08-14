@@ -51,7 +51,7 @@ pub fn api_routes(state: AppState) -> Router {
         )
         .route(
             "/api/admin/articles/{id}",
-            axum::routing::get(admin::articles_get),
+            axum::routing::get(admin::articles_get).put(admin::article_edit),
         )
         .route(
             "/api/admin/articles/{id}/approve",

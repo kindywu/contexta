@@ -136,6 +136,10 @@ export const api = {
 
   articleDetail: (id: number) => http.get<unknown, ArticleDetail>(`/articles/${id}`),
 
+  // 审核期编辑（仅 pending_review；服务端整体替换标题 + 段落）
+  updateArticle: (id: number, title: string, paragraphs: ArticleParagraph[]) =>
+    http.put<unknown, unknown>(`/articles/${id}`, { title, paragraphs }),
+
   approveArticle: (id: number) =>
     http.post<unknown, unknown>(`/articles/${id}/approve`, {}),
 

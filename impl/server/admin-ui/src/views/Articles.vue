@@ -9,7 +9,7 @@ const articles = ref<ArticleItem[]>([])
 
 // 筛选
 const filters = reactive({
-  status: undefined as string | undefined,
+  status: 'pending_review' as string | undefined, // 默认「待审核」——审核页核心场景
   date: undefined as Dayjs | undefined,
 })
 
@@ -18,6 +18,14 @@ const drawer = reactive({
   open: false,
   loading: false,
   item: null as ArticleItem | null,
+  paragraphs: [] as ArticleParagraph[],
+})
+
+// 抽屉编辑模式（仅 pending_review；标题 + 段落列表整体替换）
+const editing = reactive({
+  active: false,
+  saving: false,
+  title: '',
   paragraphs: [] as ArticleParagraph[],
 })
 
@@ -105,9 +113,10 @@ function onFilterChange() {
   load()
 }
 
-async function openDrawer(item: ArticleItem) {
+async function openDrawer(item: ArticleItem, mode: 'view' | 'edit' = 'view') {
   drawer.item = item
   drawer.paragraphs = []
+  editing.active = false
   drawer.open = true
   drawer.loading = true
   try {
@@ -120,10 +129,64 @@ async function openDrawer(item: ArticleItem) {
         chinese_translation: p[2],
       }),
     )
+    if (mode === 'edit') {
+      // 编辑模式：以详情为初值（深拷贝，取消时原样丢弃）
+      editing.title = detail.title || ''
+      editing.paragraphs = drawer.paragraphs.map((p) => ({ ...p }))
+      editing.active = true
+    }
   } catch {
     // 拦截器已提示
   } finally {
     drawer.loading = false
+  }
+}
+
+function startEdit() {
+  const item = drawer.item
+  if (!item) return
+  editing.title = item.title || ''
+  editing.paragraphs = drawer.paragraphs.map((p) => ({ ...p }))
+  editing.active = true
+}
+
+function cancelEdit() {
+  editing.active = false
+  editing.title = ''
+  editing.paragraphs = []
+}
+
+function addParagraph() {
+  const max = editing.paragraphs.reduce((m, p) => Math.max(m, p.order_index), 0)
+  editing.paragraphs.push({ order_index: max + 1, english_text: '', chinese_translation: '' })
+}
+
+function removeParagraph(index: number) {
+  editing.paragraphs.splice(index, 1)
+}
+
+async function saveEdit() {
+  const item = drawer.item
+  if (!item) return
+  if (!editing.title.trim()) {
+    message.warning('标题不能为空')
+    return
+  }
+  if (editing.paragraphs.length === 0) {
+    message.warning('至少保留一个段落')
+    return
+  }
+  editing.saving = true
+  try {
+    await api.updateArticle(item.id, editing.title.trim(), editing.paragraphs)
+    message.success(`已保存《${editing.title.trim()}》`)
+    editing.active = false
+    drawer.open = false
+    await load()
+  } catch {
+    // 拦截器已提示（如 404：文章已过审/被并发处理）
+  } finally {
+    editing.saving = false
   }
 }
 
@@ -239,6 +302,14 @@ async function generate() {
           <template #default="{ record }">
             <a-button type="link" size="small" @click="openDrawer(record)">查看</a-button>
             <a-button
+              v-if="hasContent(record) && record.status === 'pending_review'"
+              type="link"
+              size="small"
+              @click="openDrawer(record, 'edit')"
+            >
+              编辑
+            </a-button>
+            <a-button
               type="link"
               size="small"
               :disabled="!hasContent(record) || record.status !== 'pending_review'"
@@ -284,6 +355,59 @@ async function generate() {
           <div v-if="!hasContent(drawer.item)" class="no-content">
             {{ drawer.item.status === 'failed' ? '该篇生成失败，无内容可审。' : '该篇仍在生成中，暂无内容。' }}
           </div>
+
+          <!-- 编辑模式：标题 + 段落列表（en/zh 双文本域） -->
+          <div v-else-if="editing.active" class="edit-form">
+            <div class="edit-title-row">
+              <span class="edit-label">标题</span>
+              <a-input
+                v-model:value="editing.title"
+                placeholder="文章标题"
+                maxlength="200"
+                show-count
+              />
+            </div>
+            <div
+              v-for="(p, idx) in editing.paragraphs"
+              :key="p.order_index"
+              class="paragraph-item edit-paragraph"
+            >
+              <div class="edit-para-head">
+                <span class="para-no">{{ p.order_index }}.</span>
+                <a-button type="link" danger size="small" @click="removeParagraph(idx)">
+                  删除
+                </a-button>
+              </div>
+              <a-textarea
+                v-model:value="p.english_text"
+                :rows="2"
+                placeholder="英文"
+                maxlength="2000"
+                show-count
+              />
+              <a-textarea
+                v-model:value="p.chinese_translation"
+                :rows="2"
+                placeholder="中文"
+                maxlength="2000"
+                show-count
+                class="edit-zh"
+              />
+            </div>
+            <a-button type="dashed" block @click="addParagraph">+ 添加段落</a-button>
+            <div class="drawer-actions">
+              <a-button
+                type="primary"
+                :loading="editing.saving"
+                @click="saveEdit"
+              >
+                保存
+              </a-button>
+              <a-button :disabled="editing.saving" @click="cancelEdit">取消</a-button>
+            </div>
+          </div>
+
+          <!-- 查看模式 -->
           <div v-else class="paragraph-list">
             <div
               v-for="p in drawer.paragraphs"
@@ -300,7 +424,7 @@ async function generate() {
         </a-spin>
 
         <div
-          v-if="hasContent(drawer.item) && drawer.item.status === 'pending_review'"
+          v-if="hasContent(drawer.item) && drawer.item.status === 'pending_review' && !editing.active"
           class="drawer-actions"
         >
           <a-button
@@ -311,6 +435,7 @@ async function generate() {
             通过
           </a-button>
           <a-button danger @click="openReject(drawer.item!)">拒绝</a-button>
+          <a-button @click="startEdit">编辑</a-button>
         </div>
       </template>
     </a-drawer>
@@ -381,6 +506,28 @@ async function generate() {
   margin-top: 6px;
   color: #666;
   line-height: 1.6;
+}
+.edit-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.edit-label {
+  color: #666;
+  flex-shrink: 0;
+}
+.edit-paragraph {
+  border-color: #d9d9d9;
+}
+.edit-para-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.edit-zh {
+  margin-top: 8px;
 }
 .no-content {
   color: #999;

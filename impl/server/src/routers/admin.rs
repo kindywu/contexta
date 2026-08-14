@@ -101,6 +101,19 @@ pub struct ArticleGenerateRequest {
     pub date: String,
 }
 
+#[derive(Deserialize)]
+pub struct ArticleEditRequest {
+    pub title: String,
+    pub paragraphs: Vec<ParagraphEditItem>,
+}
+
+#[derive(Deserialize)]
+pub struct ParagraphEditItem {
+    pub order_index: i64,
+    pub english_text: String,
+    pub chinese_translation: String,
+}
+
 /// 待审列表：status/date 可选过滤（article_service::list_articles 白名单列 + 全绑参）。
 pub async fn articles_list(
     State(state): State<AppState>,
@@ -120,6 +133,23 @@ pub async fn articles_get(
 ) -> Result<Json<ApiResult<serde_json::Value>>, AppError> {
     let view = article_service::get_article(&state.pool, id).await?;
     Ok(ok(serde_json::to_value(view)?))
+}
+
+/// 审核期文章编辑：仅 pending_review；title 非空、paragraphs ≥1（校验失败 400），
+/// 其余（不存在/已过审/已拒绝）→ 404。事务内标题 + 段落整体替换。
+pub async fn article_edit(
+    State(state): State<AppState>,
+    _auth: AdminAuth,
+    Path(id): Path<i64>,
+    Json(req): Json<ArticleEditRequest>,
+) -> Result<Json<ApiResult<serde_json::Value>>, AppError> {
+    let paras: Vec<(i64, String, String)> = req
+        .paragraphs
+        .into_iter()
+        .map(|p| (p.order_index, p.english_text, p.chinese_translation))
+        .collect();
+    article_service::update_article_content(&state.pool, id, &req.title, &paras).await?;
+    Ok(ok(serde_json::json!({})))
 }
 
 /// 审核通过：status → approved（仅已生成行可过审，预占/生成中行 404）。
