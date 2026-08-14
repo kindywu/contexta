@@ -2,28 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:workmanager/workmanager.dart';
 
+import 'data/background/sync_callback_dispatcher.dart';
 import 'core/theme/app_theme.dart';
 import 'di/providers.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  // 2026-08-13（计划 B Task 6）：本地生成管道移除，workmanager 初始化保留
-  // （后台调度能力 T8 换每日同步任务）；占位 dispatcher 不注册任何任务，
-  // 未知任务记日志返回成功（避免后台 isolate 崩溃）。
-  Workmanager().initialize(backgroundCallbackDispatcher);
+  // 2026-08-14（计划 B Task 8）：workmanager 换每日同步任务——
+  // 定时拉取服务端已审核文章（幂等 upsert）。首次任务延迟 2h
+  // （启动编排已同步过，无需刚启动即重复）；之后每 24h 一次；
+  // 网络断开时任务跳过，等下一次周期窗口。
+  Workmanager().initialize(syncCallbackDispatcher);
+  Workmanager().registerPeriodicTask(
+    dailySyncTaskName,
+    dailySyncTaskName,
+    frequency: const Duration(hours: 24),
+    constraints: Constraints(networkType: NetworkType.connected),
+    initialDelay: const Duration(hours: 2),
+  );
   runApp(const ProviderScope(child: MainApp()));
-}
-
-/// workmanager 回调派发器（T8 将在此注册每日同步任务）。
-///
-/// 必须保持顶层函数 + `@pragma('vm:entry-point')`（后台 isolate 通过
-/// entry point 发现它，不能被 tree-shake 掉）。
-@pragma('vm:entry-point')
-void backgroundCallbackDispatcher() {
-  Workmanager().executeTask((taskName, inputData) async {
-    debugPrint('[WorkerDispatcher] executeTask taskName=$taskName inputData=$inputData');
-    return true;
-  });
 }
 
 class MainApp extends ConsumerWidget {

@@ -202,8 +202,9 @@ class HomeController extends StateNotifier<HomeUiState> {
     }
 
     final hasContent = groups.any((g) => g.articles.isNotEmpty);
-    // 2026-08-12：今天有分配但今天的组为空（文章未生成完成/被过滤）时，
-    // 即使昨天/更早有组也显示"生成中"，避免今天静默缺失。
+    // 2026-08-14（计划 B T8 carry）：同步模型下文章来自服务端，文案改
+    // 同步语义——今天有分配但今天的组为空（文章未同步完成/被过滤）时，
+    // 即使昨天/更早有组也显示"同步中"，避免今天静默缺失。
     final todayIso = isoLocalDate(DateTime.now());
     final todayRead = _historyReads.any((r) => r.learningDate == todayIso);
     final todayGroupShown = groups.any((g) => g.dateLabel == '今天');
@@ -213,7 +214,7 @@ class HomeController extends StateNotifier<HomeUiState> {
       articleGroups: groups,
       isLoading: false,
       isGenerating: todayPending || !hasContent,
-      generationMessage: (todayPending || !hasContent) ? '文章生成中，请稍候…' : '',
+      generationMessage: (todayPending || !hasContent) ? '文章同步中…' : '',
     );
   }
 

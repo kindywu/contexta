@@ -99,8 +99,9 @@ class SchemaMigrationLogDao {
 }
 
 /// daily_learning 表 DAO。
-/// 对照 DailyLearningDao.kt：
-/// getAll/getLatest/getByLearningDate/getMaxRefBatchDate/insert(ABORT)。
+/// 对照 DailyLearningDao.kt：getAll/getLatest/getByLearningDate/insert(ABORT)。
+/// （2026-08-14 计划 B T8 carry：getMaxRefBatchDate 删除——零生产引用死代码，
+/// 仅测试覆盖；服务端同步模型下不再按 ref_batch_date 做本地批次推进。）
 class DailyLearningDao {
   DailyLearningDao(this._db);
 
@@ -119,14 +120,6 @@ class DailyLearningDao {
   Future<DailyLearningRow?> getByLearningDate(String learningDate) =>
       (_db.select(_db.dailyLearnings)..where((t) => t.learningDate.equals(learningDate)))
           .getSingleOrNull();
-
-  /// MAX(ref_batch_date)；null 表示尚无学习记录。
-  Future<String?> getMaxRefBatchDate() async {
-    final maxExpr = _db.dailyLearnings.refBatchDate.max();
-    final rows = await (_db.selectOnly(_db.dailyLearnings)..addColumns([maxExpr])).get();
-    if (rows.isEmpty) return null;
-    return rows.first.read(maxExpr);
-  }
 
   /// learning_date 为主键，重复插入抛 SqliteException（ABORT 语义）。
   Future<void> insert(DailyLearningsCompanion record) =>

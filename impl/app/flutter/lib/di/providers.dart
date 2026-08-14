@@ -29,6 +29,7 @@ import '../domain/repository/stats_repository.dart';
 import '../domain/repository/vocabulary_repository.dart';
 import '../domain/model/tts_voice.dart';
 import '../domain/repository/word_repository.dart';
+import '../domain/time/prod_time_provider.dart';
 import '../domain/time/time_provider.dart';
 import '../domain/tts/tts_engine.dart';
 import '../domain/usecase/activate_seed_batch_usecase.dart';
@@ -124,8 +125,10 @@ final todayProvider = Provider<String Function()>(
       () => isoLocalDate(DateTime.now()),
 );
 
-/// 时间抽象（Kotlin TimeProvider 对应物）。
-final timeProvider = Provider<TimeProvider>((ref) => _ProdTimeProvider());
+/// 时间抽象（Kotlin TimeProvider 对应物；生产实现提为公共
+/// ProdTimeProvider——后台 isolate 的 syncCallbackDispatcher 共用，见
+/// domain/time/prod_time_provider.dart）。
+final timeProvider = Provider<TimeProvider>((ref) => ProdTimeProvider());
 
 /// 服务端 LLM 网关 API（查词远程化；与登录/同步共用同一 ServerApiClient）。
 final llmApiProvider = Provider<LlmApi>((ref) {
@@ -250,20 +253,3 @@ final addWordUseCaseProvider = Provider<AddWordUseCase>((ref) {
     llmApi: ref.watch(llmApiProvider),
   );
 });
-
-// ─── 生产实现（TimeProvider） ─────────────────────────────────────────
-
-class _ProdTimeProvider implements TimeProvider {
-  @override
-  int nowMillis() => DateTime.now().millisecondsSinceEpoch;
-
-  @override
-  String nowDateTimeString() => isoOffsetDateTime(DateTime.now());
-
-  @override
-  String todayDateString() => isoLocalDate(DateTime.now());
-
-  @override
-  String nextDateString() =>
-      isoLocalDate(DateTime.now().add(const Duration(days: 1)));
-}

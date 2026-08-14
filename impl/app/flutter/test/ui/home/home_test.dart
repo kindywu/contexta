@@ -348,9 +348,9 @@ void main() {
       expect(state.articleGroups.single.articles.single.title, '同步批次文章');
     });
 
-    test('今天组空但昨天组有文章 → isGenerating=true（生成中提示不静默）', () async {
+    test('今天组空但昨天组有文章 → isGenerating=true（同步中提示不静默）', () async {
       // 2026-08-12：worker 生成期间今天的组被过滤，昨天组存在时也必须
-      // 显示"生成中"，避免今天静默缺失。
+      // 显示"同步中"，避免今天静默缺失。
       final yesterdayInfo = DailyLearningInfo(
         learningDate: dateStr(1),
         dailyCountSnapshot: 3,
@@ -379,7 +379,7 @@ void main() {
 
       final state = container.read(homeControllerProvider);
       expect(state.isGenerating, isTrue);
-      expect(state.generationMessage, '文章生成中，请稍候…');
+      expect(state.generationMessage, '文章同步中…');
       // 昨天的组仍然展示
       expect(state.articleGroups.any((g) => g.dateLabel == '昨天'), isTrue);
       expect(state.articleGroups.any((g) => g.dateLabel == '今天'), isFalse);
@@ -438,7 +438,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('今天已分配但文章为空 → 生成中 EmptyState', (tester) async {
+    testWidgets('今天已分配但文章为空 → 同步中 EmptyState', (tester) async {
       articleRepo = _FakeArticleRepo(
         onAllDailyLearningInfos: () async => [makeInfo(0, 3)],
         onObserveArticles: (_) => Stream.value(const []),
@@ -446,7 +446,7 @@ void main() {
       final container = makeContainer();
       await pumpHome(tester, container);
 
-      expect(find.text('文章生成中'), findsOneWidget);
+      expect(find.text('文章同步中'), findsOneWidget);
     });
 
     testWidgets('空态显示暂无文章 + 同步失败副文案（B-T5 carry）', (tester) async {

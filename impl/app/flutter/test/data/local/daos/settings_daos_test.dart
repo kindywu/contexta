@@ -118,10 +118,9 @@ void main() {
       await db.close();
     });
 
-    test('空表 getAll / getLatest / getMaxRefBatchDate 返回空', () async {
+    test('空表 getAll / getLatest 返回空', () async {
       expect(await dao.getAll(), isEmpty);
       expect(await dao.getLatest(), isNull);
-      expect(await dao.getMaxRefBatchDate(), isNull);
     });
 
     test('insert 后按日期降序返回，ref_batch_id 外键生效', () async {
@@ -151,7 +150,6 @@ void main() {
       expect((await dao.getLatest())!.learningDate, '2026-08-02');
       expect((await dao.getByLearningDate('2026-08-01'))!.learningDate, '2026-08-01');
       expect(await dao.getByLearningDate('2026-08-03'), isNull);
-      expect(await dao.getMaxRefBatchDate(), '2026-03-29');
     });
 
     test('insert 同一天重复抛约束异常（learning_date 主键 ABORT）', () async {

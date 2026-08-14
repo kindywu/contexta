@@ -15,7 +15,7 @@ import 'home_controller.dart';
 /// Home 页（对照 Kotlin HomeScreen.kt）：
 /// - isLoading → LoadingIndicator
 /// - HomeHeader（日期 + streak>0 时 StreakBadge）
-/// - 生成中 → EmptyState（'文章生成中' + generationMessage 兜底文案）
+/// - 同步中 → EmptyState（'文章同步中' + generationMessage 兜底文案）
 /// - 空态 → EmptyState（'暂无文章'）
 /// - 否则 → DayGroup 列表（今天/昨天/日期，可折叠，ArticleCard）
 class HomeScreen extends ConsumerStatefulWidget {
@@ -86,9 +86,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               padding: const EdgeInsets.only(top: AppSpacing.xxl),
               child: EmptyState(
                 icon: Icons.settings_outlined,
-                message: '文章生成中',
+                message: '文章同步中',
                 subMessage: state.generationMessage.isEmpty
-                    ? '首次生成需要一些时间，请稍候…'
+                    ? '同步失败，下拉重试'
                     : state.generationMessage,
               ),
             )
