@@ -4,4 +4,7 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- debug 联调：允许明文 HTTP（真机经局域网 IP 直连本机服务端；
+         Android 9+ 默认禁止明文流量）。release 构建不含此配置。 -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>
