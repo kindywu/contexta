@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // .env 兜底加载（工作目录下可选；已存在的环境变量优先，dotenvy 不覆盖）
+    dotenvy::dotenv().ok();
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .try_init()
