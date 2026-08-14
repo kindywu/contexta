@@ -51,5 +51,4 @@ flutter:
   assets:
     - assets/contexta.db
     - assets/seed_articles.json
-    - assets/prompts/
     - assets/kittentts_models/

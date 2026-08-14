@@ -1,7 +1,7 @@
 import 'package:contexta/core/components/app_button.dart';
 import 'package:contexta/core/components/loading_indicator.dart';
 import 'package:contexta/di/providers.dart';
-import 'package:contexta/domain/llm_client.dart';
+import 'package:contexta/data/remote/llm_api.dart';
 import 'package:contexta/domain/model/word_detail.dart';
 import 'package:contexta/domain/repository/stats_repository.dart';
 import 'package:contexta/domain/repository/vocabulary_repository.dart';
@@ -26,7 +26,7 @@ class _FakeAddWordUseCase extends AddWordUseCase {
           wordRepository: _NeverWordRepo(),
           vocabularyRepository: _NeverVocabRepo(),
           statsRepository: _NeverStatsRepo(),
-          llmClient: _NeverLlmClient(),
+          llmApi: _NeverLlmApi(),
         );
 
   final AddWordResult result;
@@ -60,7 +60,7 @@ class _NeverStatsRepo implements StatsRepository {
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
 
-class _NeverLlmClient implements LlmClient {
+class _NeverLlmApi implements LlmApi {
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }

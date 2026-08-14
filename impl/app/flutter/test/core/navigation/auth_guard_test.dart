@@ -16,7 +16,7 @@ import 'package:contexta/domain/repository/word_repository.dart';
 import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/tts/tts_engine.dart';
 import 'package:contexta/data/local/database.dart';
-import 'package:contexta/domain/llm_client.dart';
+import 'package:contexta/data/remote/llm_api.dart';
 import 'package:contexta/di/providers.dart';
 import 'package:contexta/ui/auth/login_screen.dart';
 import 'package:contexta/ui/home/home_screen.dart';
@@ -126,7 +126,7 @@ class _FakeWordRepo implements WordRepository {
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
 
-class _FakeLlmClient implements LlmClient {
+class _FakeLlmApi implements LlmApi {
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
@@ -196,7 +196,7 @@ void main() {
         statsRepositoryProvider.overrideWithValue(_FakeStatsRepo()),
         vocabularyRepositoryProvider.overrideWithValue(_FakeVocabRepo()),
         wordRepositoryProvider.overrideWithValue(_FakeWordRepo()),
-        llmClientProvider.overrideWithValue(_FakeLlmClient()),
+        llmApiProvider.overrideWithValue(_FakeLlmApi()),
         // reading/settings 页会 watch TTS：真实工厂在测试环境残留 Timer
         ttsEngineProvider.overrideWith((ref) async => _TtsStub()),
       ],

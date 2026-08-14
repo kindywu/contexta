@@ -13,8 +13,7 @@ import '../data/local/daos/article_daos.dart';
 import '../data/local/daos/settings_daos.dart';
 import '../data/local/daos/word_daos.dart';
 import '../data/remote/article_api.dart';
-import '../data/remote/deepseek_api.dart';
-import '../data/remote/llm_caller.dart';
+import '../data/remote/llm_api.dart';
 import '../data/remote/server_api_client.dart';
 import '../data/sync/sync_articles_usecase.dart';
 import '../data/repository/article_repository_impl.dart';
@@ -24,7 +23,6 @@ import '../data/repository/vocabulary_repository_impl.dart';
 import '../data/repository/word_repository_impl.dart';
 import '../data/tts/tts_cache_manager.dart';
 import '../data/tts/tts_engine_factory.dart';
-import '../domain/llm_client.dart';
 import '../domain/repository/article_repository.dart';
 import '../domain/repository/settings_repository.dart';
 import '../domain/repository/stats_repository.dart';
@@ -129,25 +127,9 @@ final todayProvider = Provider<String Function()>(
 /// 时间抽象（Kotlin TimeProvider 对应物）。
 final timeProvider = Provider<TimeProvider>((ref) => _ProdTimeProvider());
 
-/// DeepSeek HTTP 客户端（dio；对照 Kotlin NetworkModule：连接 30s、
-/// 读超时 = LLM 超时 + 60s 宽限，协程级超时确定性先触发）。
-final deepSeekApiProvider = Provider<DeepSeekApi>((ref) {
-  final dio = Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 30),
-      // 读超时 = 协程级 LLM 超时 + 60s 宽限（Kotlin READ_TIMEOUT_GRACE_MS）：
-      // 若 <= 协程超时，dio 会先超时触发重试风暴；若相等则竞态；
-      // 大于时 LlmCaller 的预算超时确定性胜出
-      receiveTimeout: Duration(milliseconds: AppConfig.llmTimeoutMs + 60000),
-      sendTimeout: const Duration(seconds: 30),
-    ),
-  );
-  return DioDeepSeekApi(dio);
-});
-
-/// 统一 LLM 客户端（重试 + 三分类 + 总预算超时）。
-final llmClientProvider = Provider<LlmClient>((ref) {
-  return LlmCaller(ref.watch(deepSeekApiProvider));
+/// 服务端 LLM 网关 API（查词远程化；与登录/同步共用同一 ServerApiClient）。
+final llmApiProvider = Provider<LlmApi>((ref) {
+  return LlmApi(ref.watch(serverApiClientProvider));
 });
 
 /// TTS 缓存管理器（段落级 WAV 缓存 + FIFO 淘汰 50MB）。
@@ -265,7 +247,7 @@ final addWordUseCaseProvider = Provider<AddWordUseCase>((ref) {
     wordRepository: ref.watch(wordRepositoryProvider),
     vocabularyRepository: ref.watch(vocabularyRepositoryProvider),
     statsRepository: ref.watch(statsRepositoryProvider),
-    llmClient: ref.watch(llmClientProvider),
+    llmApi: ref.watch(llmApiProvider),
   );
 });
 
