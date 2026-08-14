@@ -14,9 +14,11 @@ use axum::Router;
 pub fn no_state_routes<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new()
         .route("/api/health", axum::routing::get(health::health))
-        // 管理页静态资源（rust-embed 嵌入 admin-ui/dist/）。/admin 与 /admin/{*path}
-        // 双挂：axum 0.8 的 {*path} 通配可匹配空段，但显式 /admin 更稳，SPA 路由回退 index.html。
+        // 管理页静态资源（rust-embed 嵌入 admin-ui/dist/）。/admin、/admin/ 与
+        // /admin/{*path} 三挂：axum 0.8 的 {*path} 通配不匹配空段，带斜杠路径
+        // 必须显式声明，否则 /admin/ 404（浏览器/书签常见形态）。
         .route("/admin", axum::routing::get(static_assets::serve_admin))
+        .route("/admin/", axum::routing::get(static_assets::serve_admin))
         .route(
             "/admin/{*path}",
             axum::routing::get(static_assets::serve_admin),

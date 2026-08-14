@@ -113,6 +113,9 @@ function onFilterChange() {
   load()
 }
 
+// 首次进入即加载（此前缺失：仅筛选/操作触发 load，首屏恒为空列表）
+onMounted(load)
+
 async function openDrawer(item: ArticleItem, mode: 'view' | 'edit' = 'view') {
   drawer.item = item
   drawer.paragraphs = []
