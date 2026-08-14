@@ -5,6 +5,7 @@ import Layout from './views/Layout.vue'
 import Users from './views/Users.vue'
 import Articles from './views/Articles.vue'
 import Usage from './views/Usage.vue'
+import Prompts from './views/Prompts.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL), // '/admin/'
@@ -18,6 +19,7 @@ const router = createRouter({
         { path: 'users', name: 'users', component: Users, meta: { title: '用户管理' } },
         { path: 'articles', name: 'articles', component: Articles, meta: { title: '文章审核' } },
         { path: 'usage', name: 'usage', component: Usage, meta: { title: '用量统计' } },
+        { path: 'prompts', name: 'prompts', component: Prompts, meta: { title: 'Prompt 管理' } },
       ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/users' },

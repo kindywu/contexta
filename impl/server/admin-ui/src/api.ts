@@ -106,6 +106,13 @@ export interface UsageRow {
   completion_tokens: number
 }
 
+export interface PromptItem {
+  key: string
+  content: string
+  // Unix millis；0 = 种子默认值（从未修改）
+  updated_at: number
+}
+
 // ---- 接口函数 ----
 
 export const api = {
@@ -126,6 +133,11 @@ export const api = {
     }),
 
   usage: () => http.get<unknown, UsageRow[]>('/usage'),
+
+  listPrompts: () => http.get<unknown, PromptItem[]>('/prompts'),
+
+  updatePrompt: (key: string, content: string) =>
+    http.put<unknown, unknown>(`/prompts/${encodeURIComponent(key)}`, { content }),
 
   listArticles: (status?: string, date?: string) => {
     const params: Record<string, string> = {}

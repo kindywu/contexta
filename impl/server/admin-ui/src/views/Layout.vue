@@ -28,6 +28,9 @@ function onLogout() {
         <a-menu-item key="/usage">
           <router-link to="/usage">用量统计</router-link>
         </a-menu-item>
+        <a-menu-item key="/prompts">
+          <router-link to="/prompts">Prompt 管理</router-link>
+        </a-menu-item>
       </a-menu>
     </a-layout-sider>
     <a-layout>
