@@ -44,6 +44,10 @@ api.example.com {
 | `LLM_TIMEOUT_SECS` | `90` | 单次 LLM 调用总预算（含重试退避） |
 | `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 模型名 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | 可换网关 |
+| `CHINADAILY_BASE_URL` | `https://www.chinadaily.com.cn` | 事实源抓取基址（NEWS 事实锚定，需服务器出网可达） |
+| `SOURCE_MAX_AGE_DAYS` | `3` | 只选近 N 天来源（新鲜度窗口） |
+| `SOURCE_FETCH_TIMEOUT_SECS` | `15` | chinadaily 单请求兜底超时 |
+| `RECENT_TITLE_DAYS` | `14` | 标题防重注入窗口（近 N 天已生成标题清单） |
 | `CACHE_TTL_DAYS` | `30` | 查词缓存 TTL |
 | `CACHE_MAX_ROWS` | `5000` | 查词缓存条数上限（超限删最旧） |
 | `JWT_SECRET` | **必须** | 生成：`openssl rand -hex 32`（**<32 字符直接启动失败**，见 §8） |
