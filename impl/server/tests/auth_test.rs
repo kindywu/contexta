@@ -33,6 +33,10 @@ fn test_cfg(db_path: &str) -> Config {
         daily_generate_hour: 3,
         admin_init_password: None,
         llm_timeout_secs: 90,
+        chinadaily_base_url: "https://www.chinadaily.com.cn".into(),
+        source_max_age_days: 3,
+        source_fetch_timeout_secs: 15,
+        recent_title_days: 14,
     }
 }
 

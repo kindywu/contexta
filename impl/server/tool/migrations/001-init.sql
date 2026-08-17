@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS article (
     regenerate_count INTEGER NOT NULL DEFAULT 0,
     prompt_tokens INTEGER NOT NULL DEFAULT 0,
     completion_tokens INTEGER NOT NULL DEFAULT 0,
+    source_article_id INTEGER,                          -- 事实源（chinadaily）引用，仅 NEWS 有值
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -79,6 +80,22 @@ CREATE TABLE IF NOT EXISTS word_lookup_cache (
     result_json TEXT NOT NULL,
     created_at INTEGER NOT NULL
 );
+
+-- NEWS 分类事实锚定：chinadaily 抓取入库的事实源（URL 唯一键，is_used 预占标记）。
+CREATE TABLE IF NOT EXISTS article_source (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_url   TEXT    NOT NULL UNIQUE,      -- 事实源唯一键（去重依据）
+    title        TEXT    NOT NULL,
+    body         TEXT    NOT NULL,             -- 正文纯文本（生成时注入 prompt；存库免重抓）
+    published_at TEXT    NOT NULL,             -- YYYY-MM-DD（URL 路径日期）
+    is_used      INTEGER NOT NULL DEFAULT 0,   -- 已引用标记（并发选中原子性）
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    is_deleted   INTEGER NOT NULL DEFAULT 0,
+    deleted_at   INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_article_source_used_date
+    ON article_source(is_used, published_at);
 
 -- Task 2：LLM prompt 存储化（管理端可编辑）。prompt 表是 prompt 的唯一来源，
 -- 种子即默认内容（updated_at=0 标记种子）。INSERT OR IGNORE：重复 migrate
@@ -138,4 +155,8 @@ Rules:
     ('article_low', 'Article length: total English word count must be 50-100 words.', 0),
     ('article_medium', 'Article length: total English word count must be 100-300 words.', 0),
     ('article_high', 'Article length: total English word count must be 300-600 words.', 0),
-    ('article_user_prompt', 'Create article #{{orderIndex}} in the category: {{category}}', 0);
+    ('article_user_prompt', 'Create article #{{orderIndex}} in the category: {{category}}
+
+{{sourceArticle}}
+
+{{recentTitles}}', 0);

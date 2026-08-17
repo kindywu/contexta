@@ -15,6 +15,10 @@ pub struct Config {
     pub daily_generate_hour: u8,
     pub admin_init_password: Option<String>,
     pub llm_timeout_secs: u64,
+    pub chinadaily_base_url: String,      // CHINADAILY_BASE_URL（事实源抓取基址）
+    pub source_max_age_days: i64,         // SOURCE_MAX_AGE_DAYS（只选近 N 天来源，保证新鲜）
+    pub source_fetch_timeout_secs: u64,   // SOURCE_FETCH_TIMEOUT_SECS（单请求兜底超时）
+    pub recent_title_days: i64,           // RECENT_TITLE_DAYS（标题防重注入窗口）
 }
 
 impl Config {
@@ -46,6 +50,10 @@ impl Config {
                 .ok()
                 .filter(|s| !s.is_empty()),
             llm_timeout_secs: env_or("LLM_TIMEOUT_SECS", "90")?.parse()?,
+            chinadaily_base_url: env_or("CHINADAILY_BASE_URL", "https://www.chinadaily.com.cn")?,
+            source_max_age_days: env_or("SOURCE_MAX_AGE_DAYS", "3")?.parse()?,
+            source_fetch_timeout_secs: env_or("SOURCE_FETCH_TIMEOUT_SECS", "15")?.parse()?,
+            recent_title_days: env_or("RECENT_TITLE_DAYS", "14")?.parse()?,
         };
         Ok(cfg)
     }
