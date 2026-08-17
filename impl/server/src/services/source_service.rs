@@ -10,6 +10,11 @@ use crate::response::AppError;
 use chrono::{Duration, Local, Utc};
 use sqlx::SqlitePool;
 
+/// 抓取链总预算：单次 pick_source 内整条抓取链（2 列表页 + 至多 20 文章页）的兜底超时。
+/// 防挂起不返回的上游把整批生成与 admin 端点卡死（单请求 15s 兜底在 22 请求下最坏 ~330s）；
+/// 超时按抓取失败降级（Ok(None)，NEWS 自由发挥）。
+pub const FETCH_TOTAL_TIMEOUT_SECS: u64 = 60;
+
 /// 一篇已被选中的事实源（含正文，供 prompt 注入；LLM 调用前占用）。
 pub struct SourceArticle {
     pub id: i64,
@@ -51,13 +56,24 @@ pub async fn pick_source(
     if let Some(s) = try_pick(pool, cfg).await? {
         return Ok(Some(s));
     }
-    match fetcher.fetch_recent(cfg).await {
-        Ok(fetched) => {
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(FETCH_TOTAL_TIMEOUT_SECS),
+        fetcher.fetch_recent(cfg),
+    )
+    .await
+    {
+        Ok(Ok(fetched)) => {
             store_sources(pool, fetched).await?;
             try_pick(pool, cfg).await
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             tracing::warn!("chinadaily fetch failed, degrade to free-write: {e}");
+            Ok(None)
+        }
+        Err(_) => {
+            tracing::warn!(
+                "chinadaily fetch timed out after {FETCH_TOTAL_TIMEOUT_SECS}s, degrade to free-write"
+            );
             Ok(None)
         }
     }
@@ -99,5 +115,7 @@ async fn try_pick(pool: &SqlitePool, cfg: &Config) -> Result<Option<SourceArticl
         }
         // 并发下被另一路占用：重试下一行
     }
+    // None 语义二义：既可能是「池空」，也可能是「连续 3 次并发争用耗尽」。后者会被
+    // pick_source 误判为池空触发一次补充抓取——良性（INSERT OR IGNORE 幂等，仅多一次抓取）。
     Ok(None)
 }

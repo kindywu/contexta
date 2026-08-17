@@ -275,6 +275,7 @@ Do not copy sentences from the source. Do not add facts not present in the sourc
 | 场景 | 行为 | 结果 |
 |---|---|---|
 | 列表页请求失败（china/world 任一） | `fetch_recent` 整体 Err → `pick_source` warn 降级 | NEWS 自由发挥，生成不中断 |
+| 抓取整链超时（60s 总预算） | `tokio::time::timeout` 触发 → warn 降级（防挂起上游卡死批处理） | NEWS 自由发挥，生成不中断 |
 | 文章页请求失败 / 不可解析 | 单篇跳过（warn），继续其余 | 来源池略窄 |
 | 池空（无未用源 / 全超新鲜度窗口） | 抓取补充 → 再选；仍空 → None | NEWS 自由发挥 |
 | 并发选中冲突 | 条件 UPDATE affected=0 → 重试下一行（至多 3 次） | 不重复引用同一来源 |

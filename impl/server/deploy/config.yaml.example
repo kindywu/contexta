@@ -5,6 +5,10 @@
 # ARTICLE_BUDGET_DAILY: 100
 # DAILY_GENERATE_HOUR: 3
 # LLM_TIMEOUT_SECS: 90
+# CHINADAILY_BASE_URL: https://www.chinadaily.com.cn   # 事实源抓取基址（需可访问 chinadaily 的外网）
+# SOURCE_MAX_AGE_DAYS: 3                               # 只选近 N 天来源（新鲜度窗口）
+# SOURCE_FETCH_TIMEOUT_SECS: 15                        # chinadaily 单请求兜底超时
+# RECENT_TITLE_DAYS: 14                                # 标题防重注入窗口
 # DEEPSEEK_MODEL: deepseek-v4-flash
 # JWT_SECRET: <必须> 生成：openssl rand -hex 32
 # DEEPSEEK_API_KEY: <必须>

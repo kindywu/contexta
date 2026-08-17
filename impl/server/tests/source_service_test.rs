@@ -109,7 +109,7 @@ async fn pick_reserves_sources_in_freshness_order_never_repeats() {
         assert_eq!(s.url, expected, "应按 published_at 降序选中");
         assert_eq!(s.title, expected);
     }
-    // 池空 → None，且未触发抓取（Noop 语义由 MockFetcher 空源提供）
+    // 池空 → 触发抓取（mock 返回空 → 存 0 行）→ 再选仍 None
     assert!(source_service::pick_source(&pool, &cfg, &fetcher).await.unwrap().is_none());
     let used: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article_source WHERE is_used = 1")
         .fetch_one(&pool)
@@ -173,5 +173,78 @@ async fn stale_sources_are_not_picked() {
     let fetcher = MockFetcher { sources: vec![], fail: false, calls: Arc::new(AtomicUsize::new(0)) };
     let s = source_service::pick_source(&pool, &cfg, &fetcher).await.unwrap().unwrap();
     assert_eq!(s.url, "https://cd/fresh", "过期来源（4 天前）不得入选");
+    cleanup(pool, &db_path).await;
+}
+
+/// 挂起不返回的抓取器（模拟黑洞上游）。`started` 在 fetch_recent 被调用时 notify——
+/// 此刻 pick_source 已越过 try_pick（空池 SELECT 完成、无进行中 DB 往返），
+/// 测试收到通知后再推进虚拟时钟：超时定时器已武装，推进不会误伤真实 IO。
+struct HangingFetcher {
+    started: Arc<tokio::sync::Notify>,
+}
+#[async_trait]
+impl SourceFetcher for HangingFetcher {
+    async fn fetch_recent(&self, _cfg: &Config) -> Result<Vec<FetchedSource>, anyhow::Error> {
+        self.started.notify_one();
+        tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        Ok(Vec::new())
+    }
+}
+
+#[tokio::test]
+async fn pick_source_times_out_hanging_fetch() {
+    let (pool, cfg, db_path) = setup().await;
+    // 不用 start_paused：setup 的 sqlx 建池在暂停时钟下会失败——暂停后运行时 park 时
+    // auto-advance 跳到 sqlx 池 acquire 的 30s 超时定时器（虚拟时钟跳跃先于真实 IO 完成）
+    // → PoolTimedOut（与 task_test 同款坑）。暂停后 DB 往返仍是真实时间，但同样的
+    // auto-advance 会在任务侧查询期间误触 acquire 定时器，因此用保活 blocking 任务
+    // 抑制 auto-advance（tokio 文档「Preventing auto-advance」：blocking 任务运行期间
+    // 时钟不自动推进），真实 IO 得以在冻结时钟下完成；其退出（halt）后 auto-advance 恢复。
+    tokio::time::pause();
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+    let (halt_tx, halt_rx) = std::sync::mpsc::channel();
+    let _keepalive = tokio::task::spawn_blocking(move || {
+        let _ = ready_tx.send(());
+        // 10s 上限：测试异常路径（panic 前未 halt）也不挂死，最多拖慢收尾
+        let _ = halt_rx.recv_timeout(std::time::Duration::from_secs(10));
+    });
+    ready_rx.recv().unwrap(); // 等阻塞线程真正启动（auto-advance 抑制已生效）
+    let notify = Arc::new(tokio::sync::Notify::new());
+    let fetcher = HangingFetcher { started: notify.clone() };
+    let started = notify.notified();
+    let pool2 = pool.clone();
+    let cfg2 = cfg.clone();
+    let mut task = tokio::spawn(async move {
+        source_service::pick_source(&pool2, &cfg2, &fetcher).await
+    });
+    // 等 fetch_recent 被调用：try_pick 的 SELECT 已完成、60s 超时定时器已武装。
+    // 与任务完成竞速：若任务提前结束（回归：未走到抓取），走 task 分支判失败而非挂死。
+    tokio::select! {
+        _ = started => {}
+        _ = &mut task => {}
+    }
+    let _ = halt_tx.send(()); // 释放保活 → auto-advance 恢复
+    // 虚拟时钟推进越过总超时 → 超时触发 → 按抓取失败降级
+    tokio::time::advance(std::time::Duration::from_secs(
+        source_service::FETCH_TOTAL_TIMEOUT_SECS + 1,
+    ))
+    .await;
+    let r = task.await.unwrap().unwrap();
+    assert!(r.is_none(), "挂起抓取超时应降级 Ok(None)");
+    tokio::time::resume();
+    cleanup(pool, &db_path).await;
+}
+
+#[tokio::test]
+async fn store_sources_is_idempotent_on_duplicate_urls() {
+    let (pool, _cfg, db_path) = setup().await;
+    let batch = vec![fetched("https://cd/dup", 0), fetched("https://cd/dup", 1)];
+    let n = source_service::store_sources(&pool, batch).await.unwrap();
+    assert_eq!(n, 1, "同批重复 URL 只插入 1 行");
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article_source")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 1);
     cleanup(pool, &db_path).await;
 }
