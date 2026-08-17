@@ -53,11 +53,11 @@ class _FakeSettingsRepo implements SettingsRepository {
   }
 
   @override
-  @override
   Future<void> updateTtsSpeed(double speed) async {
     updates.add('ttsSpeed:$speed');
   }
 
+  @override
   Future<void> updateTranslationMode(String mode) async {
     updates.add('mode:$mode');
     _settings = UserSettings(

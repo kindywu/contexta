@@ -28,12 +28,30 @@ class MainApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return MaterialApp.router(
-      title: 'Contexta',
-      theme: buildAppTheme(),
-      // 登录守卫集成在 routerProvider（authServiceProvider 状态变化 →
-      // refreshListenable 重估重定向，无需重建 router）
-      routerConfig: ref.watch(routerProvider),
+    // 数据库就绪门禁（2026-08-14 真机红屏修复）：databaseProvider 是
+    // FutureProvider，而 routerProvider → authServiceProvider →
+    // settingsRepositoryProvider 等 8 处直接 `requireValue`——DB 未加载完
+    // 就构建路由树会抛 StateError（AsyncLoading<AppDatabase> 竞态，时好时坏）。
+    // 门禁保证整棵树只在 DB 就绪后构建，8 处 requireValue 全部安全。
+    final db = ref.watch(databaseProvider);
+    return db.when(
+      loading: () => const MaterialApp(
+        title: 'Contexta',
+        home: Scaffold(body: Center(child: CircularProgressIndicator())),
+      ),
+      error: (e, _) => MaterialApp(
+        title: 'Contexta',
+        home: Scaffold(
+          body: Center(child: Text('数据库初始化失败：$e')),
+        ),
+      ),
+      data: (_) => MaterialApp.router(
+        title: 'Contexta',
+        theme: buildAppTheme(),
+        // 登录守卫集成在 routerProvider（authServiceProvider 状态变化 →
+        // refreshListenable 重估重定向，无需重建 router）
+        routerConfig: ref.watch(routerProvider),
+      ),
     );
   }
 }

@@ -23,8 +23,8 @@ class WordRepositoryImpl implements WordRepository {
     this._wordSenseDao,
     this._exampleSentenceDao,
     this._vocabularyEntryDao, {
-    InflectionResolver inflectionResolver = const RuleInflectionResolver(),
-  }) : _inflectionResolver = inflectionResolver;
+    this._inflectionResolver = const RuleInflectionResolver(),
+  });
 
   final WordDao _wordDao;
   final WordSenseDao _wordSenseDao;

@@ -323,7 +323,7 @@ void main() {
         'home', '/hoʊm/', const [
           WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
               chineseMeaning: '家', englishDefinition: 'a place where you live',
-              examples: const []),
+              examples: []),
         ],
       );
       var llmCalled = 0;
@@ -345,10 +345,10 @@ void main() {
         'play', '/pleɪ/', const [
           WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
               chineseMeaning: '戏剧', englishDefinition: 'a stage performance',
-              examples: const []),
+              examples: []),
           WordSense(id: 0, orderIndex: 2, partOfSpeech: 'v.',
               chineseMeaning: '玩耍', englishDefinition: 'to do an activity',
-              examples: const []),
+              examples: []),
         ],
       );
       final detail = await wordRepo.lookupWord('plays', (_) async => null);
@@ -360,7 +360,7 @@ void main() {
       await wordRepo.saveLlmResult('box', null, const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
             chineseMeaning: '盒子', englishDefinition: 'a container',
-            examples: const []),
+            examples: []),
       ]);
       final first = await wordRepo.lookupWord('boxes', (_) async => null);
       expect(first, isNotNull);
@@ -388,7 +388,7 @@ void main() {
       await wordRepo.saveLlmResult('wife', null, const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
             chineseMeaning: '妻子', englishDefinition: 'a married woman',
-            examples: const []),
+            examples: []),
       ]);
       final detail = await wordRepo.findLocal('wives');
       expect(detail, isNotNull);
@@ -400,7 +400,7 @@ void main() {
       await wordRepo.saveLlmResult('cry', null, const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'v.',
             chineseMeaning: '哭', englishDefinition: 'to shed tears',
-            examples: const []),
+            examples: []),
       ]);
       final detail = await wordRepo.lookupWord('cries', (_) async => null);
       expect(detail, isNotNull);
@@ -413,7 +413,7 @@ void main() {
       await wordRepo.saveLlmResult('play', '/pleɪ/', const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'v.',
             chineseMeaning: '玩', englishDefinition: 'to do an activity',
-            examples: const []),
+            examples: []),
       ]);
       final detail = await wordRepo.lookupWord('played', (_) async => null);
       expect(detail, isNotNull);
@@ -425,7 +425,7 @@ void main() {
       await wordRepo.saveLlmResult('home', null, const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
             chineseMeaning: '家', englishDefinition: 'a place where you live',
-            examples: const []),
+            examples: []),
       ]);
       final detail = await wordRepo.lookupWord('home', (_) async => null);
       expect(detail, isNotNull);
@@ -436,10 +436,10 @@ void main() {
       await wordRepo.saveLlmResult('fast', '/fæst/', const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'adv.',
             chineseMeaning: '快速地', englishDefinition: 'quickly',
-            examples: const []),
+            examples: []),
         WordSense(id: 0, orderIndex: 2, partOfSpeech: 'pron.',
             chineseMeaning: '某物', englishDefinition: 'somebody',
-            examples: const []),
+            examples: []),
       ]);
       final detail = await wordRepo.lookupWord('fasts', (_) async => null);
       expect(detail, isNotNull);

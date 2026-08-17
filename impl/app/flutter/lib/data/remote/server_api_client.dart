@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../domain/error/llm_exceptions.dart';
 import '../../domain/error/pipeline_blocking_exception.dart';
@@ -162,6 +163,7 @@ class ServerApiClient {
               : code == 'BANNED'
                   ? AuthFailureKind.banned
                   : AuthFailureKind.tokenExpired;
+          debugPrint('[ServerApiClient] 401 kind=$kind path=${e.requestOptions.path} token=${(_lastSeenToken ?? 'null').substring(0, (_lastSeenToken ?? 'null').length > 8 ? 8 : (_lastSeenToken ?? 'null').length)}');
           if (_notifiedAuthKinds.add(kind)) {
             try {
               _authCallback?.call(kind);

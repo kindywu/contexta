@@ -31,7 +31,7 @@ class AuthApi {
       body: {
         'phone': phone,
         'device_id': deviceId,
-        if (code != null) 'code': code,
+        'code': ?code,
       },
     );
     final token = data['token'] as String;

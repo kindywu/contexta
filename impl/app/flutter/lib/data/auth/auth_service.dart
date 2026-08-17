@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/repository/settings_repository.dart';
@@ -68,13 +69,10 @@ enum AuthResult {
 class AuthService extends StateNotifier<AuthState> {
   AuthService({
     required ServerApiClient api,
-    required SettingsRepository settings,
-    required Future<String> Function() deviceId,
-    required Future<String?> Function() readPhone,
+    required this._settings,
+    required this._deviceId,
+    required this._readPhone,
   })  : _api = AuthApi(api),
-        _settings = settings,
-        _deviceId = deviceId,
-        _readPhone = readPhone,
         super(const AuthState(status: AuthStatus.unknown));
 
   /// 认证 API（内部包一层 [ServerApiClient]：URL / 解包 / 秒转毫秒）。
@@ -153,11 +151,13 @@ class AuthService extends StateNotifier<AuthState> {
     final deviceId = await _deviceId();
     try {
       final login = await _api.login(phone: phone, deviceId: deviceId);
+      debugPrint('[AuthService] login OK, saving auth token=${login.token.length > 16 ? '${login.token.substring(0, 16)}...' : login.token}');
       await _settings.saveAuth(
         phone: phone,
         token: login.token,
         tokenExpiresAtMillis: login.expiresAtMillis,
       );
+      debugPrint('[AuthService] saveAuth done, state→loggedIn');
       state = AuthState(
         status: AuthStatus.loggedIn,
         phone: phone,
@@ -165,10 +165,12 @@ class AuthService extends StateNotifier<AuthState> {
       );
       return AuthResult.success;
     } on ServerApiException catch (e) {
+      debugPrint('[AuthService] login failed: code=${e.errorCode} msg=${e.message}');
       if (e.errorCode == 'BANNED') return AuthResult.banned;
       if (e.errorCode == 'NETWORK') return AuthResult.networkError;
       return AuthResult.serverError;
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[AuthService] login UNEXPECTED: $e\n$st');
       return AuthResult.serverError;
     }
   }
@@ -187,6 +189,7 @@ class AuthService extends StateNotifier<AuthState> {
 
   /// ServerApiClient 401 回调：清 token + 按类别置状态。
   Future<void> handleServerFailure(AuthFailureKind kind) async {
+    debugPrint('[AuthService] handleServerFailure: kind=$kind — CLEARING TOKEN');
     await _settings.clearAuth();
     switch (kind) {
       case AuthFailureKind.tokenExpired:

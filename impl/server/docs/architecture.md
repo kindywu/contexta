@@ -8,7 +8,7 @@ Contexta Server 是 Contexta 英语学习 App 的 Rust 服务端：DeepSeek API 
 
 ```mermaid
 flowchart TB
-    subgraph app["Flutter App（学习链路不变）"]
+    subgraph app["Flutter App（学习链路）"]
         A1["查词链: LRU→DB→解析→远程LLM"]
         A2["文章: 每日同步 → 本地批次库"]
         A3["阅读/学习记录/本地TTS"]
