@@ -51,7 +51,7 @@ impl/server/
       deepseek.rs              # DeepSeek HTTP 客户端 + call_with_retry（重试/退避/预算）
     llm/
       parser.rs                # XML 解析（WordLookup / ArticleDraft，容错兜底对齐 Dart 版）
-    prompts.rs + prompts/*.txt # prompt 模板（include_str! 编译进二进制）
+    prompts.rs                  # prompt 构建（内容唯一来源 = DB prompt 表，管理端可编辑）
     routers/                   # HTTP 层：health / auth / admin / llm / articles（见 §3）
     services/                  # 业务层：auth / llm（含配额/缓存）/ article（状态机）/ admin
     tasks/

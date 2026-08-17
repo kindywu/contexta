@@ -1,55 +1,13 @@
 use crate::response::AppError;
 use crate::services::prompt_service;
-use regex::Regex;
 use sqlx::SqlitePool;
-use std::collections::HashMap;
 
-pub static WORD_LOOKUP_SYSTEM: &str = include_str!("prompts/word_lookup_system.txt");
-pub static ARTICLE_SYSTEM: &str = include_str!("prompts/article_system.txt");
-
-/// 移植 PromptLoader._sectionRegex + loadSection：提取命名节、替换 {{key}}。
-///
-/// Dart 正则为 `=== (\w+) ===\s*\n?(.*?)(?=\n=== |\Z)`（dotAll）；
-/// 本仓库 regex crate 不支持 look-around，改用等价的两步实现：
-/// （1）定位所有 `=== NAME ===` 节头；（2）节内容 = 节头到下一节头之间的文本（trim）。
-/// 对编译期嵌入的固定模板，与 Dart 的 lookahead 边界语义等价（节头均独立成行）。
-pub fn load_section(content: &str, sections: &[&str], params: &[(&str, &str)]) -> Option<String> {
-    let header_re = Regex::new(r"=== (\w+) ===").unwrap();
-    let headers: Vec<(usize, usize, String)> = header_re
-        .captures_iter(content)
-        .map(|c| {
-            let m = c.get(0).unwrap();
-            (m.start(), m.end(), c[1].to_string())
-        })
-        .collect();
-    let mut map = HashMap::new();
-    for (i, (_, end, name)) in headers.iter().enumerate() {
-        let body_end = headers
-            .get(i + 1)
-            .map(|(s, _, _)| *s)
-            .unwrap_or(content.len());
-        map.insert(name.clone(), content[*end..body_end].trim().to_string());
-    }
-    let parts: Vec<String> = sections
-        .iter()
-        .filter_map(|s| map.get(*s).cloned())
-        .collect();
-    if parts.is_empty() {
-        return None;
-    }
-    let mut result = parts.join("\n\n");
-    for (k, v) in params {
-        result = result.replace(&format!("{{{{{k}}}}}"), v);
-    }
-    Some(result)
-}
-
-/// 移植 buildWordLookupSystemPrompt：查词 system prompt（DB 优先，缺行回退嵌入默认）。
+/// 查词 system prompt（DB 读取；内容在 prompt 表，缺行 → 500）。
 pub async fn build_word_lookup_system(pool: &SqlitePool) -> Result<String, AppError> {
     prompt_service::get_prompt(pool, "word_lookup_system").await
 }
 
-/// Task 2：查词 user prompt（原 llm_service 内联字符串 DB 化）：{{word}} 占位替换。
+/// 查词 user prompt：{{word}} 占位替换。
 pub async fn build_word_lookup_user(pool: &SqlitePool, word: &str) -> Result<String, AppError> {
     Ok(prompt_service::get_prompt(pool, "word_lookup_user")
         .await?
@@ -89,8 +47,8 @@ pub fn category_guideline(category: &str) -> Option<&'static str> {
     })
 }
 
-/// 移植 buildArticleSystemPrompt：COMMON + <难度> 节以 `\n\n` 拼接（DB 读取，
-/// 缺行回退嵌入默认），{{title}} 替换为 The Article Title（语义与嵌入版 load_section 等价）。
+/// article system prompt：COMMON + <难度> 两节以 `\n\n` 拼接（DB 读取），
+/// {{title}} 替换为 The Article Title。
 pub async fn build_article_system(
     pool: &SqlitePool,
     difficulty: &str,
@@ -101,8 +59,7 @@ pub async fn build_article_system(
     Ok(format!("{common}\n\n{diff}").replace("{{title}}", "The Article Title"))
 }
 
-/// 移植 buildArticleUserPrompt：USER_PROMPT 节占位替换（{{orderIndex}}/{{category}}，
-/// DB 读取，缺行回退嵌入默认）+ 分类指南追加。
+/// article user prompt：占位替换（{{orderIndex}}/{{category}}）+ 分类指南追加。
 pub async fn build_article_user(
     pool: &SqlitePool,
     category: &str,

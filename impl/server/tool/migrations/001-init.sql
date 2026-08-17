@@ -80,9 +80,9 @@ CREATE TABLE IF NOT EXISTS word_lookup_cache (
     created_at INTEGER NOT NULL
 );
 
--- Task 2：LLM prompt 存储化（管理端可编辑）。种子内容 = src/prompts/*.txt 对应分节
--- （生成自 /tmp/gen_prompt_seed.py，与 embedded_default 逐字一致）；updated_at=0 标记种子。
--- INSERT OR IGNORE：重复 migrate 不覆盖管理端已改内容。内容含 ';'（字符串字面量内），
+-- Task 2：LLM prompt 存储化（管理端可编辑）。prompt 表是 prompt 的唯一来源，
+-- 种子即默认内容（updated_at=0 标记种子）。INSERT OR IGNORE：重复 migrate
+-- 不覆盖管理端已改内容。内容含 ';'（字符串字面量内），
 -- 依赖 db.rs split_statements 的引号感知切分。
 CREATE TABLE IF NOT EXISTS prompt (
     key TEXT PRIMARY KEY,

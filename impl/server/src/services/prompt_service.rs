@@ -1,12 +1,11 @@
-//! Task 2：prompt 存储化服务——LLM prompt 从编译期嵌入改为数据库存储（管理端可编辑）。
+//! prompt 服务——LLM prompt 的唯一来源是 DB（prompt 表），管理端可编辑。
 //!
-//! - `get_prompt`：DB 行优先；缺行回退嵌入默认（`embedded_default`，来自
-//!   `src/prompts/*.txt` 编译期嵌入）；未知 key → BadRequest。
+//! - `get_prompt`：DB 行读取；缺行（种子缺失/行被删）→ PipelineBlocking 500
+//!   （数据完整性问题；运行期调用方只用 PROMPT_KEYS 白名单 key）。
 //! - `update_prompt`：白名单 key（PROMPT_KEYS）+ 非空校验，UPSERT（updated_at 刷新）。
 //! - 种子：001-init.sql `INSERT OR IGNORE` 7 行（updated_at=0 标记种子，重复 migrate 幂等，
 //!   不覆盖管理端已改内容）。
 
-use crate::prompts::{ARTICLE_SYSTEM, WORD_LOOKUP_SYSTEM, load_section};
 use crate::response::AppError;
 use chrono::Utc;
 use serde::Serialize;
@@ -23,36 +22,15 @@ pub const PROMPT_KEYS: [&str; 7] = [
     "article_user_prompt",
 ];
 
-/// word_lookup_user 的嵌入默认（与 llm_service 原内联字符串逐字一致）。
-const WORD_LOOKUP_USER_DEFAULT: &str = "Look up the word: {{word}}\n\nProvide the spelling, phonetic transcription (if known), and all common senses with example sentences.";
-
-/// 嵌入默认：编译期 txt 按 key 分节拆出（DB 缺行时的回退，保证运行时语义不因缺行变化）。
-/// 与 001 种子内容同源（种子生成脚本按同一分节语义产出），测试断言两者逐字相等。
-pub fn embedded_default(key: &str) -> Option<String> {
-    match key {
-        "word_lookup_system" => Some(WORD_LOOKUP_SYSTEM.to_string()),
-        "word_lookup_user" => Some(WORD_LOOKUP_USER_DEFAULT.to_string()),
-        "article_common" => load_section(ARTICLE_SYSTEM, &["COMMON"], &[]),
-        "article_low" => load_section(ARTICLE_SYSTEM, &["LOW"], &[]),
-        "article_medium" => load_section(ARTICLE_SYSTEM, &["MEDIUM"], &[]),
-        "article_high" => load_section(ARTICLE_SYSTEM, &["HIGH"], &[]),
-        "article_user_prompt" => load_section(ARTICLE_SYSTEM, &["USER_PROMPT"], &[]),
-        _ => None,
-    }
-}
-
-/// 取 prompt 内容：DB 行优先，缺行回退嵌入默认；两路皆无（未知 key）→ 400。
+/// 取 prompt 内容：DB 行读取；缺行 → 500（种子缺失/行被删，数据完整性问题）。
 pub async fn get_prompt(pool: &SqlitePool, key: &str) -> Result<String, AppError> {
     let row: Option<String> = sqlx::query_scalar("SELECT content FROM prompt WHERE key = ?")
         .bind(key)
         .fetch_optional(pool)
         .await?;
-    match row {
-        Some(c) => Ok(c),
-        None => embedded_default(key).ok_or_else(|| {
-            AppError::BadRequest("BAD_PARAM".into(), "unknown prompt key".into())
-        }),
-    }
+    row.ok_or_else(|| {
+        AppError::PipelineBlocking(format!("prompt key '{key}' missing in DB"))
+    })
 }
 
 #[derive(Serialize)]

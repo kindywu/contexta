@@ -9,14 +9,14 @@
 //! categoryToDifficulty、_categoryGuideline、buildArticleSystemPrompt/
 //! buildArticleUserPrompt、PromptLoader.loadSection。
 //!
-//! Task 2：build_* 构建函数 DB 化（签名 +pool，DB 行优先/缺行回退嵌入默认）——
-//! 相关用例改为 tokio::test + 内存库（migrate 自带 7 行种子，走 DB 路径）；
-//! load_section/category_guideline 等纯函数用例保持同步。
+//! Task 2：build_* 构建函数 DB 化（签名 +pool，内容全部来自 prompt 表）——
+//! 相关用例为 tokio::test + 内存库（migrate 自带 7 行种子，走 DB 路径）；
+//! category_guideline 等纯函数用例保持同步。
 
 use server::llm::parser::{parse_article, parse_word_lookup};
 use server::prompts::{
-    ARTICLE_SYSTEM, build_article_system, build_article_user, build_word_lookup_system,
-    build_word_lookup_user, category_guideline, category_to_difficulty, load_section,
+    build_article_system, build_article_user, build_word_lookup_system, build_word_lookup_user,
+    category_guideline, category_to_difficulty,
 };
 
 /// Task 2：构建函数走 DB——内存库单连接池（max_connections=1 使 `sqlite::memory:`
@@ -304,20 +304,6 @@ async fn build_article_system_high_contains_300_600_words() {
     pool.close().await;
 }
 
-/// Dart「难度为 null 时只含 COMMON」：Rust 接口 difficulty 为 &str（无 null），
-/// 等价路径 = 只请求 COMMON 节（load_section 直接调用）。
-#[test]
-fn build_article_system_common_only_without_difficulty_section() {
-    let prompt = load_section(
-        ARTICLE_SYSTEM,
-        &["COMMON"],
-        &[("title", "The Article Title")],
-    )
-    .unwrap();
-    assert!(prompt.contains("You are an English language learning content creator."));
-    assert!(!prompt.contains("Article length:"));
-}
-
 #[tokio::test]
 async fn build_article_system_replaces_title_placeholder() {
     let pool = prompt_db().await;
@@ -352,37 +338,16 @@ async fn build_article_user_unknown_category_omits_guideline() {
     pool.close().await;
 }
 
-/// Task 2：缺行回退嵌入默认——删光 prompt 种子后构建函数仍可用（运行时语义不因缺行变 500）。
+/// Task 2：删光 prompt 种子后构建函数全部 500（缺行 = 数据完整性问题，无回退）。
 #[tokio::test]
-async fn build_functions_fall_back_to_embedded_defaults_without_seed_rows() {
+async fn build_functions_fail_when_seed_rows_deleted() {
     let pool = prompt_db().await;
     sqlx::query("DELETE FROM prompt").execute(&pool).await.unwrap();
-    let system = build_article_system(&pool, "MEDIUM").await.unwrap();
-    assert!(system.contains("100-300 words"));
-    let user = build_article_user(&pool, "NEWS", 3).await.unwrap();
-    assert!(user.contains("Create article #3 in the category: NEWS"));
-    let wl = build_word_lookup_system(&pool).await.unwrap();
-    assert!(wl.contains("You are an English-Chinese dictionary assistant."));
-    let wl_user = build_word_lookup_user(&pool, "ocean").await.unwrap();
-    assert!(wl_user.starts_with("Look up the word: ocean"));
+    assert!(build_article_system(&pool, "MEDIUM").await.is_err());
+    assert!(build_article_user(&pool, "NEWS", 3).await.is_err());
+    assert!(build_word_lookup_system(&pool).await.is_err());
+    assert!(build_word_lookup_user(&pool, "ocean").await.is_err());
     pool.close().await;
-}
-
-// ---------- PromptLoader.loadSection ----------
-
-#[test]
-fn load_section_extracts_sections_and_replaces_placeholders() {
-    let result = load_section(ARTICLE_SYSTEM, &["COMMON", "LOW"], &[("title", "X")]).unwrap();
-    assert!(result.contains("Output only the XML"));
-    assert!(result.contains("50-100 words"));
-    assert!(!result.contains("{{title}}"));
-}
-
-/// Dart「节缺失回退 fallback」：Rust 语义 = 返回 None。
-/// （Dart「文件缺失回退」场景不适用：include_str! 编译期嵌入，文件不可能缺失。）
-#[test]
-fn load_section_returns_none_when_no_section_matches() {
-    assert!(load_section(ARTICLE_SYSTEM, &["NONEXISTENT"], &[]).is_none());
 }
 
 // ---------- buildWordLookupSystemPrompt ----------

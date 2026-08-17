@@ -1,10 +1,10 @@
-//! Task 2：prompt 表种子 + prompt_service 单测（DB 优先 / 回退嵌入默认 / 更新 / 未知 key）。
+//! Task 2：prompt 表种子 + prompt_service 单测（DB 读取 / 缺行 500 / 更新 / 未知 key）。
 //! 隔离模式沿用既有：唯一库路径 + migrate + 收尾 close + 清理三件套。
 
 use server::db;
 use server::response::AppError;
 use server::services::prompt_service::{
-    PROMPT_KEYS, embedded_default, get_all_prompts, get_prompt, update_prompt,
+    PROMPT_KEYS, get_all_prompts, get_prompt, update_prompt,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -23,9 +23,9 @@ async fn cleanup(pool: sqlx::SqlitePool, db_path: &str) {
 }
 
 /// migrate 后：prompt 表恰好 7 行种子，key 集合与 PROMPT_KEYS 一致，
-/// content 与嵌入默认逐字一致（DB 化不改变 prompt 内容），updated_at=0 标记种子。
+/// 内容非空（种子即默认内容，无第二副本），updated_at=0 标记种子。
 #[tokio::test]
-async fn migrate_seeds_seven_prompt_rows_matching_embedded_defaults() {
+async fn migrate_seeds_seven_prompt_rows() {
     let path = unique_db_path();
     let pool = db::init_pool(&path).await.unwrap();
     db::migrate(&pool).await.unwrap();
@@ -42,19 +42,21 @@ async fn migrate_seeds_seven_prompt_rows_matching_embedded_defaults() {
     expected.sort_unstable();
     assert_eq!(keys, expected, "种子 key 集合必须与 PROMPT_KEYS 一致");
     for (key, content, updated_at) in &rows {
-        assert_eq!(
-            *content,
-            embedded_default(key).unwrap(),
-            "种子 {key} 内容必须与嵌入默认一致"
-        );
+        assert!(!content.trim().is_empty(), "种子 {key} 内容不得为空");
         assert_eq!(*updated_at, 0, "种子行 updated_at 必须为 0（种子标记）");
     }
+    // 抽查一个 key 的真实内容落库（防空串种子）。
+    let system: String = sqlx::query_scalar("SELECT content FROM prompt WHERE key = 'word_lookup_system'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(system.contains("You are an English-Chinese dictionary assistant."));
     cleanup(pool, &path).await;
 }
 
-/// get_prompt：DB 行优先——覆盖种子后返回新值而非嵌入默认。
+/// get_prompt：返回 DB 当前行——覆盖种子后读到新值。
 #[tokio::test]
-async fn get_prompt_prefers_db_row_over_embedded_default() {
+async fn get_prompt_returns_updated_db_row() {
     let path = unique_db_path();
     let pool = db::init_pool(&path).await.unwrap();
     db::migrate(&pool).await.unwrap();
@@ -72,9 +74,9 @@ async fn get_prompt_prefers_db_row_over_embedded_default() {
     cleanup(pool, &path).await;
 }
 
-/// get_prompt：删行后回退嵌入默认（运行时缺行不 500）。
+/// get_prompt：缺行（种子被删）→ PipelineBlocking 500（数据完整性问题，无回退）。
 #[tokio::test]
-async fn get_prompt_falls_back_to_embedded_default_when_row_deleted() {
+async fn get_prompt_missing_row_returns_pipeline_blocking() {
     let path = unique_db_path();
     let pool = db::init_pool(&path).await.unwrap();
     db::migrate(&pool).await.unwrap();
@@ -83,23 +85,25 @@ async fn get_prompt_falls_back_to_embedded_default_when_row_deleted() {
         .execute(&pool)
         .await
         .unwrap();
-    let got = get_prompt(&pool, "word_lookup_system").await.unwrap();
-    assert_eq!(got, embedded_default("word_lookup_system").unwrap());
-    assert!(got.contains("You are an English-Chinese dictionary assistant."));
+    let err = get_prompt(&pool, "word_lookup_system").await.unwrap_err();
+    assert!(
+        matches!(err, AppError::PipelineBlocking(_)),
+        "缺行必须 500 PipelineBlocking，实际: {err:?}"
+    );
     cleanup(pool, &path).await;
 }
 
-/// 未知 key（既非种子也非嵌入默认）→ BadRequest。
+/// 未知 key（表中无行）→ PipelineBlocking 500。
 #[tokio::test]
-async fn get_prompt_unknown_key_returns_bad_request() {
+async fn get_prompt_unknown_key_returns_pipeline_blocking() {
     let path = unique_db_path();
     let pool = db::init_pool(&path).await.unwrap();
     db::migrate(&pool).await.unwrap();
 
     let err = get_prompt(&pool, "nonexistent_key").await.unwrap_err();
     assert!(
-        matches!(err, AppError::BadRequest(_, _)),
-        "未知 key 必须 400，实际: {err:?}"
+        matches!(err, AppError::PipelineBlocking(_)),
+        "未知 key 必须 500 PipelineBlocking，实际: {err:?}"
     );
     cleanup(pool, &path).await;
 }
@@ -159,10 +163,9 @@ async fn update_prompt_empty_content_returns_bad_request() {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(
-        content,
-        embedded_default("article_common").unwrap(),
-        "空内容更新不得改动原值"
+    assert!(
+        !content.trim().is_empty(),
+        "空内容更新不得改动种子原值"
     );
     cleanup(pool, &path).await;
 }
