@@ -1,16 +1,12 @@
 //! chinadaily 驱动测试：纯解析单测（fixture）+ HTTP 集成（httpmock mock 列表页/文章页）。
 //! fixture 日期动态生成（相对今天），避免测试随日期漂移失效。
 
-use async_trait::async_trait;
 use chrono::Local;
 use httpmock::prelude::*;
 use server::config::Config;
 use server::drivers::chinadaily::{
     ChinadailyFetcher, NoopFetcher, SourceFetcher, parse_article_page, parse_list_links,
 };
-use std::sync::atomic::{AtomicUsize, Ordering};
-
-static DB_SEQ: AtomicUsize = AtomicUsize::new(0);
 
 fn test_cfg(base_url: &str) -> Config {
     Config {
