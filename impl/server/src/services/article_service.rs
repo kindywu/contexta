@@ -7,9 +7,10 @@
 //! failed（生成失败，title 仍 NULL）不计入非终结，下次 ensure 补预占行替换。
 
 use crate::config::Config;
+use crate::drivers::chinadaily::SourceFetcher;
 use crate::drivers::deepseek::DeepSeekApi;
 use crate::response::AppError;
-use crate::services::{llm_service, today_start_millis};
+use crate::services::{llm_service, source_service, today_start_millis};
 use chrono::{Datelike, NaiveDate, Utc};
 use serde::Serialize;
 use sqlx::SqlitePool;
@@ -116,6 +117,7 @@ pub async fn ensure_daily_generation(
     pool: &SqlitePool,
     cfg: &Config,
     api: &dyn DeepSeekApi,
+    fetcher: &dyn SourceFetcher,
     target_date: &str,
 ) -> Result<(), AppError> {
     // 阶段 1：短事务预留缺失槽位（锁毫秒级；出错自动回滚，不落半成品）
@@ -157,7 +159,7 @@ pub async fn ensure_daily_generation(
     .fetch_all(pool)
     .await?;
     for id in pending {
-        if let Err(e) = generate_one(pool, cfg, api, id).await {
+        if let Err(e) = generate_one(pool, cfg, api, fetcher, id).await {
             // 单篇失败不阻断整批：行已标记 failed，下次 ensure 自动补预占行替换
             tracing::warn!("article {id} generation failed, will be re-reserved next run: {e:?}");
         }
@@ -174,6 +176,7 @@ pub async fn generate_one(
     pool: &SqlitePool,
     cfg: &Config,
     api: &dyn DeepSeekApi,
+    fetcher: &dyn SourceFetcher,
     article_id: i64,
 ) -> Result<(), AppError> {
     let row: Option<(String, String, i64)> = sqlx::query_as(
@@ -186,11 +189,21 @@ pub async fn generate_one(
         Some(r) => r,
         None => return Ok(()), // 已填充/已终结/不存在：幂等跳过（并发下另一路已处理）
     };
+    // NEWS 选源：池空自动抓取；抓取失败/池空降级 None（自由发挥，不阻断生成）
+    let source = if category == "NEWS" {
+        source_service::pick_source(pool, cfg, fetcher).await?
+    } else {
+        None
+    };
     let started = tokio::time::Instant::now();
-    // Task 4 起 generate_article_content 带 source 尾参；Task 5 在此接入 pick_source 选源，
-    // 当前传 None（无事实源 → 自由发挥，与改动前行为一致）。
     let generated = llm_service::generate_article_content(
-        pool, api, cfg, &difficulty, &category, order_index, None,
+        pool,
+        api,
+        cfg,
+        &difficulty,
+        &category,
+        order_index,
+        source.as_ref(),
     )
     .await;
     let latency = started.elapsed().as_millis() as i64;
@@ -214,10 +227,11 @@ pub async fn generate_one(
     // 另一路已填充则本路 affected=0，跳过段落写入幂等返回。
     let mut tx = pool.begin().await?;
     let n = sqlx::query(
-        "UPDATE article SET title = ?, prompt_tokens = ?, completion_tokens = ?, updated_at = ?
+        "UPDATE article SET title = ?, source_article_id = ?, prompt_tokens = ?, completion_tokens = ?, updated_at = ?
          WHERE id = ? AND status = 'pending_review' AND title IS NULL",
     )
     .bind(&title)
+    .bind(source.as_ref().map(|s| s.id))
     .bind(prompt_tokens as i64)
     .bind(completion_tokens as i64)
     .bind(Utc::now().timestamp_millis())
@@ -289,6 +303,7 @@ pub async fn reject_article(
     pool: &SqlitePool,
     cfg: &Config,
     api: &dyn DeepSeekApi,
+    fetcher: &dyn SourceFetcher,
     id: i64,
     reason: &str,
 ) -> Result<(), AppError> {
@@ -336,7 +351,7 @@ pub async fn reject_article(
     tx.commit().await?;
     // 事务外填充：失败 → 新行 failed（title NULL），下次 ensure 补预占行替换——
     // 按降级决策记 warn 返回成功（拒绝语义已完成，错误不上抛）。
-    if let Err(e) = generate_one(pool, cfg, api, new_id).await {
+    if let Err(e) = generate_one(pool, cfg, api, fetcher, new_id).await {
         tracing::warn!(
             "article {id} replacement generation failed, reservation {new_id} will be re-reserved by next ensure: {e:?}"
         );
@@ -420,11 +435,12 @@ pub struct ArticleView {
     pub title: String,
     pub status: String,
     pub regenerate_count: i64,
+    pub source_url: Option<String>,
     pub paragraphs: Vec<(i64, String, String)>,
 }
 
 /// load_view 的视图字段（元组打包，规避 too_many_arguments / type_complexity）：
-/// (id, title, target_date, difficulty, content_category, order_index, status, regenerate_count)
+/// (id, title, target_date, difficulty, content_category, order_index, status, regenerate_count, source_url)
 type ViewFields = (
     i64,
     Option<String>,
@@ -434,10 +450,11 @@ type ViewFields = (
     i64,
     String,
     i64,
+    Option<String>,
 );
 
 async fn load_view(pool: &SqlitePool, f: ViewFields) -> Result<ArticleView, AppError> {
-    let (id, title, date, difficulty, category, order, status, regen) = f;
+    let (id, title, date, difficulty, category, order, status, regen, source_url) = f;
     let rows: Vec<(i64, String)> = sqlx::query_as(
         "SELECT order_index, text FROM article_paragraph WHERE article_id = ? ORDER BY order_index",
     )
@@ -460,22 +477,33 @@ async fn load_view(pool: &SqlitePool, f: ViewFields) -> Result<ArticleView, AppE
         title: title.unwrap_or_default(),
         status,
         regenerate_count: regen,
+        source_url,
         paragraphs,
     })
 }
 
 pub async fn get_article(pool: &SqlitePool, id: i64) -> Result<ArticleView, AppError> {
     // 行数据元组别名（规避 type_complexity）
-    type ArticleRow = (Option<String>, String, String, String, i64, String, i64);
+    type ArticleRow = (
+        Option<String>,
+        String,
+        String,
+        String,
+        i64,
+        String,
+        i64,
+        Option<String>,
+    );
     let row: Option<ArticleRow> = sqlx::query_as(
-        "SELECT title, target_date, difficulty, content_category, order_index, status, regenerate_count FROM article WHERE id = ?",
+        "SELECT a.title, a.target_date, a.difficulty, a.content_category, a.order_index, a.status, a.regenerate_count, s.source_url
+         FROM article a LEFT JOIN article_source s ON s.id = a.source_article_id WHERE a.id = ?",
     )
     .bind(id)
     .fetch_optional(pool)
     .await?;
     match row {
-        Some((title, date, diff, cat, order, status, regen)) => {
-            load_view(pool, (id, title, date, diff, cat, order, status, regen)).await
+        Some((title, date, diff, cat, order, status, regen, source_url)) => {
+            load_view(pool, (id, title, date, diff, cat, order, status, regen, source_url)).await
         }
         None => Err(AppError::NotFound("article not found".into())),
     }
@@ -486,15 +514,16 @@ pub async fn get_approved_by_date(
     pool: &SqlitePool,
     date: &str,
 ) -> Result<Vec<ArticleView>, AppError> {
-    let rows: Vec<(i64, Option<String>, String, String, i64, i64)> = sqlx::query_as(
-        "SELECT id, title, difficulty, content_category, order_index, regenerate_count FROM article
-         WHERE target_date = ? AND status = 'approved' ORDER BY difficulty, order_index",
+    let rows: Vec<(i64, Option<String>, String, String, i64, i64, Option<String>)> = sqlx::query_as(
+        "SELECT a.id, a.title, a.difficulty, a.content_category, a.order_index, a.regenerate_count, s.source_url
+         FROM article a LEFT JOIN article_source s ON s.id = a.source_article_id
+         WHERE a.target_date = ? AND a.status = 'approved' ORDER BY a.difficulty, a.order_index",
     )
     .bind(date)
     .fetch_all(pool)
     .await?;
     let mut out = Vec::new();
-    for (id, title, diff, cat, order, regen) in rows {
+    for (id, title, diff, cat, order, regen, source_url) in rows {
         out.push(
             load_view(
                 pool,
@@ -507,6 +536,7 @@ pub async fn get_approved_by_date(
                     order,
                     "approved".into(),
                     regen,
+                    source_url,
                 ),
             )
             .await?,
@@ -524,23 +554,24 @@ pub async fn list_articles(
     status: Option<&str>,
 ) -> Result<Vec<ArticleView>, AppError> {
     let mut sql = String::from(
-        "SELECT id, title, target_date, difficulty, content_category, order_index, status, regenerate_count FROM article",
+        "SELECT a.id, a.title, a.target_date, a.difficulty, a.content_category, a.order_index, a.status, a.regenerate_count, s.source_url
+         FROM article a LEFT JOIN article_source s ON s.id = a.source_article_id",
     );
     let mut conds: Vec<&str> = Vec::new();
     let mut args: Vec<String> = Vec::new();
     if let Some(d) = date {
-        conds.push("target_date = ?");
+        conds.push("a.target_date = ?");
         args.push(d.to_string());
     }
     if let Some(s) = status {
-        conds.push("status = ?");
+        conds.push("a.status = ?");
         args.push(s.to_string());
     }
     if !conds.is_empty() {
         sql.push_str(" WHERE ");
         sql.push_str(&conds.join(" AND "));
     }
-    sql.push_str(" ORDER BY target_date DESC, difficulty, order_index");
+    sql.push_str(" ORDER BY a.target_date DESC, a.difficulty, a.order_index");
     let mut q = sqlx::query_as::<
         _,
         (
@@ -552,6 +583,7 @@ pub async fn list_articles(
             i64,
             String,
             i64,
+            Option<String>,
         ),
     >(sqlx::AssertSqlSafe(sql));
     for a in &args {
@@ -559,8 +591,10 @@ pub async fn list_articles(
     }
     let rows = q.fetch_all(pool).await?;
     let mut out = Vec::new();
-    for (id, title, date, diff, cat, order, status, regen) in rows {
-        out.push(load_view(pool, (id, title, date, diff, cat, order, status, regen)).await?);
+    for (id, title, date, diff, cat, order, status, regen, source_url) in rows {
+        out.push(
+            load_view(pool, (id, title, date, diff, cat, order, status, regen, source_url)).await?,
+        );
     }
     Ok(out)
 }

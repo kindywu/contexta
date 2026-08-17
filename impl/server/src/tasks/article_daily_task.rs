@@ -8,6 +8,7 @@
 
 use crate::AppState;
 use crate::config::Config;
+use crate::drivers::chinadaily::NoopFetcher;
 use crate::drivers::deepseek::{DeepSeekApi, DeepSeekClient};
 use crate::response::AppError;
 use crate::services::article_service;
@@ -34,8 +35,8 @@ pub async fn run_startup_fill(
     let now = Local::now();
     let today = now.format("%Y-%m-%d").to_string();
     let tomorrow = (now + Duration::days(1)).format("%Y-%m-%d").to_string();
-    article_service::ensure_daily_generation(&state.pool, cfg, api, &today).await?;
-    article_service::ensure_daily_generation(&state.pool, cfg, api, &tomorrow).await?;
+    article_service::ensure_daily_generation(&state.pool, cfg, api, &NoopFetcher, &today).await?;
+    article_service::ensure_daily_generation(&state.pool, cfg, api, &NoopFetcher, &tomorrow).await?;
     Ok(())
 }
 
@@ -79,14 +80,25 @@ pub async fn daily_generation_loop(
         let now = Local::now();
         let today = now.format("%Y-%m-%d").to_string();
         let tomorrow = (now + Duration::days(1)).format("%Y-%m-%d").to_string();
-        if let Err(e) =
-            article_service::ensure_daily_generation(&state.pool, &cfg, api.as_ref(), &today).await
+        if let Err(e) = article_service::ensure_daily_generation(
+            &state.pool,
+            &cfg,
+            api.as_ref(),
+            &NoopFetcher,
+            &today,
+        )
+        .await
         {
             tracing::error!("daily generation (today) failed: {e:?}");
         }
-        if let Err(e) =
-            article_service::ensure_daily_generation(&state.pool, &cfg, api.as_ref(), &tomorrow)
-                .await
+        if let Err(e) = article_service::ensure_daily_generation(
+            &state.pool,
+            &cfg,
+            api.as_ref(),
+            &NoopFetcher,
+            &tomorrow,
+        )
+        .await
         {
             tracing::error!("daily generation failed: {e:?}");
         }

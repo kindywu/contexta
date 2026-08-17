@@ -13,6 +13,7 @@ use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use server::db;
+use server::drivers::chinadaily::NoopFetcher;
 use server::drivers::deepseek::{DeepSeekApi, DeepSeekResponse, LlmCallError};
 use server::services::article_service;
 use server::{AppState, build_router, config::Config};
@@ -176,7 +177,7 @@ async fn list_and_review_flow() {
     // 造 15 篇（ensure_daily_generation + mock api）。approve 后要验证「今日下发可见」，
     // 故用本地今日日期（GET /api/articles/today 只回本地今日 approved 文章）。
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &today)
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, &today)
         .await
         .unwrap();
     // 待审列表：status + date 筛选 → 15 篇，title 非空（已生成），含段落
@@ -295,7 +296,7 @@ async fn reject_until_cap_marks_final() {
     let (app, pool, cfg, db_path, _server) = setup().await;
     let admin_token = admin_login(&app).await;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &today)
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, &today)
         .await
         .unwrap();
     let first: i64 = sqlx::query_scalar("SELECT id FROM article ORDER BY id LIMIT 1")
@@ -455,7 +456,7 @@ async fn edit_pending_review_article() {
     let (app, pool, cfg, db_path, _server) = setup().await;
     let admin_token = admin_login(&app).await;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &today)
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, &today)
         .await
         .unwrap();
     let id = first_editable_id(&pool).await;
@@ -530,7 +531,7 @@ async fn edit_approved_article_returns_404() {
     let (app, pool, cfg, db_path, _server) = setup().await;
     let admin_token = admin_login(&app).await;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &today)
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, &today)
         .await
         .unwrap();
     let id = first_editable_id(&pool).await;
@@ -563,7 +564,7 @@ async fn edit_reservation_row_returns_404() {
     let (app, pool, cfg, db_path, _server) = setup().await;
     let admin_token = admin_login(&app).await;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &today)
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, &today)
         .await
         .unwrap();
     // 手工造预占行：status=pending_review + title NULL（生成管线拥有——若编辑命中该行，
@@ -617,7 +618,7 @@ async fn edit_invalid_params_rejected() {
     let (app, pool, cfg, db_path, _server) = setup().await;
     let admin_token = admin_login(&app).await;
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &today)
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, &today)
         .await
         .unwrap();
     let id = first_editable_id(&pool).await;

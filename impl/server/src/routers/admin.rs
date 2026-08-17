@@ -1,4 +1,5 @@
 use crate::AppState;
+use crate::drivers::chinadaily::NoopFetcher;
 use crate::drivers::deepseek::DeepSeekClient;
 use crate::extractors::AdminAuth;
 use crate::response::{ApiResult, AppError, ok};
@@ -176,6 +177,7 @@ pub async fn articles_reject(
         &state.pool,
         &state.cfg,
         &client,
+        &NoopFetcher,
         id,
         req.reason.as_deref().unwrap_or(""),
     )
@@ -232,6 +234,7 @@ pub async fn articles_generate(
         ));
     }
     let client = DeepSeekClient::new(&state.cfg)?;
-    article_service::ensure_daily_generation(&state.pool, &state.cfg, &client, &req.date).await?;
+    article_service::ensure_daily_generation(&state.pool, &state.cfg, &client, &NoopFetcher, &req.date)
+        .await?;
     Ok(ok(serde_json::json!({})))
 }

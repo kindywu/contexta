@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use server::config::Config;
 use server::db;
+use server::drivers::chinadaily::NoopFetcher;
 use server::drivers::deepseek::{DeepSeekApi, DeepSeekResponse, LlmCallError};
 use server::response::AppError;
 use server::services::article_service;
@@ -97,7 +98,7 @@ impl DeepSeekApi for FailingFirstArticleApi {
 #[tokio::test]
 async fn ensure_generation_creates_15_articles_idempotent() {
     let (pool, cfg, db_path) = setup().await;
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-14")
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, "2026-08-14")
         .await
         .unwrap();
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article")
@@ -121,7 +122,7 @@ async fn ensure_generation_creates_15_articles_idempotent() {
             .unwrap();
     assert_eq!(not_pending, 0, "全部应为 pending_review");
     // 幂等：再跑一次不新增
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-14")
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, "2026-08-14")
         .await
         .unwrap();
     let total2: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article")
@@ -158,8 +159,8 @@ async fn concurrent_ensure_generation_is_idempotent() {
     let (pool, cfg, db_path) = setup().await;
     // BEGIN IMMEDIATE 序列化：两次并发 ensure 仍只生成 15 篇（每难度 5）
     let (r1, r2) = tokio::join!(
-        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-15"),
-        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-15"),
+        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, "2026-08-15"),
+        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, "2026-08-15"),
     );
     assert!(r1.is_ok(), "并发调用 1 失败: {:?}", r1.err());
     assert!(r2.is_ok(), "并发调用 2 失败: {:?}", r2.err());
@@ -186,7 +187,7 @@ async fn concurrent_ensure_generation_is_idempotent() {
 #[tokio::test]
 async fn reject_regenerates_until_cap_then_final() {
     let (pool, cfg, db_path) = setup().await;
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-14")
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, "2026-08-14")
         .await
         .unwrap();
     let first: i64 = sqlx::query_scalar("SELECT id FROM article ORDER BY id LIMIT 1")
@@ -194,7 +195,7 @@ async fn reject_regenerates_until_cap_then_final() {
         .await
         .unwrap();
     // 第一次 reject：旧行 → rejected，新行 pending_review（regenerate_count=1）
-    article_service::reject_article(&pool, &cfg, &MockArticleApi, first, "low quality")
+    article_service::reject_article(&pool, &cfg, &MockArticleApi, &NoopFetcher, first,"low quality")
         .await
         .unwrap();
     let old_status: String = sqlx::query_scalar("SELECT status FROM article WHERE id = ?")
@@ -218,7 +219,7 @@ async fn reject_regenerates_until_cap_then_final() {
     assert_eq!(regen, 1);
     // 连续 reject：第 2、3 次各产生新行（regenerate_count=2、3），第 4 次 → rejected_final 且不再新增
     for k in 2..=4 {
-        article_service::reject_article(&pool, &cfg, &MockArticleApi, cur, "bad")
+        article_service::reject_article(&pool, &cfg, &MockArticleApi, &NoopFetcher, cur,"bad")
             .await
             .unwrap();
         let st: String = sqlx::query_scalar("SELECT status FROM article WHERE id = ?")
@@ -282,7 +283,7 @@ async fn budget_blocks_generation() {
     }
     // 预算在预留阶段校验（预占行即消耗每日文章配额）——ensure 阶段 1 即被拒，无任何写入
     let r =
-        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-14").await;
+        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, "2026-08-14").await;
     assert!(
         matches!(r, Err(AppError::QuotaExceeded(_))),
         "预算耗尽必须 QuotaExceeded: {:?}",
@@ -304,7 +305,7 @@ async fn failed_generation_recovers_on_next_ensure() {
     };
     // 第 1 篇失败：该行标记 failed（title 仍 NULL = 预占形态），其余 14 篇正常填充，
     // 整批不中断、不回滚（单篇失败不影响其余稿件，LLM 费用不浪费）
-    let r1 = article_service::ensure_daily_generation(&pool, &cfg, &api, "2026-08-16").await;
+    let r1 = article_service::ensure_daily_generation(&pool, &cfg, &api, &NoopFetcher, "2026-08-16").await;
     assert!(r1.is_ok(), "单篇失败不应阻断整批: {:?}", r1.err());
     let failed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article WHERE status = 'failed'")
         .fetch_one(&pool)
@@ -330,7 +331,7 @@ async fn failed_generation_recovers_on_next_ensure() {
     .unwrap();
     assert_eq!(filled, 14, "其余 14 篇已填充");
     // 再跑 ensure（API 正常）：failed 槽位被新预占行替换并成功生成，每难度仍 5 篇非终结
-    let r2 = article_service::ensure_daily_generation(&pool, &cfg, &api, "2026-08-16").await;
+    let r2 = article_service::ensure_daily_generation(&pool, &cfg, &api, &NoopFetcher, "2026-08-16").await;
     assert!(r2.is_ok(), "恢复跑必须成功: {:?}", r2.err());
     let per: Vec<(String, i64)> = sqlx::query_as(
         "SELECT difficulty, COUNT(*) FROM article WHERE status IN ('pending_review','approved') GROUP BY difficulty",
@@ -362,7 +363,7 @@ async fn failed_generation_recovers_on_next_ensure() {
 #[tokio::test]
 async fn approved_articles_visible_others_not() {
     let (pool, cfg, db_path) = setup().await;
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-14")
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, "2026-08-14")
         .await
         .unwrap();
     // 未审：下发列表为空
@@ -456,7 +457,7 @@ async fn fill_is_transactional_and_recovers() {
     .execute(&pool)
     .await
     .unwrap();
-    let r = article_service::generate_one(&pool, &cfg, &MockArticleApi, id).await;
+    let r = article_service::generate_one(&pool, &cfg, &MockArticleApi, &NoopFetcher, id).await;
     assert!(
         r.is_err(),
         "段落 INSERT 失败应返回错误（F1 事务回滚）: {:?}",
@@ -493,7 +494,7 @@ async fn fill_is_transactional_and_recovers() {
         .await
         .unwrap();
     let r2 =
-        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-17").await;
+        article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, "2026-08-17").await;
     assert!(r2.is_ok(), "重填必须成功: {:?}", r2.err());
     let title_null2: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM article WHERE id = ? AND title IS NULL")
@@ -541,7 +542,7 @@ async fn approve_rejects_reservation_rows() {
         r.err()
     );
     // 填充后仍可正常 approve
-    article_service::generate_one(&pool, &cfg, &MockArticleApi, id)
+    article_service::generate_one(&pool, &cfg, &MockArticleApi, &NoopFetcher, id)
         .await
         .unwrap();
     article_service::approve_article(&pool, id).await.unwrap();
@@ -557,7 +558,7 @@ async fn approve_rejects_reservation_rows() {
 #[tokio::test]
 async fn concurrent_double_reject_creates_single_replacement() {
     let (pool, cfg, db_path) = setup().await;
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-18")
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, "2026-08-18")
         .await
         .unwrap();
     let id: i64 = sqlx::query_scalar("SELECT id FROM article ORDER BY id LIMIT 1")
@@ -567,8 +568,8 @@ async fn concurrent_double_reject_creates_single_replacement() {
     // 并发双 reject 同一行（F3）：后到者的 UPDATE 条件（仍 pending_review）不命中 →
     // 不建补生成行；恰好一个成功、另一个 NotFound
     let (r1, r2) = tokio::join!(
-        article_service::reject_article(&pool, &cfg, &MockArticleApi, id, "bad"),
-        article_service::reject_article(&pool, &cfg, &MockArticleApi, id, "also bad"),
+        article_service::reject_article(&pool, &cfg, &MockArticleApi, &NoopFetcher, id, "bad"),
+        article_service::reject_article(&pool, &cfg, &MockArticleApi, &NoopFetcher, id, "also bad"),
     );
     let ok = r1.is_ok() as i32 + r2.is_ok() as i32;
     assert_eq!(ok, 1, "双 reject 恰好一个成功");
@@ -603,7 +604,7 @@ async fn concurrent_double_reject_creates_single_replacement() {
 #[tokio::test]
 async fn reject_replacement_failure_degrades_to_ok() {
     let (pool, cfg, db_path) = setup().await;
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-19")
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, "2026-08-19")
         .await
         .unwrap();
     let first: i64 = sqlx::query_scalar("SELECT id FROM article ORDER BY id LIMIT 1")
@@ -616,7 +617,7 @@ async fn reject_replacement_failure_degrades_to_ok() {
     let api = FailingFirstArticleApi {
         calls: AtomicUsize::new(0),
     };
-    let r = article_service::reject_article(&pool, &cfg, &api, first, "bad").await;
+    let r = article_service::reject_article(&pool, &cfg, &api, &NoopFetcher, first,"bad").await;
     assert!(
         r.is_ok(),
         "补生成失败必须降级为 Ok（拒绝已生效，替换行自愈）: {:?}",
@@ -642,7 +643,7 @@ async fn reject_replacement_failure_degrades_to_ok() {
     assert_eq!(new_status, "failed", "填充失败行应为 failed");
     assert!(new_title.is_none(), "failed 行 title 仍 NULL（可自愈形态）");
     // 下次 ensure（API 正常）→ LOW 非终结仍 5 篇（4 剩 + 1 新补）
-    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, "2026-08-19")
+    article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &NoopFetcher, "2026-08-19")
         .await
         .unwrap();
     let low: i64 = sqlx::query_scalar(
@@ -671,7 +672,7 @@ async fn reject_reservation_rows_not_found() {
     .await
     .unwrap()
     .last_insert_rowid();
-    let r = article_service::reject_article(&pool, &cfg, &MockArticleApi, id, "bad").await;
+    let r = article_service::reject_article(&pool, &cfg, &MockArticleApi, &NoopFetcher, id, "bad").await;
     assert!(
         matches!(r, Err(AppError::NotFound(_))),
         "预占行（title NULL）不可 reject: {:?}",
