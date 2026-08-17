@@ -86,6 +86,7 @@ export interface ArticleItem {
   order_index: number
   status: string
   regenerate_count: number
+  source_url: string | null
 }
 
 export interface ArticleParagraph {

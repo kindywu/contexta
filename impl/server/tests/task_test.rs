@@ -9,6 +9,7 @@ use chrono::NaiveDate;
 use server::AppState;
 use server::config::Config;
 use server::db;
+use server::drivers::chinadaily::NoopFetcher;
 use server::drivers::deepseek::{DeepSeekApi, DeepSeekResponse, LlmCallError};
 use server::tasks::article_daily_task::{ApiFactory, daily_generation_loop, run_startup_fill};
 use server::tasks::default_sleep;
@@ -90,7 +91,7 @@ async fn startup_fill_generates_today_and_tomorrow() {
         cfg: Arc::new(cfg.clone()),
     };
     // 首跑：今天 15 行 + 明天 15 行
-    run_startup_fill(&state, &cfg, &MockArticleApi)
+    run_startup_fill(&state, &cfg, &MockArticleApi, &NoopFetcher)
         .await
         .unwrap();
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article")
@@ -116,7 +117,7 @@ async fn startup_fill_generates_today_and_tomorrow() {
     let diff = dates[1] - dates[0];
     assert_eq!(diff.num_days(), 1, "今天与明天必须相邻");
     // 幂等：再跑一次行数不变
-    run_startup_fill(&state, &cfg, &MockArticleApi)
+    run_startup_fill(&state, &cfg, &MockArticleApi, &NoopFetcher)
         .await
         .unwrap();
     let total2: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM article")
@@ -145,6 +146,7 @@ async fn timer_fires_at_configured_hour() {
         state,
         Arc::new(cfg.clone()),
         mock_api_factory(),
+        Arc::new(NoopFetcher),
         default_sleep(),
     ));
     // 最长等待约 24h（now.hour() >= 配置时刻时等到明天该时刻），40h 上限足够；

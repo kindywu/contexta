@@ -285,6 +285,12 @@ async function generate() {
           </template>
         </a-table-column>
         <a-table-column title="分类" data-index="content_category" width="100" />
+        <a-table-column title="来源" width="120">
+          <template #default="{ record }">
+            <a v-if="record.source_url" :href="record.source_url" target="_blank" rel="noreferrer">来源</a>
+            <span v-else class="placeholder-text">—</span>
+          </template>
+        </a-table-column>
         <a-table-column title="标题" min-width="220">
           <template #default="{ record }">
             <span v-if="hasContent(record)">{{ record.title }}</span>
@@ -345,6 +351,17 @@ async function generate() {
           <a-descriptions-item label="日期">{{ drawer.item.target_date }}</a-descriptions-item>
           <a-descriptions-item label="难度">{{ drawer.item.difficulty }}</a-descriptions-item>
           <a-descriptions-item label="分类">{{ drawer.item.content_category }}</a-descriptions-item>
+          <a-descriptions-item label="来源">
+            <a
+              v-if="drawer.item.source_url"
+              :href="drawer.item.source_url"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {{ drawer.item.source_url }}
+            </a>
+            <span v-else>—</span>
+          </a-descriptions-item>
           <a-descriptions-item label="状态">
             <a-tag :color="statusColor(drawer.item)">{{ statusText(drawer.item) }}</a-tag>
           </a-descriptions-item>

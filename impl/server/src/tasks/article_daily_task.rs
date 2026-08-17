@@ -8,7 +8,7 @@
 
 use crate::AppState;
 use crate::config::Config;
-use crate::drivers::chinadaily::NoopFetcher;
+use crate::drivers::chinadaily::{ChinadailyFetcher, NoopFetcher, SourceFetcher};
 use crate::drivers::deepseek::{DeepSeekApi, DeepSeekClient};
 use crate::response::AppError;
 use crate::services::article_service;
@@ -31,12 +31,13 @@ pub async fn run_startup_fill(
     state: &AppState,
     cfg: &Config,
     api: &dyn DeepSeekApi,
+    fetcher: &dyn SourceFetcher,
 ) -> Result<(), AppError> {
     let now = Local::now();
     let today = now.format("%Y-%m-%d").to_string();
     let tomorrow = (now + Duration::days(1)).format("%Y-%m-%d").to_string();
-    article_service::ensure_daily_generation(&state.pool, cfg, api, &NoopFetcher, &today).await?;
-    article_service::ensure_daily_generation(&state.pool, cfg, api, &NoopFetcher, &tomorrow).await?;
+    article_service::ensure_daily_generation(&state.pool, cfg, api, fetcher, &today).await?;
+    article_service::ensure_daily_generation(&state.pool, cfg, api, fetcher, &tomorrow).await?;
     Ok(())
 }
 
@@ -49,6 +50,7 @@ pub async fn daily_generation_loop(
     state: AppState,
     cfg: Arc<Config>,
     api_factory: ApiFactory,
+    fetcher: Arc<dyn SourceFetcher>,
     sleep: SleepFn,
 ) {
     loop {
@@ -84,7 +86,7 @@ pub async fn daily_generation_loop(
             &state.pool,
             &cfg,
             api.as_ref(),
-            &NoopFetcher,
+            fetcher.as_ref(),
             &today,
         )
         .await
@@ -95,7 +97,7 @@ pub async fn daily_generation_loop(
             &state.pool,
             &cfg,
             api.as_ref(),
-            &NoopFetcher,
+            fetcher.as_ref(),
             &tomorrow,
         )
         .await
@@ -108,14 +110,22 @@ pub async fn daily_generation_loop(
 /// 每日任务入口（main `tokio::spawn`）：启动补漏（客户端构造/生成失败仅记日志，不阻止
 /// serve——本函数已在独立任务中）→ 每日循环（每轮经工厂构造客户端，构造失败可恢复）。
 pub async fn spawn_daily_task(state: AppState, cfg: Arc<Config>, sleep: SleepFn) {
+    // 事实源抓取器：构造失败降级 NoopFetcher（NEWS 走自由发挥，不阻断任务）
+    let fetcher: Arc<dyn SourceFetcher> = match ChinadailyFetcher::new(&cfg) {
+        Ok(f) => Arc::new(f),
+        Err(e) => {
+            tracing::error!("chinadaily fetcher: {e}");
+            Arc::new(NoopFetcher)
+        }
+    };
     match DeepSeekClient::new(&cfg) {
         Ok(client) => {
-            if let Err(e) = run_startup_fill(&state, &cfg, &client).await {
+            if let Err(e) = run_startup_fill(&state, &cfg, &client, fetcher.as_ref()).await {
                 tracing::error!("daily task: startup fill failed: {e:?}");
             }
         }
         Err(e) => tracing::error!("daily task: deepseek client: {e}"),
     }
     let factory = production_api_factory(cfg.clone());
-    daily_generation_loop(state, cfg, factory, sleep).await;
+    daily_generation_loop(state, cfg, factory, fetcher, sleep).await;
 }
