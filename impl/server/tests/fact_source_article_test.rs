@@ -143,48 +143,68 @@ async fn news_consumes_sources_others_not_and_url_visible() {
 }
 
 #[tokio::test]
-async fn reject_replacement_does_not_reuse_source() {
+async fn reject_replacement_never_reuses_parent_source() {
     let (pool, cfg, db_path) = setup().await;
+    // 5 篇来源：ensure 耗 ≤2 篇（NEWS 数），场景 B 再耗 1 篇——池始终充足
     let fetcher = MockFetcher {
-        sources: vec![fetched("https://cd/1", 0), fetched("https://cd/2", 1)],
+        sources: vec![
+            fetched("https://cd/1", 0), fetched("https://cd/2", 1), fetched("https://cd/3", 2),
+            fetched("https://cd/4", 3), fetched("https://cd/5", 4),
+        ],
         fail: false,
     };
     article_service::ensure_daily_generation(&pool, &cfg, &MockArticleApi, &fetcher, "2026-08-15")
         .await
         .unwrap();
-    let used_before: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM article_source WHERE is_used = 1")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    // 场景 A：NEWS 原稿被拒 → 补生行轮换非 NEWS（offset 0 → 1/2/3），不新耗源
     let news_id: i64 = sqlx::query_scalar(
         "SELECT id FROM article WHERE content_category = 'NEWS' AND source_article_id IS NOT NULL ORDER BY id LIMIT 1",
     )
     .fetch_one(&pool)
     .await
     .unwrap();
-    // reject：补生成分类轮换（order+regen+1 取模），补生行必非 NEWS → 不新耗来源
-    article_service::reject_article(&pool, &cfg, &MockArticleApi, &fetcher, news_id, "bad")
-        .await
-        .unwrap();
-    let used_after: i64 =
+    let used_before: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM article_source WHERE is_used = 1")
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(used_after, used_before, "reject 补生成不得重复耗源（补生行非 NEWS）");
-    let replacement: i64 = sqlx::query_scalar("SELECT MAX(id) FROM article")
+    article_service::reject_article(&pool, &cfg, &MockArticleApi, &fetcher, news_id, "bad")
+        .await
+        .unwrap();
+    let used_after_a: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM article_source WHERE is_used = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(used_after_a, used_before, "NEWS 原稿补生行非 NEWS，不得新耗源");
+    // 场景 B：PERSONAL_ESSAY 原稿 regen=0 被拒 → (seed+order+1)%4 == 0 → 补生行轮换到 NEWS
+    let essay_id: i64 = sqlx::query_scalar(
+        "SELECT id FROM article WHERE content_category = 'PERSONAL_ESSAY' AND status = 'pending_review' ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    article_service::reject_article(&pool, &cfg, &MockArticleApi, &fetcher, essay_id, "bad")
+        .await
+        .unwrap();
+    let repl: i64 = sqlx::query_scalar("SELECT MAX(id) FROM article")
         .fetch_one(&pool)
         .await
         .unwrap();
     let (cat, src): (String, Option<i64>) =
         sqlx::query_as("SELECT content_category, source_article_id FROM article WHERE id = ?")
-            .bind(replacement)
+            .bind(repl)
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_ne!(cat, "NEWS", "补生行分类已轮换，非 NEWS");
-    assert!(src.is_none(), "非 NEWS 补生行无来源");
+    assert_eq!(cat, "NEWS", "PERSONAL_ESSAY regen=0 补生行应轮换到 NEWS");
+    assert!(src.is_some(), "NEWS 补生行应锚定新来源");
+    let used_after_b: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM article_source WHERE is_used = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(used_after_b, used_after_a + 1, "NEWS 补生行恰好新耗 1 篇来源");
     cleanup(pool, &db_path).await;
 }
 
