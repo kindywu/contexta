@@ -187,8 +187,10 @@ pub async fn generate_one(
         None => return Ok(()), // 已填充/已终结/不存在：幂等跳过（并发下另一路已处理）
     };
     let started = tokio::time::Instant::now();
+    // Task 4 起 generate_article_content 带 source 尾参；Task 5 在此接入 pick_source 选源，
+    // 当前传 None（无事实源 → 自由发挥，与改动前行为一致）。
     let generated = llm_service::generate_article_content(
-        pool, api, cfg, &difficulty, &category, order_index,
+        pool, api, cfg, &difficulty, &category, order_index, None,
     )
     .await;
     let latency = started.elapsed().as_millis() as i64;

@@ -4,7 +4,8 @@ use crate::llm::parser::{WordLookup, parse_word_lookup};
 use crate::prompts::{build_article_system, build_article_user, build_word_lookup_system, build_word_lookup_user};
 use crate::response::AppError;
 use crate::services::today_start_millis;
-use chrono::Utc;
+use crate::services::source_service::SourceArticle;
+use chrono::{Duration, Local, Utc};
 use sqlx::SqlitePool;
 
 pub async fn check_quota(pool: &SqlitePool, cfg: &Config, phone: &str) -> Result<(), AppError> {
@@ -170,9 +171,20 @@ pub async fn generate_article_content(
     difficulty: &str,
     category: &str,
     order_index: i64,
+    source: Option<&SourceArticle>,
 ) -> Result<(String, Vec<(i64, String, String)>, u64, u64), AppError> {
     let system = build_article_system(pool, difficulty).await?;
-    let user = build_article_user(pool, category, order_index).await?;
+    let source_block = match source {
+        Some(s) => format!(
+            "Facts source (China Daily, {}):\n{}\n{}\n\n\
+             Write an original news article based ONLY on the facts above.\n\
+             Do not copy sentences from the source. Do not add facts not present in the source.",
+            s.published_at, s.title, s.body
+        ),
+        None => String::new(),
+    };
+    let recent_block = recent_titles_block(pool, cfg).await?;
+    let user = build_article_user(pool, category, order_index, &source_block, &recent_block).await?;
     let resp = call_with_retry(api, &system, &user, cfg.llm_timeout_secs).await?;
     let draft = crate::llm::parser::parse_article(&resp.content);
     Ok((
@@ -180,5 +192,31 @@ pub async fn generate_article_content(
         draft.paragraphs,
         resp.prompt_tokens,
         resp.completion_tokens,
+    ))
+}
+
+/// 近 recent_title_days 天已生成文章标题清单（防重复注入；空清单 → 空串）。
+/// 标题为 None（预占/生成中/失败行）自动排除。
+async fn recent_titles_block(pool: &SqlitePool, cfg: &Config) -> Result<String, AppError> {
+    let min = (Local::now() - Duration::days(cfg.recent_title_days))
+        .format("%Y-%m-%d")
+        .to_string();
+    let titles: Vec<String> = sqlx::query_scalar(
+        "SELECT title FROM article WHERE title IS NOT NULL AND target_date >= ?
+         ORDER BY target_date DESC, id DESC LIMIT 50",
+    )
+    .bind(&min)
+    .fetch_all(pool)
+    .await?;
+    if titles.is_empty() {
+        return Ok(String::new());
+    }
+    Ok(format!(
+        "The following article titles were recently published; avoid the same subject, viewpoint, or event:\n{}",
+        titles
+            .iter()
+            .map(|t| format!("- {t}"))
+            .collect::<Vec<_>>()
+            .join("\n")
     ))
 }

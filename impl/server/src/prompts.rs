@@ -59,16 +59,21 @@ pub async fn build_article_system(
     Ok(format!("{common}\n\n{diff}").replace("{{title}}", "The Article Title"))
 }
 
-/// article user prompt：占位替换（{{orderIndex}}/{{category}}）+ 分类指南追加。
+/// article user prompt：占位替换（{{orderIndex}}/{{category}}/{{sourceArticle}}/{{recentTitles}}）
+/// + 分类指南追加。source_block / recent_block 为空串时占位符替换为空（降级自由发挥 / 无清单）。
 pub async fn build_article_user(
     pool: &SqlitePool,
     category: &str,
     order_index: i64,
+    source_block: &str,
+    recent_block: &str,
 ) -> Result<String, AppError> {
     let base = prompt_service::get_prompt(pool, "article_user_prompt")
         .await?
         .replace("{{orderIndex}}", &order_index.to_string())
-        .replace("{{category}}", category);
+        .replace("{{category}}", category)
+        .replace("{{sourceArticle}}", source_block)
+        .replace("{{recentTitles}}", recent_block);
     Ok(match category_guideline(category) {
         Some(g) => format!("{base}\n\nGuidelines for {category}:\n{g}"),
         None => base,

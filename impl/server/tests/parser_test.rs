@@ -316,7 +316,7 @@ async fn build_article_system_replaces_title_placeholder() {
 #[tokio::test]
 async fn build_article_user_includes_order_index_and_category() {
     let pool = prompt_db().await;
-    let prompt = build_article_user(&pool, "NEWS", 3).await.unwrap();
+    let prompt = build_article_user(&pool, "NEWS", 3, "", "").await.unwrap();
     assert!(prompt.contains("Create article #3 in the category: NEWS"));
     pool.close().await;
 }
@@ -324,7 +324,7 @@ async fn build_article_user_includes_order_index_and_category() {
 #[tokio::test]
 async fn build_article_user_appends_category_guideline() {
     let pool = prompt_db().await;
-    let prompt = build_article_user(&pool, "NEWS", 1).await.unwrap();
+    let prompt = build_article_user(&pool, "NEWS", 1, "", "").await.unwrap();
     assert!(prompt.contains("Guidelines for NEWS:"));
     assert!(prompt.contains("A brief news-style report on a current or hypothetical event."));
     pool.close().await;
@@ -333,7 +333,7 @@ async fn build_article_user_appends_category_guideline() {
 #[tokio::test]
 async fn build_article_user_unknown_category_omits_guideline() {
     let pool = prompt_db().await;
-    let prompt = build_article_user(&pool, "UNKNOWN_CATEGORY", 1).await.unwrap();
+    let prompt = build_article_user(&pool, "UNKNOWN_CATEGORY", 1, "", "").await.unwrap();
     assert!(!prompt.contains("Guidelines"));
     pool.close().await;
 }
@@ -344,7 +344,7 @@ async fn build_functions_fail_when_seed_rows_deleted() {
     let pool = prompt_db().await;
     sqlx::query("DELETE FROM prompt").execute(&pool).await.unwrap();
     assert!(build_article_system(&pool, "MEDIUM").await.is_err());
-    assert!(build_article_user(&pool, "NEWS", 3).await.is_err());
+    assert!(build_article_user(&pool, "NEWS", 3, "", "").await.is_err());
     assert!(build_word_lookup_system(&pool).await.is_err());
     assert!(build_word_lookup_user(&pool, "ocean").await.is_err());
     pool.close().await;

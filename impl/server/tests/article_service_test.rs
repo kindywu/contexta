@@ -57,14 +57,15 @@ async fn setup() -> (SqlitePool, Config, String) {
 }
 
 // mock DeepSeek：user prompt 含分类名（如 "NEWS"）与生成指南；
-// 返回含分类名的合法文章 XML（<title>/<paragraph>/<translation> 齐备，parse_article 可解析）。
+// 返回固定合法文章 XML（T4 起标题不可回显 prompt——防重清单会把回显标题递归注入
+// 后续 prompt 造成指数膨胀；<title>/<paragraph>/<translation> 齐备，parse_article 可解析）。
 struct MockArticleApi;
 #[async_trait]
 impl DeepSeekApi for MockArticleApi {
-    async fn chat(&self, _s: &str, u: &str) -> Result<DeepSeekResponse, LlmCallError> {
+    async fn chat(&self, _s: &str, _u: &str) -> Result<DeepSeekResponse, LlmCallError> {
         Ok(DeepSeekResponse {
             content: format!(
-                "<title>T{u}</title><paragraph>P1.</paragraph><translation>译1。</translation>"
+                "<title>T</title><paragraph>P1.</paragraph><translation>译1。</translation>"
             ),
             prompt_tokens: 1,
             completion_tokens: 1,
@@ -79,13 +80,13 @@ struct FailingFirstArticleApi {
 }
 #[async_trait]
 impl DeepSeekApi for FailingFirstArticleApi {
-    async fn chat(&self, _s: &str, u: &str) -> Result<DeepSeekResponse, LlmCallError> {
+    async fn chat(&self, _s: &str, _u: &str) -> Result<DeepSeekResponse, LlmCallError> {
         if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
             return Err(LlmCallError::Fatal("mock first call failure".into()));
         }
         Ok(DeepSeekResponse {
             content: format!(
-                "<title>T{u}</title><paragraph>P1.</paragraph><translation>译1。</translation>"
+                "<title>T</title><paragraph>P1.</paragraph><translation>译1。</translation>"
             ),
             prompt_tokens: 1,
             completion_tokens: 1,

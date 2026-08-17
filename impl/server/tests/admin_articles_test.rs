@@ -152,16 +152,16 @@ async fn user_login(app: &axum::Router, phone: &str) -> String {
     json["data"]["token"].as_str().unwrap().to_string()
 }
 
-// mock DeepSeek（T8 模式）：用户 prompt 含分类名；返回含分类名的合法文章 XML
-// （<title>/<paragraph>/<translation> 齐备，parse_article 可解析）。仅用于造数直调，
-// 不走网络；HTTP 端点的 LLM 调用由 httpmock 拦截。
+// mock DeepSeek（T8 模式）：返回固定合法文章 XML（T4 起标题不可回显 prompt——
+// 防重清单会把回显标题递归注入后续 prompt 造成指数膨胀；<title>/<paragraph>/<translation>
+// 齐备，parse_article 可解析）。仅用于造数直调，不走网络；HTTP 端点的 LLM 调用由 httpmock 拦截。
 struct MockArticleApi;
 #[async_trait]
 impl DeepSeekApi for MockArticleApi {
-    async fn chat(&self, _s: &str, u: &str) -> Result<DeepSeekResponse, LlmCallError> {
+    async fn chat(&self, _s: &str, _u: &str) -> Result<DeepSeekResponse, LlmCallError> {
         Ok(DeepSeekResponse {
             content: format!(
-                "<title>T{u}</title><paragraph>P1.</paragraph><translation>译1。</translation>"
+                "<title>T</title><paragraph>P1.</paragraph><translation>译1。</translation>"
             ),
             prompt_tokens: 1,
             completion_tokens: 1,
