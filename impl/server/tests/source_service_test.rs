@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use chrono::{Duration, Local, Utc};
 use server::config::Config;
 use server::db;
-use server::drivers::chinadaily::{FetchedSource, NoopFetcher, SourceFetcher};
+use server::drivers::chinadaily::{FetchedSource, SourceFetcher};
 use server::services::source_service;
 use sqlx::SqlitePool;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -116,6 +116,7 @@ async fn pick_reserves_sources_in_freshness_order_never_repeats() {
         .await
         .unwrap();
     assert_eq!(used, 3, "三篇全部预占");
+    cleanup(pool, &db_path).await;
 }
 
 #[tokio::test]
