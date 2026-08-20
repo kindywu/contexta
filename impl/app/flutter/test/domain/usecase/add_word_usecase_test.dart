@@ -1,7 +1,7 @@
+import 'package:contexta/data/remote/llm_api.dart';
+import 'package:contexta/data/remote/server_api_client.dart';
 import 'package:contexta/domain/error/llm_exceptions.dart';
 import 'package:contexta/domain/error/pipeline_blocking_exception.dart';
-import 'package:contexta/domain/generation/word_prompts.dart';
-import 'package:contexta/domain/llm_client.dart';
 import 'package:contexta/domain/model/daily_stats.dart';
 import 'package:contexta/domain/model/vocab_word.dart';
 import 'package:contexta/domain/model/word_detail.dart';
@@ -108,35 +108,21 @@ class FakeStatsRepository implements StatsRepository {
       throw UnimplementedError();
 }
 
-class FakeLlmClient implements LlmClient {
+class FakeLlmApi implements LlmApi {
   Object? throwError;
-  String content = _validXml;
+  WordDetail result = _sampleDetail(42);
   int callCount = 0;
+  String? lastWord;
 
   @override
-  Future<LlmResult> call(
-    String systemPrompt,
-    String userPrompt, {
-    int? timeoutMs,
-  }) async {
+  Future<WordDetail> wordLookup(String word) async {
     callCount++;
+    lastWord = word;
     final e = throwError;
     if (e != null) throw e;
-    return LlmResult(content: content, retryCount: 0);
+    return result;
   }
 }
-
-const _validXml = '<spelling>Serendipity</spelling>\n'
-    '<phonetic>/ˌserənˈdɪpəti/</phonetic>\n'
-    '<sense>\n'
-    '  <partOfSpeech>n.</partOfSpeech>\n'
-    '  <chineseMeaning>意外发现珍奇事物的运气</chineseMeaning>\n'
-    '  <englishDefinition>The occurrence of events by chance in a happy way.</englishDefinition>\n'
-    '  <example>\n'
-    '    <en>It was pure serendipity that we met.</en>\n'
-    '    <zh>我们的相遇纯属幸运。</zh>\n'
-    '  </example>\n'
-    '</sense>';
 
 WordDetail _sampleDetail(int wordId, {bool isInVocabulary = false}) {
   final sense = WordSense(
@@ -168,25 +154,22 @@ WordDetail _sampleDetail(int wordId, {bool isInVocabulary = false}) {
 }
 
 void main() {
-  // 查词 prompt 走 rootBundle（word_lookup_system.txt）
-  TestWidgetsFlutterBinding.ensureInitialized();
-
   late FakeWordRepository words;
   late FakeVocabularyRepository vocab;
   late FakeStatsRepository stats;
-  late FakeLlmClient llm;
+  late FakeLlmApi llm;
   late AddWordUseCase useCase;
 
   setUp(() {
     words = FakeWordRepository();
     vocab = FakeVocabularyRepository();
     stats = FakeStatsRepository();
-    llm = FakeLlmClient();
+    llm = FakeLlmApi();
     useCase = AddWordUseCase(
       wordRepository: words,
       vocabularyRepository: vocab,
       statsRepository: stats,
-      llmClient: llm,
+      llmApi: llm,
     );
   });
 
@@ -253,7 +236,7 @@ void main() {
 
   // ─── LLM 生成 ───────────────────────────────────────────
 
-  test('本地未命中时由 LLM 生成 落库并加入生词库', () async {
+  test('本地未命中时由服务端查词生成 落库并加入生词库', () async {
     words.findLocalResult = null;
     words.saveResult = _sampleDetail(42);
     vocab.addWordResult = 42;
@@ -266,19 +249,50 @@ void main() {
     expect(success.detail.wordId, 42);
     expect(success.addedToVocabulary, isTrue);
     expect(stages, [AddWordStage.checkingLocal, AddWordStage.generating]);
+    expect(llm.lastWord, 'serendipity');
     expect(words.savedCalls, ['serendipity']);
     expect(vocab.addWordCalls, 1);
     expect(stats.recordWordAddedCalls, 1);
   });
 
-  test('LLM 响应无有效义项时 返回拼写提示', () async {
+  test('查词响应无有效义项（解析失败）时 返回拼写提示', () async {
     words.findLocalResult = null;
-    llm.content = '<spelling>x</spelling>';
+    llm.throwError = const FormatException('word-lookup 返回空义项');
 
     final result = await useCase('serendipity');
 
     expect(result, isA<AddWordResultFailed>());
     expect((result as AddWordResultFailed).message, contains('拼写'));
+    expect(vocab.addWordCalls, 0);
+    expect(stats.recordWordAddedCalls, 0);
+  });
+
+  test('ServerApiException（LLM_FATAL）经统一映射走既有分类分支', () async {
+    words.findLocalResult = null;
+    llm.throwError = const ServerApiException(
+      errorCode: 'LLM_FATAL',
+      message: 'fatal',
+      statusCode: 500,
+    );
+
+    final result = await useCase('serendipity');
+
+    expect(result, isA<AddWordResultFailed>());
+    expect((result as AddWordResultFailed).message, contains('AI 服务暂不可用'));
+  });
+
+  test('查词配额用尽 → 配额专用提示（非通用失败文案）', () async {
+    words.findLocalResult = null;
+    llm.throwError = const ServerApiException(
+      errorCode: 'QUOTA_EXCEEDED',
+      message: 'quota',
+      statusCode: 429,
+    );
+
+    final result = await useCase('serendipity');
+
+    expect(result, isA<AddWordResultFailed>());
+    expect((result as AddWordResultFailed).message, '今日查词次数已用完');
     expect(vocab.addWordCalls, 0);
     expect(stats.recordWordAddedCalls, 0);
   });
@@ -321,14 +335,5 @@ void main() {
 
     expect(result, isA<AddWordResultFailed>());
     expect((result as AddWordResultFailed).message, contains('录入失败'));
-  });
-
-  test('LLM 返回 XML 可被解析（对照 Kotlin validXml）', () {
-    final parsed = parseWordLlmResponse(_validXml);
-    expect(parsed, isNotNull);
-    expect(parsed!.spellingDisplay, 'Serendipity');
-    expect(parsed.phoneticIpa, '/ˌserənˈdɪpəti/');
-    expect(parsed.allSenses.length, 1);
-    expect(parsed.allSenses.first.chineseMeaning, '意外发现珍奇事物的运气');
   });
 }

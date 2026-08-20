@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:contexta/domain/llm_client.dart';
+import 'package:contexta/data/remote/llm_api.dart';
+import 'package:contexta/data/remote/server_api_client.dart';
 import 'package:contexta/domain/model/article.dart';
 import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
@@ -239,20 +240,15 @@ class _FakeWordRepo implements WordRepository {
       );
 }
 
-/// 可配置 LLM 响应的客户端桩（Task 24）。
-class _FakeLlmClient implements LlmClient {
-  _FakeLlmClient({this.onCall});
+/// 可配置查词响应的服务端 API 桩（Task 24 → Task 7 远程化）。
+class _FakeLlmApi implements LlmApi {
+  _FakeLlmApi({this.onLookup});
 
-  final Future<LlmResult> Function(String system, String user)? onCall;
+  final Future<WordDetail> Function(String word)? onLookup;
 
   @override
-  Future<LlmResult> call(
-    String systemPrompt,
-    String userPrompt, {
-    int? timeoutMs,
-  }) async =>
-      onCall?.call(systemPrompt, userPrompt) ??
-      LlmResult(content: '<spelling>nope</spelling>', retryCount: 0);
+  Future<WordDetail> wordLookup(String word) async =>
+      onLookup?.call(word) ?? detailOf(spelling: 'nope');
 }
 
 /// 词库详情夹具。
@@ -304,12 +300,8 @@ Article makeArticle({
       contentCategory: 'NEWS',
       title: title,
       status: ArticleStatus.success,
-      generationStartedAt: null,
-      generationCompletedAt: '2026-08-07T12:00:00+08:00',
-      retryCount: 0,
       accumulatedReadSeconds: 0,
       readCompletedAt: readCompletedAt,
-      lastRetryAt: null,
       paragraphs: paragraphs,
     );
 
@@ -323,7 +315,7 @@ void main() {
   late _FakeSettingsRepo settingsRepo;
   late _FakeStatsRepo statsRepo;
   late _FakeWordRepo wordRepo;
-  late _FakeLlmClient llmClient;
+  late _FakeLlmApi llmApi;
   late _VocabRepo vocabRepo;
   late _RecordingTts tts;
   late ReadingController controller;
@@ -333,7 +325,7 @@ void main() {
         settingsRepository: settingsRepo,
         statsRepository: statsRepo,
         wordRepository: wordRepo,
-        llmClient: llmClient,
+        llmApi: llmApi,
         vocabularyRepository: vocabRepo,
         ttsEngineFuture: Future.value(tts),
       );
@@ -345,7 +337,7 @@ void main() {
     settingsRepo = _FakeSettingsRepo();
     statsRepo = _FakeStatsRepo();
     wordRepo = _FakeWordRepo();
-    llmClient = _FakeLlmClient();
+    llmApi = _FakeLlmApi();
     vocabRepo = _VocabRepo();
     tts = _RecordingTts();
     controller = makeController();
@@ -669,7 +661,7 @@ void main() {
         settingsRepository: settingsRepo,
         statsRepository: statsRepo,
         wordRepository: wordRepo,
-        llmClient: llmClient,
+        llmApi: llmApi,
         vocabularyRepository: vocabRepo,
         ttsEngineFuture: ready.future,
       );
@@ -695,7 +687,7 @@ void main() {
         settingsRepository: settingsRepo,
         statsRepository: statsRepo,
         wordRepository: wordRepo,
-        llmClient: llmClient,
+        llmApi: llmApi,
         vocabularyRepository: vocabRepo,
         ttsEngineFuture: ready.future,
       );
@@ -719,7 +711,7 @@ void main() {
         settingsRepository: settingsRepo,
         statsRepository: statsRepo,
         wordRepository: wordRepo,
-        llmClient: llmClient,
+        llmApi: llmApi,
         vocabularyRepository: vocabRepo,
         ttsEngineFuture: ready.future,
       );
@@ -882,22 +874,17 @@ void main() {
       expect(data.phonetic, isNull);
     });
 
-    test('词库未命中时走 LLM fallback 并落库回填', () async {
+    test('词库未命中时走服务端查词并落库回填', () async {
       var llmCalled = false;
       var saved = false;
-      llmClient = _FakeLlmClient(
-        onCall: (system, user) async {
+      llmApi = _FakeLlmApi(
+        onLookup: (word) async {
           llmCalled = true;
-          expect(system, isNotEmpty);
-          expect(user, contains('hello'));
-          return const LlmResult(
-            content: '<spelling>hello</spelling>'
-                '<phonetic>/həˈləʊ/</phonetic>'
-                '<sense><partOfSpeech>interj.</partOfSpeech>'
-                '<chineseMeaning>你好</chineseMeaning>'
-                '<englishDefinition>Greeting.</englishDefinition>'
-                '</sense>',
-            retryCount: 0,
+          expect(word, 'hello');
+          return detailOf(
+            spelling: 'hello',
+            phonetic: '/həˈləʊ/',
+            senses: [senseOf()],
           );
         },
       );
@@ -924,6 +911,67 @@ void main() {
       final data = controller.state.wordSheetData!;
       expect(data.word, 'hello');
       expect(data.wordId, 42);
+    });
+
+    test('服务端查词错误 → 经统一映射后降级「仅词头」（不落库）', () async {
+      var saved = false;
+      llmApi = _FakeLlmApi(
+        onLookup: (_) async => throw ServerApiException(
+          errorCode: 'LLM_FATAL',
+          message: 'fatal',
+          statusCode: 500,
+        ),
+      );
+      wordRepo = _FakeWordRepo(
+        onLookupWord: (spelling, llmFallback) => llmFallback(spelling),
+        onSaveLlmResult: (spelling, phonetic, senses) async {
+          saved = true;
+          return detailOf(wordId: 42);
+        },
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+
+      controller.showWordSheet('hello');
+      await Future<void>.delayed(Duration.zero);
+
+      final data = controller.state.wordSheetData!;
+      expect(data.isLoading, isFalse);
+      expect(data.word, 'hello');
+      expect(data.senses, isEmpty);
+      expect(data.phonetic, isNull);
+      expect(saved, isFalse);
+    });
+
+    test('查词配额用尽 → 降级「仅词头」并 toast 提示今日次数已用完', () async {
+      var saved = false;
+      llmApi = _FakeLlmApi(
+        onLookup: (_) async => throw ServerApiException(
+          errorCode: 'QUOTA_EXCEEDED',
+          message: 'quota',
+          statusCode: 429,
+        ),
+      );
+      wordRepo = _FakeWordRepo(
+        onLookupWord: (spelling, llmFallback) => llmFallback(spelling),
+        onSaveLlmResult: (spelling, phonetic, senses) async {
+          saved = true;
+          return detailOf(wordId: 42);
+        },
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+
+      controller.showWordSheet('hello');
+      await Future<void>.delayed(Duration.zero);
+
+      final data = controller.state.wordSheetData!;
+      expect(data.isLoading, isFalse);
+      expect(data.word, 'hello');
+      expect(data.senses, isEmpty);
+      expect(saved, isFalse);
+      // 配额专用提示（区别于其他错误：toast 告知原因，而非静默降级）
+      expect(controller.state.snackbarMessage, '今日查词次数已用完');
     });
 
     test('同词性义项相邻排列（组序 = 首次出现序）', () async {

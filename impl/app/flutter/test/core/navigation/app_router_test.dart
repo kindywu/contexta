@@ -3,10 +3,9 @@ import 'package:contexta/core/navigation/app_router.dart';
 import 'package:contexta/core/navigation/routes.dart';
 import 'package:contexta/core/theme/app_colors.dart';
 import 'package:contexta/di/providers.dart';
-import 'package:contexta/domain/model/generation_error.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/model/vocab_word.dart';
-import 'package:contexta/domain/llm_client.dart';
+import 'package:contexta/data/remote/llm_api.dart';
 import 'package:contexta/domain/repository/article_repository.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/repository/stats_repository.dart';
@@ -33,13 +32,6 @@ import 'package:go_router/go_router.dart';
 /// Home 页已接入真实实现（Task 22）：用空桩仓储避免触达真实数据库。
 
 class _FakeArticleRepo implements ArticleRepository {
-  @override
-  Future<bool> isPipelineBlocked() async => false;
-
-  @override
-  Stream<List<GenerationError>> observeGenerationErrors() =>
-      const Stream.empty();
-
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
@@ -78,7 +70,7 @@ class _FakeWordRepo implements WordRepository {
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
 
-class _FakeLlmClient implements LlmClient {
+class _FakeLlmApi implements LlmApi {
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
@@ -99,7 +91,7 @@ void main() {
         vocabularyRepositoryProvider.overrideWithValue(_FakeVocabRepo()),
         // Reading 查词（Task 24）：词库 + LLM 空桩
         wordRepositoryProvider.overrideWithValue(_FakeWordRepo()),
-        llmClientProvider.overrideWithValue(_FakeLlmClient()),
+        llmApiProvider.overrideWithValue(_FakeLlmApi()),
       ],
       child: MaterialApp.router(routerConfig: router),
     ));

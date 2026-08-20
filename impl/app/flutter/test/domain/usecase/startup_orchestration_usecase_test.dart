@@ -1,193 +1,58 @@
-import 'package:contexta/domain/background_work_scheduler.dart';
-import 'package:contexta/domain/model/article.dart';
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:contexta/data/local/database.dart';
+import 'package:contexta/data/local/daos/article_daos.dart';
+import 'package:contexta/data/sync/sync_articles_usecase.dart';
 import 'package:contexta/domain/model/article_batch.dart';
-import 'package:contexta/domain/model/daily_learning_info.dart';
-import 'package:contexta/domain/model/generation_error.dart';
-import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/repository/article_repository.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/time/time_provider.dart';
-import 'package:contexta/domain/usecase/resend_pending_alerts_usecase.dart';
 import 'package:contexta/domain/usecase/startup_orchestration_usecase.dart';
-import 'package:contexta/domain/usecase/trigger_next_batch_usecase.dart';
-import 'package:flutter_test/flutter_test.dart';
 
-/// 对照 Kotlin StartupOrchestrationUseCaseTest.kt 移植（9 个用例）。
+/// 计划 B Task 5：启动编排（服务端同步模型）测试。
+///
+/// 语义（简报裁定）：
+/// 1. 未 onboarding → StartupNeedsOnboarding（不触发同步）
+/// 2. 已 onboarding + 无 token → StartupNeedsLogin（同步跳过，首页仍可用）
+/// 3. 已 onboarding + 有 token → 同步执行 → 今天批次存在 → assignBatchForToday
+///    （dailyCountSnapshot = settings.dailyArticleCount）→ Ready(syncedBatches: N)
+/// 4. 已分配过（daily_learning 存在）→ 不重复分配
+/// 5. 同步失败 → Ready(syncedBatches: 0)（不阻塞首页——历史文章可读）
 
+/// ArticleRepository 桩：仅实现编排用到的 3 个方法，其余 noSuchMethod 兜底。
 class FakeArticleRepository implements ArticleRepository {
-  bool pipelineBlocked = false;
-  bool recoverResult = true;
-  List<ArticleBatch> generatingBatches = [];
+  /// 今天已分配的批次（getAssignedBatchForDate 返回）。
+  ArticleBatch? assignedToday;
+
+  /// (难度, 今天) 批次（getBatchByDifficultyAndDate 返回）。
   ArticleBatch? todayBatch;
-  ArticleBatch? nextBatch;
-  String? maxRefDate;
-  final List<String> findCalls = [];
+
   final List<String> assignCalls = [];
 
   @override
-  Future<bool> isPipelineBlocked() async => pipelineBlocked;
-
-  @override
-  Future<bool> recoverIfNewerVersion(int currentVersionCode) async =>
-      recoverResult;
-
-  @override
-  Future<List<ArticleBatch>> getGeneratingBatches() async => generatingBatches;
-
-  List<ArticleBatch> pendingBatches = [];
-
-  @override
-  Future<List<ArticleBatch>> getPendingBatches() async => pendingBatches;
-
-  @override
-  Future<void> reconcileOrphanArticles() async {}
-
-  @override
   Future<ArticleBatch?> getAssignedBatchForDate(String readDate) async =>
-      todayBatch;
+      assignedToday;
 
   @override
-  Future<String?> getMaxRefBatchDate() async => maxRefDate;
-
-  @override
-  Future<ArticleBatch?> findNextReadyBatch(
-      String difficulty, String? afterDate) async {
-    findCalls.add('$difficulty:$afterDate');
-    return nextBatch;
-  }
+  Future<ArticleBatch?> getBatchByDifficultyAndDate(
+    String difficulty,
+    String date,
+  ) async => todayBatch;
 
   @override
   Future<bool> assignBatchForToday(
-      int batchId, String refBatchDate, int dailyCount) async {
+    int batchId,
+    String refBatchDate,
+    int dailyCount,
+  ) async {
     assignCalls.add('$batchId:$refBatchDate:$dailyCount');
     return true;
   }
 
   @override
-  Future<List<Article>> getArticles(int batchId) async => [];
-
-  @override
-  Stream<List<Article>> observeArticles(int batchId) =>
-      throw UnimplementedError();
-
-  @override
-  Future<Article?> getArticle(int articleId) => throw UnimplementedError();
-
-  @override
-  Future<ArticleBatch?> getBatchByDifficultyAndDate(
-          String difficulty, String date) =>
-      throw UnimplementedError();
-
-  @override
-  Future<ArticleBatch?> getUnassignedBatchByDifficultyAndDate(
-          String difficulty, String date) =>
-      throw UnimplementedError();
-
-  @override
-  Future<List<ArticleBatch>> getUnassignedReadyBatches(
-          String difficulty, String? minGeneratedOn) =>
-      throw UnimplementedError();
-
-  @override
-  Future<List<DailyLearningInfo>> getAllDailyLearningInfos() =>
-      throw UnimplementedError();
-
-  @override
-  Future<ArticleBatch?> getBatchById(int batchId) =>
-      throw UnimplementedError();
-
-  @override
-  Future<bool> claimBatch(int batchId) => throw UnimplementedError();
-
-  @override
-  Future<int> createBatch(String difficulty, {String? generatedOn}) =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> createArticles(int batchId, List<String> categories) =>
-      throw UnimplementedError();
-
-  @override
-  Future<bool> claimArticle(int articleId) => throw UnimplementedError();
-
-  @override
-  Future<void> completeArticle(
-    int articleId,
-    String title,
-    List<ArticleParagraph> paragraphs, {
-    required int retryCount,
-  }) =>
-      throw UnimplementedError();
-
-  @override
-  Future<bool> isBatchComplete(int batchId) => throw UnimplementedError();
-
-  @override
-  Future<bool> hasFatalArticle(int batchId) => throw UnimplementedError();
-
-  @override
-  Future<void> markBatchReady(int batchId) => throw UnimplementedError();
-
-  @override
-  Future<int?> markBatchBlocked(int batchId, String reason, int appVersionCode) =>
-      throw UnimplementedError();
-
-  @override
-  Future<int?> failArticle(
-    int articleId,
-    String status, {
-    String? errorCode,
-    String? errorMessage,
-    String? errorHelp,
-    int retryCount = 0,
-  }) =>
-      throw UnimplementedError();
-
-  @override
-  Future<int?> fatalArticle(
-    int articleId, {
-    String? errorCode,
-    String? errorMessage,
-    int retryCount = 0,
-  }) =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> markErrorNotified(int errorLogId) =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> markBatchReadyNotified(int batchId) =>
-      throw UnimplementedError();
-
-  @override
-  Future<List<GenerationError>> getUnnotifiedErrors(String createdAfter) =>
-      throw UnimplementedError();
-
-  @override
-  Future<List<ArticleBatch>> getReadyBatchesUnnotified() =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> addReadSeconds(int articleId, int deltaSeconds) =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> tryMarkReadCompleted(int articleId) =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> forceMarkReadCompleted(int articleId) =>
-      throw UnimplementedError();
-
-  @override
-  Stream<List<GenerationError>> observeGenerationErrors() =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> resetArticleForRetry(int articleId) =>
-      throw UnimplementedError();
+  dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
 
 class FakeSettingsRepository implements SettingsRepository {
@@ -201,249 +66,209 @@ class FakeSettingsRepository implements SettingsRepository {
   Future<UserSettings?> getSettings() async => settings;
 
   @override
-  Stream<UserSettings?> observeSettings() => throw UnimplementedError();
+  Stream<UserSettings?> observeSettings() => const Stream.empty();
 
   @override
-  Future<bool> isOnboarded() => throw UnimplementedError();
-
-  @override
-  Future<void> completeOnboarding(String level, int dailyCount) =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> updateLevel(String level) => throw UnimplementedError();
-
-  @override
-  Future<bool> updateDailyArticleCount(int newCount) =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> updateTranslationMode(String mode) =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> updateTtsSpeed(double speed) =>
-      throw UnimplementedError();
-
-  @override
-  Future<void> updateTtsVoice(TtsVoice voice) => throw UnimplementedError();
-
-  @override
-  Future<void> updateMasteryThreshold(int n) => throw UnimplementedError();
-
-  @override
-  Future<void> updateAutoPlayAudio(bool enabled) =>
-      throw UnimplementedError();
+  dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
 
-class FakeTriggerNextBatch implements TriggerNextBatchUseCase {
-  TriggerNextBatchUseCase? inner;
-  final List<(String, int)> calls = [];
+/// SyncArticlesUseCase 桩：记录调用次数，可配置结果 / 抛错。
+class FakeSyncArticles extends SyncArticlesUseCase {
+  FakeSyncArticles({
+    this.result = const SyncResult(
+      syncedBatches: 2,
+      syncedArticles: 10,
+      skippedAuth: false,
+    ),
+    this.throwError,
+  }) : super(
+         db: _db,
+         batchDao: ArticleBatchDao(_db),
+         articleDao: ArticleDao(_db),
+         paragraphDao: ArticleParagraphDao(_db),
+         fetchToday: () async => const [],
+         timeProvider: const FakeTimeProvider(),
+       );
+
+  /// 只读的内存库（SyncArticlesUseCase 构造需要，本 fake 的 call 被覆写不走库）。
+  static final _db = AppDatabase.forTesting(NativeDatabase.memory());
+
+  final SyncResult result;
   Object? throwError;
-
-  @override
-  Future<void> call(String difficulty, int dailyCount) async {
-    final e = throwError;
-    if (e != null) throw e;
-    calls.add((difficulty, dailyCount));
-  }
-
-  @override
-  List<String> pickCategories(String difficulty) =>
-      inner?.pickCategories(difficulty) ??
-      (difficulty == 'LOW' ? ['DAILY_CONVERSATION'] : ['NEWS']);
-}
-
-class FakeGenerationScheduler implements BackgroundWorkScheduler {
-  final List<int> scheduled = [];
-  bool result = true;
-
-  @override
-  Future<bool> scheduleBatchGeneration(int batchId,
-      {int appVersionCode = 0}) async {
-    scheduled.add(batchId);
-    return result;
-  }
-
-  @override
-  Future<void> cancelBatchGeneration(int batchId) async {}
-
-  @override
-  Future<void> cancelAllGeneration() async {}
-}
-
-class FakeResendPendingAlerts implements ResendPendingAlertsUseCase {
-  ResendPendingAlertsUseCase? inner;
   int calls = 0;
-  Object? throwError;
 
   @override
-  Future<void> call() async {
+  Future<SyncResult> call() async {
     calls++;
     final e = throwError;
     if (e != null) throw e;
+    return result;
   }
 }
 
-ArticleBatch _batch(int id, BatchStatus status,
-        {String generatedOn = '2026-07-31'}) =>
-    ArticleBatch(
-      id: id,
-      status: status,
-      difficultyLevelSnapshot: 'LOW',
-      generatedOn: generatedOn,
-      lastUpdatedAt: '2026-07-31T21:25:42+08:00',
-    );
+ArticleBatch _batch(
+  int id,
+  BatchStatus status, {
+  String generatedOn = '2026-08-01',
+}) => ArticleBatch(
+  id: id,
+  status: status,
+  difficultyLevelSnapshot: 'LOW',
+  generatedOn: generatedOn,
+  lastUpdatedAt: '2026-08-01T21:25:42+08:00',
+);
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late FakeArticleRepository repo;
   late FakeSettingsRepository settings;
-  late FakeTriggerNextBatch trigger;
-  late FakeGenerationScheduler scheduler;
-  late FakeResendPendingAlerts resend;
+  late FakeSyncArticles sync;
   late StartupOrchestrationUseCase useCase;
 
   setUp(() {
     repo = FakeArticleRepository();
     settings = FakeSettingsRepository();
-    trigger = FakeTriggerNextBatch();
-    scheduler = FakeGenerationScheduler();
-    resend = FakeResendPendingAlerts();
+    sync = FakeSyncArticles();
     useCase = StartupOrchestrationUseCase(
       articleRepository: repo,
       settingsRepository: settings,
       timeProvider: const FakeTimeProvider(),
-      triggerNextBatch: trigger,
-      generationScheduler: scheduler,
-      resendPendingAlerts: resend,
+      syncArticles: sync,
     );
   });
 
-  // ─── 修复核心：分配批次时传 maxRefDate，不回头选旧 seed 批次 ───────────
+  // ─── 1. 未 onboarding → NeedsOnboarding（不触发同步） ─────────────────
 
-  test('未分配时 findNextReadyBatch 收到 maxRefDate 而不是 null', () async {
-    repo.todayBatch = null;
-    repo.maxRefDate = '2026-03-29';
-    repo.nextBatch = null;
+  test('未 onboarding 返回 NeedsOnboarding 且不触发同步', () async {
+    settings.settings = const UserSettings(
+      isOnboarded: false,
+      difficultyLevel: 'LOW',
+      dailyArticleCount: 5,
+      serverToken: 'tok',
+    );
 
-    final result = await useCase(1);
+    final result = await useCase();
 
-    // 关键断言：afterDate 必须是 maxRefDate（严格晚于已消费批次），
-    // 否则会回头选 seed 旧批次
-    expect(repo.findCalls, ['LOW:2026-03-29']);
-    expect(result, isA<StartupNeedsInitialBatch>());
+    expect(result, isA<StartupNeedsOnboarding>());
+    expect(sync.calls, 0);
+    expect(repo.assignCalls, isEmpty);
   });
 
-  test('maxRefDate 之后有 READY 批次时分配给今天并触发前置生成', () async {
-    repo.todayBatch = null;
-    repo.maxRefDate = '2026-03-29';
-    repo.nextBatch = _batch(6, BatchStatus.ready, generatedOn: '2026-07-31');
+  // ─── 2. 已 onboarding + 无 token → NeedsLogin（同步跳过） ─────────────
 
-    final result = await useCase(1);
+  test('无 token 返回 NeedsLogin 且同步跳过', () async {
+    settings.settings = const UserSettings(
+      isOnboarded: true,
+      difficultyLevel: 'LOW',
+      dailyArticleCount: 5,
+      serverToken: null,
+    );
+
+    final result = await useCase();
+
+    expect(result, isA<StartupNeedsLogin>());
+    expect(sync.calls, 0);
+    expect(repo.assignCalls, isEmpty);
+  });
+
+  test('token 为空字符串同样视为未登录', () async {
+    settings.settings = const UserSettings(
+      isOnboarded: true,
+      difficultyLevel: 'LOW',
+      dailyArticleCount: 5,
+      serverToken: '',
+    );
+
+    final result = await useCase();
+
+    expect(result, isA<StartupNeedsLogin>());
+    expect(sync.calls, 0);
+  });
+
+  // ─── 3. 有 token → 同步 → 分配今天批次 → Ready ──────────────────────
+
+  test(
+    '同步成功 + 今天批次存在 → 分配给今天（dailyCountSnapshot=设置值）→ Ready(syncedBatches: N)',
+    () async {
+      settings.settings = const UserSettings(
+        isOnboarded: true,
+        difficultyLevel: 'LOW',
+        dailyArticleCount: 5,
+        serverToken: 'tok',
+      );
+      repo.todayBatch = _batch(
+        3,
+        BatchStatus.current,
+        generatedOn: '2026-08-01',
+      );
+
+      final result = await useCase();
+
+      expect(result, isA<StartupReady>());
+      expect((result as StartupReady).syncedBatches, 2);
+      expect(sync.calls, 1);
+      expect(repo.assignCalls, ['3:2026-08-01:5']);
+    },
+  );
+
+  test('同步成功但今天无对应难度的批次 → 不分配，仍 Ready', () async {
+    settings.settings = const UserSettings(
+      isOnboarded: true,
+      difficultyLevel: 'LOW',
+      dailyArticleCount: 5,
+      serverToken: 'tok',
+    );
+
+    final result = await useCase();
 
     expect(result, isA<StartupReady>());
-    expect(repo.assignCalls, ['6:2026-07-31:5']);
-    expect(trigger.calls, [('LOW', 5)]);
+    expect((result as StartupReady).syncedBatches, 2);
+    expect(repo.assignCalls, isEmpty);
   });
 
-  test('今天已分配时只触发前置生成 不重新查找批次', () async {
-    repo.todayBatch = _batch(1, BatchStatus.ready, generatedOn: '2026-03-29');
+  // ─── 4. 今天已分配 → 不重复分配 ─────────────────────────────────────
 
-    final result = await useCase(1);
+  test('今天已有 daily_learning → 不重复分配，仍 Ready', () async {
+    settings.settings = const UserSettings(
+      isOnboarded: true,
+      difficultyLevel: 'LOW',
+      dailyArticleCount: 5,
+      serverToken: 'tok',
+    );
+    repo.assignedToday = _batch(
+      1,
+      BatchStatus.ready,
+      generatedOn: '2026-07-31',
+    );
+    repo.todayBatch = _batch(3, BatchStatus.current, generatedOn: '2026-08-01');
+
+    final result = await useCase();
 
     expect(result, isA<StartupReady>());
-    expect(trigger.calls, [('LOW', 5)]);
-    expect(repo.findCalls, isEmpty);
+    expect((result as StartupReady).syncedBatches, 2);
+    expect(sync.calls, 1);
+    expect(repo.assignCalls, isEmpty);
   });
 
-  // ─── 无可用批次 → NeedsInitialBatch ─────────────────────────────────
+  // ─── 5. 同步失败 → Ready(0)（不阻塞首页） ───────────────────────────
 
-  test('maxRefDate 之后无 READY 批次时返回 NeedsInitialBatch', () async {
-    repo.todayBatch = null;
-    repo.maxRefDate = '2026-07-31';
-    repo.nextBatch = null;
+  test('同步失败 → Ready(syncedBatches: 0)，不阻塞首页', () async {
+    settings.settings = const UserSettings(
+      isOnboarded: true,
+      difficultyLevel: 'LOW',
+      dailyArticleCount: 5,
+      serverToken: 'tok',
+    );
+    sync.throwError = StateError('network down');
+    repo.todayBatch = _batch(3, BatchStatus.current, generatedOn: '2026-08-01');
 
-    final result = await useCase(1);
+    final result = await useCase();
 
-    final needs = result as StartupNeedsInitialBatch;
-    expect(needs.difficulty, 'LOW');
-    expect(needs.dailyCount, 5);
-    expect(trigger.calls, isEmpty);
-  });
-
-  // ─── 卡死批次重新调度 ───────────────────────────────────────────────
-
-  test('GENERATING 批次在 reconcile 后被重新调度', () async {
-    repo.generatingBatches = [_batch(6, BatchStatus.generating)];
-    repo.todayBatch = null;
-    repo.maxRefDate = '2026-07-31';
-    repo.nextBatch = null;
-
-    await useCase(1);
-
-    expect(scheduler.scheduled, [6]);
-  });
-
-  test('PENDING 批次（worker 调度失败遗留）也被重新调度', () async {
-    // Flutter 特有：worker 调度失败时批次永久卡 PENDING（Kotlin 版
-    // worker 入队总是成功，无此问题），启动时一并重新入队。
-    repo.pendingBatches = [_batch(7, BatchStatus.pending)];
-    repo.generatingBatches = [_batch(8, BatchStatus.generating)];
-    repo.todayBatch = null;
-    repo.maxRefDate = '2026-07-31';
-    repo.nextBatch = null;
-
-    await useCase(1);
-
-    // 先重调度 GENERATING（stuck），再重调度 PENDING
-    expect(scheduler.scheduled, [8, 7]);
-  });
-
-  // ─── 未送达告警补发 ─────────────────────────────────────────────────
-
-  test('启动时补发未送达的飞书告警', () async {
-    repo.todayBatch = null;
-    repo.maxRefDate = '2026-07-31';
-    repo.nextBatch = null;
-
-    await useCase(1);
-
-    expect(resend.calls, 1);
-  });
-
-  test('补发告警失败不影响启动主流程', () async {
-    resend.throwError = StateError('webhook down');
-    repo.todayBatch = null;
-    repo.maxRefDate = '2026-07-31';
-    repo.nextBatch = null;
-
-    final result = await useCase(1);
-
-    // 补发失败被吞掉，启动编排照常完成
-    expect(result, isA<StartupNeedsInitialBatch>());
-  });
-
-  // ─── 管道阻塞 ────────────────────────────────────────────────────────
-
-  test('管道阻塞且版本未更新时返回 PipelineBlocked', () async {
-    repo.pipelineBlocked = true;
-    repo.recoverResult = false;
-
-    final result = await useCase(1);
-
-    expect(result, isA<StartupPipelineBlocked>());
-  });
-
-  test('管道阻塞但版本已更新时恢复正常流程', () async {
-    repo.pipelineBlocked = true;
-    repo.recoverResult = true;
-    repo.todayBatch = null;
-    repo.maxRefDate = '2026-07-31';
-    repo.nextBatch = null;
-
-    final result = await useCase(2);
-
-    expect(result, isA<StartupNeedsInitialBatch>());
+    expect(result, isA<StartupReady>());
+    expect((result as StartupReady).syncedBatches, 0);
+    // 同步失败直接降级返回，不做分配
+    expect(repo.assignCalls, isEmpty);
   });
 }
 
@@ -458,7 +283,6 @@ class FakeTimeProvider implements TimeProvider {
 
   @override
   String todayDateString() => '2026-08-01';
-
 
   @override
   String nextDateString() => '2026-08-02';

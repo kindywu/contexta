@@ -1,0 +1,36 @@
+[package]
+name = "server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+http-body-util = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+anyhow = "1"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite", "derive", "chrono"] }
+jsonwebtoken = { version = "11", features = ["rust_crypto"] }
+argon2 = "0.5"
+# Task 2 适配：argon2 的 rand 特性只启用 password-hash/rand_core，未启用 rand_core 的 getrandom，
+# 导致简报中 argon2::password_hash::rand_core::OsRng 不可用；此处直依赖并开启特性（getrandom 0.2 已在依赖树，无新增 crate）
+rand_core = { version = "0.6", features = ["getrandom"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rust-embed = "8"
+mime_guess = "2"
+async-trait = "0.1"
+
+[dev-dependencies]
+# 仅供集成测试的暂停时钟（pause/advance，task_test 用）；feature unify 使测试构建生效，生产构建不受影响
+tokio = { version = "1", features = ["test-util"] }
+httpmock = "0.8"

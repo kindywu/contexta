@@ -112,6 +112,38 @@ class $UserSettingsTable extends UserSettings
       'CHECK ("auto_play_audio" IN (0, 1))',
     ),
   );
+  static const VerificationMeta _serverPhoneMeta = const VerificationMeta(
+    'serverPhone',
+  );
+  @override
+  late final GeneratedColumn<String> serverPhone = GeneratedColumn<String>(
+    'server_phone',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _serverTokenMeta = const VerificationMeta(
+    'serverToken',
+  );
+  @override
+  late final GeneratedColumn<String> serverToken = GeneratedColumn<String>(
+    'server_token',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _serverTokenExpiresAtMeta =
+      const VerificationMeta('serverTokenExpiresAt');
+  @override
+  late final GeneratedColumn<int> serverTokenExpiresAt = GeneratedColumn<int>(
+    'server_token_expires_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -123,6 +155,9 @@ class $UserSettingsTable extends UserSettings
     ttsVoiceId,
     masteryThresholdN,
     autoPlayAudio,
+    serverPhone,
+    serverToken,
+    serverTokenExpiresAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -224,6 +259,33 @@ class $UserSettingsTable extends UserSettings
     } else if (isInserting) {
       context.missing(_autoPlayAudioMeta);
     }
+    if (data.containsKey('server_phone')) {
+      context.handle(
+        _serverPhoneMeta,
+        serverPhone.isAcceptableOrUnknown(
+          data['server_phone']!,
+          _serverPhoneMeta,
+        ),
+      );
+    }
+    if (data.containsKey('server_token')) {
+      context.handle(
+        _serverTokenMeta,
+        serverToken.isAcceptableOrUnknown(
+          data['server_token']!,
+          _serverTokenMeta,
+        ),
+      );
+    }
+    if (data.containsKey('server_token_expires_at')) {
+      context.handle(
+        _serverTokenExpiresAtMeta,
+        serverTokenExpiresAt.isAcceptableOrUnknown(
+          data['server_token_expires_at']!,
+          _serverTokenExpiresAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -269,6 +331,18 @@ class $UserSettingsTable extends UserSettings
         DriftSqlType.bool,
         data['${effectivePrefix}auto_play_audio'],
       )!,
+      serverPhone: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_phone'],
+      ),
+      serverToken: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}server_token'],
+      ),
+      serverTokenExpiresAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}server_token_expires_at'],
+      ),
     );
   }
 
@@ -297,6 +371,16 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
   final String ttsVoiceId;
   final int masteryThresholdN;
   final bool autoPlayAudio;
+
+  /// 登录态：服务端手机号（登录成功后回写；null = 未登录）。
+  /// 仅存本地库，不落代码 / 日志（敏感值纪律）。
+  final String? serverPhone;
+
+  /// 登录态：服务端签发的 token（null = 未登录）。
+  final String? serverToken;
+
+  /// 登录态：token 过期时间（Unix millis；null = 无 token）。
+  final int? serverTokenExpiresAt;
   const UserSettingsRow({
     required this.id,
     required this.isOnboarded,
@@ -307,6 +391,9 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     required this.ttsVoiceId,
     required this.masteryThresholdN,
     required this.autoPlayAudio,
+    this.serverPhone,
+    this.serverToken,
+    this.serverTokenExpiresAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -320,6 +407,15 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     map['tts_voice_id'] = Variable<String>(ttsVoiceId);
     map['mastery_threshold_n'] = Variable<int>(masteryThresholdN);
     map['auto_play_audio'] = Variable<bool>(autoPlayAudio);
+    if (!nullToAbsent || serverPhone != null) {
+      map['server_phone'] = Variable<String>(serverPhone);
+    }
+    if (!nullToAbsent || serverToken != null) {
+      map['server_token'] = Variable<String>(serverToken);
+    }
+    if (!nullToAbsent || serverTokenExpiresAt != null) {
+      map['server_token_expires_at'] = Variable<int>(serverTokenExpiresAt);
+    }
     return map;
   }
 
@@ -334,6 +430,15 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       ttsVoiceId: Value(ttsVoiceId),
       masteryThresholdN: Value(masteryThresholdN),
       autoPlayAudio: Value(autoPlayAudio),
+      serverPhone: serverPhone == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverPhone),
+      serverToken: serverToken == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverToken),
+      serverTokenExpiresAt: serverTokenExpiresAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(serverTokenExpiresAt),
     );
   }
 
@@ -354,6 +459,11 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       ttsVoiceId: serializer.fromJson<String>(json['ttsVoiceId']),
       masteryThresholdN: serializer.fromJson<int>(json['masteryThresholdN']),
       autoPlayAudio: serializer.fromJson<bool>(json['autoPlayAudio']),
+      serverPhone: serializer.fromJson<String?>(json['serverPhone']),
+      serverToken: serializer.fromJson<String?>(json['serverToken']),
+      serverTokenExpiresAt: serializer.fromJson<int?>(
+        json['serverTokenExpiresAt'],
+      ),
     );
   }
   @override
@@ -371,6 +481,9 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       'ttsVoiceId': serializer.toJson<String>(ttsVoiceId),
       'masteryThresholdN': serializer.toJson<int>(masteryThresholdN),
       'autoPlayAudio': serializer.toJson<bool>(autoPlayAudio),
+      'serverPhone': serializer.toJson<String?>(serverPhone),
+      'serverToken': serializer.toJson<String?>(serverToken),
+      'serverTokenExpiresAt': serializer.toJson<int?>(serverTokenExpiresAt),
     };
   }
 
@@ -384,6 +497,9 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     String? ttsVoiceId,
     int? masteryThresholdN,
     bool? autoPlayAudio,
+    Value<String?> serverPhone = const Value.absent(),
+    Value<String?> serverToken = const Value.absent(),
+    Value<int?> serverTokenExpiresAt = const Value.absent(),
   }) => UserSettingsRow(
     id: id ?? this.id,
     isOnboarded: isOnboarded ?? this.isOnboarded,
@@ -395,6 +511,11 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     ttsVoiceId: ttsVoiceId ?? this.ttsVoiceId,
     masteryThresholdN: masteryThresholdN ?? this.masteryThresholdN,
     autoPlayAudio: autoPlayAudio ?? this.autoPlayAudio,
+    serverPhone: serverPhone.present ? serverPhone.value : this.serverPhone,
+    serverToken: serverToken.present ? serverToken.value : this.serverToken,
+    serverTokenExpiresAt: serverTokenExpiresAt.present
+        ? serverTokenExpiresAt.value
+        : this.serverTokenExpiresAt,
   );
   UserSettingsRow copyWithCompanion(UserSettingsCompanion data) {
     return UserSettingsRow(
@@ -421,6 +542,15 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
       autoPlayAudio: data.autoPlayAudio.present
           ? data.autoPlayAudio.value
           : this.autoPlayAudio,
+      serverPhone: data.serverPhone.present
+          ? data.serverPhone.value
+          : this.serverPhone,
+      serverToken: data.serverToken.present
+          ? data.serverToken.value
+          : this.serverToken,
+      serverTokenExpiresAt: data.serverTokenExpiresAt.present
+          ? data.serverTokenExpiresAt.value
+          : this.serverTokenExpiresAt,
     );
   }
 
@@ -435,7 +565,10 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
           ..write('ttsSpeed: $ttsSpeed, ')
           ..write('ttsVoiceId: $ttsVoiceId, ')
           ..write('masteryThresholdN: $masteryThresholdN, ')
-          ..write('autoPlayAudio: $autoPlayAudio')
+          ..write('autoPlayAudio: $autoPlayAudio, ')
+          ..write('serverPhone: $serverPhone, ')
+          ..write('serverToken: $serverToken, ')
+          ..write('serverTokenExpiresAt: $serverTokenExpiresAt')
           ..write(')'))
         .toString();
   }
@@ -451,6 +584,9 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
     ttsVoiceId,
     masteryThresholdN,
     autoPlayAudio,
+    serverPhone,
+    serverToken,
+    serverTokenExpiresAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -464,7 +600,10 @@ class UserSettingsRow extends DataClass implements Insertable<UserSettingsRow> {
           other.ttsSpeed == this.ttsSpeed &&
           other.ttsVoiceId == this.ttsVoiceId &&
           other.masteryThresholdN == this.masteryThresholdN &&
-          other.autoPlayAudio == this.autoPlayAudio);
+          other.autoPlayAudio == this.autoPlayAudio &&
+          other.serverPhone == this.serverPhone &&
+          other.serverToken == this.serverToken &&
+          other.serverTokenExpiresAt == this.serverTokenExpiresAt);
 }
 
 class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
@@ -477,6 +616,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
   final Value<String> ttsVoiceId;
   final Value<int> masteryThresholdN;
   final Value<bool> autoPlayAudio;
+  final Value<String?> serverPhone;
+  final Value<String?> serverToken;
+  final Value<int?> serverTokenExpiresAt;
   const UserSettingsCompanion({
     this.id = const Value.absent(),
     this.isOnboarded = const Value.absent(),
@@ -487,6 +629,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     this.ttsVoiceId = const Value.absent(),
     this.masteryThresholdN = const Value.absent(),
     this.autoPlayAudio = const Value.absent(),
+    this.serverPhone = const Value.absent(),
+    this.serverToken = const Value.absent(),
+    this.serverTokenExpiresAt = const Value.absent(),
   });
   UserSettingsCompanion.insert({
     this.id = const Value.absent(),
@@ -498,6 +643,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     required String ttsVoiceId,
     required int masteryThresholdN,
     required bool autoPlayAudio,
+    this.serverPhone = const Value.absent(),
+    this.serverToken = const Value.absent(),
+    this.serverTokenExpiresAt = const Value.absent(),
   }) : isOnboarded = Value(isOnboarded),
        difficultyLevel = Value(difficultyLevel),
        dailyArticleCount = Value(dailyArticleCount),
@@ -516,6 +664,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     Expression<String>? ttsVoiceId,
     Expression<int>? masteryThresholdN,
     Expression<bool>? autoPlayAudio,
+    Expression<String>? serverPhone,
+    Expression<String>? serverToken,
+    Expression<int>? serverTokenExpiresAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -528,6 +679,10 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
       if (ttsVoiceId != null) 'tts_voice_id': ttsVoiceId,
       if (masteryThresholdN != null) 'mastery_threshold_n': masteryThresholdN,
       if (autoPlayAudio != null) 'auto_play_audio': autoPlayAudio,
+      if (serverPhone != null) 'server_phone': serverPhone,
+      if (serverToken != null) 'server_token': serverToken,
+      if (serverTokenExpiresAt != null)
+        'server_token_expires_at': serverTokenExpiresAt,
     });
   }
 
@@ -541,6 +696,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     Value<String>? ttsVoiceId,
     Value<int>? masteryThresholdN,
     Value<bool>? autoPlayAudio,
+    Value<String?>? serverPhone,
+    Value<String?>? serverToken,
+    Value<int?>? serverTokenExpiresAt,
   }) {
     return UserSettingsCompanion(
       id: id ?? this.id,
@@ -553,6 +711,9 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
       ttsVoiceId: ttsVoiceId ?? this.ttsVoiceId,
       masteryThresholdN: masteryThresholdN ?? this.masteryThresholdN,
       autoPlayAudio: autoPlayAudio ?? this.autoPlayAudio,
+      serverPhone: serverPhone ?? this.serverPhone,
+      serverToken: serverToken ?? this.serverToken,
+      serverTokenExpiresAt: serverTokenExpiresAt ?? this.serverTokenExpiresAt,
     );
   }
 
@@ -588,6 +749,17 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
     if (autoPlayAudio.present) {
       map['auto_play_audio'] = Variable<bool>(autoPlayAudio.value);
     }
+    if (serverPhone.present) {
+      map['server_phone'] = Variable<String>(serverPhone.value);
+    }
+    if (serverToken.present) {
+      map['server_token'] = Variable<String>(serverToken.value);
+    }
+    if (serverTokenExpiresAt.present) {
+      map['server_token_expires_at'] = Variable<int>(
+        serverTokenExpiresAt.value,
+      );
+    }
     return map;
   }
 
@@ -602,7 +774,10 @@ class UserSettingsCompanion extends UpdateCompanion<UserSettingsRow> {
           ..write('ttsSpeed: $ttsSpeed, ')
           ..write('ttsVoiceId: $ttsVoiceId, ')
           ..write('masteryThresholdN: $masteryThresholdN, ')
-          ..write('autoPlayAudio: $autoPlayAudio')
+          ..write('autoPlayAudio: $autoPlayAudio, ')
+          ..write('serverPhone: $serverPhone, ')
+          ..write('serverToken: $serverToken, ')
+          ..write('serverTokenExpiresAt: $serverTokenExpiresAt')
           ..write(')'))
         .toString();
   }
@@ -1325,397 +1500,6 @@ class SchemaMigrationLogsCompanion
           ..write('toVersion: $toVersion, ')
           ..write('description: $description, ')
           ..write('createdAt: $createdAt')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $GenerationPipelineStatusesTable extends GenerationPipelineStatuses
-    with
-        TableInfo<
-          $GenerationPipelineStatusesTable,
-          GenerationPipelineStatusRow
-        > {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $GenerationPipelineStatusesTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-    'id',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _isBlockedMeta = const VerificationMeta(
-    'isBlocked',
-  );
-  @override
-  late final GeneratedColumn<bool> isBlocked = GeneratedColumn<bool>(
-    'is_blocked',
-    aliasedName,
-    false,
-    type: DriftSqlType.bool,
-    requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("is_blocked" IN (0, 1))',
-    ),
-  );
-  static const VerificationMeta _blockedReasonMeta = const VerificationMeta(
-    'blockedReason',
-  );
-  @override
-  late final GeneratedColumn<String> blockedReason = GeneratedColumn<String>(
-    'blocked_reason',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _blockedAtMeta = const VerificationMeta(
-    'blockedAt',
-  );
-  @override
-  late final GeneratedColumn<String> blockedAt = GeneratedColumn<String>(
-    'blocked_at',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _blockedAppVersionCodeMeta =
-      const VerificationMeta('blockedAppVersionCode');
-  @override
-  late final GeneratedColumn<int> blockedAppVersionCode = GeneratedColumn<int>(
-    'blocked_app_version_code',
-    aliasedName,
-    true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-  );
-  @override
-  List<GeneratedColumn> get $columns => [
-    id,
-    isBlocked,
-    blockedReason,
-    blockedAt,
-    blockedAppVersionCode,
-  ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'generation_pipeline_status';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<GenerationPipelineStatusRow> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('is_blocked')) {
-      context.handle(
-        _isBlockedMeta,
-        isBlocked.isAcceptableOrUnknown(data['is_blocked']!, _isBlockedMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_isBlockedMeta);
-    }
-    if (data.containsKey('blocked_reason')) {
-      context.handle(
-        _blockedReasonMeta,
-        blockedReason.isAcceptableOrUnknown(
-          data['blocked_reason']!,
-          _blockedReasonMeta,
-        ),
-      );
-    }
-    if (data.containsKey('blocked_at')) {
-      context.handle(
-        _blockedAtMeta,
-        blockedAt.isAcceptableOrUnknown(data['blocked_at']!, _blockedAtMeta),
-      );
-    }
-    if (data.containsKey('blocked_app_version_code')) {
-      context.handle(
-        _blockedAppVersionCodeMeta,
-        blockedAppVersionCode.isAcceptableOrUnknown(
-          data['blocked_app_version_code']!,
-          _blockedAppVersionCodeMeta,
-        ),
-      );
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  GenerationPipelineStatusRow map(
-    Map<String, dynamic> data, {
-    String? tablePrefix,
-  }) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return GenerationPipelineStatusRow(
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}id'],
-      )!,
-      isBlocked: attachedDatabase.typeMapping.read(
-        DriftSqlType.bool,
-        data['${effectivePrefix}is_blocked'],
-      )!,
-      blockedReason: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}blocked_reason'],
-      ),
-      blockedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}blocked_at'],
-      ),
-      blockedAppVersionCode: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}blocked_app_version_code'],
-      ),
-    );
-  }
-
-  @override
-  $GenerationPipelineStatusesTable createAlias(String alias) {
-    return $GenerationPipelineStatusesTable(attachedDatabase, alias);
-  }
-}
-
-class GenerationPipelineStatusRow extends DataClass
-    implements Insertable<GenerationPipelineStatusRow> {
-  /// Room: @PrimaryKey val id: Int（无 autoGenerate）
-  final int id;
-  final bool isBlocked;
-  final String? blockedReason;
-  final String? blockedAt;
-  final int? blockedAppVersionCode;
-  const GenerationPipelineStatusRow({
-    required this.id,
-    required this.isBlocked,
-    this.blockedReason,
-    this.blockedAt,
-    this.blockedAppVersionCode,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['is_blocked'] = Variable<bool>(isBlocked);
-    if (!nullToAbsent || blockedReason != null) {
-      map['blocked_reason'] = Variable<String>(blockedReason);
-    }
-    if (!nullToAbsent || blockedAt != null) {
-      map['blocked_at'] = Variable<String>(blockedAt);
-    }
-    if (!nullToAbsent || blockedAppVersionCode != null) {
-      map['blocked_app_version_code'] = Variable<int>(blockedAppVersionCode);
-    }
-    return map;
-  }
-
-  GenerationPipelineStatusesCompanion toCompanion(bool nullToAbsent) {
-    return GenerationPipelineStatusesCompanion(
-      id: Value(id),
-      isBlocked: Value(isBlocked),
-      blockedReason: blockedReason == null && nullToAbsent
-          ? const Value.absent()
-          : Value(blockedReason),
-      blockedAt: blockedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(blockedAt),
-      blockedAppVersionCode: blockedAppVersionCode == null && nullToAbsent
-          ? const Value.absent()
-          : Value(blockedAppVersionCode),
-    );
-  }
-
-  factory GenerationPipelineStatusRow.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return GenerationPipelineStatusRow(
-      id: serializer.fromJson<int>(json['id']),
-      isBlocked: serializer.fromJson<bool>(json['isBlocked']),
-      blockedReason: serializer.fromJson<String?>(json['blockedReason']),
-      blockedAt: serializer.fromJson<String?>(json['blockedAt']),
-      blockedAppVersionCode: serializer.fromJson<int?>(
-        json['blockedAppVersionCode'],
-      ),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'isBlocked': serializer.toJson<bool>(isBlocked),
-      'blockedReason': serializer.toJson<String?>(blockedReason),
-      'blockedAt': serializer.toJson<String?>(blockedAt),
-      'blockedAppVersionCode': serializer.toJson<int?>(blockedAppVersionCode),
-    };
-  }
-
-  GenerationPipelineStatusRow copyWith({
-    int? id,
-    bool? isBlocked,
-    Value<String?> blockedReason = const Value.absent(),
-    Value<String?> blockedAt = const Value.absent(),
-    Value<int?> blockedAppVersionCode = const Value.absent(),
-  }) => GenerationPipelineStatusRow(
-    id: id ?? this.id,
-    isBlocked: isBlocked ?? this.isBlocked,
-    blockedReason: blockedReason.present
-        ? blockedReason.value
-        : this.blockedReason,
-    blockedAt: blockedAt.present ? blockedAt.value : this.blockedAt,
-    blockedAppVersionCode: blockedAppVersionCode.present
-        ? blockedAppVersionCode.value
-        : this.blockedAppVersionCode,
-  );
-  GenerationPipelineStatusRow copyWithCompanion(
-    GenerationPipelineStatusesCompanion data,
-  ) {
-    return GenerationPipelineStatusRow(
-      id: data.id.present ? data.id.value : this.id,
-      isBlocked: data.isBlocked.present ? data.isBlocked.value : this.isBlocked,
-      blockedReason: data.blockedReason.present
-          ? data.blockedReason.value
-          : this.blockedReason,
-      blockedAt: data.blockedAt.present ? data.blockedAt.value : this.blockedAt,
-      blockedAppVersionCode: data.blockedAppVersionCode.present
-          ? data.blockedAppVersionCode.value
-          : this.blockedAppVersionCode,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('GenerationPipelineStatusRow(')
-          ..write('id: $id, ')
-          ..write('isBlocked: $isBlocked, ')
-          ..write('blockedReason: $blockedReason, ')
-          ..write('blockedAt: $blockedAt, ')
-          ..write('blockedAppVersionCode: $blockedAppVersionCode')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    id,
-    isBlocked,
-    blockedReason,
-    blockedAt,
-    blockedAppVersionCode,
-  );
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is GenerationPipelineStatusRow &&
-          other.id == this.id &&
-          other.isBlocked == this.isBlocked &&
-          other.blockedReason == this.blockedReason &&
-          other.blockedAt == this.blockedAt &&
-          other.blockedAppVersionCode == this.blockedAppVersionCode);
-}
-
-class GenerationPipelineStatusesCompanion
-    extends UpdateCompanion<GenerationPipelineStatusRow> {
-  final Value<int> id;
-  final Value<bool> isBlocked;
-  final Value<String?> blockedReason;
-  final Value<String?> blockedAt;
-  final Value<int?> blockedAppVersionCode;
-  const GenerationPipelineStatusesCompanion({
-    this.id = const Value.absent(),
-    this.isBlocked = const Value.absent(),
-    this.blockedReason = const Value.absent(),
-    this.blockedAt = const Value.absent(),
-    this.blockedAppVersionCode = const Value.absent(),
-  });
-  GenerationPipelineStatusesCompanion.insert({
-    this.id = const Value.absent(),
-    required bool isBlocked,
-    this.blockedReason = const Value.absent(),
-    this.blockedAt = const Value.absent(),
-    this.blockedAppVersionCode = const Value.absent(),
-  }) : isBlocked = Value(isBlocked);
-  static Insertable<GenerationPipelineStatusRow> custom({
-    Expression<int>? id,
-    Expression<bool>? isBlocked,
-    Expression<String>? blockedReason,
-    Expression<String>? blockedAt,
-    Expression<int>? blockedAppVersionCode,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (isBlocked != null) 'is_blocked': isBlocked,
-      if (blockedReason != null) 'blocked_reason': blockedReason,
-      if (blockedAt != null) 'blocked_at': blockedAt,
-      if (blockedAppVersionCode != null)
-        'blocked_app_version_code': blockedAppVersionCode,
-    });
-  }
-
-  GenerationPipelineStatusesCompanion copyWith({
-    Value<int>? id,
-    Value<bool>? isBlocked,
-    Value<String?>? blockedReason,
-    Value<String?>? blockedAt,
-    Value<int?>? blockedAppVersionCode,
-  }) {
-    return GenerationPipelineStatusesCompanion(
-      id: id ?? this.id,
-      isBlocked: isBlocked ?? this.isBlocked,
-      blockedReason: blockedReason ?? this.blockedReason,
-      blockedAt: blockedAt ?? this.blockedAt,
-      blockedAppVersionCode:
-          blockedAppVersionCode ?? this.blockedAppVersionCode,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
-    if (isBlocked.present) {
-      map['is_blocked'] = Variable<bool>(isBlocked.value);
-    }
-    if (blockedReason.present) {
-      map['blocked_reason'] = Variable<String>(blockedReason.value);
-    }
-    if (blockedAt.present) {
-      map['blocked_at'] = Variable<String>(blockedAt.value);
-    }
-    if (blockedAppVersionCode.present) {
-      map['blocked_app_version_code'] = Variable<int>(
-        blockedAppVersionCode.value,
-      );
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('GenerationPipelineStatusesCompanion(')
-          ..write('id: $id, ')
-          ..write('isBlocked: $isBlocked, ')
-          ..write('blockedReason: $blockedReason, ')
-          ..write('blockedAt: $blockedAt, ')
-          ..write('blockedAppVersionCode: $blockedAppVersionCode')
           ..write(')'))
         .toString();
   }
@@ -2697,39 +2481,6 @@ class $ArticleBatchesTable extends ArticleBatches
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _blockedReasonMeta = const VerificationMeta(
-    'blockedReason',
-  );
-  @override
-  late final GeneratedColumn<String> blockedReason = GeneratedColumn<String>(
-    'blocked_reason',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _blockedAtMeta = const VerificationMeta(
-    'blockedAt',
-  );
-  @override
-  late final GeneratedColumn<String> blockedAt = GeneratedColumn<String>(
-    'blocked_at',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _readyNotifiedAtMeta = const VerificationMeta(
-    'readyNotifiedAt',
-  );
-  @override
-  late final GeneratedColumn<int> readyNotifiedAt = GeneratedColumn<int>(
-    'ready_notified_at',
-    aliasedName,
-    true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2737,9 +2488,6 @@ class $ArticleBatchesTable extends ArticleBatches
     difficultyLevelSnapshot,
     generatedOn,
     lastUpdatedAt,
-    blockedReason,
-    blockedAt,
-    readyNotifiedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2797,30 +2545,6 @@ class $ArticleBatchesTable extends ArticleBatches
     } else if (isInserting) {
       context.missing(_lastUpdatedAtMeta);
     }
-    if (data.containsKey('blocked_reason')) {
-      context.handle(
-        _blockedReasonMeta,
-        blockedReason.isAcceptableOrUnknown(
-          data['blocked_reason']!,
-          _blockedReasonMeta,
-        ),
-      );
-    }
-    if (data.containsKey('blocked_at')) {
-      context.handle(
-        _blockedAtMeta,
-        blockedAt.isAcceptableOrUnknown(data['blocked_at']!, _blockedAtMeta),
-      );
-    }
-    if (data.containsKey('ready_notified_at')) {
-      context.handle(
-        _readyNotifiedAtMeta,
-        readyNotifiedAt.isAcceptableOrUnknown(
-          data['ready_notified_at']!,
-          _readyNotifiedAtMeta,
-        ),
-      );
-    }
     return context;
   }
 
@@ -2850,18 +2574,6 @@ class $ArticleBatchesTable extends ArticleBatches
         DriftSqlType.string,
         data['${effectivePrefix}last_updated_at'],
       )!,
-      blockedReason: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}blocked_reason'],
-      ),
-      blockedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}blocked_at'],
-      ),
-      readyNotifiedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}ready_notified_at'],
-      ),
     );
   }
 
@@ -2882,20 +2594,12 @@ class ArticleBatchRow extends DataClass implements Insertable<ArticleBatchRow> {
   /// ISO date
   final String generatedOn;
   final String lastUpdatedAt;
-  final String? blockedReason;
-  final String? blockedAt;
-
-  /// 批次完成飞书告警送达时间（Unix millis）；null = 未通知，启动时补发
-  final int? readyNotifiedAt;
   const ArticleBatchRow({
     required this.id,
     required this.status,
     required this.difficultyLevelSnapshot,
     required this.generatedOn,
     required this.lastUpdatedAt,
-    this.blockedReason,
-    this.blockedAt,
-    this.readyNotifiedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2907,15 +2611,6 @@ class ArticleBatchRow extends DataClass implements Insertable<ArticleBatchRow> {
     );
     map['generated_on'] = Variable<String>(generatedOn);
     map['last_updated_at'] = Variable<String>(lastUpdatedAt);
-    if (!nullToAbsent || blockedReason != null) {
-      map['blocked_reason'] = Variable<String>(blockedReason);
-    }
-    if (!nullToAbsent || blockedAt != null) {
-      map['blocked_at'] = Variable<String>(blockedAt);
-    }
-    if (!nullToAbsent || readyNotifiedAt != null) {
-      map['ready_notified_at'] = Variable<int>(readyNotifiedAt);
-    }
     return map;
   }
 
@@ -2926,15 +2621,6 @@ class ArticleBatchRow extends DataClass implements Insertable<ArticleBatchRow> {
       difficultyLevelSnapshot: Value(difficultyLevelSnapshot),
       generatedOn: Value(generatedOn),
       lastUpdatedAt: Value(lastUpdatedAt),
-      blockedReason: blockedReason == null && nullToAbsent
-          ? const Value.absent()
-          : Value(blockedReason),
-      blockedAt: blockedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(blockedAt),
-      readyNotifiedAt: readyNotifiedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(readyNotifiedAt),
     );
   }
 
@@ -2951,9 +2637,6 @@ class ArticleBatchRow extends DataClass implements Insertable<ArticleBatchRow> {
       ),
       generatedOn: serializer.fromJson<String>(json['generatedOn']),
       lastUpdatedAt: serializer.fromJson<String>(json['lastUpdatedAt']),
-      blockedReason: serializer.fromJson<String?>(json['blockedReason']),
-      blockedAt: serializer.fromJson<String?>(json['blockedAt']),
-      readyNotifiedAt: serializer.fromJson<int?>(json['readyNotifiedAt']),
     );
   }
   @override
@@ -2967,9 +2650,6 @@ class ArticleBatchRow extends DataClass implements Insertable<ArticleBatchRow> {
       ),
       'generatedOn': serializer.toJson<String>(generatedOn),
       'lastUpdatedAt': serializer.toJson<String>(lastUpdatedAt),
-      'blockedReason': serializer.toJson<String?>(blockedReason),
-      'blockedAt': serializer.toJson<String?>(blockedAt),
-      'readyNotifiedAt': serializer.toJson<int?>(readyNotifiedAt),
     };
   }
 
@@ -2979,9 +2659,6 @@ class ArticleBatchRow extends DataClass implements Insertable<ArticleBatchRow> {
     String? difficultyLevelSnapshot,
     String? generatedOn,
     String? lastUpdatedAt,
-    Value<String?> blockedReason = const Value.absent(),
-    Value<String?> blockedAt = const Value.absent(),
-    Value<int?> readyNotifiedAt = const Value.absent(),
   }) => ArticleBatchRow(
     id: id ?? this.id,
     status: status ?? this.status,
@@ -2989,13 +2666,6 @@ class ArticleBatchRow extends DataClass implements Insertable<ArticleBatchRow> {
         difficultyLevelSnapshot ?? this.difficultyLevelSnapshot,
     generatedOn: generatedOn ?? this.generatedOn,
     lastUpdatedAt: lastUpdatedAt ?? this.lastUpdatedAt,
-    blockedReason: blockedReason.present
-        ? blockedReason.value
-        : this.blockedReason,
-    blockedAt: blockedAt.present ? blockedAt.value : this.blockedAt,
-    readyNotifiedAt: readyNotifiedAt.present
-        ? readyNotifiedAt.value
-        : this.readyNotifiedAt,
   );
   ArticleBatchRow copyWithCompanion(ArticleBatchesCompanion data) {
     return ArticleBatchRow(
@@ -3010,13 +2680,6 @@ class ArticleBatchRow extends DataClass implements Insertable<ArticleBatchRow> {
       lastUpdatedAt: data.lastUpdatedAt.present
           ? data.lastUpdatedAt.value
           : this.lastUpdatedAt,
-      blockedReason: data.blockedReason.present
-          ? data.blockedReason.value
-          : this.blockedReason,
-      blockedAt: data.blockedAt.present ? data.blockedAt.value : this.blockedAt,
-      readyNotifiedAt: data.readyNotifiedAt.present
-          ? data.readyNotifiedAt.value
-          : this.readyNotifiedAt,
     );
   }
 
@@ -3027,10 +2690,7 @@ class ArticleBatchRow extends DataClass implements Insertable<ArticleBatchRow> {
           ..write('status: $status, ')
           ..write('difficultyLevelSnapshot: $difficultyLevelSnapshot, ')
           ..write('generatedOn: $generatedOn, ')
-          ..write('lastUpdatedAt: $lastUpdatedAt, ')
-          ..write('blockedReason: $blockedReason, ')
-          ..write('blockedAt: $blockedAt, ')
-          ..write('readyNotifiedAt: $readyNotifiedAt')
+          ..write('lastUpdatedAt: $lastUpdatedAt')
           ..write(')'))
         .toString();
   }
@@ -3042,9 +2702,6 @@ class ArticleBatchRow extends DataClass implements Insertable<ArticleBatchRow> {
     difficultyLevelSnapshot,
     generatedOn,
     lastUpdatedAt,
-    blockedReason,
-    blockedAt,
-    readyNotifiedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -3054,10 +2711,7 @@ class ArticleBatchRow extends DataClass implements Insertable<ArticleBatchRow> {
           other.status == this.status &&
           other.difficultyLevelSnapshot == this.difficultyLevelSnapshot &&
           other.generatedOn == this.generatedOn &&
-          other.lastUpdatedAt == this.lastUpdatedAt &&
-          other.blockedReason == this.blockedReason &&
-          other.blockedAt == this.blockedAt &&
-          other.readyNotifiedAt == this.readyNotifiedAt);
+          other.lastUpdatedAt == this.lastUpdatedAt);
 }
 
 class ArticleBatchesCompanion extends UpdateCompanion<ArticleBatchRow> {
@@ -3066,18 +2720,12 @@ class ArticleBatchesCompanion extends UpdateCompanion<ArticleBatchRow> {
   final Value<String> difficultyLevelSnapshot;
   final Value<String> generatedOn;
   final Value<String> lastUpdatedAt;
-  final Value<String?> blockedReason;
-  final Value<String?> blockedAt;
-  final Value<int?> readyNotifiedAt;
   const ArticleBatchesCompanion({
     this.id = const Value.absent(),
     this.status = const Value.absent(),
     this.difficultyLevelSnapshot = const Value.absent(),
     this.generatedOn = const Value.absent(),
     this.lastUpdatedAt = const Value.absent(),
-    this.blockedReason = const Value.absent(),
-    this.blockedAt = const Value.absent(),
-    this.readyNotifiedAt = const Value.absent(),
   });
   ArticleBatchesCompanion.insert({
     this.id = const Value.absent(),
@@ -3085,9 +2733,6 @@ class ArticleBatchesCompanion extends UpdateCompanion<ArticleBatchRow> {
     required String difficultyLevelSnapshot,
     required String generatedOn,
     required String lastUpdatedAt,
-    this.blockedReason = const Value.absent(),
-    this.blockedAt = const Value.absent(),
-    this.readyNotifiedAt = const Value.absent(),
   }) : status = Value(status),
        difficultyLevelSnapshot = Value(difficultyLevelSnapshot),
        generatedOn = Value(generatedOn),
@@ -3098,9 +2743,6 @@ class ArticleBatchesCompanion extends UpdateCompanion<ArticleBatchRow> {
     Expression<String>? difficultyLevelSnapshot,
     Expression<String>? generatedOn,
     Expression<String>? lastUpdatedAt,
-    Expression<String>? blockedReason,
-    Expression<String>? blockedAt,
-    Expression<int>? readyNotifiedAt,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -3109,9 +2751,6 @@ class ArticleBatchesCompanion extends UpdateCompanion<ArticleBatchRow> {
         'difficulty_level_snapshot': difficultyLevelSnapshot,
       if (generatedOn != null) 'generated_on': generatedOn,
       if (lastUpdatedAt != null) 'last_updated_at': lastUpdatedAt,
-      if (blockedReason != null) 'blocked_reason': blockedReason,
-      if (blockedAt != null) 'blocked_at': blockedAt,
-      if (readyNotifiedAt != null) 'ready_notified_at': readyNotifiedAt,
     });
   }
 
@@ -3121,9 +2760,6 @@ class ArticleBatchesCompanion extends UpdateCompanion<ArticleBatchRow> {
     Value<String>? difficultyLevelSnapshot,
     Value<String>? generatedOn,
     Value<String>? lastUpdatedAt,
-    Value<String?>? blockedReason,
-    Value<String?>? blockedAt,
-    Value<int?>? readyNotifiedAt,
   }) {
     return ArticleBatchesCompanion(
       id: id ?? this.id,
@@ -3132,9 +2768,6 @@ class ArticleBatchesCompanion extends UpdateCompanion<ArticleBatchRow> {
           difficultyLevelSnapshot ?? this.difficultyLevelSnapshot,
       generatedOn: generatedOn ?? this.generatedOn,
       lastUpdatedAt: lastUpdatedAt ?? this.lastUpdatedAt,
-      blockedReason: blockedReason ?? this.blockedReason,
-      blockedAt: blockedAt ?? this.blockedAt,
-      readyNotifiedAt: readyNotifiedAt ?? this.readyNotifiedAt,
     );
   }
 
@@ -3158,15 +2791,6 @@ class ArticleBatchesCompanion extends UpdateCompanion<ArticleBatchRow> {
     if (lastUpdatedAt.present) {
       map['last_updated_at'] = Variable<String>(lastUpdatedAt.value);
     }
-    if (blockedReason.present) {
-      map['blocked_reason'] = Variable<String>(blockedReason.value);
-    }
-    if (blockedAt.present) {
-      map['blocked_at'] = Variable<String>(blockedAt.value);
-    }
-    if (readyNotifiedAt.present) {
-      map['ready_notified_at'] = Variable<int>(readyNotifiedAt.value);
-    }
     return map;
   }
 
@@ -3177,10 +2801,7 @@ class ArticleBatchesCompanion extends UpdateCompanion<ArticleBatchRow> {
           ..write('status: $status, ')
           ..write('difficultyLevelSnapshot: $difficultyLevelSnapshot, ')
           ..write('generatedOn: $generatedOn, ')
-          ..write('lastUpdatedAt: $lastUpdatedAt, ')
-          ..write('blockedReason: $blockedReason, ')
-          ..write('blockedAt: $blockedAt, ')
-          ..write('readyNotifiedAt: $readyNotifiedAt')
+          ..write('lastUpdatedAt: $lastUpdatedAt')
           ..write(')'))
         .toString();
   }
@@ -3611,39 +3232,6 @@ class $ArticlesTable extends Articles
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _generationStartedAtMeta =
-      const VerificationMeta('generationStartedAt');
-  @override
-  late final GeneratedColumn<String> generationStartedAt =
-      GeneratedColumn<String>(
-        'generation_started_at',
-        aliasedName,
-        true,
-        type: DriftSqlType.string,
-        requiredDuringInsert: false,
-      );
-  static const VerificationMeta _generationCompletedAtMeta =
-      const VerificationMeta('generationCompletedAt');
-  @override
-  late final GeneratedColumn<String> generationCompletedAt =
-      GeneratedColumn<String>(
-        'generation_completed_at',
-        aliasedName,
-        true,
-        type: DriftSqlType.string,
-        requiredDuringInsert: false,
-      );
-  static const VerificationMeta _retryCountMeta = const VerificationMeta(
-    'retryCount',
-  );
-  @override
-  late final GeneratedColumn<int> retryCount = GeneratedColumn<int>(
-    'retry_count',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
   static const VerificationMeta _accumulatedReadSecondsMeta =
       const VerificationMeta('accumulatedReadSeconds');
   @override
@@ -3665,37 +3253,15 @@ class $ArticlesTable extends Articles
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
-  static const VerificationMeta _lastRetryAtMeta = const VerificationMeta(
-    'lastRetryAt',
+  static const VerificationMeta _serverArticleIdMeta = const VerificationMeta(
+    'serverArticleId',
   );
   @override
-  late final GeneratedColumn<String> lastRetryAt = GeneratedColumn<String>(
-    'last_retry_at',
+  late final GeneratedColumn<int> serverArticleId = GeneratedColumn<int>(
+    'server_article_id',
     aliasedName,
     true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _maxRetriesMeta = const VerificationMeta(
-    'maxRetries',
-  );
-  @override
-  late final GeneratedColumn<int> maxRetries = GeneratedColumn<int>(
-    'max_retries',
-    aliasedName,
-    false,
     type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _nextRetryAtMeta = const VerificationMeta(
-    'nextRetryAt',
-  );
-  @override
-  late final GeneratedColumn<String> nextRetryAt = GeneratedColumn<String>(
-    'next_retry_at',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
   @override
@@ -3706,14 +3272,9 @@ class $ArticlesTable extends Articles
     contentCategory,
     title,
     status,
-    generationStartedAt,
-    generationCompletedAt,
-    retryCount,
     accumulatedReadSeconds,
     readCompletedAt,
-    lastRetryAt,
-    maxRetries,
-    nextRetryAt,
+    serverArticleId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3771,32 +3332,6 @@ class $ArticlesTable extends Articles
     } else if (isInserting) {
       context.missing(_statusMeta);
     }
-    if (data.containsKey('generation_started_at')) {
-      context.handle(
-        _generationStartedAtMeta,
-        generationStartedAt.isAcceptableOrUnknown(
-          data['generation_started_at']!,
-          _generationStartedAtMeta,
-        ),
-      );
-    }
-    if (data.containsKey('generation_completed_at')) {
-      context.handle(
-        _generationCompletedAtMeta,
-        generationCompletedAt.isAcceptableOrUnknown(
-          data['generation_completed_at']!,
-          _generationCompletedAtMeta,
-        ),
-      );
-    }
-    if (data.containsKey('retry_count')) {
-      context.handle(
-        _retryCountMeta,
-        retryCount.isAcceptableOrUnknown(data['retry_count']!, _retryCountMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_retryCountMeta);
-    }
     if (data.containsKey('accumulated_read_seconds')) {
       context.handle(
         _accumulatedReadSecondsMeta,
@@ -3817,29 +3352,12 @@ class $ArticlesTable extends Articles
         ),
       );
     }
-    if (data.containsKey('last_retry_at')) {
+    if (data.containsKey('server_article_id')) {
       context.handle(
-        _lastRetryAtMeta,
-        lastRetryAt.isAcceptableOrUnknown(
-          data['last_retry_at']!,
-          _lastRetryAtMeta,
-        ),
-      );
-    }
-    if (data.containsKey('max_retries')) {
-      context.handle(
-        _maxRetriesMeta,
-        maxRetries.isAcceptableOrUnknown(data['max_retries']!, _maxRetriesMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_maxRetriesMeta);
-    }
-    if (data.containsKey('next_retry_at')) {
-      context.handle(
-        _nextRetryAtMeta,
-        nextRetryAt.isAcceptableOrUnknown(
-          data['next_retry_at']!,
-          _nextRetryAtMeta,
+        _serverArticleIdMeta,
+        serverArticleId.isAcceptableOrUnknown(
+          data['server_article_id']!,
+          _serverArticleIdMeta,
         ),
       );
     }
@@ -3876,18 +3394,6 @@ class $ArticlesTable extends Articles
         DriftSqlType.string,
         data['${effectivePrefix}status'],
       )!,
-      generationStartedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}generation_started_at'],
-      ),
-      generationCompletedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}generation_completed_at'],
-      ),
-      retryCount: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}retry_count'],
-      )!,
       accumulatedReadSeconds: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}accumulated_read_seconds'],
@@ -3896,17 +3402,9 @@ class $ArticlesTable extends Articles
         DriftSqlType.string,
         data['${effectivePrefix}read_completed_at'],
       ),
-      lastRetryAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}last_retry_at'],
-      ),
-      maxRetries: attachedDatabase.typeMapping.read(
+      serverArticleId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
-        data['${effectivePrefix}max_retries'],
-      )!,
-      nextRetryAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}next_retry_at'],
+        data['${effectivePrefix}server_article_id'],
       ),
     );
   }
@@ -3933,14 +3431,14 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
 
   /// PENDING | GENERATING | SUCCESS | TIMEOUT | FAILED | FATAL
   final String status;
-  final String? generationStartedAt;
-  final String? generationCompletedAt;
-  final int retryCount;
   final int accumulatedReadSeconds;
   final String? readCompletedAt;
-  final String? lastRetryAt;
-  final int maxRetries;
-  final String? nextRetryAt;
+
+  /// 服务端文章 id（每日同步幂等键，Task 1 计划 B）。
+  /// nullable + 唯一索引：SQLite UNIQUE 允许多 NULL，本地无服务端对应的
+  /// 旧文章不冲突；同步时按 server_article_id 幂等 upsert。
+  /// 旧库自愈补列见 database.dart selfHealArticleSyncColumn。
+  final int? serverArticleId;
   const ArticleRow({
     required this.id,
     required this.batchId,
@@ -3948,14 +3446,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     required this.contentCategory,
     this.title,
     required this.status,
-    this.generationStartedAt,
-    this.generationCompletedAt,
-    required this.retryCount,
     required this.accumulatedReadSeconds,
     this.readCompletedAt,
-    this.lastRetryAt,
-    required this.maxRetries,
-    this.nextRetryAt,
+    this.serverArticleId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3968,23 +3461,12 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
       map['title'] = Variable<String>(title);
     }
     map['status'] = Variable<String>(status);
-    if (!nullToAbsent || generationStartedAt != null) {
-      map['generation_started_at'] = Variable<String>(generationStartedAt);
-    }
-    if (!nullToAbsent || generationCompletedAt != null) {
-      map['generation_completed_at'] = Variable<String>(generationCompletedAt);
-    }
-    map['retry_count'] = Variable<int>(retryCount);
     map['accumulated_read_seconds'] = Variable<int>(accumulatedReadSeconds);
     if (!nullToAbsent || readCompletedAt != null) {
       map['read_completed_at'] = Variable<String>(readCompletedAt);
     }
-    if (!nullToAbsent || lastRetryAt != null) {
-      map['last_retry_at'] = Variable<String>(lastRetryAt);
-    }
-    map['max_retries'] = Variable<int>(maxRetries);
-    if (!nullToAbsent || nextRetryAt != null) {
-      map['next_retry_at'] = Variable<String>(nextRetryAt);
+    if (!nullToAbsent || serverArticleId != null) {
+      map['server_article_id'] = Variable<int>(serverArticleId);
     }
     return map;
   }
@@ -3999,24 +3481,13 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
           ? const Value.absent()
           : Value(title),
       status: Value(status),
-      generationStartedAt: generationStartedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(generationStartedAt),
-      generationCompletedAt: generationCompletedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(generationCompletedAt),
-      retryCount: Value(retryCount),
       accumulatedReadSeconds: Value(accumulatedReadSeconds),
       readCompletedAt: readCompletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(readCompletedAt),
-      lastRetryAt: lastRetryAt == null && nullToAbsent
+      serverArticleId: serverArticleId == null && nullToAbsent
           ? const Value.absent()
-          : Value(lastRetryAt),
-      maxRetries: Value(maxRetries),
-      nextRetryAt: nextRetryAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(nextRetryAt),
+          : Value(serverArticleId),
     );
   }
 
@@ -4032,20 +3503,11 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
       contentCategory: serializer.fromJson<String>(json['contentCategory']),
       title: serializer.fromJson<String?>(json['title']),
       status: serializer.fromJson<String>(json['status']),
-      generationStartedAt: serializer.fromJson<String?>(
-        json['generationStartedAt'],
-      ),
-      generationCompletedAt: serializer.fromJson<String?>(
-        json['generationCompletedAt'],
-      ),
-      retryCount: serializer.fromJson<int>(json['retryCount']),
       accumulatedReadSeconds: serializer.fromJson<int>(
         json['accumulatedReadSeconds'],
       ),
       readCompletedAt: serializer.fromJson<String?>(json['readCompletedAt']),
-      lastRetryAt: serializer.fromJson<String?>(json['lastRetryAt']),
-      maxRetries: serializer.fromJson<int>(json['maxRetries']),
-      nextRetryAt: serializer.fromJson<String?>(json['nextRetryAt']),
+      serverArticleId: serializer.fromJson<int?>(json['serverArticleId']),
     );
   }
   @override
@@ -4058,16 +3520,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
       'contentCategory': serializer.toJson<String>(contentCategory),
       'title': serializer.toJson<String?>(title),
       'status': serializer.toJson<String>(status),
-      'generationStartedAt': serializer.toJson<String?>(generationStartedAt),
-      'generationCompletedAt': serializer.toJson<String?>(
-        generationCompletedAt,
-      ),
-      'retryCount': serializer.toJson<int>(retryCount),
       'accumulatedReadSeconds': serializer.toJson<int>(accumulatedReadSeconds),
       'readCompletedAt': serializer.toJson<String?>(readCompletedAt),
-      'lastRetryAt': serializer.toJson<String?>(lastRetryAt),
-      'maxRetries': serializer.toJson<int>(maxRetries),
-      'nextRetryAt': serializer.toJson<String?>(nextRetryAt),
+      'serverArticleId': serializer.toJson<int?>(serverArticleId),
     };
   }
 
@@ -4078,14 +3533,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     String? contentCategory,
     Value<String?> title = const Value.absent(),
     String? status,
-    Value<String?> generationStartedAt = const Value.absent(),
-    Value<String?> generationCompletedAt = const Value.absent(),
-    int? retryCount,
     int? accumulatedReadSeconds,
     Value<String?> readCompletedAt = const Value.absent(),
-    Value<String?> lastRetryAt = const Value.absent(),
-    int? maxRetries,
-    Value<String?> nextRetryAt = const Value.absent(),
+    Value<int?> serverArticleId = const Value.absent(),
   }) => ArticleRow(
     id: id ?? this.id,
     batchId: batchId ?? this.batchId,
@@ -4093,21 +3543,14 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     contentCategory: contentCategory ?? this.contentCategory,
     title: title.present ? title.value : this.title,
     status: status ?? this.status,
-    generationStartedAt: generationStartedAt.present
-        ? generationStartedAt.value
-        : this.generationStartedAt,
-    generationCompletedAt: generationCompletedAt.present
-        ? generationCompletedAt.value
-        : this.generationCompletedAt,
-    retryCount: retryCount ?? this.retryCount,
     accumulatedReadSeconds:
         accumulatedReadSeconds ?? this.accumulatedReadSeconds,
     readCompletedAt: readCompletedAt.present
         ? readCompletedAt.value
         : this.readCompletedAt,
-    lastRetryAt: lastRetryAt.present ? lastRetryAt.value : this.lastRetryAt,
-    maxRetries: maxRetries ?? this.maxRetries,
-    nextRetryAt: nextRetryAt.present ? nextRetryAt.value : this.nextRetryAt,
+    serverArticleId: serverArticleId.present
+        ? serverArticleId.value
+        : this.serverArticleId,
   );
   ArticleRow copyWithCompanion(ArticlesCompanion data) {
     return ArticleRow(
@@ -4121,30 +3564,15 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
           : this.contentCategory,
       title: data.title.present ? data.title.value : this.title,
       status: data.status.present ? data.status.value : this.status,
-      generationStartedAt: data.generationStartedAt.present
-          ? data.generationStartedAt.value
-          : this.generationStartedAt,
-      generationCompletedAt: data.generationCompletedAt.present
-          ? data.generationCompletedAt.value
-          : this.generationCompletedAt,
-      retryCount: data.retryCount.present
-          ? data.retryCount.value
-          : this.retryCount,
       accumulatedReadSeconds: data.accumulatedReadSeconds.present
           ? data.accumulatedReadSeconds.value
           : this.accumulatedReadSeconds,
       readCompletedAt: data.readCompletedAt.present
           ? data.readCompletedAt.value
           : this.readCompletedAt,
-      lastRetryAt: data.lastRetryAt.present
-          ? data.lastRetryAt.value
-          : this.lastRetryAt,
-      maxRetries: data.maxRetries.present
-          ? data.maxRetries.value
-          : this.maxRetries,
-      nextRetryAt: data.nextRetryAt.present
-          ? data.nextRetryAt.value
-          : this.nextRetryAt,
+      serverArticleId: data.serverArticleId.present
+          ? data.serverArticleId.value
+          : this.serverArticleId,
     );
   }
 
@@ -4157,14 +3585,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
           ..write('contentCategory: $contentCategory, ')
           ..write('title: $title, ')
           ..write('status: $status, ')
-          ..write('generationStartedAt: $generationStartedAt, ')
-          ..write('generationCompletedAt: $generationCompletedAt, ')
-          ..write('retryCount: $retryCount, ')
           ..write('accumulatedReadSeconds: $accumulatedReadSeconds, ')
           ..write('readCompletedAt: $readCompletedAt, ')
-          ..write('lastRetryAt: $lastRetryAt, ')
-          ..write('maxRetries: $maxRetries, ')
-          ..write('nextRetryAt: $nextRetryAt')
+          ..write('serverArticleId: $serverArticleId')
           ..write(')'))
         .toString();
   }
@@ -4177,14 +3600,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     contentCategory,
     title,
     status,
-    generationStartedAt,
-    generationCompletedAt,
-    retryCount,
     accumulatedReadSeconds,
     readCompletedAt,
-    lastRetryAt,
-    maxRetries,
-    nextRetryAt,
+    serverArticleId,
   );
   @override
   bool operator ==(Object other) =>
@@ -4196,14 +3614,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
           other.contentCategory == this.contentCategory &&
           other.title == this.title &&
           other.status == this.status &&
-          other.generationStartedAt == this.generationStartedAt &&
-          other.generationCompletedAt == this.generationCompletedAt &&
-          other.retryCount == this.retryCount &&
           other.accumulatedReadSeconds == this.accumulatedReadSeconds &&
           other.readCompletedAt == this.readCompletedAt &&
-          other.lastRetryAt == this.lastRetryAt &&
-          other.maxRetries == this.maxRetries &&
-          other.nextRetryAt == this.nextRetryAt);
+          other.serverArticleId == this.serverArticleId);
 }
 
 class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
@@ -4213,14 +3626,9 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
   final Value<String> contentCategory;
   final Value<String?> title;
   final Value<String> status;
-  final Value<String?> generationStartedAt;
-  final Value<String?> generationCompletedAt;
-  final Value<int> retryCount;
   final Value<int> accumulatedReadSeconds;
   final Value<String?> readCompletedAt;
-  final Value<String?> lastRetryAt;
-  final Value<int> maxRetries;
-  final Value<String?> nextRetryAt;
+  final Value<int?> serverArticleId;
   const ArticlesCompanion({
     this.id = const Value.absent(),
     this.batchId = const Value.absent(),
@@ -4228,14 +3636,9 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     this.contentCategory = const Value.absent(),
     this.title = const Value.absent(),
     this.status = const Value.absent(),
-    this.generationStartedAt = const Value.absent(),
-    this.generationCompletedAt = const Value.absent(),
-    this.retryCount = const Value.absent(),
     this.accumulatedReadSeconds = const Value.absent(),
     this.readCompletedAt = const Value.absent(),
-    this.lastRetryAt = const Value.absent(),
-    this.maxRetries = const Value.absent(),
-    this.nextRetryAt = const Value.absent(),
+    this.serverArticleId = const Value.absent(),
   });
   ArticlesCompanion.insert({
     this.id = const Value.absent(),
@@ -4244,21 +3647,14 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     required String contentCategory,
     this.title = const Value.absent(),
     required String status,
-    this.generationStartedAt = const Value.absent(),
-    this.generationCompletedAt = const Value.absent(),
-    required int retryCount,
     required int accumulatedReadSeconds,
     this.readCompletedAt = const Value.absent(),
-    this.lastRetryAt = const Value.absent(),
-    required int maxRetries,
-    this.nextRetryAt = const Value.absent(),
+    this.serverArticleId = const Value.absent(),
   }) : batchId = Value(batchId),
        orderIndex = Value(orderIndex),
        contentCategory = Value(contentCategory),
        status = Value(status),
-       retryCount = Value(retryCount),
-       accumulatedReadSeconds = Value(accumulatedReadSeconds),
-       maxRetries = Value(maxRetries);
+       accumulatedReadSeconds = Value(accumulatedReadSeconds);
   static Insertable<ArticleRow> custom({
     Expression<int>? id,
     Expression<int>? batchId,
@@ -4266,14 +3662,9 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     Expression<String>? contentCategory,
     Expression<String>? title,
     Expression<String>? status,
-    Expression<String>? generationStartedAt,
-    Expression<String>? generationCompletedAt,
-    Expression<int>? retryCount,
     Expression<int>? accumulatedReadSeconds,
     Expression<String>? readCompletedAt,
-    Expression<String>? lastRetryAt,
-    Expression<int>? maxRetries,
-    Expression<String>? nextRetryAt,
+    Expression<int>? serverArticleId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -4282,17 +3673,10 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
       if (contentCategory != null) 'content_category': contentCategory,
       if (title != null) 'title': title,
       if (status != null) 'status': status,
-      if (generationStartedAt != null)
-        'generation_started_at': generationStartedAt,
-      if (generationCompletedAt != null)
-        'generation_completed_at': generationCompletedAt,
-      if (retryCount != null) 'retry_count': retryCount,
       if (accumulatedReadSeconds != null)
         'accumulated_read_seconds': accumulatedReadSeconds,
       if (readCompletedAt != null) 'read_completed_at': readCompletedAt,
-      if (lastRetryAt != null) 'last_retry_at': lastRetryAt,
-      if (maxRetries != null) 'max_retries': maxRetries,
-      if (nextRetryAt != null) 'next_retry_at': nextRetryAt,
+      if (serverArticleId != null) 'server_article_id': serverArticleId,
     });
   }
 
@@ -4303,14 +3687,9 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     Value<String>? contentCategory,
     Value<String?>? title,
     Value<String>? status,
-    Value<String?>? generationStartedAt,
-    Value<String?>? generationCompletedAt,
-    Value<int>? retryCount,
     Value<int>? accumulatedReadSeconds,
     Value<String?>? readCompletedAt,
-    Value<String?>? lastRetryAt,
-    Value<int>? maxRetries,
-    Value<String?>? nextRetryAt,
+    Value<int?>? serverArticleId,
   }) {
     return ArticlesCompanion(
       id: id ?? this.id,
@@ -4319,16 +3698,10 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
       contentCategory: contentCategory ?? this.contentCategory,
       title: title ?? this.title,
       status: status ?? this.status,
-      generationStartedAt: generationStartedAt ?? this.generationStartedAt,
-      generationCompletedAt:
-          generationCompletedAt ?? this.generationCompletedAt,
-      retryCount: retryCount ?? this.retryCount,
       accumulatedReadSeconds:
           accumulatedReadSeconds ?? this.accumulatedReadSeconds,
       readCompletedAt: readCompletedAt ?? this.readCompletedAt,
-      lastRetryAt: lastRetryAt ?? this.lastRetryAt,
-      maxRetries: maxRetries ?? this.maxRetries,
-      nextRetryAt: nextRetryAt ?? this.nextRetryAt,
+      serverArticleId: serverArticleId ?? this.serverArticleId,
     );
   }
 
@@ -4353,19 +3726,6 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     if (status.present) {
       map['status'] = Variable<String>(status.value);
     }
-    if (generationStartedAt.present) {
-      map['generation_started_at'] = Variable<String>(
-        generationStartedAt.value,
-      );
-    }
-    if (generationCompletedAt.present) {
-      map['generation_completed_at'] = Variable<String>(
-        generationCompletedAt.value,
-      );
-    }
-    if (retryCount.present) {
-      map['retry_count'] = Variable<int>(retryCount.value);
-    }
     if (accumulatedReadSeconds.present) {
       map['accumulated_read_seconds'] = Variable<int>(
         accumulatedReadSeconds.value,
@@ -4374,14 +3734,8 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     if (readCompletedAt.present) {
       map['read_completed_at'] = Variable<String>(readCompletedAt.value);
     }
-    if (lastRetryAt.present) {
-      map['last_retry_at'] = Variable<String>(lastRetryAt.value);
-    }
-    if (maxRetries.present) {
-      map['max_retries'] = Variable<int>(maxRetries.value);
-    }
-    if (nextRetryAt.present) {
-      map['next_retry_at'] = Variable<String>(nextRetryAt.value);
+    if (serverArticleId.present) {
+      map['server_article_id'] = Variable<int>(serverArticleId.value);
     }
     return map;
   }
@@ -4395,14 +3749,9 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
           ..write('contentCategory: $contentCategory, ')
           ..write('title: $title, ')
           ..write('status: $status, ')
-          ..write('generationStartedAt: $generationStartedAt, ')
-          ..write('generationCompletedAt: $generationCompletedAt, ')
-          ..write('retryCount: $retryCount, ')
           ..write('accumulatedReadSeconds: $accumulatedReadSeconds, ')
           ..write('readCompletedAt: $readCompletedAt, ')
-          ..write('lastRetryAt: $lastRetryAt, ')
-          ..write('maxRetries: $maxRetries, ')
-          ..write('nextRetryAt: $nextRetryAt')
+          ..write('serverArticleId: $serverArticleId')
           ..write(')'))
         .toString();
   }
@@ -4777,578 +4126,6 @@ class ArticleParagraphsCompanion extends UpdateCompanion<ArticleParagraphRow> {
           ..write('orderIndex: $orderIndex, ')
           ..write('englishText: $englishText, ')
           ..write('chineseTranslation: $chineseTranslation')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $GenerationErrorLogsTable extends GenerationErrorLogs
-    with TableInfo<$GenerationErrorLogsTable, GenerationErrorLogRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $GenerationErrorLogsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-    'id',
-    aliasedName,
-    false,
-    hasAutoIncrement: true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
-  );
-  static const VerificationMeta _entityTypeMeta = const VerificationMeta(
-    'entityType',
-  );
-  @override
-  late final GeneratedColumn<String> entityType = GeneratedColumn<String>(
-    'entity_type',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _entityIdMeta = const VerificationMeta(
-    'entityId',
-  );
-  @override
-  late final GeneratedColumn<int> entityId = GeneratedColumn<int>(
-    'entity_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _errorCodeMeta = const VerificationMeta(
-    'errorCode',
-  );
-  @override
-  late final GeneratedColumn<String> errorCode = GeneratedColumn<String>(
-    'error_code',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _errorMessageMeta = const VerificationMeta(
-    'errorMessage',
-  );
-  @override
-  late final GeneratedColumn<String> errorMessage = GeneratedColumn<String>(
-    'error_message',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _errorHelpMeta = const VerificationMeta(
-    'errorHelp',
-  );
-  @override
-  late final GeneratedColumn<String> errorHelp = GeneratedColumn<String>(
-    'error_help',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _retryCountMeta = const VerificationMeta(
-    'retryCount',
-  );
-  @override
-  late final GeneratedColumn<int> retryCount = GeneratedColumn<int>(
-    'retry_count',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _createdAtMeta = const VerificationMeta(
-    'createdAt',
-  );
-  @override
-  late final GeneratedColumn<String> createdAt = GeneratedColumn<String>(
-    'created_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _notifiedAtMeta = const VerificationMeta(
-    'notifiedAt',
-  );
-  @override
-  late final GeneratedColumn<int> notifiedAt = GeneratedColumn<int>(
-    'notified_at',
-    aliasedName,
-    true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-  );
-  @override
-  List<GeneratedColumn> get $columns => [
-    id,
-    entityType,
-    entityId,
-    errorCode,
-    errorMessage,
-    errorHelp,
-    retryCount,
-    createdAt,
-    notifiedAt,
-  ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'generation_error_log';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<GenerationErrorLogRow> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('entity_type')) {
-      context.handle(
-        _entityTypeMeta,
-        entityType.isAcceptableOrUnknown(data['entity_type']!, _entityTypeMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_entityTypeMeta);
-    }
-    if (data.containsKey('entity_id')) {
-      context.handle(
-        _entityIdMeta,
-        entityId.isAcceptableOrUnknown(data['entity_id']!, _entityIdMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_entityIdMeta);
-    }
-    if (data.containsKey('error_code')) {
-      context.handle(
-        _errorCodeMeta,
-        errorCode.isAcceptableOrUnknown(data['error_code']!, _errorCodeMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_errorCodeMeta);
-    }
-    if (data.containsKey('error_message')) {
-      context.handle(
-        _errorMessageMeta,
-        errorMessage.isAcceptableOrUnknown(
-          data['error_message']!,
-          _errorMessageMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_errorMessageMeta);
-    }
-    if (data.containsKey('error_help')) {
-      context.handle(
-        _errorHelpMeta,
-        errorHelp.isAcceptableOrUnknown(data['error_help']!, _errorHelpMeta),
-      );
-    }
-    if (data.containsKey('retry_count')) {
-      context.handle(
-        _retryCountMeta,
-        retryCount.isAcceptableOrUnknown(data['retry_count']!, _retryCountMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_retryCountMeta);
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(
-        _createdAtMeta,
-        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_createdAtMeta);
-    }
-    if (data.containsKey('notified_at')) {
-      context.handle(
-        _notifiedAtMeta,
-        notifiedAt.isAcceptableOrUnknown(data['notified_at']!, _notifiedAtMeta),
-      );
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  GenerationErrorLogRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return GenerationErrorLogRow(
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}id'],
-      )!,
-      entityType: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}entity_type'],
-      )!,
-      entityId: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}entity_id'],
-      )!,
-      errorCode: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}error_code'],
-      )!,
-      errorMessage: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}error_message'],
-      )!,
-      errorHelp: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}error_help'],
-      ),
-      retryCount: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}retry_count'],
-      )!,
-      createdAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}created_at'],
-      )!,
-      notifiedAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}notified_at'],
-      ),
-    );
-  }
-
-  @override
-  $GenerationErrorLogsTable createAlias(String alias) {
-    return $GenerationErrorLogsTable(attachedDatabase, alias);
-  }
-}
-
-class GenerationErrorLogRow extends DataClass
-    implements Insertable<GenerationErrorLogRow> {
-  /// Room: @PrimaryKey(autoGenerate = true) val id: Long
-  final int id;
-
-  /// "BATCH" | "ARTICLE"
-  final String entityType;
-  final int entityId;
-  final String errorCode;
-  final String errorMessage;
-  final String? errorHelp;
-
-  /// 快照：错误发生时的重试次数
-  final int retryCount;
-  final String createdAt;
-
-  /// 飞书告警送达时间（Unix millis）；null = 未通知，启动时补发
-  final int? notifiedAt;
-  const GenerationErrorLogRow({
-    required this.id,
-    required this.entityType,
-    required this.entityId,
-    required this.errorCode,
-    required this.errorMessage,
-    this.errorHelp,
-    required this.retryCount,
-    required this.createdAt,
-    this.notifiedAt,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['entity_type'] = Variable<String>(entityType);
-    map['entity_id'] = Variable<int>(entityId);
-    map['error_code'] = Variable<String>(errorCode);
-    map['error_message'] = Variable<String>(errorMessage);
-    if (!nullToAbsent || errorHelp != null) {
-      map['error_help'] = Variable<String>(errorHelp);
-    }
-    map['retry_count'] = Variable<int>(retryCount);
-    map['created_at'] = Variable<String>(createdAt);
-    if (!nullToAbsent || notifiedAt != null) {
-      map['notified_at'] = Variable<int>(notifiedAt);
-    }
-    return map;
-  }
-
-  GenerationErrorLogsCompanion toCompanion(bool nullToAbsent) {
-    return GenerationErrorLogsCompanion(
-      id: Value(id),
-      entityType: Value(entityType),
-      entityId: Value(entityId),
-      errorCode: Value(errorCode),
-      errorMessage: Value(errorMessage),
-      errorHelp: errorHelp == null && nullToAbsent
-          ? const Value.absent()
-          : Value(errorHelp),
-      retryCount: Value(retryCount),
-      createdAt: Value(createdAt),
-      notifiedAt: notifiedAt == null && nullToAbsent
-          ? const Value.absent()
-          : Value(notifiedAt),
-    );
-  }
-
-  factory GenerationErrorLogRow.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return GenerationErrorLogRow(
-      id: serializer.fromJson<int>(json['id']),
-      entityType: serializer.fromJson<String>(json['entityType']),
-      entityId: serializer.fromJson<int>(json['entityId']),
-      errorCode: serializer.fromJson<String>(json['errorCode']),
-      errorMessage: serializer.fromJson<String>(json['errorMessage']),
-      errorHelp: serializer.fromJson<String?>(json['errorHelp']),
-      retryCount: serializer.fromJson<int>(json['retryCount']),
-      createdAt: serializer.fromJson<String>(json['createdAt']),
-      notifiedAt: serializer.fromJson<int?>(json['notifiedAt']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'entityType': serializer.toJson<String>(entityType),
-      'entityId': serializer.toJson<int>(entityId),
-      'errorCode': serializer.toJson<String>(errorCode),
-      'errorMessage': serializer.toJson<String>(errorMessage),
-      'errorHelp': serializer.toJson<String?>(errorHelp),
-      'retryCount': serializer.toJson<int>(retryCount),
-      'createdAt': serializer.toJson<String>(createdAt),
-      'notifiedAt': serializer.toJson<int?>(notifiedAt),
-    };
-  }
-
-  GenerationErrorLogRow copyWith({
-    int? id,
-    String? entityType,
-    int? entityId,
-    String? errorCode,
-    String? errorMessage,
-    Value<String?> errorHelp = const Value.absent(),
-    int? retryCount,
-    String? createdAt,
-    Value<int?> notifiedAt = const Value.absent(),
-  }) => GenerationErrorLogRow(
-    id: id ?? this.id,
-    entityType: entityType ?? this.entityType,
-    entityId: entityId ?? this.entityId,
-    errorCode: errorCode ?? this.errorCode,
-    errorMessage: errorMessage ?? this.errorMessage,
-    errorHelp: errorHelp.present ? errorHelp.value : this.errorHelp,
-    retryCount: retryCount ?? this.retryCount,
-    createdAt: createdAt ?? this.createdAt,
-    notifiedAt: notifiedAt.present ? notifiedAt.value : this.notifiedAt,
-  );
-  GenerationErrorLogRow copyWithCompanion(GenerationErrorLogsCompanion data) {
-    return GenerationErrorLogRow(
-      id: data.id.present ? data.id.value : this.id,
-      entityType: data.entityType.present
-          ? data.entityType.value
-          : this.entityType,
-      entityId: data.entityId.present ? data.entityId.value : this.entityId,
-      errorCode: data.errorCode.present ? data.errorCode.value : this.errorCode,
-      errorMessage: data.errorMessage.present
-          ? data.errorMessage.value
-          : this.errorMessage,
-      errorHelp: data.errorHelp.present ? data.errorHelp.value : this.errorHelp,
-      retryCount: data.retryCount.present
-          ? data.retryCount.value
-          : this.retryCount,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-      notifiedAt: data.notifiedAt.present
-          ? data.notifiedAt.value
-          : this.notifiedAt,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('GenerationErrorLogRow(')
-          ..write('id: $id, ')
-          ..write('entityType: $entityType, ')
-          ..write('entityId: $entityId, ')
-          ..write('errorCode: $errorCode, ')
-          ..write('errorMessage: $errorMessage, ')
-          ..write('errorHelp: $errorHelp, ')
-          ..write('retryCount: $retryCount, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('notifiedAt: $notifiedAt')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    id,
-    entityType,
-    entityId,
-    errorCode,
-    errorMessage,
-    errorHelp,
-    retryCount,
-    createdAt,
-    notifiedAt,
-  );
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is GenerationErrorLogRow &&
-          other.id == this.id &&
-          other.entityType == this.entityType &&
-          other.entityId == this.entityId &&
-          other.errorCode == this.errorCode &&
-          other.errorMessage == this.errorMessage &&
-          other.errorHelp == this.errorHelp &&
-          other.retryCount == this.retryCount &&
-          other.createdAt == this.createdAt &&
-          other.notifiedAt == this.notifiedAt);
-}
-
-class GenerationErrorLogsCompanion
-    extends UpdateCompanion<GenerationErrorLogRow> {
-  final Value<int> id;
-  final Value<String> entityType;
-  final Value<int> entityId;
-  final Value<String> errorCode;
-  final Value<String> errorMessage;
-  final Value<String?> errorHelp;
-  final Value<int> retryCount;
-  final Value<String> createdAt;
-  final Value<int?> notifiedAt;
-  const GenerationErrorLogsCompanion({
-    this.id = const Value.absent(),
-    this.entityType = const Value.absent(),
-    this.entityId = const Value.absent(),
-    this.errorCode = const Value.absent(),
-    this.errorMessage = const Value.absent(),
-    this.errorHelp = const Value.absent(),
-    this.retryCount = const Value.absent(),
-    this.createdAt = const Value.absent(),
-    this.notifiedAt = const Value.absent(),
-  });
-  GenerationErrorLogsCompanion.insert({
-    this.id = const Value.absent(),
-    required String entityType,
-    required int entityId,
-    required String errorCode,
-    required String errorMessage,
-    this.errorHelp = const Value.absent(),
-    required int retryCount,
-    required String createdAt,
-    this.notifiedAt = const Value.absent(),
-  }) : entityType = Value(entityType),
-       entityId = Value(entityId),
-       errorCode = Value(errorCode),
-       errorMessage = Value(errorMessage),
-       retryCount = Value(retryCount),
-       createdAt = Value(createdAt);
-  static Insertable<GenerationErrorLogRow> custom({
-    Expression<int>? id,
-    Expression<String>? entityType,
-    Expression<int>? entityId,
-    Expression<String>? errorCode,
-    Expression<String>? errorMessage,
-    Expression<String>? errorHelp,
-    Expression<int>? retryCount,
-    Expression<String>? createdAt,
-    Expression<int>? notifiedAt,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (entityType != null) 'entity_type': entityType,
-      if (entityId != null) 'entity_id': entityId,
-      if (errorCode != null) 'error_code': errorCode,
-      if (errorMessage != null) 'error_message': errorMessage,
-      if (errorHelp != null) 'error_help': errorHelp,
-      if (retryCount != null) 'retry_count': retryCount,
-      if (createdAt != null) 'created_at': createdAt,
-      if (notifiedAt != null) 'notified_at': notifiedAt,
-    });
-  }
-
-  GenerationErrorLogsCompanion copyWith({
-    Value<int>? id,
-    Value<String>? entityType,
-    Value<int>? entityId,
-    Value<String>? errorCode,
-    Value<String>? errorMessage,
-    Value<String?>? errorHelp,
-    Value<int>? retryCount,
-    Value<String>? createdAt,
-    Value<int?>? notifiedAt,
-  }) {
-    return GenerationErrorLogsCompanion(
-      id: id ?? this.id,
-      entityType: entityType ?? this.entityType,
-      entityId: entityId ?? this.entityId,
-      errorCode: errorCode ?? this.errorCode,
-      errorMessage: errorMessage ?? this.errorMessage,
-      errorHelp: errorHelp ?? this.errorHelp,
-      retryCount: retryCount ?? this.retryCount,
-      createdAt: createdAt ?? this.createdAt,
-      notifiedAt: notifiedAt ?? this.notifiedAt,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
-    if (entityType.present) {
-      map['entity_type'] = Variable<String>(entityType.value);
-    }
-    if (entityId.present) {
-      map['entity_id'] = Variable<int>(entityId.value);
-    }
-    if (errorCode.present) {
-      map['error_code'] = Variable<String>(errorCode.value);
-    }
-    if (errorMessage.present) {
-      map['error_message'] = Variable<String>(errorMessage.value);
-    }
-    if (errorHelp.present) {
-      map['error_help'] = Variable<String>(errorHelp.value);
-    }
-    if (retryCount.present) {
-      map['retry_count'] = Variable<int>(retryCount.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<String>(createdAt.value);
-    }
-    if (notifiedAt.present) {
-      map['notified_at'] = Variable<int>(notifiedAt.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('GenerationErrorLogsCompanion(')
-          ..write('id: $id, ')
-          ..write('entityType: $entityType, ')
-          ..write('entityId: $entityId, ')
-          ..write('errorCode: $errorCode, ')
-          ..write('errorMessage: $errorMessage, ')
-          ..write('errorHelp: $errorHelp, ')
-          ..write('retryCount: $retryCount, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('notifiedAt: $notifiedAt')
           ..write(')'))
         .toString();
   }
@@ -7920,8 +6697,6 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final $SchemaMigrationLogsTable schemaMigrationLogs =
       $SchemaMigrationLogsTable(this);
-  late final $GenerationPipelineStatusesTable generationPipelineStatuses =
-      $GenerationPipelineStatusesTable(this);
   late final $DailyLearningLogsTable dailyLearningLogs =
       $DailyLearningLogsTable(this);
   late final $LearningStatsSummariesTable learningStatsSummaries =
@@ -7931,8 +6706,6 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $ArticlesTable articles = $ArticlesTable(this);
   late final $ArticleParagraphsTable articleParagraphs =
       $ArticleParagraphsTable(this);
-  late final $GenerationErrorLogsTable generationErrorLogs =
-      $GenerationErrorLogsTable(this);
   late final $WordsTable words = $WordsTable(this);
   late final $WordSensesTable wordSenses = $WordSensesTable(this);
   late final $ExampleSentencesTable exampleSentences = $ExampleSentencesTable(
@@ -7958,6 +6731,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'index_article_batch_id',
     'CREATE INDEX index_article_batch_id ON article (batch_id)',
   );
+  late final Index indexArticleServerArticleId = Index(
+    'index_article_server_article_id',
+    'CREATE UNIQUE INDEX index_article_server_article_id ON article (server_article_id)',
+  );
   late final Index indexArticleParagraphArticleId = Index(
     'index_article_paragraph_article_id',
     'CREATE INDEX index_article_paragraph_article_id ON article_paragraph (article_id)',
@@ -7965,14 +6742,6 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final Index indexArticleParagraphArticleIdOrderIndex = Index(
     'index_article_paragraph_article_id_order_index',
     'CREATE UNIQUE INDEX index_article_paragraph_article_id_order_index ON article_paragraph (article_id, order_index)',
-  );
-  late final Index indexGenerationErrorLogEntityTypeEntityId = Index(
-    'index_generation_error_log_entity_type_entity_id',
-    'CREATE INDEX index_generation_error_log_entity_type_entity_id ON generation_error_log (entity_type, entity_id)',
-  );
-  late final Index indexGenerationErrorLogCreatedAt = Index(
-    'index_generation_error_log_created_at',
-    'CREATE INDEX index_generation_error_log_created_at ON generation_error_log (created_at)',
   );
   late final Index indexWordSpellingNormalized = Index(
     'index_word_spelling_normalized',
@@ -8002,14 +6771,12 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     userSettings,
     configChangeLogs,
     schemaMigrationLogs,
-    generationPipelineStatuses,
     dailyLearningLogs,
     learningStatsSummaries,
     articleBatches,
     dailyLearnings,
     articles,
     articleParagraphs,
-    generationErrorLogs,
     words,
     wordSenses,
     exampleSentences,
@@ -8020,10 +6787,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     indexArticleBatchGeneratedOn,
     indexArticleBatchDifficultyLevelSnapshotGeneratedOn,
     indexArticleBatchId,
+    indexArticleServerArticleId,
     indexArticleParagraphArticleId,
     indexArticleParagraphArticleIdOrderIndex,
-    indexGenerationErrorLogEntityTypeEntityId,
-    indexGenerationErrorLogCreatedAt,
     indexWordSpellingNormalized,
     indexWordSenseWordId,
     indexExampleSentenceWordSenseId,
@@ -8095,6 +6861,9 @@ typedef $$UserSettingsTableCreateCompanionBuilder =
       required String ttsVoiceId,
       required int masteryThresholdN,
       required bool autoPlayAudio,
+      Value<String?> serverPhone,
+      Value<String?> serverToken,
+      Value<int?> serverTokenExpiresAt,
     });
 typedef $$UserSettingsTableUpdateCompanionBuilder =
     UserSettingsCompanion Function({
@@ -8107,6 +6876,9 @@ typedef $$UserSettingsTableUpdateCompanionBuilder =
       Value<String> ttsVoiceId,
       Value<int> masteryThresholdN,
       Value<bool> autoPlayAudio,
+      Value<String?> serverPhone,
+      Value<String?> serverToken,
+      Value<int?> serverTokenExpiresAt,
     });
 
 class $$UserSettingsTableFilterComposer
@@ -8160,6 +6932,21 @@ class $$UserSettingsTableFilterComposer
 
   ColumnFilters<bool> get autoPlayAudio => $composableBuilder(
     column: $table.autoPlayAudio,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get serverPhone => $composableBuilder(
+    column: $table.serverPhone,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get serverToken => $composableBuilder(
+    column: $table.serverToken,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get serverTokenExpiresAt => $composableBuilder(
+    column: $table.serverTokenExpiresAt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -8217,6 +7004,21 @@ class $$UserSettingsTableOrderingComposer
     column: $table.autoPlayAudio,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get serverPhone => $composableBuilder(
+    column: $table.serverPhone,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get serverToken => $composableBuilder(
+    column: $table.serverToken,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get serverTokenExpiresAt => $composableBuilder(
+    column: $table.serverTokenExpiresAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$UserSettingsTableAnnotationComposer
@@ -8268,6 +7070,21 @@ class $$UserSettingsTableAnnotationComposer
     column: $table.autoPlayAudio,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get serverPhone => $composableBuilder(
+    column: $table.serverPhone,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get serverToken => $composableBuilder(
+    column: $table.serverToken,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get serverTokenExpiresAt => $composableBuilder(
+    column: $table.serverTokenExpiresAt,
+    builder: (column) => column,
+  );
 }
 
 class $$UserSettingsTableTableManager
@@ -8310,6 +7127,9 @@ class $$UserSettingsTableTableManager
                 Value<String> ttsVoiceId = const Value.absent(),
                 Value<int> masteryThresholdN = const Value.absent(),
                 Value<bool> autoPlayAudio = const Value.absent(),
+                Value<String?> serverPhone = const Value.absent(),
+                Value<String?> serverToken = const Value.absent(),
+                Value<int?> serverTokenExpiresAt = const Value.absent(),
               }) => UserSettingsCompanion(
                 id: id,
                 isOnboarded: isOnboarded,
@@ -8320,6 +7140,9 @@ class $$UserSettingsTableTableManager
                 ttsVoiceId: ttsVoiceId,
                 masteryThresholdN: masteryThresholdN,
                 autoPlayAudio: autoPlayAudio,
+                serverPhone: serverPhone,
+                serverToken: serverToken,
+                serverTokenExpiresAt: serverTokenExpiresAt,
               ),
           createCompanionCallback:
               ({
@@ -8332,6 +7155,9 @@ class $$UserSettingsTableTableManager
                 required String ttsVoiceId,
                 required int masteryThresholdN,
                 required bool autoPlayAudio,
+                Value<String?> serverPhone = const Value.absent(),
+                Value<String?> serverToken = const Value.absent(),
+                Value<int?> serverTokenExpiresAt = const Value.absent(),
               }) => UserSettingsCompanion.insert(
                 id: id,
                 isOnboarded: isOnboarded,
@@ -8342,6 +7168,9 @@ class $$UserSettingsTableTableManager
                 ttsVoiceId: ttsVoiceId,
                 masteryThresholdN: masteryThresholdN,
                 autoPlayAudio: autoPlayAudio,
+                serverPhone: serverPhone,
+                serverToken: serverToken,
+                serverTokenExpiresAt: serverTokenExpiresAt,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
@@ -8784,223 +7613,6 @@ typedef $$SchemaMigrationLogsTableProcessedTableManager =
         >,
       ),
       SchemaMigrationLogRow,
-      PrefetchHooks Function()
-    >;
-typedef $$GenerationPipelineStatusesTableCreateCompanionBuilder =
-    GenerationPipelineStatusesCompanion Function({
-      Value<int> id,
-      required bool isBlocked,
-      Value<String?> blockedReason,
-      Value<String?> blockedAt,
-      Value<int?> blockedAppVersionCode,
-    });
-typedef $$GenerationPipelineStatusesTableUpdateCompanionBuilder =
-    GenerationPipelineStatusesCompanion Function({
-      Value<int> id,
-      Value<bool> isBlocked,
-      Value<String?> blockedReason,
-      Value<String?> blockedAt,
-      Value<int?> blockedAppVersionCode,
-    });
-
-class $$GenerationPipelineStatusesTableFilterComposer
-    extends Composer<_$AppDatabase, $GenerationPipelineStatusesTable> {
-  $$GenerationPipelineStatusesTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<bool> get isBlocked => $composableBuilder(
-    column: $table.isBlocked,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get blockedReason => $composableBuilder(
-    column: $table.blockedReason,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get blockedAt => $composableBuilder(
-    column: $table.blockedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get blockedAppVersionCode => $composableBuilder(
-    column: $table.blockedAppVersionCode,
-    builder: (column) => ColumnFilters(column),
-  );
-}
-
-class $$GenerationPipelineStatusesTableOrderingComposer
-    extends Composer<_$AppDatabase, $GenerationPipelineStatusesTable> {
-  $$GenerationPipelineStatusesTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<bool> get isBlocked => $composableBuilder(
-    column: $table.isBlocked,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get blockedReason => $composableBuilder(
-    column: $table.blockedReason,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get blockedAt => $composableBuilder(
-    column: $table.blockedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get blockedAppVersionCode => $composableBuilder(
-    column: $table.blockedAppVersionCode,
-    builder: (column) => ColumnOrderings(column),
-  );
-}
-
-class $$GenerationPipelineStatusesTableAnnotationComposer
-    extends Composer<_$AppDatabase, $GenerationPipelineStatusesTable> {
-  $$GenerationPipelineStatusesTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<bool> get isBlocked =>
-      $composableBuilder(column: $table.isBlocked, builder: (column) => column);
-
-  GeneratedColumn<String> get blockedReason => $composableBuilder(
-    column: $table.blockedReason,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get blockedAt =>
-      $composableBuilder(column: $table.blockedAt, builder: (column) => column);
-
-  GeneratedColumn<int> get blockedAppVersionCode => $composableBuilder(
-    column: $table.blockedAppVersionCode,
-    builder: (column) => column,
-  );
-}
-
-class $$GenerationPipelineStatusesTableTableManager
-    extends
-        RootTableManager<
-          _$AppDatabase,
-          $GenerationPipelineStatusesTable,
-          GenerationPipelineStatusRow,
-          $$GenerationPipelineStatusesTableFilterComposer,
-          $$GenerationPipelineStatusesTableOrderingComposer,
-          $$GenerationPipelineStatusesTableAnnotationComposer,
-          $$GenerationPipelineStatusesTableCreateCompanionBuilder,
-          $$GenerationPipelineStatusesTableUpdateCompanionBuilder,
-          (
-            GenerationPipelineStatusRow,
-            BaseReferences<
-              _$AppDatabase,
-              $GenerationPipelineStatusesTable,
-              GenerationPipelineStatusRow
-            >,
-          ),
-          GenerationPipelineStatusRow,
-          PrefetchHooks Function()
-        > {
-  $$GenerationPipelineStatusesTableTableManager(
-    _$AppDatabase db,
-    $GenerationPipelineStatusesTable table,
-  ) : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$GenerationPipelineStatusesTableFilterComposer(
-                $db: db,
-                $table: table,
-              ),
-          createOrderingComposer: () =>
-              $$GenerationPipelineStatusesTableOrderingComposer(
-                $db: db,
-                $table: table,
-              ),
-          createComputedFieldComposer: () =>
-              $$GenerationPipelineStatusesTableAnnotationComposer(
-                $db: db,
-                $table: table,
-              ),
-          updateCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                Value<bool> isBlocked = const Value.absent(),
-                Value<String?> blockedReason = const Value.absent(),
-                Value<String?> blockedAt = const Value.absent(),
-                Value<int?> blockedAppVersionCode = const Value.absent(),
-              }) => GenerationPipelineStatusesCompanion(
-                id: id,
-                isBlocked: isBlocked,
-                blockedReason: blockedReason,
-                blockedAt: blockedAt,
-                blockedAppVersionCode: blockedAppVersionCode,
-              ),
-          createCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                required bool isBlocked,
-                Value<String?> blockedReason = const Value.absent(),
-                Value<String?> blockedAt = const Value.absent(),
-                Value<int?> blockedAppVersionCode = const Value.absent(),
-              }) => GenerationPipelineStatusesCompanion.insert(
-                id: id,
-                isBlocked: isBlocked,
-                blockedReason: blockedReason,
-                blockedAt: blockedAt,
-                blockedAppVersionCode: blockedAppVersionCode,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ),
-      );
-}
-
-typedef $$GenerationPipelineStatusesTableProcessedTableManager =
-    ProcessedTableManager<
-      _$AppDatabase,
-      $GenerationPipelineStatusesTable,
-      GenerationPipelineStatusRow,
-      $$GenerationPipelineStatusesTableFilterComposer,
-      $$GenerationPipelineStatusesTableOrderingComposer,
-      $$GenerationPipelineStatusesTableAnnotationComposer,
-      $$GenerationPipelineStatusesTableCreateCompanionBuilder,
-      $$GenerationPipelineStatusesTableUpdateCompanionBuilder,
-      (
-        GenerationPipelineStatusRow,
-        BaseReferences<
-          _$AppDatabase,
-          $GenerationPipelineStatusesTable,
-          GenerationPipelineStatusRow
-        >,
-      ),
-      GenerationPipelineStatusRow,
       PrefetchHooks Function()
     >;
 typedef $$DailyLearningLogsTableCreateCompanionBuilder =
@@ -9507,9 +8119,6 @@ typedef $$ArticleBatchesTableCreateCompanionBuilder =
       required String difficultyLevelSnapshot,
       required String generatedOn,
       required String lastUpdatedAt,
-      Value<String?> blockedReason,
-      Value<String?> blockedAt,
-      Value<int?> readyNotifiedAt,
     });
 typedef $$ArticleBatchesTableUpdateCompanionBuilder =
     ArticleBatchesCompanion Function({
@@ -9518,9 +8127,6 @@ typedef $$ArticleBatchesTableUpdateCompanionBuilder =
       Value<String> difficultyLevelSnapshot,
       Value<String> generatedOn,
       Value<String> lastUpdatedAt,
-      Value<String?> blockedReason,
-      Value<String?> blockedAt,
-      Value<int?> readyNotifiedAt,
     });
 
 final class $$ArticleBatchesTableReferences
@@ -9600,21 +8206,6 @@ class $$ArticleBatchesTableFilterComposer
 
   ColumnFilters<String> get lastUpdatedAt => $composableBuilder(
     column: $table.lastUpdatedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get blockedReason => $composableBuilder(
-    column: $table.blockedReason,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get blockedAt => $composableBuilder(
-    column: $table.blockedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get readyNotifiedAt => $composableBuilder(
-    column: $table.readyNotifiedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9702,21 +8293,6 @@ class $$ArticleBatchesTableOrderingComposer
     column: $table.lastUpdatedAt,
     builder: (column) => ColumnOrderings(column),
   );
-
-  ColumnOrderings<String> get blockedReason => $composableBuilder(
-    column: $table.blockedReason,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get blockedAt => $composableBuilder(
-    column: $table.blockedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get readyNotifiedAt => $composableBuilder(
-    column: $table.readyNotifiedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
 }
 
 class $$ArticleBatchesTableAnnotationComposer
@@ -9746,19 +8322,6 @@ class $$ArticleBatchesTableAnnotationComposer
 
   GeneratedColumn<String> get lastUpdatedAt => $composableBuilder(
     column: $table.lastUpdatedAt,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get blockedReason => $composableBuilder(
-    column: $table.blockedReason,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get blockedAt =>
-      $composableBuilder(column: $table.blockedAt, builder: (column) => column);
-
-  GeneratedColumn<int> get readyNotifiedAt => $composableBuilder(
-    column: $table.readyNotifiedAt,
     builder: (column) => column,
   );
 
@@ -9848,18 +8411,12 @@ class $$ArticleBatchesTableTableManager
                 Value<String> difficultyLevelSnapshot = const Value.absent(),
                 Value<String> generatedOn = const Value.absent(),
                 Value<String> lastUpdatedAt = const Value.absent(),
-                Value<String?> blockedReason = const Value.absent(),
-                Value<String?> blockedAt = const Value.absent(),
-                Value<int?> readyNotifiedAt = const Value.absent(),
               }) => ArticleBatchesCompanion(
                 id: id,
                 status: status,
                 difficultyLevelSnapshot: difficultyLevelSnapshot,
                 generatedOn: generatedOn,
                 lastUpdatedAt: lastUpdatedAt,
-                blockedReason: blockedReason,
-                blockedAt: blockedAt,
-                readyNotifiedAt: readyNotifiedAt,
               ),
           createCompanionCallback:
               ({
@@ -9868,18 +8425,12 @@ class $$ArticleBatchesTableTableManager
                 required String difficultyLevelSnapshot,
                 required String generatedOn,
                 required String lastUpdatedAt,
-                Value<String?> blockedReason = const Value.absent(),
-                Value<String?> blockedAt = const Value.absent(),
-                Value<int?> readyNotifiedAt = const Value.absent(),
               }) => ArticleBatchesCompanion.insert(
                 id: id,
                 status: status,
                 difficultyLevelSnapshot: difficultyLevelSnapshot,
                 generatedOn: generatedOn,
                 lastUpdatedAt: lastUpdatedAt,
-                blockedReason: blockedReason,
-                blockedAt: blockedAt,
-                readyNotifiedAt: readyNotifiedAt,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -10285,14 +8836,9 @@ typedef $$ArticlesTableCreateCompanionBuilder =
       required String contentCategory,
       Value<String?> title,
       required String status,
-      Value<String?> generationStartedAt,
-      Value<String?> generationCompletedAt,
-      required int retryCount,
       required int accumulatedReadSeconds,
       Value<String?> readCompletedAt,
-      Value<String?> lastRetryAt,
-      required int maxRetries,
-      Value<String?> nextRetryAt,
+      Value<int?> serverArticleId,
     });
 typedef $$ArticlesTableUpdateCompanionBuilder =
     ArticlesCompanion Function({
@@ -10302,14 +8848,9 @@ typedef $$ArticlesTableUpdateCompanionBuilder =
       Value<String> contentCategory,
       Value<String?> title,
       Value<String> status,
-      Value<String?> generationStartedAt,
-      Value<String?> generationCompletedAt,
-      Value<int> retryCount,
       Value<int> accumulatedReadSeconds,
       Value<String?> readCompletedAt,
-      Value<String?> lastRetryAt,
-      Value<int> maxRetries,
-      Value<String?> nextRetryAt,
+      Value<int?> serverArticleId,
     });
 
 final class $$ArticlesTableReferences
@@ -10389,21 +8930,6 @@ class $$ArticlesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get generationStartedAt => $composableBuilder(
-    column: $table.generationStartedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get generationCompletedAt => $composableBuilder(
-    column: $table.generationCompletedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get retryCount => $composableBuilder(
-    column: $table.retryCount,
-    builder: (column) => ColumnFilters(column),
-  );
-
   ColumnFilters<int> get accumulatedReadSeconds => $composableBuilder(
     column: $table.accumulatedReadSeconds,
     builder: (column) => ColumnFilters(column),
@@ -10414,18 +8940,8 @@ class $$ArticlesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get lastRetryAt => $composableBuilder(
-    column: $table.lastRetryAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get maxRetries => $composableBuilder(
-    column: $table.maxRetries,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get nextRetryAt => $composableBuilder(
-    column: $table.nextRetryAt,
+  ColumnFilters<int> get serverArticleId => $composableBuilder(
+    column: $table.serverArticleId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10512,21 +9028,6 @@ class $$ArticlesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get generationStartedAt => $composableBuilder(
-    column: $table.generationStartedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get generationCompletedAt => $composableBuilder(
-    column: $table.generationCompletedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get retryCount => $composableBuilder(
-    column: $table.retryCount,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<int> get accumulatedReadSeconds => $composableBuilder(
     column: $table.accumulatedReadSeconds,
     builder: (column) => ColumnOrderings(column),
@@ -10537,18 +9038,8 @@ class $$ArticlesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get lastRetryAt => $composableBuilder(
-    column: $table.lastRetryAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get maxRetries => $composableBuilder(
-    column: $table.maxRetries,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get nextRetryAt => $composableBuilder(
-    column: $table.nextRetryAt,
+  ColumnOrderings<int> get serverArticleId => $composableBuilder(
+    column: $table.serverArticleId,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -10604,21 +9095,6 @@ class $$ArticlesTableAnnotationComposer
   GeneratedColumn<String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
 
-  GeneratedColumn<String> get generationStartedAt => $composableBuilder(
-    column: $table.generationStartedAt,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get generationCompletedAt => $composableBuilder(
-    column: $table.generationCompletedAt,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<int> get retryCount => $composableBuilder(
-    column: $table.retryCount,
-    builder: (column) => column,
-  );
-
   GeneratedColumn<int> get accumulatedReadSeconds => $composableBuilder(
     column: $table.accumulatedReadSeconds,
     builder: (column) => column,
@@ -10629,18 +9105,8 @@ class $$ArticlesTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get lastRetryAt => $composableBuilder(
-    column: $table.lastRetryAt,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<int> get maxRetries => $composableBuilder(
-    column: $table.maxRetries,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get nextRetryAt => $composableBuilder(
-    column: $table.nextRetryAt,
+  GeneratedColumn<int> get serverArticleId => $composableBuilder(
+    column: $table.serverArticleId,
     builder: (column) => column,
   );
 
@@ -10728,14 +9194,9 @@ class $$ArticlesTableTableManager
                 Value<String> contentCategory = const Value.absent(),
                 Value<String?> title = const Value.absent(),
                 Value<String> status = const Value.absent(),
-                Value<String?> generationStartedAt = const Value.absent(),
-                Value<String?> generationCompletedAt = const Value.absent(),
-                Value<int> retryCount = const Value.absent(),
                 Value<int> accumulatedReadSeconds = const Value.absent(),
                 Value<String?> readCompletedAt = const Value.absent(),
-                Value<String?> lastRetryAt = const Value.absent(),
-                Value<int> maxRetries = const Value.absent(),
-                Value<String?> nextRetryAt = const Value.absent(),
+                Value<int?> serverArticleId = const Value.absent(),
               }) => ArticlesCompanion(
                 id: id,
                 batchId: batchId,
@@ -10743,14 +9204,9 @@ class $$ArticlesTableTableManager
                 contentCategory: contentCategory,
                 title: title,
                 status: status,
-                generationStartedAt: generationStartedAt,
-                generationCompletedAt: generationCompletedAt,
-                retryCount: retryCount,
                 accumulatedReadSeconds: accumulatedReadSeconds,
                 readCompletedAt: readCompletedAt,
-                lastRetryAt: lastRetryAt,
-                maxRetries: maxRetries,
-                nextRetryAt: nextRetryAt,
+                serverArticleId: serverArticleId,
               ),
           createCompanionCallback:
               ({
@@ -10760,14 +9216,9 @@ class $$ArticlesTableTableManager
                 required String contentCategory,
                 Value<String?> title = const Value.absent(),
                 required String status,
-                Value<String?> generationStartedAt = const Value.absent(),
-                Value<String?> generationCompletedAt = const Value.absent(),
-                required int retryCount,
                 required int accumulatedReadSeconds,
                 Value<String?> readCompletedAt = const Value.absent(),
-                Value<String?> lastRetryAt = const Value.absent(),
-                required int maxRetries,
-                Value<String?> nextRetryAt = const Value.absent(),
+                Value<int?> serverArticleId = const Value.absent(),
               }) => ArticlesCompanion.insert(
                 id: id,
                 batchId: batchId,
@@ -10775,14 +9226,9 @@ class $$ArticlesTableTableManager
                 contentCategory: contentCategory,
                 title: title,
                 status: status,
-                generationStartedAt: generationStartedAt,
-                generationCompletedAt: generationCompletedAt,
-                retryCount: retryCount,
                 accumulatedReadSeconds: accumulatedReadSeconds,
                 readCompletedAt: readCompletedAt,
-                lastRetryAt: lastRetryAt,
-                maxRetries: maxRetries,
-                nextRetryAt: nextRetryAt,
+                serverArticleId: serverArticleId,
               ),
           withReferenceMapper: (p0) => p0
               .map(
@@ -11297,300 +9743,6 @@ typedef $$ArticleParagraphsTableProcessedTableManager =
       (ArticleParagraphRow, $$ArticleParagraphsTableReferences),
       ArticleParagraphRow,
       PrefetchHooks Function({bool articleId, bool ttsCachesRefs})
-    >;
-typedef $$GenerationErrorLogsTableCreateCompanionBuilder =
-    GenerationErrorLogsCompanion Function({
-      Value<int> id,
-      required String entityType,
-      required int entityId,
-      required String errorCode,
-      required String errorMessage,
-      Value<String?> errorHelp,
-      required int retryCount,
-      required String createdAt,
-      Value<int?> notifiedAt,
-    });
-typedef $$GenerationErrorLogsTableUpdateCompanionBuilder =
-    GenerationErrorLogsCompanion Function({
-      Value<int> id,
-      Value<String> entityType,
-      Value<int> entityId,
-      Value<String> errorCode,
-      Value<String> errorMessage,
-      Value<String?> errorHelp,
-      Value<int> retryCount,
-      Value<String> createdAt,
-      Value<int?> notifiedAt,
-    });
-
-class $$GenerationErrorLogsTableFilterComposer
-    extends Composer<_$AppDatabase, $GenerationErrorLogsTable> {
-  $$GenerationErrorLogsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get entityType => $composableBuilder(
-    column: $table.entityType,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get entityId => $composableBuilder(
-    column: $table.entityId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get errorCode => $composableBuilder(
-    column: $table.errorCode,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get errorMessage => $composableBuilder(
-    column: $table.errorMessage,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get errorHelp => $composableBuilder(
-    column: $table.errorHelp,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get retryCount => $composableBuilder(
-    column: $table.retryCount,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get notifiedAt => $composableBuilder(
-    column: $table.notifiedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-}
-
-class $$GenerationErrorLogsTableOrderingComposer
-    extends Composer<_$AppDatabase, $GenerationErrorLogsTable> {
-  $$GenerationErrorLogsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get entityType => $composableBuilder(
-    column: $table.entityType,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get entityId => $composableBuilder(
-    column: $table.entityId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get errorCode => $composableBuilder(
-    column: $table.errorCode,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get errorMessage => $composableBuilder(
-    column: $table.errorMessage,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get errorHelp => $composableBuilder(
-    column: $table.errorHelp,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get retryCount => $composableBuilder(
-    column: $table.retryCount,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get notifiedAt => $composableBuilder(
-    column: $table.notifiedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-}
-
-class $$GenerationErrorLogsTableAnnotationComposer
-    extends Composer<_$AppDatabase, $GenerationErrorLogsTable> {
-  $$GenerationErrorLogsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get entityType => $composableBuilder(
-    column: $table.entityType,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<int> get entityId =>
-      $composableBuilder(column: $table.entityId, builder: (column) => column);
-
-  GeneratedColumn<String> get errorCode =>
-      $composableBuilder(column: $table.errorCode, builder: (column) => column);
-
-  GeneratedColumn<String> get errorMessage => $composableBuilder(
-    column: $table.errorMessage,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get errorHelp =>
-      $composableBuilder(column: $table.errorHelp, builder: (column) => column);
-
-  GeneratedColumn<int> get retryCount => $composableBuilder(
-    column: $table.retryCount,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
-
-  GeneratedColumn<int> get notifiedAt => $composableBuilder(
-    column: $table.notifiedAt,
-    builder: (column) => column,
-  );
-}
-
-class $$GenerationErrorLogsTableTableManager
-    extends
-        RootTableManager<
-          _$AppDatabase,
-          $GenerationErrorLogsTable,
-          GenerationErrorLogRow,
-          $$GenerationErrorLogsTableFilterComposer,
-          $$GenerationErrorLogsTableOrderingComposer,
-          $$GenerationErrorLogsTableAnnotationComposer,
-          $$GenerationErrorLogsTableCreateCompanionBuilder,
-          $$GenerationErrorLogsTableUpdateCompanionBuilder,
-          (
-            GenerationErrorLogRow,
-            BaseReferences<
-              _$AppDatabase,
-              $GenerationErrorLogsTable,
-              GenerationErrorLogRow
-            >,
-          ),
-          GenerationErrorLogRow,
-          PrefetchHooks Function()
-        > {
-  $$GenerationErrorLogsTableTableManager(
-    _$AppDatabase db,
-    $GenerationErrorLogsTable table,
-  ) : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$GenerationErrorLogsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$GenerationErrorLogsTableOrderingComposer(
-                $db: db,
-                $table: table,
-              ),
-          createComputedFieldComposer: () =>
-              $$GenerationErrorLogsTableAnnotationComposer(
-                $db: db,
-                $table: table,
-              ),
-          updateCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                Value<String> entityType = const Value.absent(),
-                Value<int> entityId = const Value.absent(),
-                Value<String> errorCode = const Value.absent(),
-                Value<String> errorMessage = const Value.absent(),
-                Value<String?> errorHelp = const Value.absent(),
-                Value<int> retryCount = const Value.absent(),
-                Value<String> createdAt = const Value.absent(),
-                Value<int?> notifiedAt = const Value.absent(),
-              }) => GenerationErrorLogsCompanion(
-                id: id,
-                entityType: entityType,
-                entityId: entityId,
-                errorCode: errorCode,
-                errorMessage: errorMessage,
-                errorHelp: errorHelp,
-                retryCount: retryCount,
-                createdAt: createdAt,
-                notifiedAt: notifiedAt,
-              ),
-          createCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                required String entityType,
-                required int entityId,
-                required String errorCode,
-                required String errorMessage,
-                Value<String?> errorHelp = const Value.absent(),
-                required int retryCount,
-                required String createdAt,
-                Value<int?> notifiedAt = const Value.absent(),
-              }) => GenerationErrorLogsCompanion.insert(
-                id: id,
-                entityType: entityType,
-                entityId: entityId,
-                errorCode: errorCode,
-                errorMessage: errorMessage,
-                errorHelp: errorHelp,
-                retryCount: retryCount,
-                createdAt: createdAt,
-                notifiedAt: notifiedAt,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ),
-      );
-}
-
-typedef $$GenerationErrorLogsTableProcessedTableManager =
-    ProcessedTableManager<
-      _$AppDatabase,
-      $GenerationErrorLogsTable,
-      GenerationErrorLogRow,
-      $$GenerationErrorLogsTableFilterComposer,
-      $$GenerationErrorLogsTableOrderingComposer,
-      $$GenerationErrorLogsTableAnnotationComposer,
-      $$GenerationErrorLogsTableCreateCompanionBuilder,
-      $$GenerationErrorLogsTableUpdateCompanionBuilder,
-      (
-        GenerationErrorLogRow,
-        BaseReferences<
-          _$AppDatabase,
-          $GenerationErrorLogsTable,
-          GenerationErrorLogRow
-        >,
-      ),
-      GenerationErrorLogRow,
-      PrefetchHooks Function()
     >;
 typedef $$WordsTableCreateCompanionBuilder =
     WordsCompanion Function({
@@ -13706,12 +11858,6 @@ class $AppDatabaseManager {
       $$ConfigChangeLogsTableTableManager(_db, _db.configChangeLogs);
   $$SchemaMigrationLogsTableTableManager get schemaMigrationLogs =>
       $$SchemaMigrationLogsTableTableManager(_db, _db.schemaMigrationLogs);
-  $$GenerationPipelineStatusesTableTableManager
-  get generationPipelineStatuses =>
-      $$GenerationPipelineStatusesTableTableManager(
-        _db,
-        _db.generationPipelineStatuses,
-      );
   $$DailyLearningLogsTableTableManager get dailyLearningLogs =>
       $$DailyLearningLogsTableTableManager(_db, _db.dailyLearningLogs);
   $$LearningStatsSummariesTableTableManager get learningStatsSummaries =>
@@ -13727,8 +11873,6 @@ class $AppDatabaseManager {
       $$ArticlesTableTableManager(_db, _db.articles);
   $$ArticleParagraphsTableTableManager get articleParagraphs =>
       $$ArticleParagraphsTableTableManager(_db, _db.articleParagraphs);
-  $$GenerationErrorLogsTableTableManager get generationErrorLogs =>
-      $$GenerationErrorLogsTableTableManager(_db, _db.generationErrorLogs);
   $$WordsTableTableManager get words =>
       $$WordsTableTableManager(_db, _db.words);
   $$WordSensesTableTableManager get wordSenses =>

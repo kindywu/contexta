@@ -117,14 +117,14 @@ class SettingsStatsData {
 /// Settings 页控制器（对照 Kotlin SettingsViewModel）：
 /// - 进入加载设置 + 统计
 /// - ℹ️ 信息弹窗（难度/篇数次日生效）
-/// - 难度修改：选择 → 确认弹窗 → 持久化 + 触发生成
+/// - 难度修改：选择 → 确认弹窗 → 持久化（2026-08-13 T6：不再触发本地生成，
+///   新难度文章由下一次服务端同步提供）
 /// - 篇数修改：± → 确认弹窗 → 持久化（仅写 DB，不触发生成）
 /// - 译文模式 / 掌握阈值 / 自动朗读：直接持久化
 class SettingsController extends StateNotifier<SettingsUiState> {
   SettingsController({
     required this._settingsRepository,
     required this._statsRepository,
-    required this._triggerNextBatch,
     required this._ttsEngineFuture,
     this.onTtsVoiceChanged,
   }) : super(const SettingsUiState()) {
@@ -133,8 +133,6 @@ class SettingsController extends StateNotifier<SettingsUiState> {
 
   final SettingsRepository _settingsRepository;
   final StatsRepository _statsRepository;
-  final Future<void> Function(String difficulty, int dailyCount)
-      _triggerNextBatch;
   final Future<TtsEngine> _ttsEngineFuture;
 
   /// 音色变更回调：持久化成功后调用（生产接线 invalidate
@@ -189,7 +187,7 @@ class SettingsController extends StateNotifier<SettingsUiState> {
     );
   }
 
-  // ── 难度修改：选择 → 确认 → 持久化 + 触发生成 ──
+  // ── 难度修改：选择 → 确认 → 持久化（次日生效） ──
 
   /// 用户选择新难度后调用：暂存并弹出确认弹窗（未变更则忽略）。
   void requestLevelChange(String level) {
@@ -200,14 +198,14 @@ class SettingsController extends StateNotifier<SettingsUiState> {
     );
   }
 
-  /// 用户确认修改难度：持久化 + 触发下一批生成。
+  /// 用户确认修改难度：持久化（次日生效；新难度文章由下一次服务端同步提供，
+  /// 2026-08-13 T6 起不再触发本地生成）。
   Future<void> confirmLevelChange() async {
     final level = state.pendingLevel;
     if (level == null) return;
     await _settingsRepository.updateLevel(level);
-    state = state.copyWith(level: level);
-    await _triggerNextBatch(level, state.dailyCount);
     state = state.copyWith(
+      level: level,
       showLevelConfirmDialog: false,
       pendingLevel: null,
     );
@@ -300,8 +298,6 @@ final settingsControllerProvider =
   return SettingsController(
     settingsRepository: ref.watch(settingsRepositoryProvider),
     statsRepository: ref.watch(statsRepositoryProvider),
-    triggerNextBatch: (difficulty, dailyCount) =>
-        ref.read(triggerNextBatchUseCaseProvider)(difficulty, dailyCount),
     ttsEngineFuture: ref.watch(ttsEngineProvider.future),
     // 音色写库后失效缓存，参考页/词汇页/朗读下次读取即新音色
     onTtsVoiceChanged: () => ref.invalidate(currentTtsVoiceProvider),

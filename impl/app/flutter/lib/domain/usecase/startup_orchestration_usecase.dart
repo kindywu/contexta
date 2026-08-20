@@ -1,147 +1,108 @@
 import 'package:flutter/foundation.dart';
 
-import '../background_work_scheduler.dart';
-import '../model/article_batch.dart';
+import '../../data/sync/sync_articles_usecase.dart';
 import '../repository/article_repository.dart';
 import '../repository/settings_repository.dart';
 import '../time/time_provider.dart';
-import 'resend_pending_alerts_usecase.dart';
-import 'trigger_next_batch_usecase.dart';
 
-/// 启动编排结果（对照 Kotlin StartupOrchestrationUseCase.StartupResult）。
+/// 启动编排结果（服务端同步模型）。
 sealed class StartupResult {
   const StartupResult();
 }
 
-final class StartupPipelineBlocked extends StartupResult {
-  const StartupPipelineBlocked();
-}
-
+/// 未完成 onboarding——首页展示引导，不触发同步。
 final class StartupNeedsOnboarding extends StartupResult {
   const StartupNeedsOnboarding();
 }
 
+/// 已 onboarding 但无 token——同步跳过，首页仍可浏览本地文章
+/// （「未登录」横幅提供登录入口）。
+final class StartupNeedsLogin extends StartupResult {
+  const StartupNeedsLogin();
+}
+
+/// 同步已执行（或降级跳过）——首页正常加载。
+///
+/// [syncedBatches]：本次同步覆盖的批次数（复用 + 新建）；同步失败时为 0，
+/// 首页不阻塞（历史文章可读）。
 final class StartupReady extends StartupResult {
-  const StartupReady();
+  const StartupReady({required this.syncedBatches});
+  final int syncedBatches;
 }
 
-final class StartupNeedsInitialBatch extends StartupResult {
-  const StartupNeedsInitialBatch({required this.difficulty, required this.dailyCount});
-  final String difficulty;
-  final int dailyCount;
-}
-
-/// 应用启动时的编排逻辑：reconciliation、pipeline 解除阻塞、每日批次分配
-/// （对照 Kotlin StartupOrchestrationUseCase.kt）。
+/// 应用启动编排（服务端同步模型，2026-08-13 计划 B Task 5 重写）。
 ///
 /// **流程：**
-/// 1. 检查 pipeline 是否阻塞 → 尝试恢复或返回阻塞状态
-/// 2. 检查是否完成 onboarding → 返回 NeedsOnboarding
-/// 3. 修复孤儿文章（重置 GENERATING/TIMEOUT/FAILED → PENDING）
-/// 4. 重新调度所有卡在 GENERATING 状态的 batch 的 Worker
-/// 5. 检查今天是否已有 daily_learning 分配 → Ready
-/// 6. 查找 max(ref_batch_date) 之后的 READY 批次（严格晚于已消费日期，
-///    不回头分配 seed 旧批次）
-///    - 找到 → 分配给今天，触发下一批前置生成 → Ready
-///    - 未找到 → NeedsInitialBatch（调用方创建并触发生成）
+/// 1. onboarding 检查 → 未完成 → [StartupNeedsOnboarding]（不触发同步）
+/// 2. 登录态检查 → 无 token → [StartupNeedsLogin]（同步跳过，首页仍可用）
+/// 3. [SyncArticlesUseCase] 每日同步（失败降级：warn + 继续，不阻塞首页）
+/// 4. 今天无 daily_learning → 按用户难度找今天批次
+///    [ArticleRepository.getBatchByDifficultyAndDate]（同步按
+///    (difficulty, generatedOn=服务端 target_date) 建批次）→
+///    [ArticleRepository.assignBatchForToday]
+///    （dailyCountSnapshot = settings.dailyArticleCount）
+/// 5. 返回 [StartupReady]（携带本次同步批次数）
+///
+/// 已删除（本地生成管道语义，见 B-T6 整体移除）：pipeline 阻塞检查、
+/// 孤儿修复、GENERATING 重调度、飞书告警补发、trigger_next_batch 前置生成。
 class StartupOrchestrationUseCase {
   StartupOrchestrationUseCase({
     required this._articleRepository,
     required this._settingsRepository,
     required this._timeProvider,
-    required this._triggerNextBatch,
-    required this._generationScheduler,
-    required this._resendPendingAlerts,
+    required this._syncArticles,
   });
 
   final ArticleRepository _articleRepository;
   final SettingsRepository _settingsRepository;
   final TimeProvider _timeProvider;
-  final TriggerNextBatchUseCase _triggerNextBatch;
-  final BackgroundWorkScheduler _generationScheduler;
-  final ResendPendingAlertsUseCase _resendPendingAlerts;
+  final SyncArticlesUseCase _syncArticles;
 
-  /// Full startup routine: called once when the app opens.
-  Future<StartupResult> call(int currentVersionCode) async {
-    // 1. Check pipeline block
-    if (await _articleRepository.isPipelineBlocked()) {
-      final recovered =
-          await _articleRepository.recoverIfNewerVersion(currentVersionCode);
-      if (!recovered) return const StartupPipelineBlocked();
-    }
-
-    // 2. Check onboarding
+  /// Full startup routine: called once when the app opens（首页 load /
+  /// 下拉刷新共用；幂等——已分配过则跳过分配步骤）。
+  Future<StartupResult> call() async {
+    // 1. Onboarding check
     final settings = await _settingsRepository.getSettings();
     if (settings == null || !settings.isOnboarded) {
       return const StartupNeedsOnboarding();
     }
 
-    // 3. 先查询卡在 GENERATING 的 batch（reconciliation 会重置它们）
-    final stuckBatches = await _articleRepository.getGeneratingBatches();
-    // Flutter 特有：worker 调度失败时批次可能永久卡在 PENDING（Kotlin 版
-    // worker 入队总是成功）。启动时一并重新调度，KEEP 策略保证不重复。
-    final pendingBatches = await _articleRepository.getPendingBatches();
-
-    // 4. Reconcile orphan GENERATING/TIMEOUT/FAILED articles + reset GENERATING batches
-    await _articleRepository.reconcileOrphanArticles();
-
-    // 5. 重新调度之前卡死的 batch：
-    //    reconcileOrphanArticles 已将孤儿文章和 batch 重置为 PENDING，
-    //    这里重新 enqueue Worker 让它们重新被认领生成。
-    for (final batch in [...stuckBatches, ...pendingBatches]) {
-      debugPrint('[StartupOrch] re-scheduling batch ${batch.id} (status=${batch.status})');
-      await _generationScheduler.scheduleBatchGeneration(batch.id);
+    // 2. Login check（无 token → 同步跳过，本地模式可用）
+    final token = settings.serverToken;
+    if (token == null || token.isEmpty) {
+      return const StartupNeedsLogin();
     }
 
-    // 5.5 补发未送达的飞书告警（生成期间进程被终止时，实时告警可能丢失）。
-    //     失败不影响启动主流程——下次启动还会再试。
+    // 3. 每日同步（失败降级：warn + Ready(0)，不阻塞首页）
+    var syncedBatches = 0;
     try {
-      await _resendPendingAlerts();
-    } catch (_) {
-      // 忽略：下次启动再试
+      final result = await _syncArticles();
+      syncedBatches = result.syncedBatches;
+    } catch (e) {
+      debugPrint('[StartupOrch] 同步失败，降级为本地模式: $e');
+      return StartupReady(syncedBatches: 0);
     }
 
+    // 4. 今天无 daily_learning → 按用户难度找今天批次分配
+    //    （同步批次 status=CURRENT；首页按 daily_learning.ref_batch_id
+    //    取文章，不校验批次状态，CURRENT 可正常展示）
     final today = _timeProvider.todayDateString();
-
-    // 6. Check if today already has a daily_learning assignment
-    final todayBatch = await _articleRepository.getAssignedBatchForDate(today);
-    if (todayBatch != null) {
-      // 即使今天已有分配，仍需确保未来有预生成的批次可用。
-      // 如果 daily_learning 引用的最后日期之后没有 READY 批次，则触发生成。
-      await _triggerNextBatch(
+    final assigned = await _articleRepository.getAssignedBatchForDate(today);
+    if (assigned == null) {
+      final todayBatch = await _articleRepository.getBatchByDifficultyAndDate(
         settings.difficultyLevel,
-        settings.dailyArticleCount,
+        today,
       );
-      return const StartupReady();
+      if (todayBatch != null) {
+        await _articleRepository.assignBatchForToday(
+          todayBatch.id,
+          todayBatch.generatedOn ?? today,
+          settings.dailyArticleCount,
+        );
+      }
     }
 
-    // 7. Find next READY batch for the user's difficulty.
-    //    只找已消费批次日期之后的批次（严格 >）：批次按时间顺序消费，
-    //    不回头分配 seed 旧批次。
-    final maxRefDate = await _articleRepository.getMaxRefBatchDate();
-    final nextBatch = await _articleRepository.findNextReadyBatch(
-      settings.difficultyLevel,
-      maxRefDate,
-    );
-
-    if (nextBatch != null && nextBatch.status == BatchStatus.ready) {
-      await _articleRepository.assignBatchForToday(
-        nextBatch.id,
-        nextBatch.generatedOn ?? today,
-        settings.dailyArticleCount,
-      );
-      // 触发下一批的前置生成
-      await _triggerNextBatch(
-        settings.difficultyLevel,
-        settings.dailyArticleCount,
-      );
-      return const StartupReady();
-    }
-
-    // 8. No READY batch available - need to create and generate one
-    return StartupNeedsInitialBatch(
-      difficulty: settings.difficultyLevel,
-      dailyCount: settings.dailyArticleCount,
-    );
+    // 5. Ready（首页正常加载本地文章）
+    return StartupReady(syncedBatches: syncedBatches);
   }
 }

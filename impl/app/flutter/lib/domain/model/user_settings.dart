@@ -16,6 +16,15 @@ class UserSettings {
   final int masteryThresholdN;
   final bool autoPlayAudio;
 
+  /// 登录态：服务端手机号（null = 未登录）。
+  final String? serverPhone;
+
+  /// 登录态：服务端签发的 token（null = 未登录）。
+  final String? serverToken;
+
+  /// 登录态：token 过期时间（Unix 毫秒；null = 无 token）。
+  final int? serverTokenExpiresAt;
+
   const UserSettings({
     this.id = 1,
     this.isOnboarded = false,
@@ -26,8 +35,13 @@ class UserSettings {
     this.ttsVoice = TtsVoice.bella,
     this.masteryThresholdN = 1,
     this.autoPlayAudio = false,
+    this.serverPhone,
+    this.serverToken,
+    this.serverTokenExpiresAt,
   });
 
+  // 登录态 3 字段刻意不进 toString：token 属敏感值，不落代码 / 日志
+  // （对齐 Kotlin data class 的 toString 输出，models_test 断言完全一致）
   @override
   String toString() => 'UserSettings(id=$id, isOnboarded=$isOnboarded, '
       'difficultyLevel=$difficultyLevel, dailyArticleCount=$dailyArticleCount, '

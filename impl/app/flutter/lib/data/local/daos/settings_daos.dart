@@ -98,59 +98,10 @@ class SchemaMigrationLogDao {
   }
 }
 
-/// generation_pipeline_status 表 DAO（单例行 id=1）。
-/// 对照 GenerationPipelineStatusDao.kt：
-/// observe/get/upsert(REPLACE)/clearBlocked/setBlocked。
-class GenerationPipelineStatusDao {
-  GenerationPipelineStatusDao(this._db);
-
-  final AppDatabase _db;
-
-  Future<GenerationPipelineStatusRow?> get() => (_db.select(_db.generationPipelineStatuses)
-        ..where((t) => t.id.equals(1)))
-      .getSingleOrNull();
-
-  Future<void> upsert(GenerationPipelineStatusesCompanion status) =>
-      _db.into(_db.generationPipelineStatuses).insertOnConflictUpdate(status);
-
-  Future<void> clearBlocked() {
-    // 与 setBlocked 对称：行不存在时先 upsert 单行再清除（避免 UPDATE 0 行）
-    return _ensureRow().then(
-        (_) => (_db.update(_db.generationPipelineStatuses)
-              ..where((t) => t.id.equals(1)))
-            .write(const GenerationPipelineStatusesCompanion(isBlocked: Value(false))));
-  }
-
-  Future<void> setBlocked(
-          {required String reason,
-          required String now,
-          required int appVersionCode}) =>
-      // 行不存在时先 upsert 单行（Kotlin 原版 UPDATE 0 行会导致开关永不生效，
-      // 本实现按意图修复：pipeline 阻塞必须全局生效）
-      _ensureRow().then(
-          (_) => (_db.update(_db.generationPipelineStatuses)
-                ..where((t) => t.id.equals(1)))
-              .write(GenerationPipelineStatusesCompanion(
-        isBlocked: const Value(true),
-        blockedReason: Value(reason),
-        blockedAt: Value(now),
-        blockedAppVersionCode: Value(appVersionCode),
-      )));
-
-  Future<void> _ensureRow() async {
-    if (await get() != null) return;
-    await _db.into(_db.generationPipelineStatuses).insert(GenerationPipelineStatusesCompanion.insert(
-      isBlocked: false,
-      blockedReason: const Value(null),
-      blockedAt: const Value(null),
-      blockedAppVersionCode: const Value(null),
-    ));
-  }
-}
-
 /// daily_learning 表 DAO。
-/// 对照 DailyLearningDao.kt：
-/// getAll/getLatest/getByLearningDate/getMaxRefBatchDate/insert(ABORT)。
+/// 对照 DailyLearningDao.kt：getAll/getLatest/getByLearningDate/insert(ABORT)。
+/// （2026-08-14 计划 B T8 carry：getMaxRefBatchDate 删除——零生产引用死代码，
+/// 仅测试覆盖；服务端同步模型下不再按 ref_batch_date 做本地批次推进。）
 class DailyLearningDao {
   DailyLearningDao(this._db);
 
@@ -169,14 +120,6 @@ class DailyLearningDao {
   Future<DailyLearningRow?> getByLearningDate(String learningDate) =>
       (_db.select(_db.dailyLearnings)..where((t) => t.learningDate.equals(learningDate)))
           .getSingleOrNull();
-
-  /// MAX(ref_batch_date)；null 表示尚无学习记录。
-  Future<String?> getMaxRefBatchDate() async {
-    final maxExpr = _db.dailyLearnings.refBatchDate.max();
-    final rows = await (_db.selectOnly(_db.dailyLearnings)..addColumns([maxExpr])).get();
-    if (rows.isEmpty) return null;
-    return rows.first.read(maxExpr);
-  }
 
   /// learning_date 为主键，重复插入抛 SqliteException（ABORT 语义）。
   Future<void> insert(DailyLearningsCompanion record) =>

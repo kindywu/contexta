@@ -213,7 +213,8 @@ void main() {
       );
     });
 
-    test('注册表集合：全部 17 张（16 张业务表 + db_version 版本指针表）', () async {
+    test('注册表集合：全部 15 张（14 张业务表 + db_version 版本指针表；'
+        'generation_pipeline_status / generation_error_log 已随 T6 删除）', () async {
       final rows = await db.customSelect(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
       ).get();
@@ -224,14 +225,12 @@ void main() {
           'user_settings',
           'config_change_log',
           'schema_migration_log',
-          'generation_pipeline_status',
           'daily_learning_log',
           'learning_stats_summary',
           'daily_learning',
           'article_batch',
           'article',
           'article_paragraph',
-          'generation_error_log',
           'word',
           'word_sense',
           'example_sentence',

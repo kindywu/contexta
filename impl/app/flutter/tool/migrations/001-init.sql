@@ -1,4 +1,4 @@
--- 001-init.sql —— 0→1 init 脚本：v1 标准结构（17 张表 + 索引）
+-- 001-init.sql —— 0→1 init 脚本：v1 标准结构（15 张表 + 索引）
 --
 -- 版本链条起点：001 将「无版本库」（版本 0：无 db_version 表/行的库，
 -- 含空库）升到 v1。之后的结构升级走 002、003、……，链条完整：
@@ -15,6 +15,11 @@
 -- ⚠️ 生命周期：开发期（tool/db_version = 0）v1 结构变更时**同步更新本文件**
 --    （001 描述的 v1 = 当前开发结构）；首次发布 v1（文件改 1）后**冻结**，
 --    之后的结构变更写 002 起，不得再改 001。
+--
+-- 2026-08-13（计划 B Task 6）：本地文章生成管道移除——generation_pipeline_status /
+-- generation_error_log 两表删除；article_batch 删 blocked_reason/blocked_at/
+-- ready_notified_at；article 删 generation_started_at/generation_completed_at/
+-- retry_count/last_retry_at/max_retries/next_retry_at（status 列保留）。
 
 BEGIN IMMEDIATE;
 
@@ -44,7 +49,10 @@ CREATE TABLE IF NOT EXISTS `user_settings` (
   `mastery_threshold_n` INTEGER NOT NULL,
   `auto_play_audio` INTEGER NOT NULL,
   `tts_speed` REAL NOT NULL,
-  `tts_voice_id` TEXT NOT NULL
+  `tts_voice_id` TEXT NOT NULL,
+  `server_phone` TEXT,
+  `server_token` TEXT,
+  `server_token_expires_at` INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS `config_change_log` (
@@ -53,15 +61,6 @@ CREATE TABLE IF NOT EXISTS `config_change_log` (
   `old_value` TEXT NOT NULL,
   `new_value` TEXT NOT NULL,
   `created_at` TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS `generation_pipeline_status` (
-  `id` INTEGER NOT NULL,
-  `is_blocked` INTEGER NOT NULL,
-  `blocked_reason` TEXT,
-  `blocked_at` TEXT,
-  `blocked_app_version_code` INTEGER,
-  PRIMARY KEY(`id`)
 );
 
 CREATE TABLE IF NOT EXISTS `daily_learning_log` (
@@ -90,10 +89,7 @@ CREATE TABLE IF NOT EXISTS `article_batch` (
   `status` TEXT NOT NULL,
   `difficulty_level_snapshot` TEXT NOT NULL,
   `generated_on` TEXT NOT NULL,
-  `last_updated_at` TEXT NOT NULL,
-  `blocked_reason` TEXT,
-  `blocked_at` TEXT,
-  `ready_notified_at` INTEGER
+  `last_updated_at` TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS `article` (
@@ -103,14 +99,9 @@ CREATE TABLE IF NOT EXISTS `article` (
   `content_category` TEXT NOT NULL,
   `title` TEXT,
   `status` TEXT NOT NULL,
-  `generation_started_at` TEXT,
-  `generation_completed_at` TEXT,
-  `retry_count` INTEGER NOT NULL,
   `accumulated_read_seconds` INTEGER NOT NULL,
   `read_completed_at` TEXT,
-  `last_retry_at` TEXT,
-  `max_retries` INTEGER NOT NULL,
-  `next_retry_at` TEXT,
+  `server_article_id` INTEGER,
   FOREIGN KEY(`batch_id`) REFERENCES `article_batch`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
 );
 
@@ -121,18 +112,6 @@ CREATE TABLE IF NOT EXISTS `article_paragraph` (
   `english_text` TEXT NOT NULL,
   `chinese_translation` TEXT NOT NULL,
   FOREIGN KEY(`article_id`) REFERENCES `article`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS `generation_error_log` (
-  `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  `entity_type` TEXT NOT NULL,
-  `entity_id` INTEGER NOT NULL,
-  `error_code` TEXT NOT NULL,
-  `error_message` TEXT NOT NULL,
-  `error_help` TEXT,
-  `retry_count` INTEGER NOT NULL,
-  `created_at` TEXT NOT NULL,
-  `notified_at` INTEGER
 );
 
 -- ── 词库表组 ─────────────────────────────────────────────────────
@@ -201,12 +180,11 @@ CREATE TABLE IF NOT EXISTS `tts_cache` (
 CREATE UNIQUE INDEX IF NOT EXISTS `index_article_batch_difficulty_level_snapshot_generated_on` ON `article_batch` (`difficulty_level_snapshot`, `generated_on`);
 CREATE INDEX IF NOT EXISTS `index_article_batch_generated_on` ON `article_batch` (`generated_on`);
 CREATE INDEX IF NOT EXISTS `index_article_batch_id` ON `article` (`batch_id`);
+CREATE UNIQUE INDEX IF NOT EXISTS `index_article_server_article_id` ON `article` (`server_article_id`);
 CREATE INDEX IF NOT EXISTS `index_article_paragraph_article_id` ON `article_paragraph` (`article_id`);
 CREATE UNIQUE INDEX IF NOT EXISTS `index_article_paragraph_article_id_order_index` ON `article_paragraph` (`article_id`, `order_index`);
 CREATE INDEX IF NOT EXISTS `index_daily_learning_ref_batch_id` ON `daily_learning` (`ref_batch_id`);
 CREATE INDEX IF NOT EXISTS `index_example_sentence_word_sense_id` ON `example_sentence` (`word_sense_id`);
-CREATE INDEX IF NOT EXISTS `index_generation_error_log_created_at` ON `generation_error_log` (`created_at`);
-CREATE INDEX IF NOT EXISTS `index_generation_error_log_entity_type_entity_id` ON `generation_error_log` (`entity_type`, `entity_id`);
 CREATE INDEX IF NOT EXISTS `index_vocabulary_entry_word_id` ON `vocabulary_entry` (`word_id`);
 CREATE INDEX IF NOT EXISTS `index_word_sense_word_id` ON `word_sense` (`word_id`);
 CREATE UNIQUE INDEX IF NOT EXISTS `index_word_spelling_normalized` ON `word` (`spelling_normalized`);

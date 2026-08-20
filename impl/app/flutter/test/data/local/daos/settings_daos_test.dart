@@ -12,7 +12,7 @@ import 'package:contexta/domain/model/tts_voice.dart';
 ///
 /// 对照 Android 原版 DAO（UserSettingsDao.kt / DailyLearningDao.kt /
 /// LearningStatsSummaryDao.kt / ConfigChangeLogDao.kt /
-/// SchemaMigrationLogDao.kt / GenerationPipelineStatusDao.kt /
+/// SchemaMigrationLogDao.kt /（GenerationPipelineStatusDao 已随 T6 删除）/
 /// DailyLearningLogDao.kt）逐方法验证语义。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -118,10 +118,9 @@ void main() {
       await db.close();
     });
 
-    test('空表 getAll / getLatest / getMaxRefBatchDate 返回空', () async {
+    test('空表 getAll / getLatest 返回空', () async {
       expect(await dao.getAll(), isEmpty);
       expect(await dao.getLatest(), isNull);
-      expect(await dao.getMaxRefBatchDate(), isNull);
     });
 
     test('insert 后按日期降序返回，ref_batch_id 外键生效', () async {
@@ -151,7 +150,6 @@ void main() {
       expect((await dao.getLatest())!.learningDate, '2026-08-02');
       expect((await dao.getByLearningDate('2026-08-01'))!.learningDate, '2026-08-01');
       expect(await dao.getByLearningDate('2026-08-03'), isNull);
-      expect(await dao.getMaxRefBatchDate(), '2026-03-29');
     });
 
     test('insert 同一天重复抛约束异常（learning_date 主键 ABORT）', () async {
@@ -294,49 +292,6 @@ void main() {
       final latest = await dao.getLatest();
       expect(latest!.toVersion, 2);
       expect(await dao.getCurrentVersion(), 2);
-    });
-  });
-
-  group('GenerationPipelineStatusDao', () {
-    late AppDatabase db;
-    late GenerationPipelineStatusDao dao;
-
-    setUp(() {
-      db = AppDatabase.forTesting(NativeDatabase.memory());
-      dao = GenerationPipelineStatusDao(db);
-    });
-
-    tearDown(() async {
-      await db.close();
-    });
-
-    test('upsert / clearBlocked / setBlocked', () async {
-      expect(await dao.get(), isNull);
-
-      await dao.upsert(const GenerationPipelineStatusesCompanion(
-        id: Value(1),
-        isBlocked: Value(true),
-        blockedReason: Value('structural'),
-        blockedAt: Value('2026-08-06T10:00:00+08:00'),
-        blockedAppVersionCode: Value(2),
-      ));
-      var row = await dao.get();
-      expect(row!.isBlocked, true);
-      expect(row.blockedReason, 'structural');
-
-      await dao.setBlocked(
-        reason: 'fatal',
-        now: '2026-08-06T11:00:00+08:00',
-        appVersionCode: 3,
-      );
-      row = await dao.get();
-      expect(row!.isBlocked, true);
-      expect(row.blockedReason, 'fatal');
-      expect(row.blockedAppVersionCode, 3);
-
-      await dao.clearBlocked();
-      row = await dao.get();
-      expect(row!.isBlocked, false);
     });
   });
 

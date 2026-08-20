@@ -54,6 +54,16 @@ class _FakeSettingsRepo implements SettingsRepository {
 
   @override
   Future<void> updateAutoPlayAudio(bool enabled) async {}
+
+  @override
+  Future<void> saveAuth({
+    required String phone,
+    required String token,
+    required int tokenExpiresAtMillis,
+  }) async {}
+
+  @override
+  Future<void> clearAuth() async {}
 }
 
 class _FakeActivateSeedBatch implements ActivateSeedBatchUseCase {

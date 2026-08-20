@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:contexta/core/components/app_modal.dart';
 import 'package:contexta/di/providers.dart';
-import 'package:contexta/domain/llm_client.dart';
+import 'package:contexta/data/remote/llm_api.dart';
 import 'package:contexta/domain/model/article.dart';
 import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
@@ -30,7 +30,7 @@ import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interfac
 
 /// 组合桩：实现 Reading 页依赖的全部仓储/客户端接口，测试可控配置。
 class _Stub implements ArticleRepository, SettingsRepository,
-    VocabularyRepository, StatsRepository, WordRepository, LlmClient {
+    VocabularyRepository, StatsRepository, WordRepository, LlmApi {
   Article? article;
   UserSettings settings = const UserSettings(isOnboarded: true);
   WordDetail? lookupResult;
@@ -125,12 +125,8 @@ Article makeArticle() => const Article(
       contentCategory: 'NEWS',
       title: 'A Day',
       status: ArticleStatus.success,
-      generationStartedAt: null,
-      generationCompletedAt: '2026-08-07T12:00:00+08:00',
-      retryCount: 0,
       accumulatedReadSeconds: 0,
       readCompletedAt: null,
-      lastRetryAt: null,
       paragraphs: [
         ArticleParagraph(
           orderIndex: 0,
@@ -147,12 +143,8 @@ Article makeLongArticle() => Article(
       contentCategory: 'NEWS',
       title: 'Long Article',
       status: ArticleStatus.success,
-      generationStartedAt: null,
-      generationCompletedAt: '2026-08-07T12:00:00+08:00',
-      retryCount: 0,
       accumulatedReadSeconds: 0,
       readCompletedAt: null,
-      lastRetryAt: null,
       paragraphs: [
         for (var i = 0; i < 8; i++)
           ArticleParagraph(
@@ -218,7 +210,7 @@ void main() {
         vocabularyRepositoryProvider.overrideWithValue(stub),
         statsRepositoryProvider.overrideWithValue(stub),
         wordRepositoryProvider.overrideWithValue(stub),
-        llmClientProvider.overrideWithValue(stub),
+        llmApiProvider.overrideWithValue(stub),
         ttsEngineProvider.overrideWith((ref) async => tts),
       ],
       child: MaterialApp(
@@ -307,12 +299,8 @@ void main() {
         contentCategory: 'NEWS',
         title: 'Ocean',
         status: ArticleStatus.success,
-        generationStartedAt: null,
-        generationCompletedAt: '2026-08-07T12:00:00+08:00',
-        retryCount: 0,
         accumulatedReadSeconds: 0,
         readCompletedAt: null,
-        lastRetryAt: null,
         paragraphs: [
           ArticleParagraph(
             orderIndex: 0,

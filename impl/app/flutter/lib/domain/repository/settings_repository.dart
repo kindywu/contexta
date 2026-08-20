@@ -29,4 +29,15 @@ abstract interface class SettingsRepository {
   Future<void> updateMasteryThreshold(int n);
 
   Future<void> updateAutoPlayAudio(bool enabled);
+
+  /// 登录态持久化（user_settings 的 server_phone / server_token /
+  /// server_token_expires_at；[tokenExpiresAtMillis] 为 Unix 毫秒）。
+  Future<void> saveAuth({
+    required String phone,
+    required String token,
+    required int tokenExpiresAtMillis,
+  });
+
+  /// 清除登录态（3 列置 null）。
+  Future<void> clearAuth();
 }
