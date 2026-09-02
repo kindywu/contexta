@@ -62,6 +62,9 @@ export function errorBody(e: ApiError): { code: number; message: string; error_c
 export function attachErrorHandler(app: Hono): void {
   app.onError((err, c) => {
     if (err instanceof SyntaxError) {
+      // 畸形 JSON body：仅来自 handler 内未保护的 c.req.json() 调用（如 auth/login）；
+      // 带保护调用（admin readJson 的 try/catch）不会走到这里。记日志便于排查畸形请求。
+      console.error("invalid JSON body:", err);
       return c.json(errorBody(badRequest("invalid JSON body")), 400);
     }
     if (err instanceof ApiError) {

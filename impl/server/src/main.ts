@@ -83,7 +83,9 @@ export function buildApp(
 
   app.onError((err, c) => {
     if (err instanceof SyntaxError) {
-      // 畸形 JSON body（c.req.json 抛出）→ 400 BAD_PARAM（与子路由 attachErrorHandler 同映射）
+      // 畸形 JSON body：仅来自 main 侧未保护的 c.req.json()（子路由侧同名分支见
+      // attachErrorHandler）；带保护调用不会走到这里。记日志便于排查畸形请求。
+      console.error("invalid JSON body:", err);
       return c.json(errorBody(badRequest("invalid JSON body")), 400);
     }
     if (err instanceof ApiError) {
@@ -113,9 +115,12 @@ export async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // 3) 数据库：引擎 4 表 + 服务端表（父目录不存在先建）
+  // 3) 数据库：引擎 4 表 + 服务端表（父目录不存在先建——dbPath 与 checkpointPath 各自建，
+  //    两者父目录可能不同：如 DB_PATH=/tmp/x.db + CHECKPOINT_PATH=./data/langgraph.sqlite，
+  //    BunSqliteCheckpointer 直接打开文件且引擎侧无目录创建者，不建则每日任务静默失败）
   const dbPath = engineCfg.dbPath;
   mkdirSync(dirname(dbPath), { recursive: true });
+  mkdirSync(dirname(engineCfg.checkpointPath), { recursive: true });
   const db = new Database(dbPath);
   ensureSchema(db);
   ensureServerSchema(db);
