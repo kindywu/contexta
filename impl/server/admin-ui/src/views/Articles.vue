@@ -74,6 +74,11 @@ function fmtDate(d: Dayjs | undefined): string {
   return d ? d.format('YYYY-MM-DD') : ''
 }
 
+/** 服务端 datetime('now') 为 UTC（YYYY-MM-DD HH:MM:SS），转本地时间显示。 */
+function fmtReviewedAt(s: string | null | undefined): string {
+  return s ? dayjs(new Date(s.replace(' ', 'T') + 'Z')).format('YYYY-MM-DD HH:mm') : '—'
+}
+
 /** 抽屉标题：详情标题 > 槽位当前文章标题 > 兜底。 */
 const drawerTitle = computed(
   () => drawer.detail?.title_en || drawer.slot?.article?.title_en || '槽位详情',
@@ -96,16 +101,23 @@ function canRetry(slot: SlotView): boolean {
 
 // ---- 数据加载 ----
 
+// 请求序号守卫：切换日期后旧请求晚返回时丢弃，避免覆盖新列表 / 错序复位 loading
+let loadSeq = 0
+
 async function load() {
   const d = fmtDate(date.value)
   if (!d) return
+  const seq = ++loadSeq
   loading.value = true
   try {
-    slots.value = await api.listSlots(d)
+    const result = await api.listSlots(d)
+    if (seq === loadSeq) {
+      slots.value = result
+      loading.value = false
+    }
   } catch {
     // 拦截器已提示
-  } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
@@ -140,18 +152,25 @@ async function generate() {
 
 // ---- 详情抽屉 ----
 
+// 详情请求序号守卫：关 A 开 B 时 A 的详情晚到不覆盖 B
+let drawerSeq = 0
+
 async function openDrawer(slot: SlotView) {
   if (!slot.article) return
+  const seq = ++drawerSeq
   drawer.slot = slot
   drawer.detail = null
   drawer.open = true
   drawer.loading = true
   try {
-    drawer.detail = await api.getArticleDetail(slot.article.id)
+    const result = await api.getArticleDetail(slot.article.id)
+    if (seq === drawerSeq) {
+      drawer.detail = result
+      drawer.loading = false
+    }
   } catch {
     // 拦截器已提示（如 404：文章已不存在）
-  } finally {
-    drawer.loading = false
+    if (seq === drawerSeq) drawer.loading = false
   }
 }
 
@@ -430,7 +449,7 @@ async function saveEdit() {
                 {{ drawer.detail.review.reviewed_by || '—' }}
               </a-descriptions-item>
               <a-descriptions-item label="时间" :span="2">
-                {{ drawer.detail.review.reviewed_at || '—' }}
+                {{ fmtReviewedAt(drawer.detail.review.reviewed_at) }}
               </a-descriptions-item>
               <a-descriptions-item v-if="drawer.detail.review.reject_reason" label="拒绝原因" :span="2">
                 {{ drawer.detail.review.reject_reason }}
@@ -464,7 +483,7 @@ async function saveEdit() {
                 </a-tag>
                 <span class="history-article">文章 #{{ h.article_id }}</span>
                 <span v-if="h.reviewed_by" class="history-meta">审核人：{{ h.reviewed_by }}</span>
-                <span v-if="h.reviewed_at" class="history-meta">时间：{{ h.reviewed_at }}</span>
+                <span v-if="h.reviewed_at" class="history-meta">时间：{{ fmtReviewedAt(h.reviewed_at) }}</span>
               </div>
               <div v-if="h.reject_reason" class="history-reason">原因：{{ h.reject_reason }}</div>
             </a-timeline-item>
