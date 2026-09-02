@@ -1,41 +1,70 @@
 # Contexta Server
 
-Contexta 英语学习 App 的服务端（Rust）：DeepSeek API key 只存服务端，提供查词兜底（含配额/缓存/用量账本）与每日文章生成 + 管理员审核 + App 每日同步。单二进制部署（含 Vue3 管理页）。
+Contexta 英语学习 App 的服务端（Bun/TS）：LLM API key 只存服务端，提供查词兜底（含配额/缓存/用量账本）与**每日文章生成**（LangGraph 引擎 + LangGraph checkpoint 断点续跑）+ 管理员审核（槽位视图）+ App 每日同步。单进程部署（Hono + 静态托管 Vue3 管理页）。
+
+> 技术栈：Bun + Hono 4 + `bun:sqlite`（WAL）+ LangGraph/LangChain + jsonwebtoken（HS256）+ zod。TS 直接运行，无编译步骤。架构见 [docs/architecture.md](docs/architecture.md)，配置与部署见 [docs/config-and-deploy.md](docs/config-and-deploy.md)。
 
 ## 快速启动
 
 ```bash
 cd impl/server
 
-# 必填：JWT_SECRET（>=32 字符）与 DEEPSEEK_API_KEY，缺失启动失败
-export JWT_SECRET=$(openssl rand -hex 32)
-export DEEPSEEK_API_KEY=<your-key>
+# 依赖安装
+bun install
 
-# 可选（有默认值）：PORT / DB_PATH / WORD_QUOTA_DAILY / ARTICLE_BUDGET_DAILY /
-# DAILY_GENERATE_HOUR / LLM_TIMEOUT_SECS / DEEPSEEK_MODEL / DEEPSEEK_BASE_URL /
-# CACHE_TTL_DAYS / CACHE_MAX_ROWS / ADMIN_INIT_PASSWORD（首次启动设此值即 seed 管理员 admin）
+# 配置：复制 .env.example 并填入必填项
+cp .env.example .env
+# 必填：LLM_API_KEY、JWT_SECRET（>=32 字符，openssl rand -hex 32）、TIMEZONE（须与系统时区一致）
+# 首次启动建议设 ADMIN_INIT_PASSWORD（seed 管理员 admin 后可移除）
 
-cargo run
+# 启动
+bun run src/main.ts
 ```
 
 启动后：
-- 健康检查：`GET http://localhost:8080/api/health`
-- 管理页：`http://localhost:8080/admin`（首次启动前设 `ADMIN_INIT_PASSWORD` 以 seed 管理员 `admin`）
-
-详细配置与部署（云主机选型 / Caddy HTTPS / systemd / 备份 / 首次启动顺序 / 已裁决语义）见 [docs/config-and-deploy.md](docs/config-and-deploy.md)，架构见 [docs/architecture.md](docs/architecture.md)。
+- 健康检查：`GET http://localhost:8080/api/health` → `{"code":0,"data":{"status":"ok"}}`
+- 管理页：`http://localhost:8080/admin`（首次启动前设 `ADMIN_INIT_PASSWORD` 即 seed 管理员 `admin`）
+- 启动自动：建库建表（幂等）→ seed admin → **补生成今天 + 明天文章**（后台任务，失败只记日志不阻塞 serve）；此后每日 `DAILY_GENERATE_HOUR:01`（默认 03:01）自动生成明天文章
+- 时区硬闸：`TIMEZONE` 与系统当前时区不一致 → 启动失败（`timedatectl set-timezone Asia/Shanghai`）
 
 ## 测试
 
 ```bash
-cargo test          # 单元 + 集成测试（内存 SQLite + mock DeepSeek）
-cargo clippy -- -D warnings
-cargo fmt
+bun test               # 113 用例（顶层 tests/*.test.ts；引擎另有 tests/engine/*.test.ts）
+bunx tsc --noEmit -p tsconfig.json   # 类型校验（bun run typecheck）
+```
+
+集成测试用内存 SQLite + 注入假 LLM，不真调模型。
+
+## CLI 入口（引擎手工运维）
+
+均从 `src/engine/` 直接运行，需先配置 `.env`：
+
+```bash
+bun run daily -- --date 2026-08-29 [--log-level debug]   # 每日生成（幂等：批次/槽位/文章/段落入库 + 收口）
+bun run retry -- --date 2026-08-29 [--concurrency N]     # 中断恢复：pending 槽位同 thread 续跑 / checkpoint 终态同步
+bun run replay -- --thread daily-2026-08-29-3 [--mode generate|validate] [--fresh]   # 步骤级重放（被拒后人工处置）
+bun run delete-daily -- --date 2026-08-29 --yes          # 删除某日（业务库 + 该日 checkpoint；先不带 --yes 看预览）
 ```
 
 ## 目录速览
 
-- `src/`：axum 服务端（routers → services → drivers 分层 + tasks 定时任务）
-- `admin-ui/`：Vue3 + antd 管理页（构建产物 `dist/` 随二进制发布）
-- `deploy/`：systemd unit + 配置样例
-- `tool/`：迁移脚本（`migrations/001-init.sql`）+ 版本指针（`db_version`）
-- `docs/`：架构与部署运维主题文档
+```
+impl/server/
+  src/
+    main.ts                    # 组装：配置+时区硬闸 → 建库建表 → seed admin → 路由 → serve → 每日任务 → 优雅退出
+    config.ts / db.ts          # 服务端配置（zod）/ 服务端表 DDL（幂等）+ admin seed 与校验
+    auth.ts / jwt.ts           # 认证提取器（封禁/会话/角色）/ JWT 签发校验（App 30d、admin 12h）
+    response.ts                # 统一 envelope（{code,message,error_code}）+ ApiError 工厂
+    routers/                   # HTTP 层：health / auth / llm / articles / admin
+    services/                  # 业务层：auth / llm（查词网关）/ admin / admin_articles / review（审核状态机）/ article_reader（下发）/ daily_task（每日任务）
+    llm/                       # 查词网关侧：retry（callWithRetry + driverChat）/ prompt / lookup_parser
+    engine/                    # 文章生成引擎（LangGraph 图 + graph/daily 编排 + sites 抓取 + render + CLIs）
+  admin-ui/                    # Vue3 + antd 管理页（构建产物 dist/ 随仓库提交，服务端静态托管）
+  deploy/                      # contexta-server.service（Bun 版 systemd unit）；config.yaml.example 已废弃
+  tool/                        # import-data.ts（pipeline 库 → 服务端库导入，含备份/去 embedding/校验）
+  docs/                        # 架构与部署运维主题文档
+  tests/                       # bun test 测试（顶层 + tests/engine/）
+```
+
+> 注：`src/` 下仍有 Rust 时期遗留的 `*.rs` 文件（Cargo 栈），**仅历史留档**——现行实现为 TS，待主会话确认后删除；文档一律以 TS 代码为准。

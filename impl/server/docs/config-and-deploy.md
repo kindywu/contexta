@@ -1,147 +1,167 @@
 # Contexta Server 配置与部署
 
-> 主题文档：云主机选型、构建、安装（systemd）、备份、首次启动顺序，以及**部署约束记录**（已裁决语义，改部署/客户端前必读）。配套文件：`deploy/contexta-server.service`、`deploy/config.yaml.example`。
+> 主题文档：环境变量全表（以 `.env.example` 为准）、云主机部署步骤（装 bun / 时区 / systemd / 数据准备）、运维（备份、升级）与已知风险。配套文件：`deploy/contexta-server.service`（Bun 版 systemd unit）。
+> **注意**：`deploy/config.yaml.example` 为 Rust 时期遗留对照清单，**已废弃**（现行配置只有环境变量），文件保留待清理，请勿再引用。
 
-## 1. 云主机选型
+## 1. 环境变量全表（`.env`）
 
-- **推荐**：香港/海外轻量云（免 ICP 备案）+ 域名 + Caddy 自动 HTTPS。国内云需 ICP 备案（周期 1-3 周），beta 期不建议
-- 备选：Cloudflare Tunnel（不买域名时）
-- **时区必须设为上海**（硬依赖，见 §8 约束 TZ）：
+**单一 `.env` 文件**（Bun 启动自动加载，无需 dotenv）同时服务引擎（`engine/config.ts` 的 `loadConfig`）与服务端（`config.ts` 的 `loadServerConfig`）——两份 schema 从同一进程环境读取，重叠字段（LLM_*/TIMEZONE/PROXY_URL）两边各自校验。缺省值以两处代码为准；下表"必填"项缺失或非法 → 启动失败（`process.exit(1)`）。
+
+```bash
+cp .env.example .env   # 然后填入 LLM_API_KEY 与 JWT_SECRET
+```
+
+| 变量 | 默认值 | 校验 | 说明 |
+|---|---|---|---|
+| `LLM_API_KEY` | **必填** | 非空 string | 生成与查词共用的 LLM key（缺失启动失败） |
+| `LLM_BASE_URL` | `https://api.deepseek.com` | URL | OpenAI 兼容端点；可换网关 |
+| `LLM_MODEL` | `deepseek-v4-flash` | string | 模型名（注意：思考模型 maxTokens 已由代码设为 64000，无需配置） |
+| `TIMEZONE` | **必填**（`.env.example` 为 `Asia/Shanghai`） | IANA 名（`Intl` 校验） | 所有日期语义唯一口径；**启动时须与系统时区一致**（`assertSystemTimezone` 硬闸，不一致拒绝运行） |
+| `DB_PATH` | `./data/pipeline.sqlite`（`.env.example` 设 `./data/contexta.db`） | string | 业务库：引擎 4 表 + 服务端表 + `article_review` 同库；父目录启动时自动创建 |
+| `CHECKPOINT_PATH` | `./data/langgraph.sqlite` | string | LangGraph 检查点库（独立文件；**首次部署需放置可写空文件/目录**，见 §3.5） |
+| `OUTPUT_DIR` | `./output` | string | 生成文章的 Markdown 落盘目录（文件名 `run_date-category-<ts>.md`） |
+| `BROWSER_CONCURRENCY` | `2` | 正 int | **保留配置**：当前引擎按"每槽一次图运行"执行，站点抓取（Bun.WebView）在节点内按需开合视图，此值尚未被消费（预留） |
+| `SLOT_CONCURRENCY` | `5` | 正 int | 每日生成并发槽位数上限（`runPool`）；每槽一条 LangGraph 线程 |
+| `PROXY_URL` | 空（不代理） | string | 出站 HTTP 代理（`http://` 形式）；空串转 undefined。作用于 LLM 调用（引擎 `createLLM` 与查词 `driverChat`） |
+| `PORT` | `8080` | int 1..65535 | 监听端口（Bun.serve） |
+| `JWT_SECRET` | **必填** | ≥32 字符 | HS256 密钥；`openssl rand -hex 32` 生成；<32 启动失败 |
+| `ADMIN_INIT_PASSWORD` | 空 | string | 设置时启动 seed 管理员 `admin`（argon2id）；已有 admin 行则跳过不覆盖；seed 后可移出 .env |
+| `WORD_QUOTA_DAILY` | `200` | 正 int | 用户每日查词配额（只计真实 LLM 调用；`users.quota_word_daily` 可 per-user 覆盖） |
+| `CACHE_TTL_DAYS` | `30` | 正 int | 查词缓存 TTL（命中不调 LLM 不扣配额） |
+| `CACHE_MAX_ROWS` | `5000` | 正 int | 查词缓存条数上限（超限删最旧 1 条） |
+| `DAILY_GENERATE_HOUR` | `3` | int 0..23 | 每日生成时刻（点）；实际触发 = 该点**整点后 1 分钟**（03:01，避开整点边界） |
+| `LLM_TIMEOUT_SECS` | `90` | 正 int | 查词链 LLM 调用硬预算（含 4 次尝试与退避等待；超预算 504 LLM_TIMEOUT） |
+| `REGENERATE_LIMIT` | `3` | 正 int | 单槽位拒绝补生成上限：同槽累计 rejected ≥ 上限 → `rejected_final` 不再自动补 |
+
+## 2. 云主机选型
+
+- **推荐**：香港/海外轻量云（免 ICP 备案）+ 域名 + Caddy 自动 HTTPS（App 端明文 HTTP 会被平台限制，HTTPS 必须）。备选：Cloudflare Tunnel（不买域名时）。
+- 内存：Bun + SQLite + 每槽 LangGraph（含 WebView 抓取）+ 并发 5 槽，建议 ≥ 2GB（**Bun.WebView 在 Linux 需要 webkit2gtk 依赖 + 显示环境，部署前务必 spike，见 §6**）。
+- **时区必须设为上海**（`.env` 的 `TIMEZONE` 须与系统时区一致，硬闸）：
 
 ```bash
 timedatectl set-timezone Asia/Shanghai
 timedatectl   # 确认 Local time 为 Asia/Shanghai
 ```
 
-## 2. 反向代理（Caddy 自动 HTTPS）
+## 3. 部署步骤
 
-服务端直接监听 `127.0.0.1:8080` 即可（或 `0.0.0.0:8080` 由 Caddy 反代到内网）。Caddy 一行起服务（或写 Caddyfile）：
+### 3.1 安装 Bun
 
 ```bash
-# 方式一：命令行
-caddy reverse-proxy --from api.example.com --to localhost:8080
-
-# 方式二：Caddyfile（/etc/caddy/Caddyfile）
-api.example.com {
-    reverse_proxy localhost:8080
-}
+curl -fsSL https://bun.sh/install | bash   # 装到 ~/.bun，或按官方文档装到 /usr/local/bin（systemd 用）
+bun --version                              # 确认
 ```
 
-- App 端构建时指定 `--dart-define=SERVER_BASE_URL=https://api.example.com`
-- HTTPS 必须（App 端明文 HTTP 会被平台限制）；TLS 证书由 Caddy 自动申请续期
+若 bun 装在用户目录，`/usr/local/bin/bun` 可能与 systemd 的 `ExecStart` 不一致——按实际路径调整 `deploy/contexta-server.service` 的 `ExecStart`。
 
-## 3. 配置（环境变量）
-
-**敏感值（DEEPSEEK_API_KEY / JWT_SECRET / ADMIN_INIT_PASSWORD）只走 `/etc/contexta/env`**（systemd `EnvironmentFile` 加载），不写入任何仓库文件。`deploy/config.yaml.example` 为 env 对照清单（全部可选项除标注必须的）：
-
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `PORT` | `8080` | 监听端口 |
-| `DB_PATH` | `contexta.db` | SQLite 文件路径（生产：`/opt/contexta/contexta.db`） |
-| `WORD_QUOTA_DAILY` | `200` | 用户每日查词配额（真实 LLM 调用次数） |
-| `ARTICLE_BUDGET_DAILY` | `100` | 单日文章生成预算（防补生成循环烧钱） |
-| `DAILY_GENERATE_HOUR` | `3` | 每日文章生成时刻（点；实际触发为整点后 1 分钟） |
-| `LLM_TIMEOUT_SECS` | `90` | 单次 LLM 调用总预算（含重试退避） |
-| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 模型名 |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | 可换网关 |
-| `CHINADAILY_BASE_URL` | `https://www.chinadaily.com.cn` | 事实源抓取基址（NEWS 事实锚定，需服务器出网可达） |
-| `SOURCE_MAX_AGE_DAYS` | `3` | 只选近 N 天来源（新鲜度窗口） |
-| `SOURCE_FETCH_TIMEOUT_SECS` | `15` | chinadaily 单请求兜底超时 |
-| `RECENT_TITLE_DAYS` | `14` | 标题防重注入窗口（近 N 天已生成标题清单） |
-| `CACHE_TTL_DAYS` | `30` | 查词缓存 TTL |
-| `CACHE_MAX_ROWS` | `5000` | 查词缓存条数上限（超限删最旧） |
-| `JWT_SECRET` | **必须** | 生成：`openssl rand -hex 32`（**<32 字符直接启动失败**，见 §8） |
-| `DEEPSEEK_API_KEY` | **必须** | DeepSeek API key（缺失启动失败） |
-| `ADMIN_INIT_PASSWORD` | 无 | **首次启动必须**；seed 后可从 env 移除（见 §6） |
-
-## 4. 构建
+### 3.2 目录与 .env
 
 ```bash
-# 1) 管理页静态资源（提前执行，dist 需存在——二进制用 rust-embed 嵌入）
-cd impl/server/admin-ui
-npm install && npm run build     # 产出 admin-ui/dist/（已提交仓库）
+sudo useradd -r -m -d /opt/contexta contexta   # systemd unit 用 User=contexta
+sudo mkdir -p /opt/contexta/server/data /opt/contexta/server/logs /opt/contexta/server/output
+sudo chown -R contexta:contexta /opt/contexta/server
 
-# 2) 服务端 release 构建
-cd impl/server
-cargo build --release            # 产出 target/release/server（单二进制）
+# 仓库同步（impl/server 整体 → /opt/contexta/server；admin-ui/dist 随仓库）
+sudo rsync -a --exclude node_modules --exclude .git <本地 impl/server>/ /opt/contexta/server/
+
+cd /opt/contexta/server
+sudo -u contexta bun install                   # 依赖（bun.lock 锁定）
+
+# 敏感配置（权限 600，只服务用户可读）
+sudo -u contexta bash -c 'cp .env.example .env && chmod 600 .env'
+sudo -u contexta edit .env                     # 填 LLM_API_KEY / JWT_SECRET（>=32 字符）；核对 TIMEZONE
 ```
 
-## 5. 安装（rsync + systemctl）
+### 3.3 数据准备（首次部署）
+
+1. **业务库**（`DB_PATH`，如 `data/contexta.db`）——两条路：
+   - **A. 导入现有管线数据**（推荐存量）：在本地（或目标机）运行 `tool/import-data.ts`——把文章管线库（旧结构含 `embedding` 列，源库**只读**）导入服务端业务库：备份先行（源 + 旧 target 三件套）→ 拷贝 → **`articles` 去 embedding 重建** → 建表（引擎 4 表 + 服务端表）→ 历史成功槽位全部写 `article_review(status='approved', reviewed_by='import')` → 校验（批次数/行数/段落数/review 行数/integrity_check）。详细契约、校验项与预期报告见 `tool/README.md`。注意：`tool/README.md` 与 `tool/import-data.ts` 头部注释对真实导入路径的约定（如 Rust 遗留 `impl/server/contexta.db` 备份留档）由主会话执行。
+     ```bash
+     cd impl/server && bun run tool/import-data.ts -- \
+       --source <pipeline.sqlite> --target data/contexta.db
+     ```
+   - **B. 全新空库**：不放置库文件，首次启动时 `ensureSchema` + `ensureServerSchema` 自动幂等建表；文章由每日任务/手动补生成现生成（从 0 开始积累）。
+2. **检查点库**（`CHECKPOINT_PATH`，`data/langgraph.sqlite`）：**无需预置内容**——`BunSqliteCheckpointer` 以 `create: true` 打开，文件不存在会自动创建（含 `checkpoints`/`writes` 两表）。首次部署放置**空文件**即可（或直接留空不建，首次生成时自动创建）；确认 `data/` 目录可写（服务用户 contexta）。
+3. **备份留档**：导入脚本每次运行先把源与旧 target 备份到 `<target 同目录>/.backup/`（主文件 + `-wal`/`-shm` 侧车三件套）；生产删除任何备份前先确认对象是本次会话产物，**绝不删除既有备份**。
+
+### 3.4 systemd 启停
 
 ```bash
-# 目录与 unit 文件
-sudo mkdir -p /opt/contexta /etc/contexta
-sudo rsync -a target/release/server /opt/contexta/server
 sudo cp deploy/contexta-server.service /etc/systemd/system/contexta-server.service
-
-# 敏感配置（权限 600，只 root 可读）
-sudo tee /etc/contexta/env <<'EOF'
-PORT=8080
-DB_PATH=/opt/contexta/contexta.db
-JWT_SECRET=<openssl rand -hex 32 生成>
-DEEPSEEK_API_KEY=<key>
-ADMIN_INIT_PASSWORD=<首次启动用，seed 后移除>
-EOF
-sudo chmod 600 /etc/contexta/env
-
-# 启动并开机自启
 sudo systemctl daemon-reload
 sudo systemctl enable --now contexta-server
 sudo systemctl status contexta-server
 ```
 
-**升级流程**：`rsync -a` 新二进制 → `sudo systemctl restart contexta-server`（SQLite 数据文件不动）。
+unit 语义：`User=contexta` + `WorkingDirectory=/opt/contexta/server`（引擎 `./data`、`./logs`、`./output` 相对该目录）+ `EnvironmentFile=/opt/contexta/server/.env` + `ExecStart=/usr/local/bin/bun run src/main.ts`（TS 直接运行，无构建产物）+ `Restart=on-failure, RestartSec=10`。
 
-## 6. 首次启动顺序
+### 3.5 日志
 
-1. 设置 `ADMIN_INIT_PASSWORD` 到 `/etc/contexta/env`（seed 后即可从 env 移除，下次启动不再覆盖——已有 admin 行则跳过 seed）
-2. `systemctl start contexta-server`——启动时自动：连库 + 001 迁移 + seed admin（username `admin`）+ **补生成今天与明天的文章**（任务侧，LLM 调用）
-3. 登录管理页 `https://api.example.com/admin`，用 `admin` + 初始密码
-4. 若启动时补生成失败或当天已过审文章不足，**手动补生成今天**：
-   ```bash
-   curl -X POST https://api.example.com/api/admin/articles/generate \
-     -H "Authorization: Bearer <admin-token>" -H "Content-Type: application/json" \
-     -d '{"date":"2026-08-13"}'
-   ```
-5. 审核：管理页「文章审核」通过今天文章（仅已过审对用户可见）
-6. 此后每日 03:01 自动生成明天文章，管理员白天审核
+- **stdout → journald**：服务进程所有日志（`[server]`、`[daily-task]`、引擎 `log()`）走 stdout——`journalctl -u contexta-server -f` / `journalctl -u contexta-server | grep daily-task`。
+- **engine `logs/` 目录**：CLI 入口（`bun run daily` / `retry` / `replay`）额外写 `logs/run-<本地时间戳>.log`（`--log-level debug` 记 prompt 全文与 LLM 原始响应）；服务端进程内不 initLog（只 stdout）。`logs/` 时间戳一律取配置时区。
 
-## 7. 备份（每月冷备份）
+## 4. 首次启动顺序
 
-**备份 = 拷 SQLite 文件**（单文件，含 WAL 时先 checkpoint 或直接用 sqlite3 .backup）：
+1. `.env` 就绪（`LLM_API_KEY` / `JWT_SECRET` / `TIMEZONE` 必须；`ADMIN_INIT_PASSWORD` 首次启动设置以 seed `admin`，seed 后可移出）
+2. `systemctl start contexta-server` —— 启动自动：建库建表 → seed admin → 监听 → **补生成今天 + 明天**（启动补漏，失败只记日志不阻塞 serve）
+3. 健康检查：`curl http://localhost:8080/api/health`；管理页 `https://api.example.com/admin`（`admin` + 初始密码）
+4. 当天缺文可手动补生成：`POST /api/admin/articles/generate {"date":"2026-08-13"}`（admin JWT）
+5. 管理员在管理页**审核**（槽位视图：通过/拒绝/重跑/编辑）——仅已过审对用户可见
+6. 此后每日 `DAILY_GENERATE_HOUR:01`（默认 03:01）自动生成明天文章；error 槽位由每日任务自动补跑一次，仍失败留 error 待人工 `POST /api/admin/slots/:id/retry` 或 `bun run retry` 重试
+
+## 5. 运维
+
+### 5.1 备份纪律
+
+- **备份对象 = 两个库各三件套**：`contexta.db`（业务）+ `langgraph.sqlite`（检查点），每库主文件 + `-wal` + `-shm`（WAL 模式，最新写入可能只在侧车——只拷主文件会丢数据）。
+- **冷备份**：每月一次，归档到仓库根 `.backup/`（已 gitignore 但按纪律 `git add -f .backup/contexta-db-*` 提交最近一次备份）；删除任何备份前先确认对象是本次会话产物。
+- **热备**：`sqlite3 <db> ".backup <路径>"` 或停服拷贝（WAL checkpoint 后三件套齐拷）。
+- 恢复：停服 → 三件套回拷（覆盖同名 `-wal`/`-shm`）→ 启动；注意设备端还有 App 本地缓存，恢复服务端会回滚服务端侧数据。
+
+### 5.2 升级（未上线阶段策略：无迁移体系）
+
+- 当前 `tool/db_version` = 0（**从未发布生产**），**没有版本化迁移**：schema 变更直接改 `ensureSchema` / `ensureServerSchema`（`CREATE TABLE IF NOT EXISTS` + 旧库补列），不存在 001/002 升级链。
+- 未上线期间升级路径（二选一）：
+  1. **新库重建**：停服 → 新目录部署新版 → 空库自动建表 → `tool/import-data.ts` 重新导入管线数据（历史文章标 approved）→ 启动；同日之内文章缺失由每日任务/手动补生成补齐。
+  2. **就地重启**：同版本小改（无 schema 变更）→ 同步代码 + `bun install` → `systemctl restart contexta-server`（数据文件不动）。
+- 任一 schema 变更前：**备份先行**（§5.1 三件套）→ 验证（integrity_check / 表数 / 行数）→ 再重启。
+- 若 schema 变更是"发布后"性质（db_version ≥ 1），才启用编号迁移 + drift 双写纪律——当前不适用。
+
+### 5.3 运维速查
 
 ```bash
-mkdir -p /backup
-sqlite3 /opt/contexta/contexta.db ".backup /backup/contexta-$(date +%F).db"
+systemctl status contexta-server && systemctl restart contexta-server
+journalctl -u contexta-server -f                          # 实时日志
+journalctl -u contexta-server | grep "daily-task"         # 每日任务
+curl http://localhost:8080/api/health                     # 健康检查
+sudo -u contexta bun run daily   -- --date 2026-08-29     # 手动补生成某日
+sudo -u contexta bun run retry   -- --date 2026-08-29     # 中断恢复（同 thread 续跑）
+sudo -u contexta bun run replay  -- --thread daily-2026-08-29-3   # 步骤级重放（被拒后人工处置）
+sudo -u contexta bun run delete-daily -- --date 2026-08-29 --yes  # 删除某日（先不带 --yes 看预览）
 ```
 
-- **每月做一次冷备份**，沿用仓库根 `.backup/` 纪律：`git add -f .backup/contexta-db-*` 提交最近一次备份；删除任何备份前先确认对象是本次会话产物，**绝不删除既有备份**
-- 恢复：停服务 → `sqlite3 /backup/contexta-YYYY-MM-DD.db ".backup /opt/contexta/contexta.db"` → 启动（注意设备端还有 App 本地缓存，恢复会回滚服务端侧数据）
+## 6. 已知风险：Bun.WebView 在 headless Linux
 
-## 8. 部署约束记录（已裁决语义，改部署/客户端前必读）
+- **风险**：站点抓取（`news`/`expository` 两条 pathA 类别）依赖 `Bun.WebView` 打开真实页面（`sites/common.ts` 的 `fetchAnchorSnapshots` / `fetchArticleHTML`）。Bun.WebView 在 macOS 用 WKWebView 可用；**Linux 上依赖 webkit2gtk 且需要显示环境**——纯 headless 服务器无 X/Wayland 时构造/导航可能失败或挂起。后果：pathA 类别槽位经 `fetchLinks` 失败 → `generateArticle` 收为 `outcome=error`（技术失败，不静默降级），每日任务补跑一次仍失败后留 error 等人工处置——**news/expository 每日 2 个类别将无法产出**。
+- **部署前必须 spike**（在目标云主机上）：`bun -e 'const v = new Bun.WebView({width:1440,height:2000}); console.log(await v.evaluate("1+1")); v.close()'` 验证 WebView 可用。
+- **备选方案（部署时按 spike 结果选一）**：
+  - `xvfb-run`（虚拟显示）包裹服务进程，Bun.WebView 正常走 webkit2gtk（需 `libwebkit2gtk-4.1` 系依赖）；
+  - 站点不支持时降级：`sites.config.ts` 去掉 chinadaily/tencent 配置行 → `news`/`expository` 变 pathB（模型知识生成，**失去事实锚定，有幻觉风险**——仅作临时降级，须人工审核把关）；
+  - 改造抓取层为 offscreen/无头渲染或 HTTP 抓取（属代码改动，dev 阶段 spike 后另行决策）。
+- 若部署后 LLM 欠费/站点全挂：槽位 error 不阻塞服务，恢复后每日任务自动补跑 + 人工 retry/手动补生成即可自愈。
 
-以下语义已在实现中裁决并落测，部署或对接时**不得按直觉更改**：
+## 7. 部署约束快速索引（实现已裁决，改部署/客户端前必读）
 
 | # | 约束 | 裁决语义 | 出处 |
 |---|---|---|---|
-| 1 | **difficulty 字典序** | `GET /api/articles` 的排序为 `ORDER BY difficulty, order_index`——difficulty 是 TEXT，按 **ASCII 字典序**（HIGH < LOW < MEDIUM），**不是**自然难度序（LOW/MEDIUM/HIGH）。App 端须自行按自然序整理 | article_service `get_approved_by_date` |
-| 2 | **非法日期 = 空结果** | 下发接口（`GET /api/articles?date=`）对非法日期**不校验、不 400**，直接查库返回 200 空数组 `data: []`。仅管理端手动补生成（`POST /api/admin/articles/generate`）做严格零填充 ISO 校验（`2026-8-14`、`2026-13-01`、`2026-02-30` 均 400 BAD_PARAM） | routers/articles.rs、routers/admin.rs |
-| 3 | **JWT_SECRET ≥ 32 字符** | 启动硬校验，不足直接报错退出（HS256 安全下限）。生成：`openssl rand -hex 32` | config.rs |
-| 4 | **TZ 影响配额日界** | 查词配额日界、文章日预算、用量统计、`/api/articles/today` 的"今天"全部按**服务器本地时区**零点（`chrono::Local`）。部署必须 `timedatectl set-timezone Asia/Shanghai`，否则配额日界偏移 8 小时 | services/mod.rs `today_start_millis` |
-| 5 | **`\|\|\|` 段落契约** | 段落入库为单列 `英文\|\|\|中文`，下发时按 `\|\|\|` 拆分；无分隔符时整段作英文、中文为空串。服务端**不存第二列** | article_service `generate_one` / `load_view` |
-| 6 | **error_code 表** | 服务端错误语义固定为 `{code, message, error_code}`，HTTP 状态码表达类别、body 内 error_code 表达细分。App 端按此映射回现有异常类型（400 QUOTA_EXCEEDED / 401 TOKEN_EXPIRED·EVICTED / 403 BANNED / 500 LLM_FATAL·PIPELINE_BLOCKING / 502 LLM_RECOVERABLE_EXHAUSTED / 504 LLM_TIMEOUT）。**新增错误必须走该表**，不得裸发新状态码 | response.rs，详见 architecture.md §6 |
-| 7 | **T9 任务 03:01 触发** | 每日生成时刻 = `DAILY_GENERATE_HOUR` 点**整点后 1 分钟**（默认 03:01，避开整点边界）。启动时另有补漏（今天+明天），与定时循环幂等 | tasks/article_daily_task.rs |
-| 8 | **admin 12h TTL** | 管理员 token 有效期 12 小时（App token 30 天）——admin 会话被窃取时缩小暴露窗口 | jwt.rs |
-| 9 | **免密直登** | App 登录不校验验证码（beta 简化），预留 `code` 字段将来升级；风险靠封禁兜底 | auth_service.rs |
-| 10 | **文章为全局共享池** | 同难度用户读同批文章（3 难度 × 5 篇/天），审核模型下不按用户独立生成；下发需 JWT，与用户查词配额无关 | 设计决策 |
-
-## 9. 运维速查
-
-```bash
-systemctl status contexta-server        # 状态
-journalctl -u contexta-server -f        # 日志
-curl http://localhost:8080/api/health   # 健康检查
-```
-
-- 每日生成失败只记日志不阻塞服务：`journalctl -u contexta-server | grep "daily"`，LLM 恢复后下一次 wake（03:01）自动补齐
-- 管理页静态资源随二进制嵌入：升级二进制即升级管理页
+| 1 | **difficulty 字典序** | 下发排序 `ORDER BY difficulty, order_index`——TEXT 按 ASCII 字典序（HIGH < LOW < MEDIUM），非自然难度序；App 端自行整理 | `article_reader.ts` |
+| 2 | **非法日期 = 空结果** | 下发 `?date=` 非法/任意字符串不校验、不 400，200 空数组；仅管理端补生成严格 ISO 校验 | `routers/articles.ts`、`routers/admin.ts` |
+| 3 | **JWT_SECRET ≥ 32 字符** | 启动硬校验，不足报错退出 | `config.ts` |
+| 4 | **TZ 影响日界** | 查词配额日界、文章日界、`/today`、日志时间戳全部按配置时区；`TIMEZONE` 与系统时区不一致**拒绝运行** | `engine/config.ts` `assertSystemTimezone` |
+| 5 | **error_code 表** | 错误语义固定 `{code, message, error_code}`，HTTP 状态码表达类别、error_code 细分；**新增错误必须走该表** | `response.ts`，见 architecture.md §7 |
+| 6 | **03:01 触发** | 每日生成 = `DAILY_GENERATE_HOUR` 点整点后 1 分钟；启动补漏（今天+明天）与定时循环幂等 | `services/daily_task.ts` |
+| 7 | **admin 12h TTL** | admin token 12 小时（App token 30 天） | `jwt.ts` |
+| 8 | **免密直登** | App 登录不校验验证码（beta 简化），保留 `code` 字段；风险靠封禁兜底 | `services/auth_service.ts` |
+| 9 | **文章为全局共享池** | 同难度用户读同批文章（3 难度 × 5 篇/天）；下发需 JWT，与查词配额无关 | 设计决策 |
+| 10 | **source_url 不下发** | 文章 App 契约不含 `source_url`（仅管理端可见）；`regenerate_count`/`order_index` 为派生字段 | `article_reader.ts` |

@@ -1,14 +1,16 @@
 [Unit]
 Description=Contexta Server
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/contexta/env
-WorkingDirectory=/opt/contexta
-ExecStart=/opt/contexta/server
+User=contexta
+WorkingDirectory=/opt/contexta/server
+EnvironmentFile=/opt/contexta/server/.env
+ExecStart=/usr/local/bin/bun run src/main.ts
 Restart=on-failure
-RestartSec=5
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
