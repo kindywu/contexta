@@ -35,7 +35,7 @@ test("deriveByCategory: 按类别分组且保持配置文件顺序", () => {
 });
 
 test("sites.config: 配置内容为 chinadaily/tencent 且 byCategory 派生正确", async () => {
-  const { sites, byCategory } = await import("../src/sites.config");
+  const { sites, byCategory } = await import("../../src/engine/sites.config");
   expect(sites.map((s) => s.name).sort()).toEqual(["chinadaily", "tencent"]);
   expect(byCategory.news?.map((s) => s.name)).toEqual(["chinadaily", "tencent"]);
   expect(byCategory.expository?.map((s) => s.name)).toEqual(["chinadaily", "tencent"]);
