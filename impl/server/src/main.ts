@@ -7,6 +7,7 @@ import { mkdirSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { serveStatic } from "hono/bun";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { loadServerConfig, type ServerConfig } from "./config";
@@ -43,7 +44,13 @@ function mountAdmin(app: Hono, distDir: string): void {
   const indexHtmlPath = join(distDir, "index.html");
   if (existsSync(indexHtmlPath)) {
     const indexHtml = readFileSync(indexHtmlPath, "utf8");
-    app.get("/admin", (c) => c.html(indexHtml));
+    // index.html 不缓存：防浏览器留存旧 index 引用已删除的旧哈希资源，
+    // 命中 SPA 回退后以 text/html 应答 → 破 UI。静态资源（assets/*）不受影响。
+    const sendIndex = (c: Context) => {
+      c.header("Cache-Control", "no-cache");
+      return c.html(indexHtml);
+    };
+    app.get("/admin", sendIndex);
     app.get(
       "/admin/*",
       serveStatic({
@@ -51,7 +58,7 @@ function mountAdmin(app: Hono, distDir: string): void {
         rewriteRequestPath: (p) => p.replace(/^\/admin\/?/, ""),
       }),
     );
-    app.get("/admin/*", (c) => c.html(indexHtml)); // SPA 前端路由回退
+    app.get("/admin/*", sendIndex); // SPA 前端路由回退
   } else {
     app.get("/admin", (c) => c.text(ADMIN_PLACEHOLDER));
     app.get("/admin/*", (c) => c.text(ADMIN_PLACEHOLDER));

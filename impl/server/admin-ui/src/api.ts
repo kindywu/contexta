@@ -27,7 +27,7 @@ export function redirectLogin() {
 
 const http = axios.create({
   baseURL: '/api/admin',
-  timeout: 15_000, // 默认 15s；生成接口单独覆盖为 5 分钟
+  timeout: 15_000, // 默认 15s；生成/重跑类接口单独覆盖为 5 分钟
 })
 
 http.interceptors.request.use((config) => {
@@ -66,7 +66,7 @@ http.interceptors.response.use(
   },
 )
 
-// ---- 类型（与后端 admin API 契约一致） ----
+// ---- 类型（与后端 admin API 契约一致；键名精确 snake_case） ----
 
 export interface AdminUser {
   phone: string
@@ -77,28 +77,6 @@ export interface AdminUser {
   today_word_lookups: number
 }
 
-export interface ArticleItem {
-  id: number
-  title: string | null
-  target_date: string
-  difficulty: string
-  content_category: string
-  order_index: number
-  status: string
-  regenerate_count: number
-  source_url: string | null
-}
-
-export interface ArticleParagraph {
-  order_index: number
-  english_text: string
-  chinese_translation: string
-}
-
-export interface ArticleDetail extends ArticleItem {
-  paragraphs: ArticleParagraph[]
-}
-
 export interface UsageRow {
   phone: string | null
   endpoint: string
@@ -107,11 +85,71 @@ export interface UsageRow {
   completion_tokens: number
 }
 
-export interface PromptItem {
-  key: string
-  content: string
-  // Unix millis；0 = 种子默认值（从未修改）
-  updated_at: number
+/** 段落（编辑请求与详情响应共用）：order_index 1 起（响应侧派生） */
+export interface ArticleParagraph {
+  order_index: number
+  english_text: string
+  chinese_translation: string
+}
+
+/** 槽位视图的当前文章（白名单列；source_url 可空）。 */
+export interface SlotArticle {
+  id: number
+  category: string
+  title_en: string
+  title_zh: string
+  source_url: string | null
+  paragraph_count: number
+  path: string
+  run_date: string
+}
+
+/** 当前文章的最新审核行。 */
+export interface SlotReview {
+  id: number
+  status: string
+  reject_reason: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
+}
+
+/** 同槽全部 review 行（含当前行）倒序（新 → 旧）；关联 article_id（契约不含 id）。 */
+export interface ReviewHistoryItem {
+  article_id: number
+  status: string
+  reject_reason: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
+}
+
+/** 槽位视图行：槽位 + 当前文章 + 当前审核行 + 同槽审核历史。 */
+export interface SlotView {
+  slot_id: number
+  slot_index: number
+  difficulty: string
+  status: string
+  attempts: number
+  thread_id: string
+  article: SlotArticle | null
+  review: SlotReview | null
+  history: ReviewHistoryItem[]
+}
+
+/** 文章详情：articles 全行 + 段落 + review 行 + 所属槽位（slot_id/slot_index）。 */
+export interface ArticleDetail {
+  id: number
+  batch_id: number
+  category: string
+  title_en: string
+  title_zh: string
+  source_url: string | null
+  paragraph_count: number
+  path: string
+  run_date: string
+  paragraphs: ArticleParagraph[]
+  review: SlotReview | null
+  slot_id: number | null
+  slot_index: number | null
 }
 
 // ---- 接口函数 ----
@@ -135,35 +173,37 @@ export const api = {
 
   usage: () => http.get<unknown, UsageRow[]>('/usage'),
 
-  listPrompts: () => http.get<unknown, PromptItem[]>('/prompts'),
+  // ---- 槽位审核视图 ----
 
-  updatePrompt: (key: string, content: string) =>
-    http.put<unknown, unknown>(`/prompts/${encodeURIComponent(key)}`, { content }),
+  /** 某日全部槽位（slot_index 升序）：当前文章 + 审核行 + 同槽审核历史。 */
+  listSlots: (date: string) =>
+    http.get<unknown, SlotView[]>('/articles', { params: { date } }),
 
-  listArticles: (status?: string, date?: string) => {
-    const params: Record<string, string> = {}
-    if (status) params.status = status
-    if (date) params.date = date
-    return http.get<unknown, ArticleItem[]>('/articles', { params })
-  },
+  /** 文章详情：articles 全行 + 段落 + review + 所属槽位。 */
+  getArticleDetail: (id: number) => http.get<unknown, ArticleDetail>(`/articles/${id}`),
 
-  articleDetail: (id: number) => http.get<unknown, ArticleDetail>(`/articles/${id}`),
-
-  // 审核期编辑（仅 pending_review；服务端整体替换标题 + 段落）
-  updateArticle: (id: number, title: string, paragraphs: ArticleParagraph[]) =>
-    http.put<unknown, unknown>(`/articles/${id}`, { title, paragraphs }),
+  /** 审核期编辑（仅 pending_review；服务端整体替换标题 + 段落，按请求序重编序号）。 */
+  updateArticle: (
+    id: number,
+    payload: { title: string; paragraphs: ArticleParagraph[] },
+  ) => http.put<unknown, unknown>(`/articles/${id}`, payload),
 
   approveArticle: (id: number) =>
     http.post<unknown, unknown>(`/articles/${id}/approve`, {}),
 
-  rejectArticle: (id: number, reason: string) =>
+  /** 拒绝触发补生成可达分钟级（LLM 预算），与服务端契约一致的 5 分钟超时。 */
+  rejectArticle: (id: number, reason?: string) =>
     http.post<unknown, unknown>(
       `/articles/${id}/reject`,
       { reason },
-      { timeout: 300_000 }, // 拒绝触发补生成可达 90s+（LLM 预算），与服务端契约一致的 5 分钟超时
+      { timeout: 300_000 },
     ),
 
-  // 手动生成可达分钟级（15 篇 × LLM 串行），axios timeout 放宽到 5 分钟
+  /** 失败/被拒槽位重跑：同步等引擎生成（分钟级），5 分钟超时。 */
+  retrySlot: (id: number) =>
+    http.post<unknown, unknown>(`/slots/${id}/retry`, {}, { timeout: 300_000 }),
+
+  /** 手动补生成可达分钟级（15 篇 × LLM 串行），axios timeout 放宽到 5 分钟。 */
   generateArticles: (date: string, opts?: AxiosRequestConfig) =>
     http.post<unknown, unknown>('/articles/generate', { date }, { timeout: 300_000, ...opts }),
 }
