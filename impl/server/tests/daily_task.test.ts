@@ -1,7 +1,8 @@
 // tests/daily_task.test.ts
 // 每日任务编排（启动补漏 + 定时循环 + pending 恢复 + error 补跑 + 审核行补齐）：
-// genDaily/retryFailed/reRun/ensure/now/sleep 全部注入假实现——不依赖真实引擎/LLM/定时器；
+// genDaily/retryFailed/ensure/now/sleep 注入假实现——不依赖真实引擎/LLM/定时器；
 // 槽位终态用真实 :memory: 库 + 引擎 listSlots 手工造，验证 runFill 的编排顺序与分派。
+// 唯一例外：error 补跑唯一 genSeq 测试用真实 retrySlot（缺省 reRun）+ 注入 gen（error 三态）。
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
@@ -10,6 +11,7 @@ import { join } from "node:path";
 import { loadServerConfig } from "../src/config";
 import { ensureServerSchema } from "../src/db";
 import { loadConfig, type AppConfig } from "../src/engine/config";
+import type { ArticleResult } from "../src/engine/graph/state";
 import {
   createBatchAndSlots,
   ensureSchema,
@@ -20,6 +22,7 @@ import {
   type SlotStatus,
 } from "../src/engine/db";
 import { localDate } from "../src/engine/utils/time";
+import type { GenArgs } from "../src/services/review_service";
 import { DailyTask, type DailyTaskCtx } from "../src/services/daily_task";
 import { todayStartMillis } from "../src/time";
 
@@ -57,10 +60,10 @@ function recorders() {
   const retryFailed = async (args: { runDate: string; config: AppConfig }) => {
     events.push(`retry:${args.runDate}`);
   };
-  const reRuns: { slot: SlotRow; seq: number }[] = [];
-  const reRun = async (_ctx: DailyTaskCtx, slot: SlotRow, seq: number) => {
-    reRuns.push({ slot, seq });
-    events.push(`rerun:${slot.slotIndex}:${seq}`);
+  const reRuns: { slot: SlotRow }[] = [];
+  const reRun = async (_ctx: DailyTaskCtx, slot: SlotRow) => {
+    reRuns.push({ slot });
+    events.push(`rerun:${slot.slotIndex}`);
   };
   const ensure = (_db: Database) => {
     events.push("ensure");
@@ -112,7 +115,7 @@ describe("daily_task runFill", () => {
     expect(f.reRuns).toHaveLength(0); // 无 error 槽
   });
 
-  test("error 槽存在 → reRun 恰好 1 次：传该槽 row + genSeq=1（rejected/其余不动）", async () => {
+  test("error 槽存在 → reRun 恰好 1 次：传该槽 row（rejected/其余不动）", async () => {
     const f = recorders();
     const { db, ctx } = makeCtx({ ...f });
     const slots = seedSlots(db, 3);
@@ -122,11 +125,41 @@ describe("daily_task runFill", () => {
     await new DailyTask(ctx).runFill(RUN_DATE);
 
     expect(f.reRuns).toHaveLength(1);
-    expect(f.reRuns[0]!.seq).toBe(1);
     expect(f.reRuns[0]!.slot.id).toBe(slots[1]!.id);
     expect(f.reRuns[0]!.slot.slotIndex).toBe(1);
     expect(f.reRuns[0]!.slot.status).toBe("error");
     expect(f.events).toContain("ensure");
+  });
+
+  test("error 槽补跑走 retrySlot 唯一 genSeq：槽位两次 runFill 均真尝试且 threadId 不同", async () => {
+    // 不注入 reRun（走缺省 = retrySlot 闭包）+ 注入 gen（error 三态，不真调引擎/LLM）：
+    // 槽位两次都留 error → 第二次 runFill 仍进入补跑；genSeq = Date.now() 唯一
+    // （pre-fix reRunSlot(ctx, slot, 1) 恒 -r1，两次同 id——命中引擎"同 threadId
+    // 终态 checkpoint 复用"契约时第二次静默 no-op）。
+    const genCalls: string[] = [];
+    const gen = async (args: GenArgs): Promise<ArticleResult> => {
+      genCalls.push(args.threadId);
+      await new Promise((r) => setTimeout(r, 5)); // 两次 Date.now() 落不同毫秒
+      return { outcome: "error", message: "仍失败" };
+    };
+    const { db, ctx } = makeCtx({
+      genDaily: async () => {},
+      retryFailed: async () => {},
+      gen,
+    });
+    const slots = seedSlots(db, 1);
+    writeSlotResult(db, { slotId: slots[0]!.id, threadId: slots[0]!.threadId, status: "error" });
+
+    const task = new DailyTask(ctx);
+    await task.runFill(RUN_DATE);
+    const t1 = listSlots(db, RUN_DATE)[0]!.threadId;
+    await task.runFill(RUN_DATE);
+    const t2 = listSlots(db, RUN_DATE)[0]!.threadId;
+
+    expect(genCalls).toHaveLength(2); // 两次都真尝试（非 checkpoint 空跑）
+    expect(t1).toMatch(/^daily-2026-09-02-0-r\d+$/);
+    expect(t2).toMatch(/^daily-2026-09-02-0-r\d+$/);
+    expect(t2).not.toBe(t1); // R4 唯一 genSeq：第二次不复用同 id
   });
 
   test("genDaily 抛错 → 不中断：retryFailed/ensure 仍被调，runFill 不抛", async () => {

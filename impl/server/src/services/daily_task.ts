@@ -5,7 +5,7 @@
 //   配置时区，assertSystemTimezone 保证）→ 补今天（幂等、成本为零）+ 主生成明天；
 //   单轮失败已由 runFill 内部日志化，循环继续
 // - runFill：引擎幂等生成（无批次→建 15 槽全跑；running→只补 pending；已收口→直接返回）
-//   → retryFailedSlots（pending 恢复：resume/sync）→ error 槽位每槽一次 reRun（图三态
+//   → retryFailedSlots（pending 恢复：resume/sync）→ error 槽位每槽一次 retrySlot（图三态
 //   承诺：补跑仍失败留 error，err 不抛）→ ensureReviewRows 补齐审核行
 // - 单步失败仅记日志（console.error），不中断后续步骤与整个 fill——旧版
 //   "失败只记日志不阻止 serve" 语义
@@ -14,11 +14,11 @@
 import type { Database } from "bun:sqlite";
 import type { ServerConfig } from "../config";
 import type { AppConfig } from "../engine/config";
-import { listSlots } from "../engine/db";
+import { listSlots, type SlotRow } from "../engine/db";
 import { generateDailyArticles, retryFailedSlots } from "../engine/graph/daily";
 import { localDate } from "../engine/utils/time";
 import { todayStartMillis } from "../time";
-import { ensureReviewRows, reRunSlot } from "./review_service";
+import { ensureReviewRows, retrySlot, type GenFn } from "./review_service";
 
 /** 每日生成/重试 seam 入参（引擎 generateDailyArticles / retryFailedSlots 的子集）。 */
 export interface DailyGenArgs {
@@ -28,6 +28,9 @@ export interface DailyGenArgs {
 
 /** 每日生成/重试 seam（缺省 = 引擎 generateDailyArticles / retryFailedSlots 闭包）。 */
 export type DailyGenFn = (args: DailyGenArgs) => Promise<unknown>;
+
+/** error 槽补跑 seam（缺省 = review_service.retrySlot）。 */
+export type DailyReRunFn = (ctx: DailyTaskCtx, slotRow: SlotRow) => Promise<void>;
 
 /**
  * 每日任务上下文：db = 服务端共享连接；engineCfg/serverCfg 为配置；
@@ -41,8 +44,18 @@ export interface DailyTaskCtx {
   genDaily?: DailyGenFn;
   /** 引擎 pending 恢复（resume/sync）：缺省 retryFailedSlots 闭包 */
   retryFailed?: DailyGenFn;
-  /** error 槽补跑：缺省 review_service.reRunSlot */
-  reRun?: typeof reRunSlot;
+  /**
+   * error 槽补跑：缺省 review_service.retrySlot——R4 唯一 genSeq（thread =
+   * daily-<date>-<slot>-r<Date.now()>）：恒定 -r1 会命中引擎"同 threadId 终态
+   * checkpoint 复用"契约，第二次补跑/审核首次拒绝静默 no-op（05ad9be 同 bug 类）。
+   */
+  reRun?: DailyReRunFn;
+  /**
+   * 槽位级生成（仅经缺省 reRun → retrySlot → reRunSlot 消费；reRunSlot 的 ctx 是
+   * DailyTaskCtx 本身，ctx.gen ?? 引擎 generateArticle）：测试注入 error 三态假实现，
+   * 使缺省补跑路径可端到端验证且不真调引擎/LLM。
+   */
+  gen?: GenFn;
   /** 审核行补齐：缺省 review_service.ensureReviewRows */
   ensure?: typeof ensureReviewRows;
   /** 时钟注入：缺省 new Date（测试固定时刻） */
@@ -67,7 +80,7 @@ export class DailyTask {
   private readonly ctx: DailyTaskCtx;
   private readonly genDaily: DailyGenFn;
   private readonly retryFailed: DailyGenFn;
-  private readonly reRun: typeof reRunSlot;
+  private readonly reRun: DailyReRunFn;
   private readonly ensure: typeof ensureReviewRows;
   private readonly now: () => Date;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -78,7 +91,7 @@ export class DailyTask {
       ctx.genDaily ?? ((args) => generateDailyArticles({ runDate: args.runDate, config: args.config }));
     this.retryFailed =
       ctx.retryFailed ?? ((args) => retryFailedSlots({ runDate: args.runDate, config: args.config }));
-    this.reRun = ctx.reRun ?? reRunSlot;
+    this.reRun = ctx.reRun ?? ((c, s) => retrySlot(c, s));
     this.ensure = ctx.ensure ?? ensureReviewRows;
     this.now = ctx.now ?? (() => new Date());
     this.sleep = ctx.sleep ?? ((ms) => Bun.sleep(ms));
@@ -103,7 +116,7 @@ export class DailyTask {
       for (const slot of listSlots(this.ctx.db, date)) {
         if (slot.status !== "error") continue;
         try {
-          await this.reRun(this.ctx, slot, 1);
+          await this.reRun(this.ctx, slot);
         } catch (err) {
           console.error(`[daily-task] ${date} slot ${slot.id}[${slot.slotIndex}] 补跑失败（留 error）:`, err);
         }
