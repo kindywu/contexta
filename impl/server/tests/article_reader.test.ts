@@ -54,7 +54,7 @@ describe("listApprovedByDate", () => {
   test("只返回 approved 且按难度/序号排序，regenerateCount 派生", () => {
     const db = new Database(":memory:");
     seed(db);
-    // 两篇 LOW 均 pending_review → 空；批准 slot0
+    // 首批文章均无 review 行 → 空；再为 slot0 制造 rejected 历史 + 补生成批准
     const slot0 = (listSlots(db, "2026-09-02").find((s) => s.slotIndex === 0))!;
     const slot0Article = slot0.articleId!;
     // 先制造一次 rejected 历史再批准：同槽位补生成新文章（新 review 行），旧 rejected 行保留
