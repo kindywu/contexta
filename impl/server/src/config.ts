@@ -11,6 +11,14 @@ const serverEnvSchema = z.object({
   DAILY_GENERATE_HOUR: z.coerce.number().int().min(0).max(23).default(3),
   LLM_TIMEOUT_SECS: z.coerce.number().int().positive().default(90),
   REGENERATE_LIMIT: z.coerce.number().int().positive().default(3),
+  LLM_API_KEY: z.string().min(1),
+  LLM_BASE_URL: z.url().default("https://api.deepseek.com"),
+  LLM_MODEL: z.string().default("deepseek-v4-flash"),
+  PROXY_URL: z
+    .string()
+    .optional()
+    .default("")
+    .transform((s) => (s === "" ? undefined : s)),
   TIMEZONE: z
     .string()
     .min(1)
@@ -28,6 +36,10 @@ export interface ServerConfig {
   llmTimeoutSecs: number;
   regenerateLimit: number;
   timeZone: string;
+  llmApiKey: string;
+  llmBaseUrl: string;
+  llmModel: string;
+  proxyUrl?: string;
 }
 
 export function loadServerConfig(
@@ -50,5 +62,9 @@ export function loadServerConfig(
     llmTimeoutSecs: v.LLM_TIMEOUT_SECS,
     regenerateLimit: v.REGENERATE_LIMIT,
     timeZone: v.TIMEZONE,
+    llmApiKey: v.LLM_API_KEY,
+    llmBaseUrl: v.LLM_BASE_URL,
+    llmModel: v.LLM_MODEL,
+    proxyUrl: v.PROXY_URL,
   };
 }
