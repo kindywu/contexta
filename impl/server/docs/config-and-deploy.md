@@ -121,7 +121,8 @@ unit 语义：`User=contexta` + `WorkingDirectory=/opt/contexta/server`（引擎
 
 ### 5.2 升级（未上线阶段策略：无迁移体系）
 
-- 当前 `tool/db_version` = 0（**从未发布生产**），**没有版本化迁移**：schema 变更直接改 `ensureSchema` / `ensureServerSchema`（`CREATE TABLE IF NOT EXISTS` + 旧库补列），不存在 001/002 升级链。
+- 当前 `tool/db_version` = 0（**从未发布生产**），**没有版本化迁移**：schema 变更直接改 `ensureSchema` / `ensureServerSchema`（全部 `CREATE TABLE/INDEX IF NOT EXISTS`，**代码中无任何 ALTER TABLE**——新增列不自动补到既有库），不存在 001/002 升级链。
+- **存量库加列的正确姿势**：新库重建（重新导入/再生成，见下），或用一次性 SQL 补丁脚本（放 `/tmp` 不留仓库）就地 `ALTER TABLE`——模型与 Flutter 端 `tool/migrations/` 的 MIGRATION 纪律一致（发布后才启用编号迁移 + 双写）。
 - 未上线期间升级路径（二选一）：
   1. **新库重建**：停服 → 新目录部署新版 → 空库自动建表 → `tool/import-data.ts` 重新导入管线数据（历史文章标 approved）→ 启动；同日之内文章缺失由每日任务/手动补生成补齐。
   2. **就地重启**：同版本小改（无 schema 变更）→ 同步代码 + `bun install` → `systemctl restart contexta-server`（数据文件不动）。

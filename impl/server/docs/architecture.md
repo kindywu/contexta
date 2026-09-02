@@ -88,7 +88,7 @@ impl/server/
 
 ## 3. 数据模型（contexta.db，引擎 4 表 + 服务端 5 表 + article_review）
 
-建表由启动时 `ensureSchema(db)`（引擎）+ `ensureServerSchema(db)`（服务端）幂等执行（全部 `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`）。引擎索引随 `DROP TABLE` 语义处理（删除重建日库时），服务端索引随建表重建。`tool/migrations/001-init.sql` 为 Rust 时期遗留（结构已并入上述两个 ensure 函数，不再执行）；`tool/db_version` = 0（从未发布生产）。
+建表由启动时 `ensureSchema(db)`（引擎）+ `ensureServerSchema(db)`（服务端）幂等执行（全部 `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`；**代码无 ALTER TABLE**——新结构对新建库生效，存量库演进见 config-and-deploy §5.2）。引擎索引随 `DROP TABLE` 语义处理（删除重建日库时），服务端索引随建表重建。`tool/migrations/001-init.sql` 为 Rust 时期遗留（结构已并入上述两个 ensure 函数，不再执行）；`tool/db_version` = 0（从未发布生产）。
 
 ### 3.1 引擎 4 表（pipeline 原样，`articles` 无 embedding 列）
 
@@ -254,7 +254,7 @@ flowchart TD
 - **LLM 调用**（`callWithRetry` + `driverChat`，`src/llm/retry.ts`）：OpenAI 兼容 `POST {base}/chat/completions`，404 回退 `/v1/chat/completions`；`LLM_TIMEOUT_SECS`（默认 90s）为硬预算——共 4 次尝试，每次尝试以剩余预算截断（Promise.race 超时），退避等待也计入预算。错误分类：400/401/403 → fatal；429 → recoverable（Retry-After clamp 0..30s）；5xx/其余 → recoverable（指数退避 2s×2^(n-1) 封顶 10s）；发送层失败（网络/超时/DNS/TLS）→ timeout。第 4 次仍失败：timeout → 504 LLM_TIMEOUT，recoverable → 502 LLM_RECOVERABLE_EXHAUSTED，fatal → 500 LLM_FATAL。可选出站代理 `PROXY_URL`（Bun fetch proxy 选项）。
 - **记账**：LLM 调用成功即记（无论解析/写缓存结果如何）——堵住"易触发解析失败的词无限烧钱"的绕过口；记账失败仅降级告警（磁盘满/写繁忙时不得把成功查词变 500）。
 - **写缓存守卫**：仅当 `parsed.spelling.toLowerCase() === key` 才写——LLM 输出变体/屈折时不入缓存，否则请求词 key 会向全用户共享缓存写入错误词条。
-- **解析**：`parseWordLookup`（`src/llm/lookup_parser.ts`，XML 容错解析）：`<spelling>`/`<phonetic>`/`<sense>`/`<example>`（en/zh），无 `<spelling>` 时用首个成对根标签兜底（仅接受单词/词组形态）；1-3 个 sense、每 sense 0-2 个 example；字段映射为 App JSON 契约（`senses[].part_of_speech/chinese_meaning/english_definition/examples[].sentence_en/sentence_zh/is_primary`，order_index 1 起）。prompt 内嵌（`src/llm/prompt.ts`，对齐 001-init.sql 种子原文；TS 无 prompt 表——管理端不可编辑）。
+- **解析**：`parseWordLookup`（`src/llm/lookup_parser.ts`，XML 容错解析）：`<spelling>`/`<phonetic>`/`<sense>`/`<example>`（en/zh），无 `<spelling>` 时用首个成对根标签兜底（仅接受单词/词组形态）；**1-3 个 sense、每 sense 0-2 个 example 是 prompt 指令**（`src/llm/prompt.ts` 的 system 提示），parser 不强制封顶——按实际出现次数全量解析；字段映射为 App JSON 契约（`senses[].part_of_speech/chinese_meaning/english_definition/examples[].sentence_en/sentence_zh/is_primary`，order_index 1 起）。prompt 内嵌（`src/llm/prompt.ts`，对齐 001-init.sql 种子原文；TS 无 prompt 表——管理端不可编辑）。
 - **查词 LLM 端点复用**：与文章生成共用同一 `LLM_API_KEY`/`LLM_BASE_URL`/`LLM_MODEL`；文章引擎走 `@langchain/openai` ChatOpenAI（jsonMode 结构化输出, maxTokens=64000——deepseek 思考模型 reasoning_content 消耗输出预算，缺省上限过小会吃光预算导致解析失败），查词走轻量 `driverChat`（无 LangChain）。
 
 ## 6. 认证与账号体系

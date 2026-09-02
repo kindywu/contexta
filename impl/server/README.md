@@ -30,11 +30,16 @@ bun run src/main.ts
 ## 测试
 
 ```bash
-bun test               # 113 用例（顶层 tests/*.test.ts；引擎另有 tests/engine/*.test.ts）
+bun test tests/*.test.ts              # 顶层确定性子集：113 用例，全绿
+bun test                              # 全量（含 tests/engine/）：218 用例
 bunx tsc --noEmit -p tsconfig.json   # 类型校验（bun run typecheck）
 ```
 
-集成测试用内存 SQLite + 注入假 LLM，不真调模型。
+- 顶层子集（`tests/*.test.ts`）113 用例全绿：内存 SQLite + 注入假 LLM，不真调模型。
+- **全量 `bun test` 含已知预存失败**（源仓库遗留，与本迁移无关，未修复）：
+  - `tests/engine/sites.test.ts` — 3 例确定性失败：`extractChinaDailyLinks` 的"近 30 天"新鲜度窗口 vs 2026-08 夹具日期，随日期推移夹具老化永远空列表；
+  - `tests/engine/db.test.ts` — 1 例确定性失败：`ensureSchema` 旧库补 `thread_id` 列断言（当前实现无 ALTER TABLE，属遗留待办）；
+  - 其余约 16 例为 `.env` 门控：用例装载即调 `loadConfig()`（要求 `LLM_API_KEY`/`TIMEZONE`），本地 `.env` 未提供时失败/报错——配置完整 `.env` 后应转绿；其中 `generate-union-real.test.ts` 为文件级未处理错误（Bun 将其计入 error）。
 
 ## CLI 入口（引擎手工运维）
 
