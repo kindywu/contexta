@@ -65,4 +65,16 @@ describe("llmService.wordLookup", () => {
     await llmService.wordLookup(db, cfg, chat, "13800000000", "run");
     expect((db.query("SELECT COUNT(*) as c FROM word_lookup_cache").get() as { c: number }).c).toBe(0);
   });
+  test("缓存形状不符（可解析但非 WordLookup）→ 删行自愈走 LLM", async () => {
+    const db = freshDb();
+    db.run("INSERT INTO word_lookup_cache (word, result_json, created_at) VALUES ('apple', '{\"foo\":\"bar\"}', ?)", [Date.now()]);
+    let calls = 0;
+    const chat = async () => { calls++; return goodChat(); };
+    const r = await llmService.wordLookup(db, cfg, chat, "13800000000", "apple");
+    expect(r.spelling).toBe("apple");
+    expect(calls).toBe(1); // 形状不符缓存未命中，仍调 LLM
+    const rows = db.query("SELECT result_json FROM word_lookup_cache WHERE word = 'apple'").all() as { result_json: string }[];
+    expect(rows).toHaveLength(1); // 旧畸形行已删，新写好缓存
+    expect((JSON.parse(rows[0].result_json) as { spelling: string }).spelling).toBe("apple");
+  });
 });

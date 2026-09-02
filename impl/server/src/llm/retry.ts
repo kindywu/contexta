@@ -95,8 +95,7 @@ const DEFAULT_TIMEOUT_MS = 90_000;
  * OpenAI 兼容 `POST {base}/chat/completions` 驱动（供 llmService 闭包包装为无参 chat）。
  * 错误分类（对齐 Dart LlmErrorClassifier / Rust DeepSeekClient）：
  * 400/401/403 → fatal；429 → recoverable(retryAfterSecs)；5xx/其余 → recoverable；
- * 网络错误 → recoverable；单请求超时（AbortError）→ timeout；
- * 成功：choices[0].message.content + usage（usage 缺省 0）。
+ * send 失败（网络/超时，一切）→ timeout；成功：choices[0].message.content + usage（usage 缺省 0）。
  */
 export async function driverChat(
   opts: LlmDriverOptions,
@@ -130,12 +129,9 @@ export async function driverChat(
     try {
       return await doFetch(`${base}${path}`);
     } catch (e) {
-      // abort（单请求超时）→ timeout；其余网络错误 → recoverable
-      const name = (e as { name?: string })?.name;
-      if (name === "AbortError" || name === "TimeoutError") {
-        throw { kind: "timeout" as const, message: String((e as Error)?.message ?? e) };
-      }
-      throw { kind: "recoverable" as const, message: String((e as Error)?.message ?? e) };
+      // 对齐 Rust drivers/deepseek.rs:85：send() 的一切失败（超时信号、DNS、拒连、TLS……）
+      // 统一归 LlmCallError::Timeout（App 端映射 LLM_TIMEOUT 504），而非 recoverable。
+      throw { kind: "timeout" as const, message: String((e as Error)?.message ?? e) };
     }
   };
 

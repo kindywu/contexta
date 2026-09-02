@@ -109,9 +109,9 @@ describe("driverChat", () => {
     await expect(driverChat(opts(async () => Response.json({ choices: [{ message: {} }] })), "s", "u"))
       .rejects.toMatchObject({ kind: "recoverable" });
   });
-  test("网络错误 → recoverable；AbortError → timeout", async () => {
+  test("网络错误 / AbortError 均 → timeout（对齐 Rust：一切 send 失败 = Timeout → 504 LLM_TIMEOUT）", async () => {
     await expect(driverChat(opts(async () => { throw new TypeError("fetch failed"); }), "s", "u"))
-      .rejects.toMatchObject({ kind: "recoverable" });
+      .rejects.toMatchObject({ kind: "timeout" });
     await expect(driverChat(opts(async () => { throw new DOMException("aborted", "AbortError"); }), "s", "u"))
       .rejects.toMatchObject({ kind: "timeout" });
   });

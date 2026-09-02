@@ -31,15 +31,21 @@ export async function wordLookup(
     .query("SELECT result_json FROM word_lookup_cache WHERE word = ? AND created_at >= ?")
     .get(key, Date.now() - cfg.cacheTtlDays * DAY_MS) as { result_json: string } | undefined;
   if (cached) {
+    // 形状校验对齐 Rust serde 严格反序列化：能解析但形状不符（如 {"foo":"bar"}）同样是
+    // 坏缓存——直接返回会给 App 畸形对象且永不愈合，故走同一删行自愈路径。
+    let parsed: WordLookup | null = null;
     try {
-      return JSON.parse(cached.result_json) as WordLookup;
+      const v = JSON.parse(cached.result_json) as unknown;
+      if (isValidWordLookup(v)) parsed = v;
     } catch {
-      console.warn(`corrupt word_lookup_cache row for ${JSON.stringify(key)}, deleting and re-generating`);
-      try {
-        db.query("DELETE FROM word_lookup_cache WHERE word = ?").run(key);
-      } catch (e) {
-        console.warn(`failed to delete corrupt cache row ${JSON.stringify(key)}:`, e);
-      }
+      // JSON 解析失败 = 坏缓存
+    }
+    if (parsed) return parsed;
+    console.warn(`corrupt word_lookup_cache row for ${JSON.stringify(key)}, deleting and re-generating`);
+    try {
+      db.query("DELETE FROM word_lookup_cache WHERE word = ?").run(key);
+    } catch (e) {
+      console.warn(`failed to delete corrupt cache row ${JSON.stringify(key)}:`, e);
     }
   }
   // 配额
@@ -87,6 +93,13 @@ function userQuota(db: Database, cfg: ServerConfig, phone: string): number {
     .query("SELECT quota_word_daily FROM users WHERE phone = ?")
     .get(phone) as { quota_word_daily: number | null } | undefined;
   return row?.quota_word_daily ?? cfg.wordQuotaDaily;
+}
+
+/** 缓存形状校验（对齐 Rust serde 严格反序列化 WordLookup：spelling 必为 string、senses 必为数组）。 */
+function isValidWordLookup(v: unknown): v is WordLookup {
+  if (typeof v !== "object" || v === null) return false;
+  const o = v as Record<string, unknown>;
+  return typeof o.spelling === "string" && Array.isArray(o.senses);
 }
 
 function recordUsage(
