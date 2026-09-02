@@ -6,12 +6,25 @@ import { authRouter } from "../src/routers/auth";
 import { adminRouter } from "../src/routers/admin";
 import { resolveAuthUser } from "../src/auth";
 import { loadServerConfig } from "../src/config";
+import type { AppConfig } from "../src/engine/config";
 
 const cfg = loadServerConfig({ JWT_SECRET: "s".repeat(32), LLM_API_KEY: "k", TIMEZONE: "Asia/Shanghai" });
+// Task 8 起 adminRouter 签名扩容（第三参 engineCfg）：本文件只用 login，占位配置即可
+const engineCfg: AppConfig = {
+  llmApiKey: "k",
+  llmBaseUrl: "https://api.deepseek.com",
+  llmModel: "m",
+  timezone: "Asia/Shanghai",
+  dbPath: ":memory:",
+  checkpointPath: ":memory:",
+  outputDir: "/tmp",
+  browserConcurrency: 2,
+  slotConcurrency: 5,
+};
 const db = new Database(":memory:");
 ensureServerSchema(db);
 const app = authRouter(db, cfg);
-app.route("/", adminRouter(db, cfg));
+app.route("/", adminRouter(db, cfg, engineCfg));
 
 async function login(token: string) { return await app.request("/api/auth/me", { headers: { authorization: `Bearer ${token}` } }); }
 

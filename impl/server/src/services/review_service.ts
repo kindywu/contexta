@@ -68,7 +68,7 @@ async function withSlotLock(slotId: number, fn: () => Promise<void>): Promise<vo
 }
 
 /** 引擎 SlotRow 重建（与 engine/db.ts 的 toSlotRow 同形；引擎未导出，服务端不复用）。 */
-function toSlotRow(row: Record<string, unknown>): SlotRow {
+export function toSlotRow(row: Record<string, unknown>): SlotRow {
   return {
     id: row.id as number,
     batchId: row.batch_id as number,
