@@ -7,6 +7,9 @@
 // - runFill：引擎幂等生成（无批次→建 15 槽全跑；running→只补 pending；已收口→直接返回）
 //   → retryFailedSlots（pending 恢复：resume/sync）→ error 槽位每槽一次 retrySlot（图三态
 //   承诺：补跑仍失败留 error，err 不抛）→ ensureReviewRows 补齐审核行
+// - runFill in-flight 去重（模块级，按日期）：startupFill 与 loop 可能同日双调
+//   （启动 + 03:01）→ 两连接同跑 pending 槽 = 双倍 LLM 成本 + 可能孤儿行；
+//   并发调用返回同一 Promise（不双跑），失败兜底也已去重
 // - 单步失败仅记日志（console.error），不中断后续步骤与整个 fill——旧版
 //   "失败只记日志不阻止 serve" 语义
 // - 槽位级去重：error 补跑与审核重生成共用 Task 7 的进程锁（同槽串行）
@@ -75,6 +78,11 @@ export function nextTriggerWaitMs(now: Date, hour: number, timeZone: string): nu
   return nextTrigger - now.getTime();
 }
 
+/** 模块级 in-flight 去重（按日期 → 进行中的 fill Promise）：startupFill 与 loop
+ * 双后台任务可能同日并发（启动补漏 + 03:01 定时）——同日期并发时返回同一 Promise，
+ * 内层 genDaily/retryFailed/补跑只执行一次（不双跑）。settled（含失败）即删除条目。 */
+const fillInflight = new Map<string, Promise<void>>();
+
 /** 每日任务（main 组装时经 start() 后台启动；服务进程退出即结束）。 */
 export class DailyTask {
   private readonly ctx: DailyTaskCtx;
@@ -100,8 +108,18 @@ export class DailyTask {
   /**
    * 单日填充（幂等）：引擎生成 → pending 恢复 → error 槽每槽一次补跑 → 审核行补齐。
    * 单步失败仅记日志（不中断后续步骤）；补跑仍失败留 error——err 不抛。
+   * in-flight 去重：同一日期并发调用（startupFill 与 loop 双后台）返回同一
+   * Promise——双跑同一日期 = 双倍 LLM 成本 + 并发写同槽位。
    */
-  async runFill(date: string): Promise<void> {
+  runFill(date: string): Promise<void> {
+    const existing = fillInflight.get(date);
+    if (existing) return existing;
+    const fill = this.runFillInner(date).finally(() => fillInflight.delete(date));
+    fillInflight.set(date, fill);
+    return fill;
+  }
+
+  private async runFillInner(date: string): Promise<void> {
     try {
       await this.genDaily({ runDate: date, config: this.ctx.engineCfg });
     } catch (err) {

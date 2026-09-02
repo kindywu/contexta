@@ -188,6 +188,29 @@ describe("daily_task runFill", () => {
     const after = listSlots(db, RUN_DATE);
     expect(after[1]!.status).toBe("error"); // 补跑仍失败 → 留 error
   });
+
+  test("同日并发 runFill → in-flight 去重：内层 genDaily 只被调 1 次（不双跑）", async () => {
+    // genDaily 挂起至测试释放：第二次 runFill 时第一次仍在跑——去重必须返回同一
+    // Promise 而非再跑一轮（双跑 = 双倍 LLM 成本 + 并发写同槽位）。
+    const genCalls: string[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const genDaily = async (args: { runDate: string; config: AppConfig }) => {
+      genCalls.push(args.runDate);
+      await gate;
+    };
+    const { ctx } = makeCtx({ genDaily, retryFailed: async () => {}, ensure: () => 0 });
+    const task = new DailyTask(ctx);
+
+    const p1 = task.runFill(RUN_DATE);
+    const p2 = task.runFill(RUN_DATE);
+    expect(genCalls).toEqual([RUN_DATE]); // 第二次调用未触发新生成
+    expect(p2).toBe(p1); // 同一 in-flight Promise
+
+    release();
+    await Promise.all([p1, p2]);
+    expect(genCalls).toHaveLength(1); // 全程只生成一次
+  });
 });
 
 describe("daily_task startupFill", () => {

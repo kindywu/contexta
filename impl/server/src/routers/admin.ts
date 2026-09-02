@@ -96,8 +96,14 @@ export function adminRouter(
 
   app.put("/api/admin/users/:phone/quota", async (c) => {
     auth(c);
-    const body = await readJson<{ word_daily?: number | null }>(c);
-    adminService.setQuota(db, c.req.param("phone"), body.word_daily);
+    const body = await readJson<{ word_daily?: unknown }>(c);
+    const wd = body.word_daily;
+    // 只接受正整数或 null（null = 清覆盖）：非数字会被 SQLite 当 TEXT 存储，
+    // 配额比较恒 false → 该用户配额永久失效（无限烧钱），故入口硬校验。
+    if (wd !== null && (typeof wd !== "number" || !Number.isInteger(wd) || wd <= 0)) {
+      throw badRequest("word_daily must be a positive integer or null");
+    }
+    adminService.setQuota(db, c.req.param("phone"), wd);
     return c.json(ok({}));
   });
 
@@ -158,6 +164,11 @@ export function adminRouter(
       | Record<string, unknown>
       | undefined;
     if (!row) throw notFound("slot not found");
+    // 槽位状态守卫：只允许 error/rejected（无文章）槽重跑——success 槽的当前文章
+    // 若已 approved，直连 API 重跑会静默下架已上线文章。pending（生成中）同样禁止。
+    if (row.status !== "error" && row.status !== "rejected") {
+      throw badRequest("slot not retryable");
+    }
     await retrySlot(ctx, toSlotRow(row));
     return c.json(ok({}));
   });

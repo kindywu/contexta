@@ -38,7 +38,7 @@ function testEngineCfg(dir: string): AppConfig {
 interface SeedSlot {
   slotIndex: number;
   difficulty: Difficulty;
-  status: "success" | "error" | "rejected";
+  status: "success" | "error" | "rejected" | "pending";
 }
 
 /** 建批次 + 槽位（createBatchAndSlots）+ 成功槽位插文回填（insertArticleWithParagraphs + writeSlotResult）。 */
@@ -234,6 +234,43 @@ describe("admin users & usage", () => {
     });
     expect(clear.status).toBe(200);
     expect((db.query("SELECT quota_word_daily FROM users WHERE phone = 'u1'").get() as { quota_word_daily: number | null }).quota_word_daily).toBeNull();
+  });
+
+  test("quota 校验：word_daily 非正整数/非 number/缺失 → 400 BAD_PARAM 且不落库", async () => {
+    const { db, app } = await buildApp();
+    db.query("INSERT INTO users (phone, status, created_at, updated_at) VALUES ('u1', 'normal', 1000, 1000)").run();
+    const tok = await adminToken(app);
+    const put = (body: unknown) =>
+      app.request("/api/admin/users/u1/quota", {
+        method: "PUT",
+        headers: { ...authHeader(tok), "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    // "abc" 曾是重灾场景：SQLite TEXT 存储 → usage >= 'abc' 恒 false → 配额永久失效
+    const badBodies = [
+      { word_daily: "abc" },
+      { word_daily: "500" },
+      { word_daily: 1.5 },
+      { word_daily: 0 },
+      { word_daily: -5 },
+      { word_daily: true },
+      { word_daily: [1] },
+      { word_daily: {} },
+      {}, // 缺失字段同样拒绝（显式 null 才表示清覆盖）
+    ];
+    for (const body of badBodies) {
+      const res = await put(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect((await res.json()).error_code).toBe("BAD_PARAM");
+    }
+    // 非法值零写入：quota 仍 NULL（防 TEXT 污染）
+    const row = db.query("SELECT quota_word_daily FROM users WHERE phone = 'u1'").get() as {
+      quota_word_daily: unknown;
+    };
+    expect(row.quota_word_daily).toBeNull();
+    // 合法值（正整数 / null）仍可写（回归）
+    expect((await put({ word_daily: 500 })).status).toBe(200);
+    expect((await put({ word_daily: null })).status).toBe(200);
   });
 
   test("usage 汇总：按 (phone, endpoint) 聚合今日，含 NULL phone 独立成组", async () => {
@@ -625,6 +662,37 @@ describe("admin approve/reject/retry routes", () => {
 
     const nf = await app.request("/api/admin/slots/999999/retry", { method: "POST", headers: authHeader(tok) });
     expect(nf.status).toBe(404);
+  });
+
+  test("slots retry 守卫：success/pending → 400（gen 不调用、槽位不动）；rejected/error → 200", async () => {
+    const { gen, calls } = successGen();
+    const { db, app } = await buildApp({ gen });
+    seedDay(db, [
+      { slotIndex: 0, difficulty: "MEDIUM", status: "success" },
+      { slotIndex: 1, difficulty: "LOW", status: "pending" },
+      { slotIndex: 2, difficulty: "MEDIUM", status: "rejected" },
+      { slotIndex: 3, difficulty: "LOW", status: "error" },
+    ]);
+    const slots = listSlots(db, RUN_DATE);
+    const tok = await adminToken(app);
+    const retry = (id: number) =>
+      app.request(`/api/admin/slots/${id}/retry`, { method: "POST", headers: authHeader(tok) });
+
+    for (const idx of [0, 1]) {
+      const res = await retry(slots[idx]!.id);
+      expect(res.status, `slot ${idx}`).toBe(400);
+      expect((await res.json()).error_code).toBe("BAD_PARAM");
+    }
+    for (const idx of [2, 3]) {
+      expect((await retry(slots[idx]!.id)).status, `slot ${idx}`).toBe(200);
+    }
+    expect(calls).toHaveLength(2); // 仅 rejected/error 触发生成
+    // success 槽未被改写：当前文章（可能已 approved）不下架
+    const s = db.query("SELECT status, article_id FROM batch_slots WHERE id = ?").get(slots[0]!.id) as {
+      status: string; article_id: number;
+    };
+    expect(s.status).toBe("success");
+    expect(s.article_id).toBe(slots[0]!.articleId!);
   });
 });
 
