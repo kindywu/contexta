@@ -54,11 +54,16 @@ export function errorBody(e: ApiError): { code: number; message: string; error_c
 
 /**
  * 给 Hono app 挂统一错误处理：handler 内 throw ApiError → 对应 status + errorBody；
+ * SyntaxError（畸形 JSON body，c.req.json 抛出）→ 400 BAD_PARAM；
  * 其余异常 → 500 INTERNAL。路由工厂（authRouter/adminRouter 等）创建后立即挂载，
- * 子路由经 `app.route()` 挂载时 Hono 会组合子 app 的 errorHandler，嵌套仍生效。
+ * 子路由经 `app.route()` 挂载时 Hono 会组合子 app 的 errorHandler，嵌套仍生效——
+ * 子路由内错误就地消化不上抛顶层（顶层 onError 只兜 main 侧代码）。
  */
 export function attachErrorHandler(app: Hono): void {
   app.onError((err, c) => {
+    if (err instanceof SyntaxError) {
+      return c.json(errorBody(badRequest("invalid JSON body")), 400);
+    }
     if (err instanceof ApiError) {
       return c.json(errorBody(err), err.status as ContentfulStatusCode);
     }
