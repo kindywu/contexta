@@ -70,11 +70,30 @@ describe("listApprovedByDate", () => {
     ).run(regenId, slot0.id);
     const all = listApprovedByDate(db, "2026-09-02");
     expect(all).toHaveLength(1);
-    expect(all[0].contentCategory).toBe("simple_story");
-    expect(all[0].orderIndex).toBe(1);
-    expect(all[0].regenerateCount).toBe(1);
-    expect(all[0].paragraphs[0]).toEqual({ orderIndex: 1, englishText: "para-en-0", chineseTranslation: "para-zh-0" });
+    expect(all[0].content_category).toBe("simple_story");
+    expect(all[0].order_index).toBe(1);
+    expect(all[0].regenerate_count).toBe(1);
+    expect(all[0].paragraphs[0]).toEqual({ order_index: 1, english_text: "para-en-0", chinese_translation: "para-zh-0" });
     expect(all[0].status).toBe("SUCCESS");
+    // 防回归：wire 键名必须精确 snake_case（App DTO article_dto.dart fromJson 按此解析）
+    const wire = JSON.stringify(all[0]);
+    for (const k of ['"target_date"', '"content_category"', '"order_index"', '"regenerate_count"', '"english_text"', '"chinese_translation"']) {
+      expect(wire).toContain(k);
+    }
+    expect(wire).not.toContain('"targetDate"');
+  });
+
+  test("槽位 status 非 success（reRun 失败残留旧 approved 文章）不出现在结果中", () => {
+    const db = new Database(":memory:");
+    seed(db);
+    const slot0 = (listSlots(db, "2026-09-02").find((s) => s.slotIndex === 0))!;
+    db.query(
+      "INSERT INTO article_review (article_id, slot_id, status, reviewed_by) VALUES (?, ?, 'approved', 'admin')",
+    ).run(slot0.articleId, slot0.id);
+    // article_id 指向已 approved 文章，但槽位终态非 success（模拟补生成失败残留）
+    db.query("UPDATE batch_slots SET status = 'error' WHERE id = ?").run(slot0.id);
+    const all = listApprovedByDate(db, "2026-09-02");
+    expect(all).toHaveLength(0);
   });
 
   test("同难度 orderIndex 从 1 起派生；跨难度按 difficulty 字典序排列；无 rejected 历史 = 0", () => {
@@ -89,9 +108,9 @@ describe("listApprovedByDate", () => {
     // 排序：difficulty ASCII 字典序（HIGH < LOW < MEDIUM），同难度按 orderIndex
     expect(all.map((a) => a.title)).toEqual(["T3", "T0", "T1", "T2"]);
     expect(all.map((a) => a.difficulty)).toEqual(["HIGH", "LOW", "LOW", "MEDIUM"]);
-    expect(all.map((a) => a.orderIndex)).toEqual([1, 1, 2, 1]);
-    expect(all[2].regenerateCount).toBe(0);
-    expect(all[2].paragraphs[0]).toEqual({ orderIndex: 1, englishText: "para-en-1", chineseTranslation: "para-zh-1" });
+    expect(all.map((a) => a.order_index)).toEqual([1, 1, 2, 1]);
+    expect(all[2].regenerate_count).toBe(0);
+    expect(all[2].paragraphs[0]).toEqual({ order_index: 1, english_text: "para-en-1", chinese_translation: "para-zh-1" });
   });
 });
 
@@ -134,14 +153,20 @@ describe("articles router", () => {
       headers: { authorization: `Bearer ${tok}` },
     });
     expect(good.status).toBe(200);
-    const body = await good.json();
+    // 防回归：c.json 序列化的真实响应体键名必须 snake_case（App DTO 契约）
+    const raw = await good.text();
+    for (const k of ['"target_date"', '"content_category"', '"order_index"', '"regenerate_count"', '"english_text"', '"chinese_translation"']) {
+      expect(raw).toContain(k);
+    }
+    expect(raw).not.toContain('"targetDate"');
+    const body = JSON.parse(raw);
     expect(body.code).toBe(0);
     expect(body.data).toHaveLength(1);
     expect(body.data[0]).toMatchObject({
-      title: "T0", targetDate: "2026-09-02", difficulty: "LOW", contentCategory: "simple_story",
-      orderIndex: 1, regenerateCount: 0, status: "SUCCESS",
+      title: "T0", target_date: "2026-09-02", difficulty: "LOW", content_category: "simple_story",
+      order_index: 1, regenerate_count: 0, status: "SUCCESS",
     });
-    expect(body.data[0].paragraphs).toEqual([{ orderIndex: 1, englishText: "para-en-0", chineseTranslation: "para-zh-0" }]);
+    expect(body.data[0].paragraphs).toEqual([{ order_index: 1, english_text: "para-en-0", chinese_translation: "para-zh-0" }]);
     const bad = await app.request("/api/articles?date=not-a-date", {
       headers: { authorization: `Bearer ${tok}` },
     });
