@@ -1,0 +1,50 @@
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,   // HTTP 状态码
+    public readonly code: number,     // body.code
+    public readonly errorCode: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export function ok<T>(data: T): { code: 0; data: T } {
+  return { code: 0, data };
+}
+
+export function badRequest(message: string, errorCode = "BAD_PARAM"): ApiError {
+  return new ApiError(400, 400, errorCode, message);
+}
+export function quotaExceeded(message: string): ApiError {
+  return new ApiError(400, 40001, "QUOTA_EXCEEDED", message);
+}
+export function unauthorized(errorCode: string): ApiError {
+  return new ApiError(401, 401, errorCode, "unauthorized");
+}
+export function banned(message: string): ApiError {
+  return new ApiError(403, 403, "BANNED", message);
+}
+export function notFound(message: string): ApiError {
+  return new ApiError(404, 404, "NOT_FOUND", message);
+}
+export function llmFatal(message: string): ApiError {
+  return new ApiError(500, 500, "LLM_FATAL", message);
+}
+export function llmRecoverableExhausted(message: string): ApiError {
+  return new ApiError(502, 502, "LLM_RECOVERABLE_EXHAUSTED", message);
+}
+export function llmTimeout(message: string): ApiError {
+  return new ApiError(504, 504, "LLM_TIMEOUT", message);
+}
+export function pipelineBlocking(message: string): ApiError {
+  return new ApiError(500, 500, "PIPELINE_BLOCKING", message);
+}
+export function internal(err: unknown): ApiError {
+  console.error("internal error:", err);
+  return new ApiError(500, 500, "INTERNAL", "internal error");
+}
+
+export function errorBody(e: ApiError): { code: number; message: string; error_code: string } {
+  return { code: e.code, message: e.message, error_code: e.errorCode };
+}
