@@ -239,7 +239,14 @@ export async function reRunSlot(ctx: ReviewCtx, slotRow: SlotRow, genSeq: number
   });
 }
 
-/** error/rejected 槽位（无文章）重跑入口：genSeq = 1（thread -r1）。 */
+/**
+ * error/rejected 槽位（无文章）重跑入口。
+ * genSeq = Date.now()（唯一线程号）：引擎同 threadId 已有终态 checkpoint 时按断点
+ * 续跑契约返回旧结果、不重跑 LLM——固定 genSeq=1（thread 恒 -r1）会令"重复点重试"
+ * 或"拒绝补生成失败后再重试"静默 no-op。唯一号永不与拒绝路径的 n+1 ∈ [1, REGENERATE_LIMIT]
+ * 撞号；delete-daily 的 LIKE 'daily-<date>-%' 前缀仍连带清理 -r<Date.now()> 线程
+ * （运行时进程锁保证同槽串行）。
+ */
 export function retrySlot(ctx: ReviewCtx, slotRow: SlotRow): Promise<void> {
-  return reRunSlot(ctx, slotRow, 1);
+  return reRunSlot(ctx, slotRow, Date.now());
 }

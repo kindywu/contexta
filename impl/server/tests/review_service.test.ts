@@ -371,7 +371,7 @@ describe("review_service", () => {
     expect(threads).toContain("daily-2026-09-02-0-r2");
   });
 
-  test("retrySlot: error 槽位（无文章）重跑入口 → genSeq=1（thread -r1）", async () => {
+  test("retrySlot: error 槽位（无文章）重跑入口 → 唯一 threadId（-r<Date.now()>）", async () => {
     const { gen, calls } = successGen();
     const { db, ctx } = setup({ gen });
     const slot = listSlots(db, RUN_DATE)[0]!;
@@ -380,7 +380,7 @@ describe("review_service", () => {
     await retrySlot(ctx, slot);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.threadId).toBe("daily-2026-09-02-0-r1");
+    expect(calls[0]!.threadId).toMatch(/^daily-2026-09-02-0-r\d+$/);
     const s = db
       .query("SELECT status, article_id FROM batch_slots WHERE id = ?")
       .get(slot.id) as { status: string; article_id: number };
@@ -391,6 +391,27 @@ describe("review_service", () => {
       .query("SELECT status FROM article_review WHERE article_id = ?")
       .get(s.article_id) as { status: string };
     expect(rev.status).toBe("pending_review");
+  });
+
+  test("retrySlot: 同槽连续两次 → threadId 唯一且 gen 两次（不撞引擎终态 checkpoint）", async () => {
+    const threads: string[] = [];
+    const gen = async (args: GenArgs): Promise<ArticleResult> => {
+      threads.push(args.threadId);
+      await new Promise((r) => setTimeout(r, 5)); // 确保两次 Date.now() 落不同毫秒
+      return { outcome: "success", genAttempts: 1, article: { ...article({ titleEn: `N${threads.length}` }) } };
+    };
+    const { db, ctx } = setup({ gen });
+    const slot = listSlots(db, RUN_DATE)[0]!;
+    db.query("UPDATE batch_slots SET status = 'error' WHERE id = ?").run(slot.id);
+
+    await retrySlot(ctx, slot);
+    await retrySlot(ctx, slot);
+
+    expect(threads).toHaveLength(2); // 两次都真跑了 gen（第二次不复用旧线程号）
+    expect(threads[0]).toMatch(/^daily-2026-09-02-0-r\d+$/);
+    expect(threads[1]).toMatch(/^daily-2026-09-02-0-r\d+$/);
+    const seq = threads.map((t) => Number(t.match(/-r(\d+)$/)![1]));
+    expect(seq[1]).toBeGreaterThan(seq[0]!); // 唯一：第二次线程号递增不复用
   });
 
   test("reRunSlot: 注入 gen 抛错 → 槽位按 error 落库且批次收口", async () => {
