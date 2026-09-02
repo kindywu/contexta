@@ -1,3 +1,6 @@
+import type { Hono } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,   // HTTP 状态码
@@ -47,4 +50,19 @@ export function internal(err: unknown): ApiError {
 
 export function errorBody(e: ApiError): { code: number; message: string; error_code: string } {
   return { code: e.code, message: e.message, error_code: e.errorCode };
+}
+
+/**
+ * 给 Hono app 挂统一错误处理：handler 内 throw ApiError → 对应 status + errorBody；
+ * 其余异常 → 500 INTERNAL。路由工厂（authRouter/adminRouter 等）创建后立即挂载，
+ * 子路由经 `app.route()` 挂载时 Hono 会组合子 app 的 errorHandler，嵌套仍生效。
+ */
+export function attachErrorHandler(app: Hono): void {
+  app.onError((err, c) => {
+    if (err instanceof ApiError) {
+      return c.json(errorBody(err), err.status as ContentfulStatusCode);
+    }
+    console.error("internal error:", err);
+    return c.json(errorBody(new ApiError(500, 500, "INTERNAL", "internal error")), 500);
+  });
 }
