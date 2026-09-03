@@ -10,23 +10,25 @@ class ArticleApi {
 
   final ServerApiClient _client;
 
-  /// 拉取今日已审核文章（服务端已按难度 / 顺序排好）。
+  /// 拉取本次投放（服务端按难度游标/配额/同日冻结计算；difficulty 为
+  /// App 当前难度设置，count 为每日篇数设置——服务端负责截断到配额）。
   ///
-  /// data 非数组（防御，与 ServerApiClient 的畸形响应防御一致）→
-  /// 抛 [ServerApiException]（UNKNOWN），不让 TypeError 裸逃逸。
-  Future<List<ArticleDto>> fetchTodayArticles() => _client.get(
-    '/api/articles/today',
+  /// data 非 Map（防御，与 ServerApiClient 的畸形响应防御一致）→
+  /// 抛 [ServerApiException]（UNKNOWN）。
+  Future<ArticleDeliveryDto> fetchDelivery({
+    required String difficulty,
+    required int count,
+  }) => _client.get(
+    '/api/articles/delivery',
+    query: {'difficulty': difficulty, 'count': count},
     parser: (data) {
-      if (data is! List) {
+      if (data is! Map) {
         throw ServerApiException(
           errorCode: 'UNKNOWN',
-          message: '今日文章接口 data 不是数组（实际 ${data.runtimeType}）',
+          message: '投放接口 data 不是对象（实际 ${data.runtimeType}）',
         );
       }
-      return [
-        for (final e in data)
-          ArticleDto.fromJson((e as Map).cast<String, dynamic>()),
-      ];
+      return ArticleDeliveryDto.fromJson(data.cast<String, dynamic>());
     },
   );
 }

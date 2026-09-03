@@ -79,3 +79,24 @@ class ArticleParagraphDto {
         chineseTranslation: json['chinese_translation'] as String,
       );
 }
+
+/// 服务端投放响应 DTO（GET /api/articles/delivery 契约）：
+/// `{delivery_date, articles: [ArticleDto...]}`。
+/// delivery_date = 服务器时区今天（本地批次 generated_on 取此值）。
+class ArticleDeliveryDto {
+  const ArticleDeliveryDto({required this.deliveryDate, required this.articles});
+
+  /// 服务器时区交付日（yyyy-MM-dd）。
+  final String deliveryDate;
+
+  final List<ArticleDto> articles;
+
+  factory ArticleDeliveryDto.fromJson(Map<String, dynamic> json) =>
+      ArticleDeliveryDto(
+        deliveryDate: json['delivery_date'] as String,
+        articles: [
+          for (final e in (json['articles'] as List? ?? const []))
+            ArticleDto.fromJson((e as Map).cast<String, dynamic>()),
+        ],
+      );
+}
