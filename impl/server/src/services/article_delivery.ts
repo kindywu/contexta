@@ -59,12 +59,15 @@ export function deliverArticles(db: Database, args: DeliveryArgs): DeliveryResul
   // 统一在一个事务内（读已提交 + 写串行）。
   const deliveryDate = localDate(args.timeZone, new Date(args.nowMs));
   return db.transaction((): DeliveryResult => {
-    // ① 同日冻结（按账号：任意设备当天读都返回同一批）
+    // ① 同日冻结（按账号：任意设备当天读都返回同一批）。
+    // JOIN articles 过滤 delete-daily 已删文章——账本行可残留（删除不回溯账本），
+    // 冻结集存在已删文章时按幸存者返回（order_index 1..N 重排，不保留账本 id 间隙）。
     const frozen = db
       .query(
-        `SELECT article_id FROM article_delivery
-         WHERE phone = ? AND difficulty = ? AND delivery_date = ?
-         ORDER BY id`,
+        `SELECT d.article_id FROM article_delivery d
+         JOIN articles a ON a.id = d.article_id
+         WHERE d.phone = ? AND d.difficulty = ? AND d.delivery_date = ?
+         ORDER BY d.id`,
       )
       .all(args.phone, args.difficulty, deliveryDate) as { article_id: number }[];
     if (frozen.length > 0) {
@@ -73,6 +76,8 @@ export function deliverArticles(db: Database, args: DeliveryArgs): DeliveryResul
         articles: frozen.map((f, i) => toArticleForApp(db, f.article_id, i + 1)),
       };
     }
+    // 冻结集为空 = 当日无交付或交付的文章全被 delete-daily 删除——按全新投放处理；
+    // 已删文章仍在已读账本（cursor/已读集合按账本），不会重新投回。
 
     // ② 全新交付
     const quotaRow = db

@@ -155,6 +155,36 @@ describe("deliverArticles", () => {
     expect(b.articles.map((a) => a.id)).toEqual([7, 6]);
   });
 
+  test("delete-daily 删光冻结集的全部文章 → 不抛异常，落入全新投放路径", () => {
+    const db = new Database(":memory:");
+    seedCorpus(db);
+    const first = deliver(db, { difficulty: "LOW", count: 2 });
+    expect(first.articles.map((a) => a.id)).toEqual([7, 6]); // 两者 run_date=2026-09-02
+    // 模拟 delete-daily 删除 2026-09-02 全部文章（article_delivery 账本行残留，与 deleteDailyData 一致）
+    db.run(`DELETE FROM article_paragraphs WHERE article_id IN (SELECT id FROM articles WHERE run_date = '2026-09-02')`);
+    db.run(`DELETE FROM articles WHERE run_date = '2026-09-02'`);
+    const again = deliver(db, { difficulty: "LOW", count: 2 });
+    expect(again.deliveryDate).toBe("2026-09-03");
+    // 全新投放：游标仍按账本 = 7；已删文章不复现；补位最早未读 [1, 2]
+    expect(again.articles.map((a) => a.id)).toEqual([1, 2]);
+    expect(again.articles.map((a) => a.order_index)).toEqual([1, 2]);
+    // 同日再次调用 → 新投集合被冻结
+    const frozen = deliver(db, { difficulty: "LOW", count: 2 });
+    expect(frozen.articles.map((a) => a.id)).toEqual([1, 2]);
+  });
+
+  test("delete-daily 只删冻结集部分文章 → 按幸存者冻结返回（order_index 重排）", () => {
+    const db = new Database(":memory:");
+    seedCorpus(db);
+    const first = deliver(db, { difficulty: "LOW", count: 2 });
+    expect(first.articles.map((a) => a.id)).toEqual([7, 6]);
+    db.run(`DELETE FROM article_paragraphs WHERE article_id = 6`);
+    db.run(`DELETE FROM articles WHERE id = 6`);
+    const again = deliver(db, { difficulty: "LOW", count: 2 });
+    expect(again.articles.map((a) => a.id)).toEqual([7]); // 删除的不返回，幸存者照常冻结
+    expect(again.articles.map((a) => a.order_index)).toEqual([1]); // 1..N 重排
+  });
+
   test("count 截断：quota 未设置 → 默认 5", () => {
     const db = new Database(":memory:");
     seedCorpus(db);

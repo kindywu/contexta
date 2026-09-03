@@ -77,6 +77,7 @@ describe("articles router (delivery)", () => {
       expect(raw).toContain(k);
     }
     expect(raw).not.toContain('"targetDate"');
+    expect(raw).not.toContain('"deliveryDate"');
     const body = JSON.parse(raw);
     expect(body.code).toBe(0);
     expect(body.data.delivery_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);

@@ -50,7 +50,7 @@ erDiagram
 - **无 DEFAULT 子句**：默认值由应用代码填充（对照 Room 逐列一致）。两个例外：(1) 测试夹具中 `tts_speed` 的临时补丁默认值；(2) 开发期补列补丁 / 打开自愈给 `tts_voice_id`、`voice_id` 补的 `DEFAULT 'BELLA'`——SQLite 的 `ALTER TABLE ADD COLUMN NOT NULL` 必须带 DEFAULT，DEFAULT 仅服务于补列路径，应用代码始终显式写值，语义与 001-init.sql 的无 DEFAULT 写法等价。
 - **AUTOINCREMENT 纪律**：自增主键 → `AUTOINCREMENT`；单行/业务主键（`user_settings`、`generation_pipeline_status`、`learning_stats_summary`、`daily_learning`、`db_version`）→ 裸 `INTEGER PRIMARY KEY` 无自增。
 - **索引按需**：外键单列索引、`(difficulty_level_snapshot, generated_on)` UNIQUE、`(article_id, order_index)` UNIQUE、`tts_cache_last_accessed_at_index` 等，全部对照 Room 自动命名规则逐条一致（schema_*_test.dart 逐列断言）。
-- **`article.server_article_id`（可空 + UNIQUE 索引）——服务端投放幂等键**：每日同步按服务端文章 id 幂等 upsert——有则更新 title/orderIndex/contentCategory 与段落（**不重置** accumulatedReadSeconds 等本地阅读状态），无则 INSERT（status 'SUCCESS'）。可空允许无服务端来源的行（旧库 / 本地生成语义文章）与投放行共存；批次键 = (difficulty, generated_on=投放日 delivery_date)，服务端 08:00 生成窗口前同步锁定的是当时最新过审文章（同日不再变）。
+- **`article.server_article_id`（可空 + UNIQUE 索引）——服务端投放幂等键**：每日同步按服务端文章 id 幂等 upsert——有则更新 title/orderIndex/contentCategory 与段落（**不重置** accumulatedReadSeconds 等本地阅读状态），无则 INSERT（status 'SUCCESS'）。可空允许无服务端来源的行（旧库 / 本地生成语义文章）与投放行共存；批次键 = (difficulty, generated_on=投放日 delivery_date)，服务端 08:00 生成窗口前同步锁定的是当时最新过审文章（同日不再变）；8 点前无未读 → 空交付且不记账（非冻结）→ 当天生成窗口后再次同步可投当天新文。
 
 ## 二、版本管理线：db_version 指针 + 仓库文件
 

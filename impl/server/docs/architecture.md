@@ -207,7 +207,7 @@ stateDiagram-v2
 
 **参数**：`difficulty` 必填（LOW/MEDIUM/HIGH，非法 → 400 BAD_PARAM）；`count` 必填（≥1 整数，缺失/非整/<1 → 400 BAD_PARAM）。
 
-**配额**：`count` 与 `users.quota_article_daily`（null → `DEFAULT_ARTICLE_QUOTA_DAILY=5`）取 min——**超配额不报错**，服务端静默截断（App 无需感知配额值）。
+**配额**：`count` 与 `users.quota_article_daily`（null → `DEFAULT_ARTICLE_QUOTA_DAILY=5`）取 min——**超配额不报错**，服务端静默截断（App 无需感知配额值）；`quota_article_daily` 为 0/负时按 0 截断（当日该难度无交付），服务端 `Math.max(quota, 0)` 行为。
 
 **响应**：`{code:0, data:{delivery_date, articles:[ArticleForApp...]}}`；`delivery_date` = 配置时区"今天"（`localDate(timeZone, now)`），App 本地批次键（generatedOn）取此值。
 
@@ -217,7 +217,7 @@ stateDiagram-v2
 2. **游标**：`delivered` = 该 phone×难度已投全部 article_id 集合；`cursor = max(delivered)`（无则 0）；
 3. **新文章池**：`id > cursor` 的已过审文章按 **id DESC 最新优先** 取 count 篇——"新到旧"阅读顺序；
 4. **未读补位**：仍不足 → 从从未交付过的文章按 **id ASC 最早优先** 补足（跳过已投/已选，**永不重复已读**）；仍不足 → 返回剩余（可为空）；
-5. **记账**：仅**非空交付**写入账本（`device_id` 只记录交付设备，不参与冻结/游标/已读逻辑）；**空交付不记账** → 同日（如 08:00 生成窗口后）再次调用可投到新文章。`UNIQUE(phone, article_id)` 保护：正常路径补位已排除全部已交付，插入冲突 = 算法 bug，用普通 INSERT 大声失败（不静默 OR IGNORE）。
+5. **记账**：仅**非空交付**写入账本（`device_id` 记录**当天首次交付**的设备——同日重复/换设备返回冻结集、不新增记录，不参与冻结/游标/已读逻辑）；**空交付不记账** → 同日（如 08:00 生成窗口后）再次调用可投到新文章。`UNIQUE(phone, article_id)` 保护：正常路径补位已排除全部已交付，插入冲突 = 算法 bug，用普通 INSERT 大声失败（不静默 OR IGNORE）。
 
 **已过审谓词**（与旧 `?date=` 端点同）：`batch_slots.status='success' AND article_review.status='approved'` 且文章为槽位现指向——writeSlotResult 的 `article_id = COALESCE(?, article_id)` 从不清空，reRun 失败会残留旧 approved 文章，**只投 success 槽位的最新文章**。
 
