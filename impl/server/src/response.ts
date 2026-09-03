@@ -25,6 +25,11 @@ export function quotaExceeded(message: string): ApiError {
 export function unauthorized(errorCode: string): ApiError {
   return new ApiError(401, 401, errorCode, "unauthorized");
 }
+/** 登录凭据错误（用户名不存在/密码错误）：与 token 过期的 TOKEN_EXPIRED 区分。
+ *  统一响应不区分具体原因，防账号枚举；前端据此显示「用户名或密码错误」而非「登录已过期」。 */
+export function invalidCredentials(): ApiError {
+  return new ApiError(401, 401, "INVALID_CREDENTIALS", "unauthorized");
+}
 export function banned(message: string): ApiError {
   return new ApiError(403, 403, "BANNED", message);
 }

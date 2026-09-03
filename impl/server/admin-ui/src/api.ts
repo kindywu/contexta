@@ -53,8 +53,14 @@ http.interceptors.response.use(
     const status: number | undefined = err.response?.status
     const data = err.response?.data
     if (status === 401) {
-      message.error('登录已过期，请重新登录')
-      redirectLogin()
+      // INVALID_CREDENTIALS = 登录凭据错误（后端 admin login 专用）：显示具体文案且不跳登录
+      // （用户已在登录页；其余 401 = token 缺失/过期/被拒 → 清 token 回登录页）
+      if (data?.error_code === 'INVALID_CREDENTIALS') {
+        message.error('用户名或密码错误')
+      } else {
+        message.error('登录已过期，请重新登录')
+        redirectLogin()
+      }
     } else if (data?.message) {
       message.error(data.message)
     } else if (err.code === 'ECONNABORTED') {

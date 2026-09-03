@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { ServerConfig } from "../config";
-import { unauthorized } from "../response";
+import { invalidCredentials } from "../response";
 import { issueAdminToken } from "../jwt";
 import { todayStartMillis } from "../time";
 
@@ -29,14 +29,14 @@ export const adminService = {
     const row = db
       .query("SELECT password_hash FROM admin_user WHERE username = ?")
       .get(username) as { password_hash: string } | undefined;
-    if (!row) throw unauthorized("TOKEN_EXPIRED");
+    if (!row) throw invalidCredentials();
     let valid = false;
     try {
       valid = Bun.password.verifySync(password, row.password_hash);
     } catch {
       valid = false;
     }
-    if (!valid) throw unauthorized("TOKEN_EXPIRED");
+    if (!valid) throw invalidCredentials();
     return issueAdminToken(cfg, username);
   },
 

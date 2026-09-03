@@ -149,6 +149,43 @@ function authHeader(tok: string): Record<string, string> {
   return { authorization: `Bearer ${tok}` };
 }
 
+describe("admin login", () => {
+  test("密码错误/用户名不存在 → 401 INVALID_CREDENTIALS（不区分，防枚举；不再误报 TOKEN_EXPIRED）", async () => {
+    const { app } = await buildApp();
+    // 密码错误
+    const badPw = await app.request("/api/admin/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "admin", password: "wrong" }),
+    });
+    expect(badPw.status).toBe(401);
+    const badBody = await badPw.json();
+    expect(badBody.error_code).toBe("INVALID_CREDENTIALS");
+    expect(badBody.code).toBe(401);
+    // 用户名不存在（与密码错误同响应，不区分）
+    const noUser = await app.request("/api/admin/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "nobody", password: "x" }),
+    });
+    expect(noUser.status).toBe(401);
+    expect((await noUser.json()).error_code).toBe("INVALID_CREDENTIALS");
+  });
+
+  test("正确凭据仍 200 + token（防回归）", async () => {
+    const { app } = await buildApp();
+    const res = await app.request("/api/admin/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: "admin", password: "pw-123456" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.code).toBe(0);
+    expect(typeof body.data.token).toBe("string");
+  });
+});
+
 describe("admin users & usage", () => {
   test("用户列表：按 created_at 升序，today_word_lookups 只计今日 word_lookup", async () => {
     const { db, app } = await buildApp();
