@@ -2,13 +2,35 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import dayjs, { type Dayjs } from 'dayjs'
-import { api, type ArticleDetail, type ArticleParagraph, type SlotView } from '../api'
+import {
+  api,
+  type ArticleDetail,
+  type ArticleListItem,
+  type ArticleParagraph,
+} from '../api'
 
 const loading = ref(false)
-const slots = ref<SlotView[]>([])
+const rows = ref<ArticleListItem[]>([])
 
-// 日期选择：默认今天，切换即刷新
-const date = ref<Dayjs>(dayjs())
+// 服务端分页/排序状态（a-table change 事件回写）
+const pagination = reactive({
+  current: 1,
+  pageSize: 15,
+  total: 0,
+})
+const sorter = reactive<{ field: string; order: 'ascend' | 'descend' | undefined }>({
+  field: '',
+  order: undefined,
+})
+
+// 时间段过滤：默认当天；切换即刷新
+const range = ref<[Dayjs, Dayjs]>([dayjs(), dayjs()])
+
+// 状态过滤：'' = 全部（pending_review / approved / rejected 含 rejected_final）
+const statusFilter = ref<string>('')
+
+// 摘要统计（时间段内全量，不受状态筛选影响）
+const stats = ref({ total: 0, pending_review: 0, approved: 0, rejected: 0 })
 
 // 补生成：独立日期输入（防误触，不默认今天）
 const generateState = reactive({
@@ -16,15 +38,15 @@ const generateState = reactive({
   running: false,
 })
 
-// 详情抽屉（查看/编辑入口；数据来自 listSlots 行 + getArticleDetail）
+// 详情抽屉（查看/编辑入口；数据来自列表行 + getArticleDetail）
 const drawer = reactive({
   open: false,
-  slot: null as SlotView | null,
+  row: null as ArticleListItem | null,
   detail: null as ArticleDetail | null,
   loading: false,
 })
 
-// 抽屉内编辑 Modal（仅 pending_review；标题 + 段落整体替换）
+// 抽屉内编辑 Modal（仅 pending_review 且当前指向；标题 + 段落整体替换）
 const editing = reactive({
   active: false,
   saving: false,
@@ -35,19 +57,10 @@ const editing = reactive({
 // 拒绝弹窗
 const rejectState = reactive({
   open: false,
-  slot: null as SlotView | null,
+  row: null as ArticleListItem | null,
   reason: '',
   submitting: false,
 })
-
-// ---- 状态展示 ----
-
-const SLOT_STATUS: Record<string, { text: string; color: string }> = {
-  success: { text: '成功', color: 'blue' },
-  pending: { text: '生成中', color: 'processing' },
-  error: { text: '生成失败', color: '#595959' },
-  rejected: { text: '生成拒绝', color: '#595959' },
-}
 
 const REVIEW_STATUS: Record<string, { text: string; color: string }> = {
   pending_review: { text: '待审核', color: 'warning' },
@@ -62,9 +75,12 @@ const DIFFICULTY_COLOR: Record<string, string> = {
   HIGH: 'red',
 }
 
-function slotStatusMeta(status: string) {
-  return SLOT_STATUS[status] ?? { text: status, color: 'default' }
-}
+const STATUS_OPTIONS = [
+  { value: '', label: '全部' },
+  { value: 'pending_review', label: '待审核' },
+  { value: 'approved', label: '已通过' },
+  { value: 'rejected', label: '已拒绝' },
+]
 
 function reviewStatusMeta(status: string) {
   return REVIEW_STATUS[status] ?? { text: status, color: 'default' }
@@ -75,44 +91,52 @@ function fmtDate(d: Dayjs | undefined): string {
 }
 
 /** 服务端 datetime('now') 为 UTC（YYYY-MM-DD HH:MM:SS），转本地时间显示。 */
-function fmtReviewedAt(s: string | null | undefined): string {
+function fmtUtcTime(s: string | null | undefined): string {
   return s ? dayjs(new Date(s.replace(' ', 'T') + 'Z')).format('YYYY-MM-DD HH:mm') : '—'
 }
 
-/** 抽屉标题：详情标题 > 槽位当前文章标题 > 兜底。 */
+/** 抽屉标题：详情标题 > 列表行标题 > 兜底。 */
 const drawerTitle = computed(
-  () => drawer.detail?.title_en || drawer.slot?.article?.title_en || '槽位详情',
+  () => drawer.detail?.title_en || drawer.row?.title_en || '文章详情',
 )
 
-function slotLabel(slot: SlotView): number {
-  return slot.slot_index + 1 // 存储 0 基，展示 1 基
+function slotLabel(row: { slot_index: number | null }): string {
+  return row.slot_index == null ? '—' : `#${row.slot_index + 1}` // 存储 0 基，展示 1 基
 }
 
-/** 无文章（error/rejected）占位文案；pending = 生成中。 */
-function emptyText(slot: SlotView): string {
-  return slot.status === 'pending' ? '生成中…' : '无文章'
+/** 重跑条件：文章被拒（非终）且仍为槽位当前指向（补生成未成/失败场景）。 */
+function canRetry(row: ArticleListItem): boolean {
+  return row.review?.status === 'rejected' && row.is_current
 }
 
-/** 重跑条件：槽位终态且无当前文章（初始生成失败/被拒），或当前文章已被拒绝且补生成未成（review 仍为现指向）。 */
-function canRetry(slot: SlotView): boolean {
-  if (!slot.review && (slot.status === 'error' || slot.status === 'rejected')) return true
-  return slot.review?.status === 'rejected'
+/** 可审核提交：待审且文章是槽位现指向（旧文不可再审，守卫在服务端）。row 可空以兼容抽屉里 drawer.row 未就绪态。 */
+function canReview(row: ArticleListItem | null): boolean {
+  return !!row && row.review?.status === 'pending_review' && row.is_current
 }
 
 // ---- 数据加载 ----
 
-// 请求序号守卫：切换日期后旧请求晚返回时丢弃，避免覆盖新列表 / 错序复位 loading
+// 请求序号守卫：切换筛选后旧请求晚返回时丢弃，避免覆盖新列表 / 错序复位 loading
 let loadSeq = 0
 
 async function load() {
-  const d = fmtDate(date.value)
-  if (!d) return
+  const [start, end] = range.value
   const seq = ++loadSeq
   loading.value = true
   try {
-    const result = await api.listSlots(d)
+    const result = await api.listArticles({
+      start_date: fmtDate(start),
+      end_date: fmtDate(end),
+      status: statusFilter.value || undefined,
+      page: pagination.current,
+      page_size: pagination.pageSize,
+      sort_by: sorter.field || undefined,
+      sort_dir: sorter.order === 'ascend' ? 'asc' : sorter.order === 'descend' ? 'desc' : undefined,
+    })
     if (seq === loadSeq) {
-      slots.value = result
+      rows.value = result.items
+      pagination.total = result.total
+      stats.value = result.stats
       loading.value = false
     }
   } catch {
@@ -123,8 +147,41 @@ async function load() {
 
 onMounted(load)
 
-function onDateChange() {
+function onFilterChange() {
+  pagination.current = 1
   load()
+}
+
+/** 统计项点击 → 设置状态筛选（再次点击取消）。 */
+function pickStatus(s: string) {
+  statusFilter.value = statusFilter.value === s ? '' : s
+  onFilterChange()
+}
+
+/** a-table change：分页/排序变化 → 回写状态并重载（服务端分页+排序）。 */
+function onTableChange(
+  p: { current: number; pageSize: number },
+  _filters: unknown,
+  s: { field: string; order: 'ascend' | 'descend' | undefined },
+) {
+  let changed = false
+  if (p.pageSize !== pagination.pageSize) {
+    changed = true
+    pagination.pageSize = p.pageSize
+    pagination.current = 1 // 页大小变化回第一页
+  } else if (p.current !== pagination.current) {
+    changed = true
+    pagination.current = p.current
+  }
+  const nextField = s?.field ?? ''
+  const nextOrder = s?.order
+  if (nextField !== sorter.field || nextOrder !== sorter.order) {
+    changed = true
+    sorter.field = nextField
+    sorter.order = nextOrder
+    pagination.current = 1 // 排序变化回第一页
+  }
+  if (changed) load()
 }
 
 // 补生成：确认后刷新当前列表（若补的不是当前日期，提示用户切换查看）
@@ -138,11 +195,7 @@ async function generate() {
   try {
     await api.generateArticles(d)
     message.success(`已提交 ${d} 的文章生成`)
-    if (d === fmtDate(date.value)) {
-      await load()
-    } else {
-      message.info(`可在顶部切换到 ${d} 查看结果`)
-    }
+    await load()
   } catch {
     // 拦截器已提示（含 5 分钟超时）
   } finally {
@@ -155,15 +208,14 @@ async function generate() {
 // 详情请求序号守卫：关 A 开 B 时 A 的详情晚到不覆盖 B
 let drawerSeq = 0
 
-async function openDrawer(slot: SlotView) {
-  if (!slot.article) return
+async function openDrawer(row: ArticleListItem) {
   const seq = ++drawerSeq
-  drawer.slot = slot
+  drawer.row = row
   drawer.detail = null
   drawer.open = true
   drawer.loading = true
   try {
-    const result = await api.getArticleDetail(slot.article.id)
+    const result = await api.getArticleDetail(row.id)
     if (seq === drawerSeq) {
       drawer.detail = result
       drawer.loading = false
@@ -176,18 +228,16 @@ async function openDrawer(slot: SlotView) {
 
 // ---- 审核操作（approve / reject / retry） ----
 
-function confirmApprove(slot: SlotView) {
-  const article = slot.article
-  if (!article) return
+function confirmApprove(row: ArticleListItem) {
   Modal.confirm({
     title: '通过文章',
-    content: `确认通过《${article.title_en}》？通过后不可再次修改。`,
+    content: `确认通过《${row.title_en}》？通过后不可再次修改。`,
     okText: '确认通过',
     cancelText: '取消',
     onOk: async () => {
       try {
-        await api.approveArticle(article.id)
-        message.success(`已通过《${article.title_en}》`)
+        await api.approveArticle(row.id)
+        message.success(`已通过《${row.title_en}》`)
         drawer.open = false
         await load()
       } catch {
@@ -197,19 +247,18 @@ function confirmApprove(slot: SlotView) {
   })
 }
 
-function openReject(slot: SlotView) {
-  rejectState.slot = slot
+function openReject(row: ArticleListItem) {
+  rejectState.row = row
   rejectState.reason = ''
   rejectState.open = true
 }
 
 async function submitReject() {
-  const slot = rejectState.slot
-  const article = slot?.article
-  if (!slot || !article) return
+  const row = rejectState.row
+  if (!row) return
   rejectState.submitting = true
   try {
-    await api.rejectArticle(article.id, rejectState.reason)
+    await api.rejectArticle(row.id, rejectState.reason)
     message.success('已拒绝，将自动补生成')
     rejectState.open = false
     drawer.open = false
@@ -221,16 +270,17 @@ async function submitReject() {
   }
 }
 
-function confirmRetry(slot: SlotView) {
+function confirmRetry(row: ArticleListItem) {
+  if (row.slot_id == null) return
   Modal.confirm({
     title: '重跑槽位',
-    content: `确认重跑槽位 #${slotLabel(slot)}？将重新生成该槽位文章（可替换当前被拒/失败内容）。`,
+    content: `确认重跑槽位 ${slotLabel(row)}？将重新生成该槽位文章（可替换当前被拒内容）。`,
     okText: '确认重跑',
     cancelText: '取消',
     onOk: async () => {
       try {
-        await api.retrySlot(slot.slot_id)
-        message.success(`槽位 #${slotLabel(slot)} 重跑完成`)
+        await api.retrySlot(row.slot_id!)
+        message.success(`槽位 ${slotLabel(row)} 重跑完成`)
         await load()
       } catch {
         // 拦截器已提示（含 5 分钟超时）
@@ -239,7 +289,7 @@ function confirmRetry(slot: SlotView) {
   })
 }
 
-// ---- 抽屉内编辑（仅 pending_review） ----
+// ---- 抽屉内编辑（仅 pending_review 且当前指向） ----
 
 function startEdit() {
   const detail = drawer.detail
@@ -272,9 +322,8 @@ function removeParagraph(index: number) {
 }
 
 async function saveEdit() {
-  const slot = drawer.slot
-  const article = slot?.article
-  if (!slot || !article) return
+  const row = drawer.row
+  if (!row) return
   const title = editing.title.trim()
   if (!title) {
     message.warning('标题不能为空')
@@ -294,7 +343,7 @@ async function saveEdit() {
   }
   editing.saving = true
   try {
-    await api.updateArticle(article.id, {
+    await api.updateArticle(row.id, {
       title,
       paragraphs: editing.paragraphs.map((p) => ({
         order_index: p.order_index,
@@ -318,12 +367,20 @@ async function saveEdit() {
   <div class="articles-page">
     <a-card class="filter-card">
       <div class="filter-row">
-        <span class="filter-label">日期：</span>
-        <a-date-picker
-          v-model:value="date"
-          placeholder="选择日期"
-          style="width: 180px"
-          @change="onDateChange"
+        <span class="filter-label">时间：</span>
+        <a-range-picker
+          v-model:value="range"
+          :allow-clear="false"
+          format="YYYY-MM-DD"
+          style="width: 260px"
+          @change="onFilterChange"
+        />
+        <span class="filter-label">状态：</span>
+        <a-select
+          v-model:value="statusFilter"
+          :options="STATUS_OPTIONS"
+          style="width: 130px"
+          @change="onFilterChange"
         />
         <span class="spacer" />
         <span class="generate-label">补生成：</span>
@@ -337,62 +394,86 @@ async function saveEdit() {
           补生成
         </a-button>
       </div>
+
+      <!-- 摘要统计：时间段内全量（不受状态筛选影响），点击可筛选 -->
+      <div class="stats-row">
+        <a-tag
+          v-for="s in [
+            { key: '', label: '总计', value: stats.total, color: 'blue' },
+            { key: 'pending_review', label: '待审核', value: stats.pending_review, color: 'orange' },
+            { key: 'approved', label: '已通过', value: stats.approved, color: 'green' },
+            { key: 'rejected', label: '已拒绝', value: stats.rejected, color: 'red' },
+          ]"
+          :key="s.key"
+          :class="{ 'stats-tag-active': statusFilter === s.key }"
+          :color="statusFilter === s.key ? s.color : undefined"
+          class="stats-tag"
+          @click="pickStatus(s.key)"
+        >
+          {{ s.label }} {{ s.value }}
+        </a-tag>
+      </div>
     </a-card>
 
     <a-card :loading="loading" class="list-card">
-      <a-table :data-source="slots" :pagination="false" row-key="slot_id" size="middle">
-        <a-table-column title="槽位" width="80">
+      <a-table
+        :data-source="rows"
+        :pagination="{
+          current: pagination.current,
+          pageSize: pagination.pageSize,
+          total: pagination.total,
+          showSizeChanger: true,
+          pageSizeOptions: ['15', '30', '45'],
+          showTotal: (t: number) => `共 ${t} 篇`,
+        }"
+        row-key="id"
+        size="middle"
+        @change="onTableChange"
+      >
+        <a-table-column title="日期" data-index="run_date" sorter width="110">
+          <template #default="{ record }">{{ record.run_date }}</template>
+        </a-table-column>
+        <a-table-column title="槽位" data-index="slot_index" sorter width="120">
           <template #default="{ record }">
-            <span style="font-weight: 600">#{{ slotLabel(record) }}</span>
+            <span style="font-weight: 600">{{ slotLabel(record) }}</span>
+            <a-tag v-if="record.slot_index != null && !record.is_current" color="default" size="small">
+              已替换
+            </a-tag>
           </template>
         </a-table-column>
-        <a-table-column title="难度" width="90">
+        <a-table-column title="难度" data-index="difficulty" sorter width="90">
           <template #default="{ record }">
             <a-tag :color="DIFFICULTY_COLOR[record.difficulty] || 'default'">
               {{ record.difficulty }}
             </a-tag>
           </template>
         </a-table-column>
-        <a-table-column title="分类" width="160">
+        <a-table-column title="分类" data-index="category" sorter width="150">
+          <template #default="{ record }">{{ record.category }}</template>
+        </a-table-column>
+        <a-table-column title="标题" data-index="title_en" width="220">
           <template #default="{ record }">
-            <span v-if="record.article">{{ record.article.category }}</span>
-            <span v-else class="placeholder-text">{{ emptyText(record) }}</span>
+            <span class="title-cell">{{ record.title_en }}</span>
           </template>
         </a-table-column>
-        <a-table-column title="状态" width="200">
+        <a-table-column title="状态" data-index="status" sorter width="120">
           <template #default="{ record }">
-            <a-tag :color="slotStatusMeta(record.status).color">
-              {{ slotStatusMeta(record.status).text }}
-            </a-tag>
             <a-tag v-if="record.review" :color="reviewStatusMeta(record.review.status).color">
               {{ reviewStatusMeta(record.review.status).text }}
             </a-tag>
+            <span v-else class="placeholder-text">无审核记录</span>
           </template>
         </a-table-column>
-        <a-table-column title="来源" width="110">
-          <template #default="{ record }">
-            <a
-              v-if="record.article?.source_url"
-              :href="record.article.source_url"
-              target="_blank"
-              rel="noreferrer"
-            >
-              原文
-            </a>
-            <span v-else class="placeholder-text">—</span>
-          </template>
-        </a-table-column>
-        <a-table-column title="attempts" width="90" align="center">
-          <template #default="{ record }">{{ record.attempts }}</template>
+        <a-table-column title="生成时间" data-index="created_at" sorter width="140">
+          <template #default="{ record }">{{ fmtUtcTime(record.created_at) }}</template>
         </a-table-column>
         <a-table-column title="操作" width="200">
           <template #default="{ record }">
-            <a-button v-if="record.article" type="link" size="small" @click="openDrawer(record)">
-              查看
-            </a-button>
-            <template v-if="record.review?.status === 'pending_review'">
+            <a-button type="link" size="small" @click="openDrawer(record)">查看</a-button>
+            <template v-if="canReview(record)">
               <a-button type="link" size="small" @click="confirmApprove(record)">通过</a-button>
               <a-button type="link" danger size="small" @click="openReject(record)">拒绝</a-button>
+              <a-button type="link" size="small" @click="startEdit">编辑</a-button>
             </template>
             <a-button v-if="canRetry(record)" type="link" size="small" @click="confirmRetry(record)">
               重跑
@@ -413,16 +494,22 @@ async function saveEdit() {
 
           <a-descriptions :column="2" size="small" bordered class="drawer-meta">
             <a-descriptions-item label="槽位">
-              #{{ (drawer.slot?.slot_index ?? 0) + 1 }}
+              {{ slotLabel(drawer.detail) }}
             </a-descriptions-item>
             <a-descriptions-item label="难度">
-              <a-tag :color="DIFFICULTY_COLOR[drawer.slot?.difficulty ?? ''] || 'default'">
-                {{ drawer.slot?.difficulty }}
+              <a-tag :color="DIFFICULTY_COLOR[drawer.detail.difficulty] || 'default'">
+                {{ drawer.detail.difficulty }}
               </a-tag>
             </a-descriptions-item>
             <a-descriptions-item label="日期">{{ drawer.detail.run_date }}</a-descriptions-item>
             <a-descriptions-item label="段落数">{{ drawer.detail.paragraph_count }}</a-descriptions-item>
             <a-descriptions-item label="分类" :span="2">{{ drawer.detail.category }}</a-descriptions-item>
+            <a-descriptions-item label="归属">
+              <span v-if="drawer.detail.slot_index != null && !drawer.row?.is_current" class="old-article-tag">
+                已替换（旧文，不可再审核）
+              </span>
+              <span v-else>当前槽位指向</span>
+            </a-descriptions-item>
             <a-descriptions-item label="来源" :span="2">
               <a
                 v-if="drawer.detail.source_url"
@@ -448,8 +535,8 @@ async function saveEdit() {
               <a-descriptions-item label="审核人">
                 {{ drawer.detail.review.reviewed_by || '—' }}
               </a-descriptions-item>
-              <a-descriptions-item label="时间" :span="2">
-                {{ fmtReviewedAt(drawer.detail.review.reviewed_at) }}
+              <a-descriptions-item label="审核时间" :span="2">
+                {{ fmtUtcTime(drawer.detail.review.reviewed_at) }}
               </a-descriptions-item>
               <a-descriptions-item v-if="drawer.detail.review.reject_reason" label="拒绝原因" :span="2">
                 {{ drawer.detail.review.reject_reason }}
@@ -475,15 +562,15 @@ async function saveEdit() {
 
           <!-- 槽位审核历史时间线 -->
           <div class="block-title">槽位历史（同槽全部审核记录）</div>
-          <a-timeline v-if="drawer.slot && drawer.slot.history.length" class="history-timeline">
-            <a-timeline-item v-for="(h, i) in drawer.slot.history" :key="i">
+          <a-timeline v-if="drawer.detail.history.length" class="history-timeline">
+            <a-timeline-item v-for="(h, i) in drawer.detail.history" :key="i">
               <div class="history-row">
                 <a-tag :color="reviewStatusMeta(h.status).color">
                   {{ reviewStatusMeta(h.status).text }}
                 </a-tag>
                 <span class="history-article">文章 #{{ h.article_id }}</span>
                 <span v-if="h.reviewed_by" class="history-meta">审核人：{{ h.reviewed_by }}</span>
-                <span v-if="h.reviewed_at" class="history-meta">时间：{{ fmtReviewedAt(h.reviewed_at) }}</span>
+                <span v-if="h.reviewed_at" class="history-meta">时间：{{ fmtUtcTime(h.reviewed_at) }}</span>
               </div>
               <div v-if="h.reject_reason" class="history-reason">原因：{{ h.reject_reason }}</div>
             </a-timeline-item>
@@ -492,11 +579,11 @@ async function saveEdit() {
 
           <!-- pending_review：抽屉内审核/编辑操作 -->
           <div
-            v-if="drawer.detail.review?.status === 'pending_review' && !editing.active"
+            v-if="canReview(drawer.row!) && !editing.active"
             class="drawer-actions"
           >
-            <a-button type="primary" @click="confirmApprove(drawer.slot!)">通过</a-button>
-            <a-button danger @click="openReject(drawer.slot!)">拒绝</a-button>
+            <a-button type="primary" @click="confirmApprove(drawer.row!)">通过</a-button>
+            <a-button danger @click="openReject(drawer.row!)">拒绝</a-button>
             <a-button @click="startEdit">编辑</a-button>
           </div>
         </template>
@@ -596,9 +683,33 @@ async function saveEdit() {
 .generate-label {
   color: #666;
 }
+.stats-row {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.stats-tag {
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 10px;
+}
+.stats-tag-active {
+  font-weight: 600;
+  border-width: 2px;
+}
 .placeholder-text {
   color: #999;
   font-style: italic;
+}
+.title-cell {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.old-article-tag {
+  color: #c00;
 }
 .drawer-meta {
   margin-bottom: 16px;

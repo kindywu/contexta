@@ -361,8 +361,8 @@ describe("admin users & usage", () => {
   });
 });
 
-describe("admin articles slot view", () => {
-  test("槽位视图：error 槽（无文章）出现且 article/review 为 null；success 槽带文章与 pending_review", async () => {
+describe("admin articles list", () => {
+  test("文章列表：每篇成功文章一行（error 槽无文章不出现），行含 review/is_current/生成时间；stats 四计数", async () => {
     const { db, app } = await buildApp();
     seedDay(db, [
       { slotIndex: 0, difficulty: "MEDIUM", status: "success" },
@@ -370,97 +370,224 @@ describe("admin articles slot view", () => {
     ]);
     const { ensureReviewRows } = await import("../src/services/review_service");
     ensureReviewRows(db);
-    const slots = listSlots(db, RUN_DATE);
+    const slot0 = listSlots(db, RUN_DATE)[0]!;
     const tok = await adminToken(app);
 
-    const res = await app.request(`/api/admin/articles?date=${RUN_DATE}`, { headers: authHeader(tok) });
+    const res = await app.request(`/api/admin/articles?start_date=${RUN_DATE}&end_date=${RUN_DATE}`, {
+      headers: authHeader(tok),
+    });
     expect(res.status).toBe(200);
     const data = (await res.json()).data;
-    expect(data).toHaveLength(2);
-    // 0 槽：success + 文章 + pending_review
-    expect(data[0]).toMatchObject({
-      slot_id: slots[0]!.id,
-      slot_index: 0,
+    expect(data.total).toBe(1);
+    expect(data.items).toHaveLength(1);
+    expect(data.items[0]).toMatchObject({
+      id: slot0.articleId,
+      run_date: RUN_DATE,
       difficulty: "MEDIUM",
-      status: "success",
-      attempts: 1,
-      thread_id: "daily-2026-09-02-0",
-      article: {
-        id: slots[0]!.articleId,
-        category: "news",
-        title_en: "T0",
-        title_zh: "题0",
-        source_url: null,
-        paragraph_count: 2,
-        path: "A",
-        run_date: RUN_DATE,
+      category: "news",
+      title_en: "T0",
+      title_zh: "题0",
+      source_url: null,
+      paragraph_count: 2,
+      created_at: expect.any(String),
+      slot_id: slot0.id,
+      slot_index: 0,
+      is_current: true,
+      review: {
+        status: "pending_review",
+        reject_reason: null,
+        reviewed_by: null,
+        reviewed_at: null,
       },
-      review: { id: expect.any(Number), status: "pending_review", reject_reason: null, reviewed_by: null, reviewed_at: null },
     });
-    expect(data[0].history).toEqual([
-      { article_id: slots[0]!.articleId, status: "pending_review", reject_reason: null, reviewed_by: null, reviewed_at: null },
-    ]);
-    // 1 槽：error，无文章无 review
-    expect(data[1]).toEqual({
-      slot_id: slots[1]!.id,
-      slot_index: 1,
-      difficulty: "LOW",
-      status: "error",
-      attempts: 1,
-      thread_id: "daily-2026-09-02-1",
-      article: null,
-      review: null,
-      history: [],
-    });
+    expect(data.stats).toEqual({ total: 1, pending_review: 1, approved: 0, rejected: 0 });
   });
 
-  test("槽位视图：history 为同槽全部 review 行倒序（新 → 旧）", async () => {
+  test("时间段过滤：start_date/end_date 圈定 run_date；缺省默认当天", async () => {
+    const { db, app } = await buildApp();
+    const { localDate } = await import("../src/engine/utils/time");
+    const today = localDate(cfg.timeZone);
+    seedDay(db, [{ slotIndex: 0, difficulty: "MEDIUM", status: "success" }], RUN_DATE);
+    seedDay(db, [{ slotIndex: 0, difficulty: "LOW", status: "success" }], today);
+    // 注意：若今天恰是 RUN_DATE，2 天种子实为 2 篇同日文——首行进今天（默认排序 run_date DESC, id DESC）
+    const { ensureReviewRows } = await import("../src/services/review_service");
+    ensureReviewRows(db);
+    const tok = await adminToken(app);
+
+    // 缺省 = 当天（today 种子的文可见，RUN_DATE 的不可见）
+    const defaultRes = await app.request("/api/admin/articles", { headers: authHeader(tok) });
+    const defaultData = (await defaultRes.json()).data;
+    expect(defaultData.total).toBe(1);
+    expect(defaultData.items[0].run_date).toBe(today);
+
+    // 时间段 [RUN_DATE, RUN_DATE] → 只有 RUN_DATE 的文
+    const dayRes = await app.request(`/api/admin/articles?start_date=${RUN_DATE}&end_date=${RUN_DATE}`, {
+      headers: authHeader(tok),
+    });
+    const dayData = (await dayRes.json()).data;
+    expect(dayData.total).toBe(1);
+    expect(dayData.items[0].run_date).toBe(RUN_DATE);
+  });
+
+  test("状态过滤：pending_review/approved/rejected 各自匹配；rejected 聚合 rejected_final；stats 恒为时间段全量", async () => {
+    const { db, app } = await buildApp();
+    seedDay(db, [
+      { slotIndex: 0, difficulty: "MEDIUM", status: "success" },
+      { slotIndex: 1, difficulty: "LOW", status: "success" },
+      { slotIndex: 2, difficulty: "HIGH", status: "success" },
+      { slotIndex: 3, difficulty: "LOW", status: "success" },
+    ]);
+    const { ensureReviewRows } = await import("../src/services/review_service");
+    ensureReviewRows(db);
+    const ids = listSlots(db, RUN_DATE).map((s) => s.articleId!) as number[];
+    db.query("UPDATE article_review SET status = 'approved' WHERE article_id = ?").run(ids[0]);
+    db.query("UPDATE article_review SET status = 'rejected' WHERE article_id = ?").run(ids[1]);
+    db.query("UPDATE article_review SET status = 'rejected_final' WHERE article_id = ?").run(ids[2]);
+    // ids[3] 保持 pending_review
+    const tok = await adminToken(app);
+    const q = (status: string) =>
+      app.request(`/api/admin/articles?start_date=${RUN_DATE}&end_date=${RUN_DATE}&status=${status}`, {
+        headers: authHeader(tok),
+      });
+
+    expect(((await (await q("pending_review")).json()).data).items.map((i: { id: number }) => i.id)).toEqual([ids[3]]);
+    expect(((await (await q("approved")).json()).data).items.map((i: { id: number }) => i.id)).toEqual([ids[0]]);
+    // rejected 聚合 rejected + rejected_final（默认序同 run_date 下 slot_index ASC：slot1 在前）
+    expect(((await (await q("rejected")).json()).data).items.map((i: { id: number }) => i.id)).toEqual([ids[1], ids[2]]);
+    // stats 不受 status 影响
+    const s = (await (await q("approved")).json()).data.stats;
+    expect(s).toEqual({ total: 4, pending_review: 1, approved: 1, rejected: 2 });
+    // 无状态参数 = 全部
+    expect((await (await app.request(`/api/admin/articles?start_date=${RUN_DATE}&end_date=${RUN_DATE}`, { headers: authHeader(tok) })).json()).data.total).toBe(4);
+  });
+
+  test("is_current：补生成替换后旧文 false、当前文 true（旧文仍可被列表检索）", async () => {
     const { db, app } = await buildApp();
     seedDay(db, [{ slotIndex: 0, difficulty: "MEDIUM", status: "success" }]);
     const { ensureReviewRows } = await import("../src/services/review_service");
     const slot = listSlots(db, RUN_DATE)[0]!;
     const oldId = slot.articleId!;
-    // 旧文 rejected（模拟此前补生成拒绝）
     db.query(
       "INSERT INTO article_review (article_id, slot_id, status, reject_reason, reviewed_by) VALUES (?, ?, 'rejected', '太简单', 'admin')",
     ).run(oldId, slot.id);
-    // 槽位换指新文，新文补 pending_review
     const newId = insertReplacementArticle(db, slot.id, { threadId: "daily-2026-09-02-0-r1" });
     ensureReviewRows(db);
     const tok = await adminToken(app);
 
-    const res = await app.request(`/api/admin/articles?date=${RUN_DATE}`, { headers: authHeader(tok) });
+    const res = await app.request(`/api/admin/articles?start_date=${RUN_DATE}&end_date=${RUN_DATE}`, {
+      headers: authHeader(tok),
+    });
     const data = (await res.json()).data;
-    expect(data).toHaveLength(1);
-    expect(data[0].article).toMatchObject({ id: newId });
-    expect(data[0].review).toMatchObject({ status: "pending_review" });
-    // 倒序：新文行在前，旧文 rejected 行在后
-    expect(data[0].history.map((h: { article_id: number; status: string }) => [h.article_id, h.status])).toEqual([
-      [newId, "pending_review"],
-      [oldId, "rejected"],
-    ]);
+    expect(data.total).toBe(2);
+    // 默认序（id DESC）：新文在前
+    expect(data.items[0]).toMatchObject({ id: newId, is_current: true, review: { status: "pending_review" } });
+    expect(data.items[1]).toMatchObject({ id: oldId, is_current: false, review: { status: "rejected" } });
   });
 
-  test("槽位视图：status 过滤——pending_review 只出待审槽，'error' 只出 error 槽，approved 无匹配为空", async () => {
+  test("分页：page_size 15/30/45 + page 偏移；total 恒为全量", async () => {
     const { db, app } = await buildApp();
-    seedDay(db, [
-      { slotIndex: 0, difficulty: "MEDIUM", status: "success" },
-      { slotIndex: 1, difficulty: "LOW", status: "error" },
-    ]);
+    const slots = Array.from({ length: 16 }, (_, i) => ({
+      slotIndex: i,
+      difficulty: "MEDIUM" as Difficulty,
+      status: "success" as const,
+    }));
+    seedDay(db, slots);
     const { ensureReviewRows } = await import("../src/services/review_service");
     ensureReviewRows(db);
     const tok = await adminToken(app);
 
-    const pending = await app.request(`/api/admin/articles?date=${RUN_DATE}&status=pending_review`, { headers: authHeader(tok) });
-    const pendingData = (await pending.json()).data as { slot_index: number }[];
-    expect(pendingData.map((s) => s.slot_index)).toEqual([0]);
+    const page1 = await app.request(`/api/admin/articles?start_date=${RUN_DATE}&end_date=${RUN_DATE}&page=1&page_size=15`, {
+      headers: authHeader(tok),
+    });
+    const p1 = (await page1.json()).data;
+    expect(p1.items).toHaveLength(15);
+    expect(p1.total).toBe(16);
 
-    const err = await app.request(`/api/admin/articles?date=${RUN_DATE}&status=error`, { headers: authHeader(tok) });
-    const errData = (await err.json()).data as { slot_index: number }[];
-    expect(errData.map((s) => s.slot_index)).toEqual([1]);
+    const page2 = await app.request(`/api/admin/articles?start_date=${RUN_DATE}&end_date=${RUN_DATE}&page=2&page_size=15`, {
+      headers: authHeader(tok),
+    });
+    expect((await page2.json()).data.items).toHaveLength(1);
 
-    const approved = await app.request(`/api/admin/articles?date=${RUN_DATE}&status=approved`, { headers: authHeader(tok) });
-    expect((await approved.json()).data).toEqual([]);
+    const big = await app.request(`/api/admin/articles?start_date=${RUN_DATE}&end_date=${RUN_DATE}&page=1&page_size=30`, {
+      headers: authHeader(tok),
+    });
+    const bigData = await big.json();
+    expect(bigData.data.items).toHaveLength(16);
+    expect(bigData.data.total).toBe(16);
+  });
+
+  test("排序：默认 run_date DESC, slot_index ASC, id DESC；sort_by/sort_dir 各列生效", async () => {
+    const { db, app } = await buildApp();
+    const dateA = "2026-09-01";
+    const dateB = "2026-09-02";
+    seedDay(db, [
+      { slotIndex: 0, difficulty: "MEDIUM", status: "success" },
+      { slotIndex: 1, difficulty: "LOW", status: "success" },
+    ], dateA);
+    seedDay(db, [
+      { slotIndex: 0, difficulty: "HIGH", status: "success" },
+      { slotIndex: 1, difficulty: "MEDIUM", status: "success" },
+    ], dateB);
+    const { ensureReviewRows } = await import("../src/services/review_service");
+    ensureReviewRows(db);
+    // 四篇各自设唯一 created_at（UTC TEXT 可任意赋值）验证排序确定性
+    db.query("UPDATE articles SET created_at = '2026-09-01 01:00:00' WHERE id = ?").run(listSlots(db, dateA)[0]!.articleId);
+    db.query("UPDATE articles SET created_at = '2026-09-01 02:00:00' WHERE id = ?").run(listSlots(db, dateA)[1]!.articleId);
+    db.query("UPDATE articles SET created_at = '2026-09-02 09:00:00' WHERE id = ?").run(listSlots(db, dateB)[0]!.articleId);
+    db.query("UPDATE articles SET created_at = '2026-09-02 10:00:00' WHERE id = ?").run(listSlots(db, dateB)[1]!.articleId);
+    const tok = await adminToken(app);
+    const json = async (qs: string) => {
+      const res = await app.request(`/api/admin/articles?start_date=${dateA}&end_date=${dateB}&${qs}`, {
+        headers: authHeader(tok),
+      });
+      return res.json();
+    };
+
+    // 默认：run_date DESC（B 先），同日 slot_index ASC，同槽 id DESC
+    const def = (await json("")).data;
+    expect(def.items.map((i: { run_date: string; slot_index: number }) => [i.run_date, i.slot_index])).toEqual([
+      [dateB, 0], [dateB, 1], [dateA, 0], [dateA, 1],
+    ]);
+
+    const asc = (await json("sort_by=run_date&sort_dir=asc")).data;
+    expect(asc.items.map((i: { run_date: string }) => i.run_date)).toEqual([dateA, dateA, dateB, dateB]);
+
+    const slotDesc = (await json("sort_by=slot_index&sort_dir=desc")).data;
+    expect(slotDesc.items.map((i: { slot_index: number }) => i.slot_index)).toEqual([1, 1, 0, 0]);
+
+    const createdAsc = (await json("sort_by=created_at&sort_dir=asc")).data;
+    expect(createdAsc.items.map((i: { created_at: string }) => i.created_at)).toEqual([
+      "2026-09-01 01:00:00",
+      "2026-09-01 02:00:00",
+      "2026-09-02 09:00:00",
+      "2026-09-02 10:00:00",
+    ]);
+
+    // status 字母序：pending_review 全部同态 → 退化为 id 序，仅验证 200 与可排序
+    const byStatus = (await json("sort_by=status&sort_dir=asc")).data;
+    expect(byStatus.items).toHaveLength(4);
+  });
+
+  test("参数校验：非法日期/日期区间/status/sort_by/sort_dir/page/page_size → 400 BAD_PARAM", async () => {
+    const { app } = await buildApp();
+    const tok = await adminToken(app);
+    const cases = [
+      "start_date=bad-date",
+      "start_date=2026-09-02&end_date=2026-09-01",
+      "start_date=2026-9-2",
+      "status=bogus",
+      "sort_by=title_en",
+      "sort_dir=up",
+      "page=0",
+      "page=abc",
+      "page_size=10",
+      "page_size=20",
+    ];
+    for (const qs of cases) {
+      const res = await app.request(`/api/admin/articles?${qs}`, { headers: authHeader(tok) });
+      const body = await res.json();
+      expect({ qs, status: res.status, code: body.error_code }).toEqual({ qs, status: 400, code: "BAD_PARAM" });
+    }
   });
 });
 
@@ -510,6 +637,41 @@ describe("admin article detail", () => {
     const res = await app.request("/api/admin/articles/999999", { headers: authHeader(tok) });
     expect(res.status).toBe(404);
     expect((await res.json()).error_code).toBe("NOT_FOUND");
+  });
+
+  test("详情：history 为同槽全部 review 行倒序（新 → 旧）；旧文详情归其原槽位", async () => {
+    const { db, app } = await buildApp();
+    seedDay(db, [{ slotIndex: 0, difficulty: "MEDIUM", status: "success" }]);
+    const { ensureReviewRows } = await import("../src/services/review_service");
+    const slot = listSlots(db, RUN_DATE)[0]!;
+    const oldId = slot.articleId!;
+    // 旧文 rejected（模拟此前补生成拒绝）
+    db.query(
+      "INSERT INTO article_review (article_id, slot_id, status, reject_reason, reviewed_by) VALUES (?, ?, 'rejected', '太简单', 'admin')",
+    ).run(oldId, slot.id);
+    // 槽位换指新文，新文补 pending_review
+    const newId = insertReplacementArticle(db, slot.id, { threadId: "daily-2026-09-02-0-r1" });
+    ensureReviewRows(db);
+    const tok = await adminToken(app);
+
+    // 新文详情：history 含新旧两行（倒序），slot_index 仍归属槽 0
+    const newRes = await app.request(`/api/admin/articles/${newId}`, { headers: authHeader(tok) });
+    const newData = (await newRes.json()).data;
+    expect(newData.slot_index).toBe(0);
+    expect(newData.review).toMatchObject({ status: "pending_review" });
+    expect(newData.history.map((h: { article_id: number; status: string }) => [h.article_id, h.status])).toEqual([
+      [newId, "pending_review"],
+      [oldId, "rejected"],
+    ]);
+
+    // 旧文详情：仍归原槽位，history = 同槽全部行（倒序，新文在前）——槽位时间线语义
+    const oldRes = await app.request(`/api/admin/articles/${oldId}`, { headers: authHeader(tok) });
+    const oldData = (await oldRes.json()).data;
+    expect(oldData.slot_index).toBe(0);
+    expect(oldData.history.map((h: { article_id: number; status: string }) => [h.article_id, h.status])).toEqual([
+      [newId, "pending_review"],
+      [oldId, "rejected"],
+    ]);
   });
 });
 

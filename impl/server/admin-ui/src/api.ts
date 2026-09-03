@@ -98,16 +98,29 @@ export interface ArticleParagraph {
   chinese_translation: string
 }
 
-/** 槽位视图的当前文章（白名单列；source_url 可空）。 */
-export interface SlotArticle {
+/** 文章列表行（文章视角）：articles 白名单列 + review 行 + 所属槽位 + 现指向标记。 */
+export interface ArticleListItem {
   id: number
+  run_date: string
+  difficulty: string
   category: string
   title_en: string
   title_zh: string
   source_url: string | null
   paragraph_count: number
-  path: string
-  run_date: string
+  created_at: string
+  slot_id: number | null
+  slot_index: number | null
+  /** 文章是否为所属槽位当前指向（补生成替换后旧文为 false，不可再审核）。 */
+  is_current: boolean
+  review: SlotReview | null
+}
+
+/** 文章列表响应：分页 items + 全量条数 + 时间段统计（不含 status 筛选）。 */
+export interface ArticleListResult {
+  items: ArticleListItem[]
+  total: number
+  stats: { total: number; pending_review: number; approved: number; rejected: number }
 }
 
 /** 当前文章的最新审核行。 */
@@ -128,20 +141,7 @@ export interface ReviewHistoryItem {
   reviewed_at: string | null
 }
 
-/** 槽位视图行：槽位 + 当前文章 + 当前审核行 + 同槽审核历史。 */
-export interface SlotView {
-  slot_id: number
-  slot_index: number
-  difficulty: string
-  status: string
-  attempts: number
-  thread_id: string
-  article: SlotArticle | null
-  review: SlotReview | null
-  history: ReviewHistoryItem[]
-}
-
-/** 文章详情：articles 全行 + 段落 + review 行 + 所属槽位（slot_id/slot_index）。 */
+/** 文章详情：articles 全行 + 段落 + review 行 + 同槽审核历史 + 所属槽位（slot_id/slot_index）。 */
 export interface ArticleDetail {
   id: number
   batch_id: number
@@ -154,6 +154,7 @@ export interface ArticleDetail {
   run_date: string
   paragraphs: ArticleParagraph[]
   review: SlotReview | null
+  history: ReviewHistoryItem[]
   slot_id: number | null
   slot_index: number | null
 }
@@ -179,11 +180,18 @@ export const api = {
 
   usage: () => http.get<unknown, UsageRow[]>('/usage'),
 
-  // ---- 槽位审核视图 ----
+  // ---- 文章列表 / 详情 / 编辑 ----
 
-  /** 某日全部槽位（slot_index 升序）：当前文章 + 审核行 + 同槽审核历史。 */
-  listSlots: (date: string) =>
-    http.get<unknown, SlotView[]>('/articles', { params: { date } }),
+  /** 文章视角分页列表：时间段（run_date）+ 可选状态过滤 + 白名单排序 + 统计。 */
+  listArticles: (params: {
+    start_date?: string
+    end_date?: string
+    status?: string
+    page?: number
+    page_size?: number
+    sort_by?: string
+    sort_dir?: 'asc' | 'desc'
+  }) => http.get<unknown, ArticleListResult>('/articles', { params }),
 
   /** 文章详情：articles 全行 + 段落 + review + 所属槽位。 */
   getArticleDetail: (id: number) => http.get<unknown, ArticleDetail>(`/articles/${id}`),

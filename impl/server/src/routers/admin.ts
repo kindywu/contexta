@@ -112,13 +112,44 @@ export function adminRouter(
     return c.json(ok(adminService.usageReport(db, cfg)));
   });
 
-  // ---------- 槽位审核视图 / 详情 / 编辑 ----------
+  // ---------- 文章列表 / 详情 / 编辑 ----------
 
   app.get("/api/admin/articles", (c) => {
     auth(c);
-    const date = c.req.query("date") ?? localDate(cfg.timeZone);
-    const status = c.req.query("status");
-    return c.json(ok(adminArticles.listSlotsByDate(db, date, status || undefined)));
+    const today = localDate(cfg.timeZone);
+    const startDate = c.req.query("start_date") ?? today;
+    const endDate = c.req.query("end_date") ?? today;
+    for (const [name, v] of [["start_date", startDate], ["end_date", endDate]] as const) {
+      if (!isValidIsoDate(v)) throw badRequest(`${name} must be a valid YYYY-MM-DD date`);
+    }
+    if (startDate > endDate) throw badRequest("start_date must be <= end_date");
+    const status = c.req.query("status") ?? "";
+    if (status !== "" && !["pending_review", "approved", "rejected"].includes(status)) {
+      throw badRequest("invalid status");
+    }
+    const pageRaw = c.req.query("page") ?? "1";
+    if (!/^\d+$/.test(pageRaw) || pageRaw === "0") throw badRequest("page must be a positive integer");
+    const pageSizeRaw = c.req.query("page_size") ?? "15";
+    if (!["15", "30", "45"].includes(pageSizeRaw)) {
+      throw badRequest("page_size must be 15, 30 or 45");
+    }
+    const sortBy = c.req.query("sort_by") ?? "run_date";
+    if (!adminArticles.ARTICLE_SORTABLE.includes(sortBy as never)) throw badRequest("invalid sort_by");
+    const sortDirRaw = (c.req.query("sort_dir") ?? "desc").toLowerCase();
+    if (sortDirRaw !== "asc" && sortDirRaw !== "desc") throw badRequest("invalid sort_dir");
+    return c.json(
+      ok(
+        adminArticles.listArticles(db, {
+          startDate,
+          endDate,
+          status: status || undefined,
+          page: Number(pageRaw),
+          pageSize: Number(pageSizeRaw),
+          sortBy,
+          sortDir: sortDirRaw,
+        }),
+      ),
+    );
   });
 
   app.get("/api/admin/articles/:id", (c) => {
