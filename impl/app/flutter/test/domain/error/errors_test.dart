@@ -172,7 +172,7 @@ void main() {
   });
 
   group('PipelineBlockingException', () {
-    test('message 原样保留（LlmErrorClassifier 正则依赖 Constraint / disk I/O）',
+    test('message 原样保留（查词/加词调用点经 mapErrorCodeToException 展示）',
         () {
       const msg1 = 'Structural error: DB Constraint violation';
       final e1 = PipelineBlockingException(msg1);

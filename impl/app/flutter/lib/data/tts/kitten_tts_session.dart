@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
@@ -254,12 +253,10 @@ class KittenTtsPluginSession implements KittenTtsSession {
 
         if (cachedPath != null) {
           // 缓存命中（预取已完成该段）：直接播文件，引擎空闲可并行预取
-          if (prefetch == null) {
-            prefetch = _prefetchRemaining(
-              texts, paragraphIds, speed, utteranceId, voice,
-              startIndex: i + 2,
-            );
-          }
+          prefetch ??= _prefetchRemaining(
+            texts, paragraphIds, speed, utteranceId, voice,
+            startIndex: i + 2,
+          );
           debugPrint('[KittenTTS] paragraph ${i + 1}/$total: cache HIT, play file');
           await _playFileSource(File(cachedPath).openRead(), utteranceId);
         } else {
@@ -284,12 +281,10 @@ class KittenTtsPluginSession implements KittenTtsSession {
           }
 
           // 当前段已生成，引擎空闲 → 启动后续段落预取（i+2 起，i+1 由循环处理）
-          if (prefetch == null) {
-            prefetch = _prefetchRemaining(
-              texts, paragraphIds, speed, utteranceId, voice,
-              startIndex: i + 2,
-            );
-          }
+          prefetch ??= _prefetchRemaining(
+            texts, paragraphIds, speed, utteranceId, voice,
+            startIndex: i + 2,
+          );
 
           // 播放该段（await 播完再处理下一段）
           await _playWav(wav, utteranceId);
@@ -847,9 +842,8 @@ class KittenSpeedMapper {
 /// 全文朗读待播队列项：WAV 字节 或 缓存文件路径（二选一）。
 /// [paragraphIndex] 为正文段落索引（标题为 null），供播放 worker 上报播放位置。
 class _QueuedAudio {
-  _QueuedAudio.wav(Uint8List bytes, {this.isTitle = false, this.paragraphIndex})
-      : bytes = bytes,
-        filePath = null;
+  _QueuedAudio.wav(this.bytes, {this.isTitle = false, this.paragraphIndex})
+      : filePath = null;
 
   _QueuedAudio.file(String path, {this.paragraphIndex})
       : bytes = null,

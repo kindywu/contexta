@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../core/components/article_card.dart';
 import '../../core/components/loading_indicator.dart';
+import '../../core/navigation/routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
+import '../../data/auth/auth_service.dart';
+import '../../di/providers.dart';
 import 'home_controller.dart';
 
 /// Home 页（对照 Kotlin HomeScreen.kt）：
 /// - isLoading → LoadingIndicator
 /// - HomeHeader（日期 + streak>0 时 StreakBadge）
-/// - 生成中 → EmptyState（'文章生成中' + generationMessage 兜底文案）
+/// - 同步中 → EmptyState（'文章同步中' + generationMessage 兜底文案）
 /// - 空态 → EmptyState（'暂无文章'）
 /// - 否则 → DayGroup 列表（今天/昨天/日期，可折叠，ArticleCard）
 class HomeScreen extends ConsumerStatefulWidget {
@@ -61,44 +65,57 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       return const SizedBox.expand(child: LoadingIndicator());
     }
 
-    return ListView(
-      padding: EdgeInsets.zero,
-      children: [
-        const SizedBox(height: AppSpacing.sm),
-        _HomeHeader(dateLabel: state.dateLabel, streak: state.streak),
-        const SizedBox(height: AppSpacing.sm),
-        if (state.isGenerating)
-          Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.xxl),
-            child: EmptyState(
-              icon: Icons.settings_outlined,
-              message: '文章生成中',
-              subMessage: state.generationMessage.isEmpty
-                  ? '首次生成需要一些时间，请稍候…'
-                  : state.generationMessage,
-            ),
-          )
-        else if (state.articleGroups.isEmpty)
-          const Padding(
-            padding: EdgeInsets.only(top: AppSpacing.xxl),
-            child: EmptyState(
-              icon: Icons.menu_book_outlined,
-              message: '暂无文章',
-              subMessage: '请等待文章生成',
-            ),
-          )
-        else
-          for (final group in state.articleGroups)
-            Material(
-              color: Colors.transparent,
-              child: _DayGroup(
-                dateLabel: group.dateLabel,
-                articles: group.articles,
-                onArticleClick: widget.onArticleClick,
+    // 下拉刷新：重跑同步编排（同步 + 今日分配）+ 重载文章流；
+    // AlwaysScrollableScrollPhysics 保证内容不满屏时也可下拉（含空态）。
+    return RefreshIndicator(
+      onRefresh: () => ref.read(homeControllerProvider.notifier).refresh(),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        children: [
+          const SizedBox(height: AppSpacing.sm),
+          // 服务端已配置但未登录 → 提示条 + 登录入口（本地模式不显示；
+          // 服务端配置时守卫会拦截，此处是「暂不登录」回访入口）
+          if (ref.watch(serverConfiguredProvider) &&
+              ref.watch(authServiceProvider).status != AuthStatus.loggedIn)
+            const _LoginBanner(),
+          _HomeHeader(dateLabel: state.dateLabel, streak: state.streak),
+          const SizedBox(height: AppSpacing.sm),
+          if (state.isGenerating)
+            Padding(
+              padding: const EdgeInsets.only(top: AppSpacing.xxl),
+              child: EmptyState(
+                icon: Icons.settings_outlined,
+                message: '文章同步中',
+                subMessage: state.generationMessage.isEmpty
+                    ? '同步失败，下拉重试'
+                    : state.generationMessage,
               ),
-            ),
-        const SizedBox(height: 24),
-      ],
+            )
+          else if (state.articleGroups.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: AppSpacing.xxl),
+              child: EmptyState(
+                icon: Icons.menu_book_outlined,
+                message: '暂无文章',
+                // 2026-08-13（计划 B T5 carry / T6 落地）：同步模型下文章来自
+                // 服务端，空态语义从「等待本地生成」改为「同步失败可重试」
+                subMessage: '暂时没有文章，下拉刷新试试',
+              ),
+            )
+          else
+            for (final group in state.articleGroups)
+              Material(
+                color: Colors.transparent,
+                child: _DayGroup(
+                  dateLabel: group.dateLabel,
+                  articles: group.articles,
+                  onArticleClick: widget.onArticleClick,
+                ),
+              ),
+          const SizedBox(height: 24),
+        ],
+      ),
     );
   }
 }
@@ -156,8 +173,9 @@ class _StreakBadge extends StatelessWidget {
           const SizedBox(width: AppSpacing.xxs),
           Text(
             '连续 $streak 天',
-            style: AppType.textTheme.labelMedium
-                ?.copyWith(color: AppColors.primary),
+            style: AppType.textTheme.labelMedium?.copyWith(
+              color: AppColors.primary,
+            ),
           ),
         ],
       ),
@@ -192,7 +210,9 @@ class _DayGroupState extends State<_DayGroup> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppPage.horizontalPadding),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppPage.horizontalPadding,
+          ),
           child: InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
             child: Padding(
@@ -214,7 +234,9 @@ class _DayGroupState extends State<_DayGroup> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppPage.horizontalPadding),
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppPage.horizontalPadding,
+          ),
           child: Column(
             children: [
               for (final article in widget.articles)
@@ -253,6 +275,49 @@ class _ArticleCardView extends StatelessWidget {
         isReadCompleted: article.isReadCompleted,
       ),
       onClick: onClick,
+    );
+  }
+}
+
+/// 未登录提示条 + 登录入口（服务端已配置且未登录时显示）。
+class _LoginBanner extends StatelessWidget {
+  const _LoginBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppPage.horizontalPadding,
+        vertical: AppSpacing.xs,
+      ),
+      child: Material(
+        color: AppColors.surfaceSoft,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.xs,
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.person_outline, size: 18, color: AppColors.muted),
+              const SizedBox(width: AppSpacing.xs),
+              Expanded(
+                child: Text(
+                  '未登录',
+                  style: AppType.textTheme.bodyMedium?.copyWith(
+                    color: AppColors.muted,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () => context.push(Routes.login),
+                child: const Text('登录'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -56,17 +56,13 @@ void main() {
       expect(batches.map((b) => b.lastUpdatedAt).toSet(), {seedNow});
     });
 
-    test('文章字段：SUCCESS / retry 0 / maxRetries 3 / 阅读秒数 0 / 完成时间已填', () async {
+    test('文章字段：SUCCESS / 阅读秒数 0 / 标题已填（T6 后无 retry/maxRetries/完成时间列）', () async {
       await writeSeedIfNeeded(db);
 
       final articles = await db.select(db.articles).get();
       expect(articles.map((a) => a.status).toSet(), {'SUCCESS'});
-      expect(articles.every((a) => a.retryCount == 0), isTrue);
-      expect(articles.every((a) => a.maxRetries == 3), isTrue);
       expect(articles.every((a) => a.accumulatedReadSeconds == 0), isTrue);
       expect(articles.every((a) => a.title != null), isTrue);
-      final seedNow = isoOffsetDateTime(DateTime(2026, 3, 29, 12, 0));
-      expect(articles.every((a) => a.generationCompletedAt == seedNow), isTrue);
     });
 
     test('文章按 orderIndex 归属批次：每批 5 篇、段落从 orderIndex 1 起连续', () async {

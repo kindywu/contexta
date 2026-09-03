@@ -13,12 +13,8 @@ Article _article(int id, {String category = 'NEWS', ArticleStatus? status, int? 
       contentCategory: category,
       title: null,
       status: status ?? ArticleStatus.success,
-      generationStartedAt: null,
-      generationCompletedAt: null,
-      retryCount: 0,
       accumulatedReadSeconds: 0,
       readCompletedAt: null,
-      lastRetryAt: null,
     );
 
 void main() {

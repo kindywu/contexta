@@ -6,6 +6,8 @@
 
 .superpowers/*.**
 
+docs/superpowers/*.**
+
 docs/superpowers/
 impl/app/flutter/temp_docs
 impl/etl/ref

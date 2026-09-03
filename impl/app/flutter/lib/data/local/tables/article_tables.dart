@@ -1,8 +1,13 @@
 import 'package:drift/drift.dart';
 
-/// 文章表组（4 张）：article_batch / article / article_paragraph / generation_error_log。
+/// 文章表组（3 张）：article_batch / article / article_paragraph。
 /// 逐列对照 Android Room schema：
 /// impl/app/android/app/src/main/java/com/ak/contexta/data/local/entity/*.kt
+///
+/// 2026-08-13（计划 B Task 6）：本地生成管道整体移除——article_batch 删
+/// blocked_reason/blocked_at/ready_notified_at，article 删生成状态机 6 列
+/// （generation_started_at/generation_completed_at/retry_count/last_retry_at/
+/// max_retries/next_retry_at，status 列保留），generation_error_log 表整体删除。
 ///
 /// Room 建表规则（drift 必须逐条一致）：
 /// - 禁止 withDefault() —— Room 建表无 DEFAULT，默认值由应用代码填充
@@ -38,13 +43,6 @@ class ArticleBatches extends Table {
   TextColumn get generatedOn => text()();
 
   TextColumn get lastUpdatedAt => text()();
-
-  TextColumn? get blockedReason => text().nullable()();
-
-  TextColumn? get blockedAt => text().nullable()();
-
-  /// 批次完成飞书告警送达时间（Unix millis）；null = 未通知，启动时补发
-  IntColumn? get readyNotifiedAt => integer().nullable()();
 }
 
 /// 表 article（ArticleEntity.kt）
@@ -52,6 +50,11 @@ class ArticleBatches extends Table {
 @TableIndex(
   name: 'index_article_batch_id',
   columns: {#batchId},
+)
+@TableIndex(
+  name: 'index_article_server_article_id',
+  columns: {#serverArticleId},
+  unique: true,
 )
 class Articles extends Table {
   /// Room 表名 article（类名复数，必须显式覆盖）
@@ -76,21 +79,15 @@ class Articles extends Table {
   /// PENDING | GENERATING | SUCCESS | TIMEOUT | FAILED | FATAL
   TextColumn get status => text()();
 
-  TextColumn? get generationStartedAt => text().nullable()();
-
-  TextColumn? get generationCompletedAt => text().nullable()();
-
-  IntColumn get retryCount => integer()();
-
   IntColumn get accumulatedReadSeconds => integer()();
 
   TextColumn? get readCompletedAt => text().nullable()();
 
-  TextColumn? get lastRetryAt => text().nullable()();
-
-  IntColumn get maxRetries => integer()();
-
-  TextColumn? get nextRetryAt => text().nullable()();
+  /// 服务端文章 id（每日同步幂等键，Task 1 计划 B）。
+  /// nullable + 唯一索引：SQLite UNIQUE 允许多 NULL，本地无服务端对应的
+  /// 旧文章不冲突；同步时按 server_article_id 幂等 upsert。
+  /// 旧库自愈补列见 database.dart selfHealArticleSyncColumn。
+  IntColumn? get serverArticleId => integer().nullable()();
 }
 
 /// 表 article_paragraph（ArticleParagraphEntity.kt）
@@ -121,46 +118,4 @@ class ArticleParagraphs extends Table {
   TextColumn get englishText => text()();
 
   TextColumn get chineseTranslation => text()();
-}
-
-/// 表 generation_error_log（GenerationErrorLogEntity.kt）
-///
-/// 生成错误流水账（db:TYPE 流水账，快照语义）：记录生成管道中的错误事件，
-/// 错误详情（error_code / error_message / error_help）可追溯历史，
-/// 状态仍留在 article_batch / article 的 status 字段。
-@DataClassName('GenerationErrorLogRow')
-@TableIndex(
-  name: 'index_generation_error_log_entity_type_entity_id',
-  columns: {#entityType, #entityId},
-)
-@TableIndex(
-  name: 'index_generation_error_log_created_at',
-  columns: {#createdAt},
-)
-class GenerationErrorLogs extends Table {
-  /// Room 表名 generation_error_log（类名复数，必须显式覆盖）
-  @override
-  String get tableName => 'generation_error_log';
-
-  /// Room: @PrimaryKey(autoGenerate = true) val id: Long
-  IntColumn get id => integer().autoIncrement()();
-
-  /// "BATCH" | "ARTICLE"
-  TextColumn get entityType => text()();
-
-  IntColumn get entityId => integer()();
-
-  TextColumn get errorCode => text()();
-
-  TextColumn get errorMessage => text()();
-
-  TextColumn? get errorHelp => text().nullable()();
-
-  /// 快照：错误发生时的重试次数
-  IntColumn get retryCount => integer()();
-
-  TextColumn get createdAt => text()();
-
-  /// 飞书告警送达时间（Unix millis）；null = 未通知，启动时补发
-  IntColumn? get notifiedAt => integer().nullable()();
 }

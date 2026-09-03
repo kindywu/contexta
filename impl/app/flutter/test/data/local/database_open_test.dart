@@ -73,4 +73,99 @@ void main() {
       expect((await db2.select(db2.articleParagraphs).get()).length, 105);
     });
   });
+
+  group('beforeOpen 自愈（登录态 + 文章同步列）', () {
+    /// 拷贝旧结构 fixture（test/fixtures/legacy/contexta.db）到临时目录。
+    /// WAL 三件套齐拉（主文件 + -wal + -shm），保证打开即最新状态。
+    Future<Directory> copyLegacyFixture() async {
+      final tmp = await Directory.systemTemp.createTemp('contexta-heal-');
+      File('test/fixtures/legacy/contexta.db').copySync('${tmp.path}/contexta.db');
+      for (final suffix in ['-wal', '-shm']) {
+        final src = File('test/fixtures/legacy/contexta.db$suffix');
+        if (src.existsSync()) {
+          src.copySync('${tmp.path}/contexta.db$suffix');
+        }
+      }
+      return tmp;
+    }
+
+    test('打开旧结构库自愈：user_settings 补 3 登录态列、article 补 server_article_id + 唯一索引，已有数据不丢', () async {
+      final tmp = await copyLegacyFixture();
+      final db = await buildAppDatabase(overridePath: '${tmp.path}/contexta.db');
+      addTearDown(() async {
+        await db.close();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      // user_settings：server_phone / server_token（TEXT nullable）+
+      // server_token_expires_at（INTEGER nullable）
+      final usCols = await db.customSelect(
+        "SELECT name, type, \"notnull\" FROM pragma_table_info('user_settings')",
+      ).get();
+      final usByName = {for (final r in usCols) r.read<String>('name'): r};
+      expect(usByName['server_phone']!.read<String>('type'), 'TEXT');
+      expect(usByName['server_phone']!.read<int>('notnull'), 0);
+      expect(usByName['server_token']!.read<String>('type'), 'TEXT');
+      expect(usByName['server_token']!.read<int>('notnull'), 0);
+      expect(usByName['server_token_expires_at']!.read<String>('type'), 'INTEGER');
+      expect(usByName['server_token_expires_at']!.read<int>('notnull'), 0);
+
+      // article：server_article_id（INTEGER nullable）+ 唯一索引
+      // （SQLite UNIQUE 允许多 NULL —— 同步幂等键语义）
+      final aCols = await db.customSelect(
+        "SELECT name, type, \"notnull\" FROM pragma_table_info('article')",
+      ).get();
+      final aByName = {for (final r in aCols) r.read<String>('name'): r};
+      expect(aByName['server_article_id']!.read<String>('type'), 'INTEGER');
+      expect(aByName['server_article_id']!.read<int>('notnull'), 0);
+
+      final idx = await db.customSelect(
+        "SELECT name, \"unique\" FROM pragma_index_list('article') "
+        "WHERE name = 'index_article_server_article_id'",
+      ).get();
+      expect(idx, hasLength(1), reason: '自愈应建出同步幂等键唯一索引');
+      expect(idx.single.read<int>('unique'), 1);
+
+      // 已有表数据不丢（fixture 基线：user_settings 单行、article 60 行）
+      final usCount = await db
+          .customSelect('SELECT count(*) AS c FROM user_settings')
+          .getSingle();
+      expect(usCount.read<int>('c'), 1);
+      final artCount =
+          await db.customSelect('SELECT count(*) AS c FROM article').getSingle();
+      expect(artCount.read<int>('c'), 60);
+    });
+
+    test('二次打开幂等：不重复补列、不重复建索引', () async {
+      final tmp = await copyLegacyFixture();
+      final db1 = await buildAppDatabase(overridePath: '${tmp.path}/contexta.db');
+      await db1.close();
+
+      final db2 = await buildAppDatabase(overridePath: '${tmp.path}/contexta.db');
+      addTearDown(() async {
+        await db2.close();
+        try {
+          tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
+
+      final usCols = await db2.customSelect(
+        "SELECT name FROM pragma_table_info('user_settings')",
+      ).get();
+      expect(
+        usCols
+            .map((r) => r.read<String>('name'))
+            .where((n) => n.startsWith('server_'))
+            .toList(),
+        ['server_phone', 'server_token', 'server_token_expires_at'],
+      );
+      final idx = await db2.customSelect(
+        "SELECT count(*) AS c FROM pragma_index_list('article') "
+        "WHERE name = 'index_article_server_article_id'",
+      ).getSingle();
+      expect(idx.read<int>('c'), 1, reason: '索引幂等：二次打开不重复建');
+    });
+  });
 }

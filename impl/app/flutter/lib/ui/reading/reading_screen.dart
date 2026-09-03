@@ -444,7 +444,6 @@ class _ReadingPlayerBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final slow = ttsSpeed < 1.0;
-    final fast = ttsSpeed > 1.0;
     return Container(
       color: AppColors.surfaceCard,
       padding: const EdgeInsets.symmetric(

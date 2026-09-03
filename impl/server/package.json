@@ -1,0 +1,31 @@
+{
+  "name": "contexta-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "daily": "bun run src/engine/daily-cli.ts",
+    "retry": "bun run src/engine/retry.ts",
+    "replay": "bun run src/engine/replay.ts",
+    "delete-daily": "bun run src/engine/delete-daily.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.9",
+    "@langchain/langgraph": "^1.4.12",
+    "@langchain/langgraph-checkpoint": "^1.1.5",
+    "@langchain/openai": "^1.5.10",
+    "hono": "^4.6.0",
+    "jsonwebtoken": "^9.0.2",
+    "sqlite-vec": "^0.1.9",
+    "turndown": "^7.2.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/turndown": "^5.0.6",
+    "typescript": "^7"
+  }
+}

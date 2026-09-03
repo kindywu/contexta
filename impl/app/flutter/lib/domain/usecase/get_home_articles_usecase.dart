@@ -10,7 +10,8 @@ import '../model/article.dart';
 class GetHomeArticlesUseCase {
   /// 过滤并排序当前批次的文章。
   ///
-  /// [articles] 批次所有文章（通常 5 篇，见 TriggerNextBatchUseCase.maxArticlesPerBatch）
+  /// [articles] 批次所有文章（同步批次每批 5 篇；2026-08-13 T6 生成管道
+  /// 删除后无固定上限，按服务端实际返回）
   /// [userDifficulty] 用户当前难度等级（取自 `user_settings`）
   /// [displayLimit] 每批展示数量（取自 `daily_learning.dailyCountSnapshot`，可能 ≠ 当前设置）
   List<Article> call(

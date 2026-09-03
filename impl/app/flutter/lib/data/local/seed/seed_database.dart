@@ -65,10 +65,7 @@ Future<void> writeSeedIfNeeded(AppDatabase db) async {
                 contentCategory: article.contentCategory,
                 title: Value(article.title),
                 status: 'SUCCESS',
-                generationCompletedAt: Value(now),
-                retryCount: 0,
                 accumulatedReadSeconds: 0,
-                maxRetries: 3,
               ),
             );
         if (articleId == -1) {

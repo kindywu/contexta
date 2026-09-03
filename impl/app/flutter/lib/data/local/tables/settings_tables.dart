@@ -10,12 +10,15 @@ import 'article_tables.dart';
 /// - 自增主键 → integer().autoIncrement()；无自增 → integer()() + primaryKey override
 /// - 索引名与 Room 完全一致（Room 按 表名_列名 自动命名）
 
-/// 表 user_settings（UserSettingsEntity.kt：单例行 id=1，全列 NOT NULL，无索引无外键）
+/// 表 user_settings（UserSettingsEntity.kt：单例行 id=1，无索引无外键）
 ///
 /// 列序说明：Room 原 7 列（id / is_onboarded / difficulty_level /
 /// daily_article_count / translation_display_mode / mastery_threshold_n /
-/// auto_play_audio）+ 开发期 v1 补入 tts_speed / tts_voice_id，共 9 列；
-/// tts_voice_id（音色）紧跟 tts_speed。
+/// auto_play_audio）+ 开发期 v1 补入 tts_speed / tts_voice_id / 登录态 3 列
+/// （server_phone / server_token / server_token_expires_at），共 12 列；
+/// tts_voice_id（音色）紧跟 tts_speed，登录态 3 列在末尾。
+/// 登录态 3 列 nullable（旧库自愈 ALTER 补列 + 未登录时无值，见
+/// database.dart selfHealServerAuthColumns）。
 @DataClassName('UserSettingsRow')
 class UserSettings extends Table {
   /// Room 表名 user_settings（类名复数，显式覆盖保持一致）
@@ -44,6 +47,16 @@ class UserSettings extends Table {
   IntColumn get masteryThresholdN => integer()();
 
   BoolColumn get autoPlayAudio => boolean()();
+
+  /// 登录态：服务端手机号（登录成功后回写；null = 未登录）。
+  /// 仅存本地库，不落代码 / 日志（敏感值纪律）。
+  TextColumn? get serverPhone => text().nullable()();
+
+  /// 登录态：服务端签发的 token（null = 未登录）。
+  TextColumn? get serverToken => text().nullable()();
+
+  /// 登录态：token 过期时间（Unix millis；null = 无 token）。
+  IntColumn? get serverTokenExpiresAt => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -86,28 +99,6 @@ class SchemaMigrationLogs extends Table {
   TextColumn get description => text()();
 
   TextColumn get createdAt => text()();
-}
-
-/// 表 generation_pipeline_status（GenerationPipelineStatusEntity.kt：单例行 id=1）
-@DataClassName('GenerationPipelineStatusRow')
-class GenerationPipelineStatuses extends Table {
-  /// Room 表名 generation_pipeline_status（类名复数，必须显式覆盖）
-  @override
-  String get tableName => 'generation_pipeline_status';
-
-  /// Room: @PrimaryKey val id: Int（无 autoGenerate）
-  IntColumn get id => integer()();
-
-  BoolColumn get isBlocked => boolean()();
-
-  TextColumn? get blockedReason => text().nullable()();
-
-  TextColumn? get blockedAt => text().nullable()();
-
-  IntColumn? get blockedAppVersionCode => integer().nullable()();
-
-  @override
-  Set<Column> get primaryKey => {id};
 }
 
 /// 表 daily_learning_log（DailyLearningLogEntity.kt）

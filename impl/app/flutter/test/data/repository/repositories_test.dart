@@ -14,8 +14,6 @@ import 'package:contexta/data/repository/stats_repository_impl.dart';
 import 'package:contexta/data/repository/vocabulary_repository_impl.dart';
 import 'package:contexta/data/repository/word_repository_impl.dart';
 import 'package:contexta/domain/inflection/inflection_resolver.dart';
-import 'package:contexta/domain/model/article.dart';
-import 'package:contexta/domain/model/article_batch.dart';
 import 'package:contexta/domain/model/vocab_word.dart';
 import 'package:contexta/domain/model/word_detail.dart';
 import 'package:contexta/domain/repository/article_repository.dart';
@@ -73,12 +71,9 @@ void main() {
       nowIso,
     );
     articleRepo = ArticleRepositoryImpl(
-      db,
       ArticleBatchDao(db),
       ArticleDao(db),
       ArticleParagraphDao(db),
-      GenerationPipelineStatusDao(db),
-      GenerationErrorLogDao(db),
       DailyLearningDao(db),
       nowIso,
       nowDate,
@@ -328,7 +323,7 @@ void main() {
         'home', '/hoʊm/', const [
           WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
               chineseMeaning: '家', englishDefinition: 'a place where you live',
-              examples: const []),
+              examples: []),
         ],
       );
       var llmCalled = 0;
@@ -350,10 +345,10 @@ void main() {
         'play', '/pleɪ/', const [
           WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
               chineseMeaning: '戏剧', englishDefinition: 'a stage performance',
-              examples: const []),
+              examples: []),
           WordSense(id: 0, orderIndex: 2, partOfSpeech: 'v.',
               chineseMeaning: '玩耍', englishDefinition: 'to do an activity',
-              examples: const []),
+              examples: []),
         ],
       );
       final detail = await wordRepo.lookupWord('plays', (_) async => null);
@@ -365,7 +360,7 @@ void main() {
       await wordRepo.saveLlmResult('box', null, const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
             chineseMeaning: '盒子', englishDefinition: 'a container',
-            examples: const []),
+            examples: []),
       ]);
       final first = await wordRepo.lookupWord('boxes', (_) async => null);
       expect(first, isNotNull);
@@ -393,7 +388,7 @@ void main() {
       await wordRepo.saveLlmResult('wife', null, const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
             chineseMeaning: '妻子', englishDefinition: 'a married woman',
-            examples: const []),
+            examples: []),
       ]);
       final detail = await wordRepo.findLocal('wives');
       expect(detail, isNotNull);
@@ -405,7 +400,7 @@ void main() {
       await wordRepo.saveLlmResult('cry', null, const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'v.',
             chineseMeaning: '哭', englishDefinition: 'to shed tears',
-            examples: const []),
+            examples: []),
       ]);
       final detail = await wordRepo.lookupWord('cries', (_) async => null);
       expect(detail, isNotNull);
@@ -418,7 +413,7 @@ void main() {
       await wordRepo.saveLlmResult('play', '/pleɪ/', const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'v.',
             chineseMeaning: '玩', englishDefinition: 'to do an activity',
-            examples: const []),
+            examples: []),
       ]);
       final detail = await wordRepo.lookupWord('played', (_) async => null);
       expect(detail, isNotNull);
@@ -430,7 +425,7 @@ void main() {
       await wordRepo.saveLlmResult('home', null, const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'n.',
             chineseMeaning: '家', englishDefinition: 'a place where you live',
-            examples: const []),
+            examples: []),
       ]);
       final detail = await wordRepo.lookupWord('home', (_) async => null);
       expect(detail, isNotNull);
@@ -441,10 +436,10 @@ void main() {
       await wordRepo.saveLlmResult('fast', '/fæst/', const [
         WordSense(id: 0, orderIndex: 1, partOfSpeech: 'adv.',
             chineseMeaning: '快速地', englishDefinition: 'quickly',
-            examples: const []),
+            examples: []),
         WordSense(id: 0, orderIndex: 2, partOfSpeech: 'pron.',
             chineseMeaning: '某物', englishDefinition: 'somebody',
-            examples: const []),
+            examples: []),
       ]);
       final detail = await wordRepo.lookupWord('fasts', (_) async => null);
       expect(detail, isNotNull);
@@ -453,182 +448,34 @@ void main() {
   });
 
   group('ArticleRepository', () {
-    test('createBatch + createArticles + getArticles', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      expect(batchId, greaterThan(0));
-      await articleRepo.createArticles(batchId, ['NEWS', 'SIMPLE_STORY']);
-
-      final articles = await articleRepo.getArticles(batchId);
-      expect(articles.length, 2);
-      expect(articles[0].orderIndex, 1);
-      expect(articles[0].contentCategory, 'NEWS');
-      expect(articles[0].status, ArticleStatus.pending);
-      expect(articles[0].batchId, batchId);
-    });
-
-    test('claimBatch / claimArticle CAS 语义', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-
-      expect(await articleRepo.claimBatch(batchId), true);
-      expect(await articleRepo.claimBatch(batchId), true); // GENERATING 可再认领
-      await articleRepo.markBatchReady(batchId);
-      expect(await articleRepo.claimBatch(batchId), false); // READY 拒绝
-
-      final articleId = (await articleRepo.getArticles(batchId)).first.id;
-      expect(await articleRepo.claimArticle(articleId), true);
-      expect(await articleRepo.claimArticle(articleId), true);
-      await articleRepo.failArticle(articleId, 'FAILED', errorCode: 'E1', errorMessage: '失败');
-      expect(await articleRepo.claimArticle(articleId), true); // FAILED 可重试认领
-    });
-
-    test('completeArticle 写段落与成功状态', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-      final articleId = (await articleRepo.getArticles(batchId)).first.id;
-
-      await articleRepo.completeArticle(articleId, 'A title', [
-        ArticleParagraph(orderIndex: -1, englishText: 'para 1', chineseTranslation: '段落一'),
-        ArticleParagraph(orderIndex: 2, englishText: 'para 2', chineseTranslation: '段落二'),
-      ], retryCount: 1);
-
-      final article = await articleRepo.getArticle(articleId);
-      expect(article!.status, ArticleStatus.success);
-      expect(article.title, 'A title');
-      expect(article.retryCount, 1);
-      expect(article.paragraphs.length, 2);
-      expect(article.paragraphs[0].orderIndex, 1); // <=0 用序号
-      expect(article.paragraphs[1].orderIndex, 2);
-    });
-
-    test('isBatchComplete / hasFatalArticle', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS', 'SIMPLE_STORY']);
-      expect(await articleRepo.isBatchComplete(batchId), false);
-
-      final articles = await articleRepo.getArticles(batchId);
-      await articleRepo.completeArticle(
-          articles[0].id, 't1', const [], retryCount: 0);
-      expect(await articleRepo.isBatchComplete(batchId), false);
-      expect(await articleRepo.hasFatalArticle(batchId), false);
-
-      await articleRepo.completeArticle(
-          articles[1].id, 't2', const [], retryCount: 0);
-      expect(await articleRepo.isBatchComplete(batchId), true);
-
-      // 再建一个含 FATAL 的批次（不同日期，避免 (difficulty, generated_on) 唯一冲突）
-      final batch2 = await articleRepo.createBatch('LOW', generatedOn: '2026-08-06');
-      await articleRepo.createArticles(batch2, ['NEWS']);
-      final a2 = (await articleRepo.getArticles(batch2)).first;
-      await articleRepo.fatalArticle(a2.id, errorCode: 'F', errorMessage: 'fatal');
-      expect(await articleRepo.hasFatalArticle(batch2), true);
-    });
-
-    test('markBatchBlocked：批次 BLOCKED + 错误流水账 + pipeline 开关', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-
-      final logId = await articleRepo.markBatchBlocked(batchId, '结构性错误', 5);
-      expect(logId, greaterThan(0));
-      expect(await articleRepo.isPipelineBlocked(), true);
-
-      final batch = await articleRepo.getBatchById(batchId);
-      expect(batch!.status, BatchStatus.blocked);
-      expect(batch.blockedReason, '结构性错误');
-
-      final status = await db.select(db.generationPipelineStatuses).getSingleOrNull();
-      expect(status!.isBlocked, true);
-      expect(status.blockedAppVersionCode, 5);
-
-      final errors = await db.select(db.generationErrorLogs).get();
-      expect(errors.length, 1);
-      expect(errors.first.entityType, 'BATCH');
-      expect(errors.first.errorCode, 'STRUCTURAL_PIPELINE_BLOCKED');
-    });
-
-    test('recoverIfNewerVersion：新版本解锁并重置孤儿文章', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-      final articleId = (await articleRepo.getArticles(batchId)).first.id;
-      await articleRepo.claimArticle(articleId); // GENERATING
-      await articleRepo.claimBatch(batchId);
-
-      await articleRepo.markBatchBlocked(batchId, '原因', 5);
-      expect(await articleRepo.recoverIfNewerVersion(5), false);
-      expect(await articleRepo.recoverIfNewerVersion(6), true);
-      expect(await articleRepo.isPipelineBlocked(), false);
-
-      // 恢复只清 pipeline 开关与文章状态（Kotlin 语义：批次保持 BLOCKED，
-      // 由 ActivateSeedBatch/生成编排在解锁后另行处理）
-      final article = await articleRepo.getArticle(articleId);
-      expect(article!.status, ArticleStatus.pending);
-      final batch = await articleRepo.getBatchById(batchId);
-      expect(batch!.status, BatchStatus.blocked);
-    });
-
-    test('failArticle / fatalArticle：状态 + 错误流水账同事务', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-      final articleId = (await articleRepo.getArticles(batchId)).first.id;
-
-      final logId = await articleRepo.failArticle(articleId, 'TIMEOUT',
-          errorCode: 'TIMEOUT', errorMessage: '超时', errorHelp: '稍后重试', retryCount: 2);
-      expect(logId, greaterThan(0));
-
-      final article = await articleRepo.getArticle(articleId);
-      expect(article!.status, ArticleStatus.timeout);
-      // Kotlin 语义：updateStatusWithRetryTime 只写 status + last_retry_at，
-      // retryCount 只进 error log，不进 article 行
-      expect(article.retryCount, 0);
-      expect(article.lastRetryAt, nowIso());
-
-      final errors = await db.select(db.generationErrorLogs).get();
-      expect(errors.length, 1);
-      expect(errors.first.errorMessage, '超时');
-      expect(errors.first.errorHelp, '稍后重试');
-      expect(errors.first.retryCount, 2);
-
-      // 无错误详情 → 返回 null，不写流水账
-      final id2 = await articleRepo.failArticle(articleId, 'FAILED');
-      expect(id2, isNull);
-      expect((await db.select(db.generationErrorLogs).get()).length, 1);
-    });
-
-    test('错误流水账：markErrorNotified + getUnnotifiedErrors', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-      final articleId = (await articleRepo.getArticles(batchId)).first.id;
-
-      final logId = await articleRepo.failArticle(articleId, 'FAILED',
-          errorCode: 'E', errorMessage: 'm');
-      await articleRepo.markErrorNotified(logId!);
-
-      final unnotified = await articleRepo.getUnnotifiedErrors('2000-01-01T00:00:00+08:00');
-      expect(unnotified, isEmpty);
-      final row = await db.select(db.generationErrorLogs).getSingle();
-      expect(row.notifiedAt, isNotNull);
-    });
-
-    test('批次完成通知：markBatchReadyNotified + getReadyBatchesUnnotified', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-      await articleRepo.markBatchReady(batchId);
-
-      final unnotified = await articleRepo.getReadyBatchesUnnotified();
-      expect(unnotified.map((b) => b.id), [batchId]);
-
-      await articleRepo.markBatchReadyNotified(batchId);
-      expect(await articleRepo.getReadyBatchesUnnotified(), isEmpty);
-    });
+    /// 直连 DAO 插入 READY 批次 + SUCCESS 文章（T6 后仓储不再提供
+    /// createArticles/markBatchReady，测试用 DAO 构造等价数据）。
+    Future<int> insertReadyBatchWithArticles(String difficulty,
+        {required String generatedOn, List<String> categories = const ['NEWS']}) async {
+      final batchId = await db.into(db.articleBatches).insert(
+          ArticleBatchesCompanion.insert(
+            status: 'READY',
+            difficultyLevelSnapshot: difficulty,
+            generatedOn: generatedOn,
+            lastUpdatedAt: nowIso(),
+          ));
+      for (var i = 0; i < categories.length; i++) {
+        await db.into(db.articles).insert(ArticlesCompanion.insert(
+              batchId: batchId,
+              orderIndex: i + 1,
+              contentCategory: categories[i],
+              title: Value('T$i'),
+              status: 'SUCCESS',
+              accumulatedReadSeconds: 0,
+            ));
+      }
+      return batchId;
+    }
 
     test('getBatchByDifficultyAndDate / findNextReadyBatch / 批次消费顺序', () async {
       // 批次 1、2 同难度；1 先 READY 并被消费
-      final b1 = await articleRepo.createBatch('LOW', generatedOn: '2026-08-01');
-      await articleRepo.createArticles(b1, ['NEWS']);
-      await articleRepo.markBatchReady(b1);
-      final b2 = await articleRepo.createBatch('LOW', generatedOn: '2026-08-02');
-      await articleRepo.createArticles(b2, ['SIMPLE_STORY']);
-      await articleRepo.markBatchReady(b2);
+      final b1 = await insertReadyBatchWithArticles('LOW', generatedOn: '2026-08-01');
+      final b2 = await insertReadyBatchWithArticles('LOW', generatedOn: '2026-08-02');
 
       expect((await articleRepo.getBatchByDifficultyAndDate('LOW', '2026-08-01'))!.id, b1);
 
@@ -644,8 +491,6 @@ void main() {
           await articleRepo.assignBatchForToday(b1, '2026-08-01', 1),
           false); // 今天已有记录
 
-      expect(await articleRepo.getMaxRefBatchDate(), '2026-08-01');
-
       // afterDate 不早于已消费日期（>=，2026-08-12 修复）→ b2
       final next = await articleRepo.findNextReadyBatch('LOW', '2026-08-01');
       expect(next!.id, b2);
@@ -655,9 +500,7 @@ void main() {
     });
 
     test('getAssignedBatchForDate / getAllDailyLearningInfos', () async {
-      final b1 = await articleRepo.createBatch('LOW', generatedOn: '2026-08-01');
-      await articleRepo.createArticles(b1, ['NEWS']);
-      await articleRepo.markBatchReady(b1);
+      final b1 = await insertReadyBatchWithArticles('LOW', generatedOn: '2026-08-01');
       await articleRepo.assignBatchForToday(b1, '2026-08-01', 1);
 
       final today = nowDate();
@@ -671,29 +514,11 @@ void main() {
       expect(infos.first.batch.id, b1);
     });
 
-    test('getUnassignedReadyBatches：默认 minGeneratedOn 为今天', () async {
-      // 默认 minGeneratedOn = 今天 → 生成于过去（8-01）的批次被排除（忽略旧 seed 数据）
-      final b1 = await articleRepo.createBatch('LOW', generatedOn: '2026-08-01');
-      await articleRepo.createArticles(b1, ['NEWS']);
-      await articleRepo.markBatchReady(b1);
-      // 2026-08-12 修复（>=）：今天（08-07）生成的未消费批次不再被排除——
-      // 它就是"预生成给下次打开消费"的批次
-      final b2 = await articleRepo.createBatch('LOW', generatedOn: '2026-08-07');
-      await articleRepo.createArticles(b2, ['NEWS']);
-      await articleRepo.markBatchReady(b2);
-
-      final unassigned = await articleRepo.getUnassignedReadyBatches('LOW', null);
-      expect(unassigned.map((b) => b.id), [b2]);
-
-      // 显式传更早日期 → 两批都返回
-      final all = await articleRepo.getUnassignedReadyBatches('LOW', '2026-07-01');
-      expect(all.map((b) => b.id), [b1, b2]);
-    });
-
     test('阅读计时：addReadSeconds + tryMarkReadCompleted + force', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-      final articleId = (await articleRepo.getArticles(batchId)).first.id;
+      final batchId = await insertReadyBatchWithArticles('LOW', generatedOn: '2026-08-01');
+      final articleQuery = db.select(db.articles)
+        ..where((t) => t.batchId.equals(batchId));
+      final articleId = (await articleQuery.getSingle()).id;
 
       await articleRepo.addReadSeconds(articleId, 50);
       await articleRepo.addReadSeconds(articleId, 50);
@@ -715,70 +540,38 @@ void main() {
     });
 
     test('forceMarkReadCompleted：无视累计秒数', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-      final articleId = (await articleRepo.getArticles(batchId)).first.id;
+      final batchId = await insertReadyBatchWithArticles('LOW', generatedOn: '2026-08-01');
+      final articleQuery = db.select(db.articles)
+        ..where((t) => t.batchId.equals(batchId));
+      final articleId = (await articleQuery.getSingle()).id;
       await articleRepo.forceMarkReadCompleted(articleId);
       expect((await articleRepo.getArticle(articleId))!.readCompletedAt, nowIso());
     });
 
-    test('reconcileOrphanArticles：重置 GENERATING/TIMEOUT/FAILED 文章与批次', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-      final articleId = (await articleRepo.getArticles(batchId)).first.id;
-      await articleRepo.claimArticle(articleId); // GENERATING
-      await articleRepo.claimBatch(batchId); // GENERATING
-
-      await articleRepo.reconcileOrphanArticles();
-      final article = await articleRepo.getArticle(articleId);
-      expect(article!.status, ArticleStatus.pending);
-      final batch = await articleRepo.getBatchById(batchId);
-      expect(batch!.status, BatchStatus.pending);
-    });
-
-    test('getGeneratingBatches', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-      expect(await articleRepo.getGeneratingBatches(), isEmpty);
-      await articleRepo.claimBatch(batchId);
-      expect((await articleRepo.getGeneratingBatches()).map((b) => b.id), [batchId]);
-    });
-
     test('observeArticles 流：插入触发更新', () async {
-      final batchId = await articleRepo.createBatch('LOW');
+      final batchId = await db.into(db.articleBatches).insert(
+          ArticleBatchesCompanion.insert(
+            status: 'CURRENT',
+            difficultyLevelSnapshot: 'LOW',
+            generatedOn: '2026-08-01',
+            lastUpdatedAt: nowIso(),
+          ));
       // drift watch 订阅即发首帧（空列表），跳过首帧取插入后的第二帧
       final emission = articleRepo.observeArticles(batchId).skip(1).first;
-      await articleRepo.createArticles(batchId, ['NEWS', 'SIMPLE_STORY']);
+      await db.batch((b) => b.insertAll(db.articles, [
+            for (var i = 0; i < 2; i++)
+              ArticlesCompanion.insert(
+                batchId: batchId,
+                orderIndex: i + 1,
+                contentCategory: ['NEWS', 'SIMPLE_STORY'][i],
+                title: Value('T$i'),
+                status: 'SUCCESS',
+                accumulatedReadSeconds: 0,
+              ),
+          ]));
       final articles = await emission;
       expect(articles.length, 2);
       expect(articles[0].contentCategory, 'NEWS');
-    });
-
-    test('observeGenerationErrors 流：每篇文章只取最新错误', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-      final articleId = (await articleRepo.getArticles(batchId)).first.id;
-
-      await articleRepo.failArticle(articleId, 'TIMEOUT',
-          errorCode: 'T1', errorMessage: '第一次');
-      await articleRepo.failArticle(articleId, 'FAILED',
-          errorCode: 'F2', errorMessage: '第二次');
-      // 订阅后首帧即当前状态（drift watch 语义）：只含最新错误
-      final errors = await articleRepo.observeGenerationErrors().first;
-      expect(errors.length, 1);
-      expect(errors.first.errorMessage, '第二次');
-      expect(errors.first.status, 'FAILED');
-    });
-
-    test('resetArticleForRetry', () async {
-      final batchId = await articleRepo.createBatch('LOW');
-      await articleRepo.createArticles(batchId, ['NEWS']);
-      final articleId = (await articleRepo.getArticles(batchId)).first.id;
-      await articleRepo.failArticle(articleId, 'FAILED', errorCode: 'E', errorMessage: 'm');
-      await articleRepo.resetArticleForRetry(articleId);
-      final article = await articleRepo.getArticle(articleId);
-      expect(article!.status, ArticleStatus.pending);
-      expect(article.retryCount, 0);
     });
   });
 

@@ -4,6 +4,7 @@
 abstract final class Routes {
   static const onboarding = '/onboarding';
   static const home = '/home';
+  static const login = '/login';
   static const reading = '/reading/:articleId';
   static const vocabulary = '/vocabulary';
   static const addWord = '/add_word';

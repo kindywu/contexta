@@ -67,6 +67,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            // v2 并行安装（2026-08-14）：debug 构建使用独立 applicationId
+            // （com.ak.contexta.v2），与旧版包并存互不干扰，adb install -r 不触碰旧包；
+            // release 保持 com.ak.contexta。
+            applicationIdSuffix = ".v2"
+        }
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.

@@ -3,9 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/remote/llm_api.dart';
+import '../../data/remote/server_api_client.dart';
 import '../../di/providers.dart';
-import '../../domain/generation/word_prompts.dart';
-import '../../domain/llm_client.dart';
+import '../../domain/error/llm_exceptions.dart';
 import '../../domain/model/article.dart';
 import '../../domain/model/tts_voice.dart';
 import '../../domain/model/word_detail.dart';
@@ -214,7 +215,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     required this._vocabularyRepository,
     required this._statsRepository,
     required this._wordRepository,
-    required this._llmClient,
+    required this._llmApi,
     required Future<TtsEngine> ttsEngineFuture,
   })  : _ttsEngineFuture = ttsEngineFuture,
         super(const ReadingUiState()) {
@@ -230,7 +231,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
   final VocabularyRepository _vocabularyRepository;
   final StatsRepository _statsRepository;
   final WordRepository _wordRepository;
-  final LlmClient _llmClient;
+  final LlmApi _llmApi;
   final Future<TtsEngine> _ttsEngineFuture;
 
   TtsEngine? _ttsEngine;
@@ -686,26 +687,27 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     }
   }
 
-  /// LLM 兜底查词：DeepSeek 生成 → 解析 → 落库回填（返回带 DB ID 的详情）。
+  /// 服务端兜底查词：word-lookup API → 落库回填（返回带 DB ID 的详情）。
   Future<WordDetail?> _llmFallback(String rawWord) async {
-    debugPrint('[ReadingCtrl] _llmFallback: calling LLM for "$rawWord"');
+    debugPrint('[ReadingCtrl] _llmFallback: calling word-lookup API for "$rawWord"');
     try {
-      final result = await _llmClient.call(
-        await buildWordLookupSystemPrompt(),
-        buildWordLookupUserPrompt(rawWord),
+      final detail = await _llmApi.wordLookup(rawWord);
+      debugPrint('[ReadingCtrl] _llmFallback: word-lookup OK senses=${detail.allSenses.length}');
+      return _wordRepository.saveLlmResult(
+        detail.spellingDisplay,
+        detail.phoneticIpa,
+        detail.allSenses,
+        normalized: WordRepository.normalize(detail.spellingDisplay),
       );
-      debugPrint('[ReadingCtrl] _llmFallback: LLM content len=${result.content.length} retries=${result.retryCount}');
-      final parsed = parseWordLlmResponse(result.content);
-      if (parsed == null) {
-        debugPrint('[ReadingCtrl] _llmFallback: PARSE FAILED. content: ${result.content}');
+    } on ServerApiException catch (e) {
+      final mapped = mapErrorCodeToException(e);
+      if (mapped is QuotaExceededException) {
+        // 配额用尽：仍降级「仅词头」，但 toast 告知原因（配额不会因重试恢复）
+        state = state.copyWith(snackbarMessage: '今日查词次数已用完');
         return null;
       }
-      return _wordRepository.saveLlmResult(
-        parsed.spellingDisplay,
-        parsed.phoneticIpa,
-        parsed.allSenses,
-        normalized: WordRepository.normalize(parsed.spellingDisplay),
-      );
+      // 其余错误统一抛出：上层（_lookupWord）既有 catch 降级「仅词头」
+      throw mapped;
     } catch (e) {
       debugPrint('[ReadingCtrl] _llmFallback ERROR: $e');
       return null;
@@ -797,7 +799,7 @@ final readingControllerProvider = StateNotifierProvider.autoDispose
     vocabularyRepository: ref.watch(vocabularyRepositoryProvider),
     statsRepository: ref.watch(statsRepositoryProvider),
     wordRepository: ref.watch(wordRepositoryProvider),
-    llmClient: ref.watch(llmClientProvider),
+    llmApi: ref.watch(llmApiProvider),
     ttsEngineFuture: ref.watch(ttsEngineProvider.future),
   );
 });

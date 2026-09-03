@@ -31,6 +31,14 @@ class _FakeSettingsRepo implements SettingsRepository {
   Future<void> updateMasteryThreshold(int n) async {}
   @override
   Future<void> updateAutoPlayAudio(bool enabled) async {}
+  @override
+  Future<void> saveAuth({
+    required String phone,
+    required String token,
+    required int tokenExpiresAtMillis,
+  }) async {}
+  @override
+  Future<void> clearAuth() async {}
 }
 
 void main() {

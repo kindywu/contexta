@@ -1,0 +1,10 @@
+/target
+node_modules/
+data/
+output/
+logs/
+.backup/
+.env
+contexta.db
+contexta.db-shm
+contexta.db-wal
