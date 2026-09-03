@@ -4,6 +4,7 @@ import type { Database } from "bun:sqlite";
  * 服务端表（对齐旧 001-init.sql，时间戳 Unix millis INTEGER）。
  * 与引擎 4 表共用同一库：调用方先 `ensureSchema(db)`（引擎），再 `ensureServerSchema(db)`。
  * article_review 的 article_id/slot_id 引用由引擎 ensureSchema 创建的 articles(id)/batch_slots(id)。
+ * article_delivery（2026-09-03 文章投放）：账户×文章的交付账本；UNIQUE(phone, article_id)——同一 phone 号（含重装换 device_id / 多设备）永不重复投同一篇（学习者是"人"，不读相同文章）；device_id 仅记录交付设备，不参与冻结/游标/已读逻辑（均按 phone×难度）。
  */
 const SERVER_DDL: string[] = [
   `CREATE TABLE IF NOT EXISTS users (
@@ -59,6 +60,18 @@ const SERVER_DDL: string[] = [
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
   `CREATE INDEX IF NOT EXISTS idx_article_review_slot ON article_review(slot_id)`,
+  `CREATE TABLE IF NOT EXISTS article_delivery (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    difficulty TEXT NOT NULL,
+    article_id INTEGER NOT NULL REFERENCES articles(id),
+    delivery_date TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(phone, article_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_article_delivery_client_date
+    ON article_delivery(phone, difficulty, delivery_date)`,
 ];
 
 /** 幂等建服务端表：逐条 run（CREATE TABLE / INDEX 均 IF NOT EXISTS）。 */
