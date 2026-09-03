@@ -214,8 +214,8 @@ final activateSeedBatchUseCaseProvider = Provider<ActivateSeedBatchUseCase>((
   );
 });
 
-/// 每日文章同步用例（fetchToday 经 ArticleApi；T6 编排在登录后触发）。
-/// 直连 DAO（简报裁定）：不经过 ArticleRepository 大接口。
+/// 每日文章同步用例（fetchDelivery 经 ArticleApi；difficulty/count 取自
+/// user_settings——启动时按当前难度设置投放）。直连 DAO（简报裁定）。
 final syncArticlesUseCaseProvider = Provider<SyncArticlesUseCase>((ref) {
   final db = ref.watch(databaseProvider).requireValue;
   return SyncArticlesUseCase(
@@ -223,7 +223,13 @@ final syncArticlesUseCaseProvider = Provider<SyncArticlesUseCase>((ref) {
     batchDao: ArticleBatchDao(db),
     articleDao: ArticleDao(db),
     paragraphDao: ArticleParagraphDao(db),
-    fetchToday: () => ref.read(articleApiProvider).fetchTodayArticles(),
+    fetchDelivery: () async {
+      final settings = await ref.read(settingsRepositoryProvider).getSettings();
+      return ref.read(articleApiProvider).fetchDelivery(
+        difficulty: settings?.difficultyLevel ?? 'MEDIUM',
+        count: settings?.dailyArticleCount ?? 3,
+      );
+    },
     timeProvider: ref.watch(timeProvider),
   );
 });

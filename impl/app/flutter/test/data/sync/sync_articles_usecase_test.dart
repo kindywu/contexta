@@ -15,8 +15,9 @@ import 'package:contexta/domain/time/time_provider.dart';
 /// - 批次键 = 投放日 delivery_date（非文章 target_date——投放集可跨天）；
 /// - 空交付（articles 空）→ 0 批次 0 文章，不建批；
 /// - 投放是一次性交付单难度，其余幂等 / 事务 / 单飞语义与计划 B 简报一致。
-/// 10 个场景：首次投放、重复同步幂等、服务端更新、段落 upsert、事务回滚、
-/// fetch 失败、并发单飞、in-flight 清理、空交付、generatedOn = delivery_date。
+/// 11 个场景：首次投放、难度分组、重复同步幂等、服务端更新、段落 upsert、
+/// 事务回滚、fetch 失败、并发单飞、in-flight 清理、空交付、generatedOn =
+/// delivery_date。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -135,6 +136,57 @@ void main() {
       expect(p.chineseTranslation, startsWith('段落'));
       expect(p.orderIndex, inInclusiveRange(1, 2));
     }
+  });
+
+  test('难度分组：单投放集含 LOW（2 篇）+ MEDIUM（1 篇）→ 2 个 CURRENT 批次、文章落对应难度批次', () async {
+    final result = await buildUseCase(
+      () async => buildDelivery(
+        articles: [
+          buildArticle(
+            id: 1,
+            difficulty: 'LOW',
+            contentCategory: 'life',
+            orderIndex: 1,
+            title: 'title-LOW-1',
+          ),
+          buildArticle(
+            id: 2,
+            difficulty: 'LOW',
+            contentCategory: 'life',
+            orderIndex: 2,
+            title: 'title-LOW-2',
+          ),
+          buildArticle(
+            id: 3,
+            difficulty: 'MEDIUM',
+            contentCategory: 'life',
+            orderIndex: 1,
+            title: 'title-MEDIUM-1',
+          ),
+        ],
+      ),
+    ).call();
+
+    expect(result.syncedBatches, 2);
+    expect(result.syncedArticles, 3);
+
+    final batches = await db.select(db.articleBatches).get();
+    expect(batches, hasLength(2), reason: '同投放集按难度各建一批（不合并）');
+    final byDifficulty = {
+      for (final b in batches) b.difficultyLevelSnapshot: b,
+    };
+    for (final b in batches) {
+      expect(b.status, 'CURRENT');
+      expect(b.generatedOn, '2026-08-13', reason: '批次键 = 单 delivery_date');
+    }
+
+    // 文章各落对应难度批次（本地文章行无 difficulty 列，经 batchId 断言）
+    final articles = await db.select(db.articles).get();
+    expect(articles, hasLength(3));
+    final byServerId = {for (final a in articles) a.serverArticleId!: a};
+    expect(byServerId[1]!.batchId, byDifficulty['LOW']!.id);
+    expect(byServerId[2]!.batchId, byDifficulty['LOW']!.id);
+    expect(byServerId[3]!.batchId, byDifficulty['MEDIUM']!.id);
   });
 
   test('重复同步（同数据）→ 行数不变（server_article_id 幂等）', () async {
