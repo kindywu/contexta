@@ -1,5 +1,5 @@
 // tests/daily_task.test.ts
-// 每日任务编排（启动补漏 + 定时循环 + pending 恢复 + error 补跑 + 审核行补齐）：
+// 每日任务编排（窗口触发 + pending 恢复 + error 补跑 + 审核行补齐）：
 // genDaily/retryFailed/ensure/now/sleep 注入假实现——不依赖真实引擎/LLM/定时器；
 // 槽位终态用真实 :memory: 库 + 引擎 listSlots 手工造，验证 runFill 的编排顺序与分派。
 // 唯一例外：error 补跑唯一 genSeq 测试用真实 retrySlot（缺省 reRun）+ 注入 gen（error 三态）。
@@ -21,9 +21,13 @@ import {
   type SlotRow,
   type SlotStatus,
 } from "../src/engine/db";
-import { localDate } from "../src/engine/utils/time";
 import type { GenArgs } from "../src/services/review_service";
-import { DailyTask, type DailyTaskCtx } from "../src/services/daily_task";
+import {
+  DailyTask,
+  isInDailyWindow,
+  nextTriggerWaitMs,
+  type DailyTaskCtx,
+} from "../src/services/daily_task";
 import { todayStartMillis } from "../src/time";
 
 const RUN_DATE = "2026-09-02";
@@ -213,74 +217,120 @@ describe("daily_task runFill", () => {
   });
 });
 
-describe("daily_task startupFill", () => {
-  test("同一次 now() 推导今天+明天，依次 runFill 两日", async () => {
-    const fixedNow = new Date(2026, 8, 2, 10, 0, 0);
-    const today = localDate(TZ, fixedNow);
-    const tomorrow = localDate(TZ, new Date(fixedNow.getTime() + 86_400_000));
-    const f = recorders();
-    const { ctx } = makeCtx({ ...f, now: () => fixedNow });
+describe("daily_task 窗口判定", () => {
+  const W = { start: 480, end: 495 }; // 08:00-08:15
 
-    await new DailyTask(ctx).startupFill();
-
-    expect(f.genCalls.map((c) => c.runDate)).toEqual([today, tomorrow]);
+  test("isInDailyWindow：窗口内（含边界）true，窗口外 false", () => {
+    expect(isInDailyWindow(new Date(2026, 8, 2, 8, 0, 0), W, TZ)).toBe(true);
+    expect(isInDailyWindow(new Date(2026, 8, 2, 8, 10, 0), W, TZ)).toBe(true);
+    expect(isInDailyWindow(new Date(2026, 8, 2, 8, 15, 0), W, TZ)).toBe(true);
+    expect(isInDailyWindow(new Date(2026, 8, 2, 7, 59, 59), W, TZ)).toBe(false);
+    expect(isInDailyWindow(new Date(2026, 8, 2, 8, 15, 1), W, TZ)).toBe(false);
+    expect(isInDailyWindow(new Date(2026, 8, 2, 20, 0, 0), W, TZ)).toBe(false);
   });
 
-  test("单日 fill 失败 → 另一日仍执行（失败仅记日志）", async () => {
-    const fixedNow = new Date(2026, 8, 2, 10, 0, 0);
-    const today = localDate(TZ, fixedNow);
-    const tomorrow = localDate(TZ, new Date(fixedNow.getTime() + 86_400_000));
-    const calls: string[] = [];
-    const genDaily = async ({ runDate }: { runDate: string; config: AppConfig }) => {
-      calls.push(runDate);
-      if (runDate === today) throw new Error("今天生成失败");
-    };
-    const { ctx } = makeCtx({ genDaily, now: () => fixedNow });
-
-    await expect(new DailyTask(ctx).startupFill()).resolves.toBeUndefined();
-    expect(calls).toEqual([today, tomorrow]); // 今天失败不阻止明天
+  test("nextTriggerWaitMs：未到窗口 → 今日窗口开始；窗口内/已过 → 明日窗口开始", () => {
+    const at = (h: number, m: number, s = 0) => new Date(2026, 8, 2, h, m, s);
+    const start = todayStartMillis(TZ, at(0, 0)); // 2026-09-02 本地零点
+    expect(nextTriggerWaitMs(at(7, 0), W, TZ)).toBe(480 * 60_000 - 7 * 3_600_000); // 08:00-07:00 = 1h
+    expect(nextTriggerWaitMs(at(8, 10), W, TZ)).toBe(start + 480 * 60_000 + 86_400_000 - at(8, 10).getTime());
+    expect(nextTriggerWaitMs(at(8, 20), W, TZ)).toBe(start + 480 * 60_000 + 86_400_000 - at(8, 20).getTime());
   });
 });
 
-describe("daily_task loop", () => {
-  test("等待到 DAILY_GENERATE_HOUR:01；触发后 runFill(今天补) + runFill(明天主生成)", async () => {
-    const fixedNow = new Date(2026, 8, 2, 14, 0, 0); // 14:00 ≥ 3 → 等明天 03:01
-    const hour = 3; // serverCfg.dailyGenerateHour 缺省 3
-    const sleeps: number[] = [];
-    const stop = new Error("stop-loop");
-    const sleep = async (ms: number) => {
-      sleeps.push(ms);
-      if (sleeps.length >= 2) throw stop; // 第一觉醒来触发一轮后终止循环
-    };
-    const f = recorders();
-    const { ctx } = makeCtx({ ...f, now: () => fixedNow, sleep });
+describe("daily_task loop（窗口触发 + 三态判定）", () => {
+  const W = { start: 480, end: 495 }; // 08:00-08:15
 
-    await expect(new DailyTask(ctx).loop()).rejects.toThrow("stop-loop");
-
-    // 等待毫秒 = 明天 hour:01 - now（系统时区 == 配置时区，todayStartMillis 同口径）
-    const expected =
-      todayStartMillis(TZ, fixedNow) + 86_400_000 + hour * 3_600_000 + 60_000 - fixedNow.getTime();
-    expect(sleeps[0]).toBe(expected);
-
-    // 触发后：今天（补）+ 明天（主生成），由同一次 now 推导
-    const today = localDate(TZ, fixedNow);
-    const tomorrow = localDate(TZ, new Date(fixedNow.getTime() + 86_400_000));
-    expect(f.genCalls.map((c) => c.runDate)).toEqual([today, tomorrow]);
-  });
-
-  test("未到 hour 时等当天 hour:01（now 01:00 → 等今天 03:01）", async () => {
-    const fixedNow = new Date(2026, 8, 2, 1, 0, 0); // 01:00 < 3 → 今天 03:01
-    const hour = 3;
-    const sleeps: number[] = [];
-    const sleep = async (ms: number) => {
-      sleeps.push(ms);
+  // fake sleep：记录等待毫秒后立即抛错终止循环（每次触发点的等待就是断言目标）
+  function stopLoopSleep(sleeps: number[]) {
+    return async (msValue: number) => {
+      sleeps.push(msValue);
       throw new Error("stop-loop");
     };
-    const { ctx } = makeCtx({ genDaily: async () => {}, retryFailed: async () => {}, now: () => fixedNow, sleep });
+  }
+
+  test("窗口内（08:10）→ 立即触发，只生成当天一天，随后睡到明日窗口", async () => {
+    const fixedNow = new Date(2026, 8, 2, 8, 10, 0);
+    const sleeps: number[] = [];
+    const f = recorders();
+    const { ctx } = makeCtx({ ...f, now: () => fixedNow, sleep: stopLoopSleep(sleeps) });
 
     await expect(new DailyTask(ctx).loop()).rejects.toThrow("stop-loop");
 
-    const expected = todayStartMillis(TZ, fixedNow) + hour * 3_600_000 + 60_000 - fixedNow.getTime();
-    expect(sleeps[0]).toBe(expected);
+    // 只生成触发时刻当天（2026-09-02），不再今日补跑 + 明日主生成双跑
+    expect(f.genCalls.map((c) => c.runDate)).toEqual([RUN_DATE]);
+    // 处理后睡到明日窗口开始 = 今日零点 + 480min + 24h - 08:10
+    const dayStart = todayStartMillis(TZ, fixedNow);
+    expect(sleeps[0]).toBe(dayStart + 480 * 60_000 + 86_400_000 - fixedNow.getTime());
+  });
+
+  test("未到窗口（07:00）→ 先睡到今日窗口开始，不触发生成", async () => {
+    const fixedNow = new Date(2026, 8, 2, 7, 0, 0);
+    const sleeps: number[] = [];
+    const f = recorders();
+    const { ctx } = makeCtx({ ...f, now: () => fixedNow, sleep: stopLoopSleep(sleeps) });
+
+    await expect(new DailyTask(ctx).loop()).rejects.toThrow("stop-loop");
+    expect(sleeps[0]).toBe(3_600_000); // 08:00 - 07:00
+    expect(f.genCalls).toHaveLength(0);
+  });
+
+  test("已过窗口（08:20）→ 跳过当天，睡到明日窗口（错过不补、不重试）", async () => {
+    const fixedNow = new Date(2026, 8, 2, 8, 20, 0);
+    const sleeps: number[] = [];
+    const f = recorders();
+    const { ctx } = makeCtx({ ...f, now: () => fixedNow, sleep: stopLoopSleep(sleeps) });
+
+    await expect(new DailyTask(ctx).loop()).rejects.toThrow("stop-loop");
+    expect(sleeps[0]).toBe(480 * 60_000 + 86_400_000 - 8 * 3_600_000 - 20 * 60_000); // 明日 08:00
+    expect(f.genCalls).toHaveLength(0); // 当天已错过 → 不生成
+  });
+
+  test("当天批次已收口（全 success）→ 跳过，不调 runFill", async () => {
+    const fixedNow = new Date(2026, 8, 2, 8, 10, 0);
+    const sleeps: number[] = [];
+    const f = recorders();
+    const { db, ctx } = makeCtx({ ...f, now: () => fixedNow, sleep: stopLoopSleep(sleeps) });
+    const slots = seedSlots(db, 3);
+    for (const s of slots) writeSlotResult(db, { slotId: s.id, threadId: s.threadId, status: "success" });
+    finalizeBatch(db, slots[0]!.batchId); // status = completed
+
+    await expect(new DailyTask(ctx).loop()).rejects.toThrow("stop-loop");
+    expect(f.genCalls).toHaveLength(0); // 已生成成功 → 跳过
+    expect(f.events).toEqual([]); // runFill 完全未调用
+  });
+
+  test("自定义窗口生效（12:00-12:30）：08:10 不在窗口 → 睡到 12:00；12:10 在窗口 → 触发", async () => {
+    const custom = loadServerConfig({
+      JWT_SECRET: "s".repeat(32),
+      LLM_API_KEY: "k",
+      TIMEZONE: TZ,
+      DAILY_GENERATE_WINDOW: "12:00-12:30",
+    });
+    // 12:10 触发当天
+    const f = recorders();
+    const sleeps: number[] = [];
+    const inNow = new Date(2026, 8, 2, 12, 10, 0);
+    const { ctx: c1 } = makeCtx({
+      ...f,
+      serverCfg: custom,
+      now: () => inNow,
+      sleep: stopLoopSleep(sleeps),
+    });
+    await expect(new DailyTask(c1).loop()).rejects.toThrow("stop-loop");
+    expect(f.genCalls.map((c) => c.runDate)).toEqual([RUN_DATE]);
+
+    // 08:10 未到窗口 → 睡到 12:00
+    const g = recorders();
+    const sleeps2: number[] = [];
+    const { ctx: c2 } = makeCtx({
+      ...g,
+      serverCfg: custom,
+      now: () => new Date(2026, 8, 2, 8, 10, 0),
+      sleep: stopLoopSleep(sleeps2),
+    });
+    await expect(new DailyTask(c2).loop()).rejects.toThrow("stop-loop");
+    expect(sleeps2[0]).toBe(12 * 3_600_000 - 8 * 3_600_000 - 10 * 60_000); // 3h50m
+    expect(g.genCalls).toHaveLength(0);
   });
 });

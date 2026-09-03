@@ -107,6 +107,16 @@ export function getBatch(db: Database, runDate: string): BatchRow | undefined {
 }
 
 /**
+ * 某日批次是否已收口（存在且 status != 'running'）：每日窗口触发时的"已生成成功"
+ * 判定——收口（completed / completed_with_failures / failed）＝当天生成流程已结束，
+ * 跳过不再触碰；无批次或 running（含中断未收口）＝未完成，交由 runFill 继续。
+ */
+export function isDailyBatchFinished(db: Database, runDate: string): boolean {
+  const batch = getBatch(db, runDate);
+  return batch !== undefined && batch.status !== "running";
+}
+
+/**
  * 新建批次 + 插入槽位行，单事务原子完成（批次/槽位要么全建要么全不建）。
  * run_date UNIQUE：同日重复创建抛约束错，由调用方先 getBatch 分派复用。
  */

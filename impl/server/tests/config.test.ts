@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { loadServerConfig } from "../src/config";
+import { formatWindow, loadServerConfig } from "../src/config";
 
 describe("loadServerConfig", () => {
   const base = { JWT_SECRET: "x".repeat(32), LLM_API_KEY: "k", TIMEZONE: "Asia/Shanghai" };
@@ -15,7 +15,8 @@ describe("loadServerConfig", () => {
     expect(c.wordQuotaDaily).toBe(200);
     expect(c.cacheTtlDays).toBe(30);
     expect(c.cacheMaxRows).toBe(5000);
-    expect(c.dailyGenerateHour).toBe(3);
+    expect(c.dailyGenerateWindow).toEqual({ start: 480, end: 495 }); // 默认 08:00-08:15（分钟数）
+    expect(formatWindow(c.dailyGenerateWindow)).toBe("08:00-08:15");
     expect(c.llmTimeoutSecs).toBe(90);
     expect(c.regenerateLimit).toBe(3);
     expect(c.adminInitPassword).toBeUndefined();
@@ -33,5 +34,18 @@ describe("loadServerConfig", () => {
   });
   test("timeZone 透传", () => {
     expect(loadServerConfig(base).timeZone).toBe("Asia/Shanghai");
+  });
+  test("DAILY_GENERATE_WINDOW 可覆盖（12:00-12:30 → {start:720,end:750}）", () => {
+    const c = loadServerConfig({ ...base, DAILY_GENERATE_WINDOW: "12:00-12:30" });
+    expect(c.dailyGenerateWindow).toEqual({ start: 720, end: 750 });
+    expect(formatWindow(c.dailyGenerateWindow)).toBe("12:00-12:30");
+  });
+  test("DAILY_GENERATE_WINDOW 非法格式/边界抛错", () => {
+    // 缺 "-" / 越界时刻 / start >= end 均拒绝
+    expect(() => loadServerConfig({ ...base, DAILY_GENERATE_WINDOW: "0800-0815" })).toThrow(/格式/);
+    expect(() => loadServerConfig({ ...base, DAILY_GENERATE_WINDOW: "25:00-08:15" })).toThrow(/HH:MM|格式/);
+    expect(() => loadServerConfig({ ...base, DAILY_GENERATE_WINDOW: "08:60-09:00" })).toThrow(/HH:MM|格式/);
+    expect(() => loadServerConfig({ ...base, DAILY_GENERATE_WINDOW: "08:15-08:00" })).toThrow(/start|开始|窗口/);
+    expect(() => loadServerConfig({ ...base, DAILY_GENERATE_WINDOW: "08:00-08:00" })).toThrow(/start|开始|窗口/);
   });
 });

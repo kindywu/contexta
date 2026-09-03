@@ -29,7 +29,7 @@ cp .env.example .env   # 然后填入 LLM_API_KEY 与 JWT_SECRET
 | `WORD_QUOTA_DAILY` | `200` | 正 int | 用户每日查词配额（只计真实 LLM 调用；`users.quota_word_daily` 可 per-user 覆盖） |
 | `CACHE_TTL_DAYS` | `30` | 正 int | 查词缓存 TTL（命中不调 LLM 不扣配额） |
 | `CACHE_MAX_ROWS` | `5000` | 正 int | 查词缓存条数上限（超限删最旧 1 条） |
-| `DAILY_GENERATE_HOUR` | `3` | int 0..23 | 每日生成时刻（点）；实际触发 = 该点**整点后 1 分钟**（03:01，避开整点边界） |
+| `DAILY_GENERATE_WINDOW` | `08:00-08:15` | `HH:MM-HH:MM`（开始必须早于结束） | 每日生成窗口（配置时区当日）：窗口内任意时刻触发，窗口内只生成**当天** 15 篇；错过窗口（进程不在/重启晚于窗口）**跳过不补不重试**——便于本地测试可直接改小/改后 |
 | `LLM_TIMEOUT_SECS` | `90` | 正 int | 查词链 LLM 调用硬预算（含 4 次尝试与退避等待；超预算 504 LLM_TIMEOUT） |
 | `REGENERATE_LIMIT` | `3` | 正 int | 单槽位拒绝补生成上限：同槽累计 rejected ≥ 上限 → `rejected_final` 不再自动补 |
 
@@ -98,17 +98,20 @@ unit 语义：`User=contexta` + `WorkingDirectory=/opt/contexta/server`（引擎
 
 ### 3.5 日志
 
-- **stdout → journald**：服务进程所有日志（`[server]`、`[daily-task]`、引擎 `log()`）走 stdout——`journalctl -u contexta-server -f` / `journalctl -u contexta-server | grep daily-task`。
-- **engine `logs/` 目录**：CLI 入口（`bun run daily` / `retry` / `replay`）额外写 `logs/run-<本地时间戳>.log`（`--log-level debug` 记 prompt 全文与 LLM 原始响应）；服务端进程内不 initLog（只 stdout）。`logs/` 时间戳一律取配置时区。
+- **服务进程三类日志分离**（`logs/` 相对 `WorkingDirectory`，均带日期、**7 天一代自动清理**——启动时 + 每日窗口触发后各清一次）：
+  - `logs/server-<YYYY-MM-DD>.log` —— **Web 服务**日志（启动/退出/请求错误等），**同时输出 stdout**——`journalctl -u contexta-server -f` 仍可见；
+  - `logs/daily-<YYYY-MM-DD>.log` —— **生成**日志（引擎 `log()` + `[daily-task]` 编排行），**只进文件不进 stdout**（与 Web 日志互不干扰）；
+  - `logs/run-<时间戳>.log` —— CLI 入口（`bun run daily` / `retry` / `replay`）每次运行一个新文件（`--log-level debug` 记 prompt 全文与 LLM 原始响应；`logs/` 时间戳一律取配置时区）。
+- **查看每日任务**：`tail -f logs/daily-$(date +%F).log`（或直接看 `logs/daily-*.log`）；实时 Web 日志 `journalctl -u contexta-server -f`。
 
 ## 4. 首次启动顺序
 
 1. `.env` 就绪（`LLM_API_KEY` / `JWT_SECRET` / `TIMEZONE` 必须；`ADMIN_INIT_PASSWORD` 首次启动设置以 seed `admin`，seed 后可移出）
-2. `systemctl start contexta-server` —— 启动自动：建库建表 → seed admin → 监听 → **补生成今天 + 明天**（启动补漏，失败只记日志不阻塞 serve）
+2. `systemctl start contexta-server` —— 启动自动：建库建表 → seed admin → 监听（**启动不生成任何文章**）；每日生成只由窗口循环触发
 3. 健康检查：`curl http://localhost:8080/api/health`；管理页 `https://api.example.com/admin`（`admin` + 初始密码）
 4. 当天缺文可手动补生成：`POST /api/admin/articles/generate {"date":"2026-08-13"}`（admin JWT）
 5. 管理员在管理页**审核**（槽位视图：通过/拒绝/重跑/编辑）——仅已过审对用户可见
-6. 此后每日 `DAILY_GENERATE_HOUR:01`（默认 03:01）自动生成明天文章；error 槽位由每日任务自动补跑一次，仍失败留 error 待人工 `POST /api/admin/slots/:id/retry` 或 `bun run retry` 重试
+6. 此后每日 `DAILY_GENERATE_WINDOW`（默认 `08:00-08:15`，配置时区）内自动生成**当天** 15 篇（三态判定：当天批次已收口 → 跳过；没执行过 → 执行；执行中 → 继续）；错过窗口即跳过，error 槽位由当轮 runFill 自动补跑一次，仍失败留 error 待人工 `POST /api/admin/slots/:id/retry` 或 `bun run retry` 重试
 
 ## 5. 运维
 
@@ -133,8 +136,8 @@ unit 语义：`User=contexta` + `WorkingDirectory=/opt/contexta/server`（引擎
 
 ```bash
 systemctl status contexta-server && systemctl restart contexta-server
-journalctl -u contexta-server -f                          # 实时日志
-journalctl -u contexta-server | grep "daily-task"         # 每日任务
+journalctl -u contexta-server -f                          # 实时日志（Web 服务侧）
+tail -f logs/daily-$(date +%F).log                         # 每日任务/生成日志（仅文件）
 curl http://localhost:8080/api/health                     # 健康检查
 sudo -u contexta bun run daily   -- --date 2026-08-29     # 手动补生成某日
 sudo -u contexta bun run retry   -- --date 2026-08-29     # 中断恢复（同 thread 续跑）
@@ -161,7 +164,7 @@ sudo -u contexta bun run delete-daily -- --date 2026-08-29 --yes  # 删除某日
 | 3 | **JWT_SECRET ≥ 32 字符** | 启动硬校验，不足报错退出 | `config.ts` |
 | 4 | **TZ 影响日界** | 查词配额日界、文章日界、`/today`、日志时间戳全部按配置时区；`TIMEZONE` 与系统时区不一致**拒绝运行** | `engine/config.ts` `assertSystemTimezone` |
 | 5 | **error_code 表** | 错误语义固定 `{code, message, error_code}`，HTTP 状态码表达类别、error_code 细分；**新增错误必须走该表** | `response.ts`，见 architecture.md §7 |
-| 6 | **03:01 触发** | 每日生成 = `DAILY_GENERATE_HOUR` 点整点后 1 分钟；启动补漏（今天+明天）与定时循环幂等 | `services/daily_task.ts` |
+| 6 | **窗口触发** | 每日生成 = `DAILY_GENERATE_WINDOW`（默认 08:00-08:15，配置时区）窗口内任意时刻；只生成当天，错过跳过不补；生成日志只进 `logs/daily-*.log` | `services/daily_task.ts`、`config.ts` |
 | 7 | **admin 12h TTL** | admin token 12 小时（App token 30 天） | `jwt.ts` |
 | 8 | **免密直登** | App 登录不校验验证码（beta 简化），保留 `code` 字段；风险靠封禁兜底 | `services/auth_service.ts` |
 | 9 | **文章为全局共享池** | 同难度用户读同批文章（3 难度 × 5 篇/天）；下发需 JWT，与查词配额无关 | 设计决策 |

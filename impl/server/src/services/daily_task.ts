@@ -1,24 +1,22 @@
 // src/services/daily_task.ts
-// 每日任务编排（对齐旧 Rust tasks/article_daily_task.rs 语义，时序见架构文档 §5.2）：
-// - startupFill：启动补漏——生成今天 + 明天（同一次 now() 推导，防跨午夜）；失败仅记日志
-// - loop：无限循环——睡到 DAILY_GENERATE_HOUR:01（分钟=01 避整点边界；服务器本地 =
-//   配置时区，assertSystemTimezone 保证）→ 补今天（幂等、成本为零）+ 主生成明天；
-//   单轮失败已由 runFill 内部日志化，循环继续
-// - runFill：引擎幂等生成（无批次→建 15 槽全跑；running→只补 pending；已收口→直接返回）
-//   → retryFailedSlots（pending 恢复：resume/sync）→ error 槽位每槽一次 retrySlot（图三态
-//   承诺：补跑仍失败留 error，err 不抛）→ ensureReviewRows 补齐审核行
-// - runFill in-flight 去重（模块级，按日期）：startupFill 与 loop 可能同日双调
-//   （启动 + 03:01）→ 两连接同跑 pending 槽 = 双倍 LLM 成本 + 可能孤儿行；
-//   并发调用返回同一 Promise（不双跑），失败兜底也已去重
-// - 单步失败仅记日志（console.error），不中断后续步骤与整个 fill——旧版
-//   "失败只记日志不阻止 serve" 语义
+// 每日任务编排（窗口触发语义：每天生成窗口内只生成"当天"15 篇；错过窗口跳过，不补不重试）：
+// - loop：无限循环——不在窗口内 → 睡到下一窗口开始（已过窗口 = 当天错过，直接等明天）；
+//   进入窗口 → 三态判定当天批次：已收口（status != running）→ 跳过；无批次/执行中 → runFill
+//   （引擎幂等：无批次→建 15 槽全跑；running→只补 pending 后收口）
+// - runFill：引擎生成 → retryFailedSlots（pending 恢复：resume/sync）→ error 槽位每槽一次
+//   retrySlot（图三态承诺：补跑仍失败留 error，err 不抛）→ ensureReviewRows 补齐审核行
+// - runFill in-flight 去重（模块级，按日期）：并发调用返回同一 Promise（不双跑），
+//   失败兜底也已去重
+// - 单步失败仅记日志（走引擎 log() → logs/daily-<date>.log，服务进程内不输出到 web stdout；
+//   CLI 场景 console 保留），不中断后续步骤与整个 fill
 // - 槽位级去重：error 补跑与审核重生成共用 Task 7 的进程锁（同槽串行）
 // 测试注入：genDaily/retryFailed/reRun/ensure/now/sleep 全部可替换（见 DailyTaskCtx）。
 import type { Database } from "bun:sqlite";
-import type { ServerConfig } from "../config";
+import { DEFAULT_LOG_DIR, formatWindow, type DailyWindow, type ServerConfig } from "../config";
 import type { AppConfig } from "../engine/config";
-import { listSlots, type SlotRow } from "../engine/db";
+import { isDailyBatchFinished, listSlots, type SlotRow } from "../engine/db";
 import { generateDailyArticles, retryFailedSlots } from "../engine/graph/daily";
+import { cleanupOldLogs, log } from "../engine/graph/log";
 import { localDate } from "../engine/utils/time";
 import { todayStartMillis } from "../time";
 import { ensureReviewRows, retrySlot, type GenFn } from "./review_service";
@@ -67,20 +65,28 @@ export interface DailyTaskCtx {
   sleep?: (ms: number) => Promise<void>;
 }
 
-/**
- * 下一次触发（DAILY_GENERATE_HOUR:01）与 now 的毫秒差（测试可注入 now 后直接断言）。
- * 日期与时刻均按"系统时区 = 配置时区"（assertSystemTimezone 保证）用本地 Date 构造，
- * 与 Rust 版 `Local::now()` 口径一致：now.hour < hour → 今天该时刻，否则明天该时刻。
- */
-export function nextTriggerWaitMs(now: Date, hour: number, timeZone: string): number {
-  const todayTrigger = todayStartMillis(timeZone, now) + hour * 3_600_000 + 60_000; // 今日 hour:01
-  const nextTrigger = now.getHours() < hour ? todayTrigger : todayTrigger + 86_400_000;
-  return nextTrigger - now.getTime();
+/** 每日生成窗口（配置时区当日）：now 是否落在 [start, end] 闭区间内。 */
+export function isInDailyWindow(now: Date, window: DailyWindow, timeZone: string): boolean {
+  const dayStart = todayStartMillis(timeZone, now);
+  const s = dayStart + window.start * 60_000;
+  const e = dayStart + window.end * 60_000;
+  return now.getTime() >= s && now.getTime() <= e;
 }
 
-/** 模块级 in-flight 去重（按日期 → 进行中的 fill Promise）：startupFill 与 loop
- * 双后台任务可能同日并发（启动补漏 + 03:01 定时）——同日期并发时返回同一 Promise，
- * 内层 genDaily/retryFailed/补跑只执行一次（不双跑）。settled（含失败）即删除条目。 */
+/**
+ * 距下一窗口开始的毫秒：now < 今日窗口开始 → 今日窗口；否则（窗口内/已过）→ 明日窗口。
+ * 窗口内时刻调用此函数即得到"下一轮"＝明日窗口——loop 触发处理后用它睡过当日窗口，
+ * 避免窗口内立即重复触发（如 08:00 跳过批次后不会在 08:15 前空转重查）。
+ */
+export function nextTriggerWaitMs(now: Date, window: DailyWindow, timeZone: string): number {
+  const dayStart = todayStartMillis(timeZone, now);
+  const s = dayStart + window.start * 60_000;
+  return now.getTime() < s ? s - now.getTime() : s + 86_400_000 - now.getTime();
+}
+
+/** 模块级 in-flight 去重（按日期 → 进行中的 fill Promise）：并发可能同日双调
+ * （loop 与手动入口）→ 同日期并发时返回同一 Promise，内层 genDaily/retryFailed/
+ * 补跑只执行一次（不双跑）。settled（含失败）即删除条目。 */
 const fillInflight = new Map<string, Promise<void>>();
 
 /** 每日任务（main 组装时经 start() 后台启动；服务进程退出即结束）。 */
@@ -108,8 +114,8 @@ export class DailyTask {
   /**
    * 单日填充（幂等）：引擎生成 → pending 恢复 → error 槽每槽一次补跑 → 审核行补齐。
    * 单步失败仅记日志（不中断后续步骤）；补跑仍失败留 error——err 不抛。
-   * in-flight 去重：同一日期并发调用（startupFill 与 loop 双后台）返回同一
-   * Promise——双跑同一日期 = 双倍 LLM 成本 + 并发写同槽位。
+   * in-flight 去重：同一日期并发调用返回同一 Promise——双跑同一日期 = 双倍 LLM
+   * 成本 + 并发写同槽位。
    */
   runFill(date: string): Promise<void> {
     const existing = fillInflight.get(date);
@@ -123,12 +129,12 @@ export class DailyTask {
     try {
       await this.genDaily({ runDate: date, config: this.ctx.engineCfg });
     } catch (err) {
-      console.error(`[daily-task] ${date} 引擎生成失败（继续后续步骤）:`, err);
+      log(`[daily-task] ${date} 引擎生成失败（继续后续步骤）: ${errText(err)}`);
     }
     try {
       await this.retryFailed({ runDate: date, config: this.ctx.engineCfg });
     } catch (err) {
-      console.error(`[daily-task] ${date} pending 恢复失败（继续后续步骤）:`, err);
+      log(`[daily-task] ${date} pending 恢复失败（继续后续步骤）: ${errText(err)}`);
     }
     try {
       for (const slot of listSlots(this.ctx.db, date)) {
@@ -136,59 +142,56 @@ export class DailyTask {
         try {
           await this.reRun(this.ctx, slot);
         } catch (err) {
-          console.error(`[daily-task] ${date} slot ${slot.id}[${slot.slotIndex}] 补跑失败（留 error）:`, err);
+          log(`[daily-task] ${date} slot ${slot.id}[${slot.slotIndex}] 补跑失败（留 error）: ${errText(err)}`);
         }
       }
     } catch (err) {
-      console.error(`[daily-task] ${date} 列槽失败:`, err);
+      log(`[daily-task] ${date} 列槽失败: ${errText(err)}`);
     }
     try {
       this.ensure(this.ctx.db);
     } catch (err) {
-      console.error(`[daily-task] ${date} 审核行补齐失败:`, err);
-    }
-  }
-
-  /** 启动补漏：今天 + 明天（同一次 now() 推导防跨午夜）；单日失败仅记日志。 */
-  async startupFill(): Promise<void> {
-    const now = this.now();
-    const today = localDate(this.ctx.engineCfg.timezone, now);
-    const tomorrow = localDate(this.ctx.engineCfg.timezone, new Date(now.getTime() + 86_400_000));
-    for (const date of [today, tomorrow]) {
-      try {
-        await this.runFill(date);
-      } catch (err) {
-        console.error(`[daily-task] startupFill ${date} 失败:`, err);
-      }
+      log(`[daily-task] ${date} 审核行补齐失败: ${errText(err)}`);
     }
   }
 
   /**
-   * 每日定时循环（无限）：睡到 DAILY_GENERATE_HOUR:01 → 补今天（幂等、成本为零）+
-   * 主生成明天；触发后等待本轮 fill 完成了才进入下一次 sleep。今天/明天由同一次
-   * now() 推导。fill 失败已内部日志化（循环继续）；sleep 异常向调用方传播
-   * （Bun.sleep 生产不抛；测试用假 sleep 抛错终止循环）。
+   * 每日窗口循环（无限）：不在窗口（未到/已过）→ 睡到下一窗口开始（已过 = 当天错过，
+   * 直接等明天，不补不重试）；进入窗口 → 三态判定当天（收口跳过 / 无批次或 running 则
+   * runFill）→ 清理 7 天前旧日志 → 睡到明日窗口。窗口与日期口径：配置时区（localDate）。
+   * runFill 失败已内部日志化（循环继续）；sleep 异常向调用方传播（Bun.sleep 生产不抛；
+   * 测试用假 sleep 抛错终止循环）。
    */
   async loop(): Promise<void> {
     for (;;) {
-      const hour = this.ctx.serverCfg.dailyGenerateHour;
-      const wait = nextTriggerWaitMs(this.now(), hour, this.ctx.engineCfg.timezone);
-      console.log(`[daily-task] 下一次生成于 ${hour}:01，等待 ${Math.max(0, Math.round(wait / 1000))}s`);
-      await this.sleep(wait);
+      const w = this.ctx.serverCfg.dailyGenerateWindow;
+      const tz = this.ctx.engineCfg.timezone;
       const now = this.now();
-      const today = localDate(this.ctx.engineCfg.timezone, now);
-      const tomorrow = localDate(this.ctx.engineCfg.timezone, new Date(now.getTime() + 86_400_000));
-      await this.runFill(today); // 补：启动补漏失败后当天缺文自愈
-      await this.runFill(tomorrow); // 主生成
+      if (!isInDailyWindow(now, w, tz)) {
+        const wait = nextTriggerWaitMs(now, w, tz);
+        log(`[daily-task] 下一次生成窗口 ${formatWindow(w)}，等待 ${Math.max(0, Math.round(wait / 1000))}s`);
+        await this.sleep(wait);
+        continue;
+      }
+      // 窗口内：只处理"今天"（触发时刻当天）；错过/收口均不再触碰
+      const date = localDate(tz, this.now());
+      if (isDailyBatchFinished(this.ctx.db, date)) {
+        log(`[daily-task] ${date} 批次已收口，跳过本轮生成`);
+      } else {
+        await this.runFill(date);
+      }
+      cleanupOldLogs(DEFAULT_LOG_DIR, 7, tz); // 每日一次：清理 7 天前的旧日志
+      await this.sleep(nextTriggerWaitMs(this.now(), w, tz)); // 睡到明日窗口（见函数注释）
     }
   }
 
-  /**
-   * 启动两个后台任务（Bun 无 tokio spawn——void promise 风格；服务进程退出即结束）。
-   * 两个任务各自兜底 catch（startupFill/loop 内部已日志化，此处只兜计划外异常）。
-   */
+  /** 启动后台任务（Bun 无 tokio spawn——void promise 风格；服务进程退出即结束）。
+   * 启动不生成文章：只跑窗口循环，窗口错过即跳过。 */
   start(): void {
-    void this.startupFill().catch((err) => console.error("[daily-task] 启动补漏后台异常:", err));
-    void this.loop().catch((err) => console.error("[daily-task] 定时循环后台异常:", err));
+    void this.loop().catch((err) => log(`[daily-task] 定时循环后台异常: ${errText(err)}`));
   }
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? (err.stack ?? err.message) : String(err);
 }

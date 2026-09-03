@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { serverError } from "./services/server_log";
 
 export class ApiError extends Error {
   constructor(
@@ -49,7 +50,7 @@ export function pipelineBlocking(message: string): ApiError {
   return new ApiError(500, 500, "PIPELINE_BLOCKING", message);
 }
 export function internal(err: unknown): ApiError {
-  console.error("internal error:", err);
+  serverError("internal error:", err);
   return new ApiError(500, 500, "INTERNAL", "internal error");
 }
 
@@ -69,13 +70,13 @@ export function attachErrorHandler(app: Hono): void {
     if (err instanceof SyntaxError) {
       // 畸形 JSON body：仅来自 handler 内未保护的 c.req.json() 调用（如 auth/login）；
       // 带保护调用（admin readJson 的 try/catch）不会走到这里。记日志便于排查畸形请求。
-      console.error("invalid JSON body:", err);
+      serverError("invalid JSON body:", err);
       return c.json(errorBody(badRequest("invalid JSON body")), 400);
     }
     if (err instanceof ApiError) {
       return c.json(errorBody(err), err.status as ContentfulStatusCode);
     }
-    console.error("internal error:", err);
+    serverError("internal error:", err);
     return c.json(errorBody(new ApiError(500, 500, "INTERNAL", "internal error")), 500);
   });
 }

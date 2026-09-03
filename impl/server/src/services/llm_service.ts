@@ -10,6 +10,7 @@ import { badRequest, pipelineBlocking, quotaExceeded } from "../response";
 import { parseWordLookup, type WordLookup } from "../llm/lookup_parser";
 import { lookupSystemPrompt, lookupUserPrompt } from "../llm/prompt";
 import { callWithRetry, type ChatFn } from "../llm/retry";
+import { serverWarn } from "./server_log";
 import { todayStartMillis } from "../time";
 
 const DAY_MS = 86_400_000;
@@ -41,11 +42,11 @@ export async function wordLookup(
       // JSON 解析失败 = 坏缓存
     }
     if (parsed) return parsed;
-    console.warn(`corrupt word_lookup_cache row for ${JSON.stringify(key)}, deleting and re-generating`);
+    serverWarn(`corrupt word_lookup_cache row for ${JSON.stringify(key)}, deleting and re-generating`);
     try {
       db.query("DELETE FROM word_lookup_cache WHERE word = ?").run(key);
     } catch (e) {
-      console.warn(`failed to delete corrupt cache row ${JSON.stringify(key)}:`, e);
+      serverWarn(`failed to delete corrupt cache row ${JSON.stringify(key)}:`, e);
     }
   }
   // 配额
@@ -71,7 +72,7 @@ export async function wordLookup(
   try {
     recordUsage(db, phone, "word_lookup", resp.promptTokens, resp.completionTokens, latency);
   } catch (e) {
-    console.warn(`record_usage failed for word_lookup ${JSON.stringify(key)}:`, e);
+    serverWarn(`record_usage failed for word_lookup ${JSON.stringify(key)}:`, e);
   }
   const parsed = parseWordLookup(resp.content);
   if (!parsed) throw pipelineBlocking("unparseable LLM response");
@@ -81,7 +82,7 @@ export async function wordLookup(
     try {
       writeCache(db, cfg, key, parsed);
     } catch (e) {
-      console.warn(`word_lookup cache write failed for ${JSON.stringify(key)}:`, e);
+      serverWarn(`word_lookup cache write failed for ${JSON.stringify(key)}:`, e);
     }
   }
   return parsed;

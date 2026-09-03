@@ -5,6 +5,7 @@
  */
 
 import { performance } from "node:perf_hooks";
+import { log } from "../graph/log";
 import { fmtMs } from "../utils/format";
 import { pollUntil } from "../utils/wait";
 
@@ -82,11 +83,11 @@ export async function fetchAnchorSnapshots(
       view.evaluate<boolean>(`!!document.querySelector(${JSON.stringify(selector)})`),
     );
     if (!ok) {
-      console.warn(`[sites] 列表 ${pageUrl} 等待超时(30s)，按当前 DOM 继续`);
+      log(`[sites] 列表 ${pageUrl} 等待超时(30s)，按当前 DOM 继续`);
     }
     const tExtract = performance.now();
     const snaps = await view.evaluate<AnchorSnap[]>(snapshotScript(selector));
-    console.log(
+    log(
       `[sites] 列表 ${pageUrl} | 等待填充 ${fmtMs(tExtract - tWait)} | 提取 ${fmtMs(performance.now() - tExtract)} | ${snaps.length} 条`,
     );
     return snaps;
@@ -168,7 +169,7 @@ export async function fetchArticleHTML(
       ),
     );
     if (!ok) {
-      console.warn(
+      log(
         `[sites] 正文容器 ${containerSelector} (${pageUrl}) 等待超时(30s)，按当前 DOM 继续`,
       );
     }
@@ -181,7 +182,7 @@ export async function fetchArticleHTML(
         `文章正文容器 ${containerSelector} 在页面中未找到（兜底也未命中）: ${pageUrl}`,
       );
     }
-    console.log(
+    log(
       `[sites] 正文 ${pageUrl} | 等待容器 ${fmtMs(tExtract - tWait)} | 清洗 ${fmtMs(performance.now() - tExtract)} | ${res.html.length} 字节`,
     );
     return res.html;

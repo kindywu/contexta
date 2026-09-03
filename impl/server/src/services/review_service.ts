@@ -21,6 +21,7 @@ import {
   type SlotStatus,
 } from "../engine/db";
 import { generateArticle } from "../engine/graph";
+import { log } from "../engine/graph/log";
 import type { ArticleResult } from "../engine/graph/state";
 import type { Difficulty } from "../engine/schema";
 import { renderMarkdown } from "../engine/render";
@@ -208,7 +209,7 @@ export async function reRunSlot(ctx: ReviewCtx, slotRow: SlotRow, genSeq: number
         usedUrls: new Set<string>(),
       });
     } catch (e) {
-      console.error(`reRunSlot slot=${slotRow.id} gen 抛错:`, e);
+      log(`reRunSlot slot=${slotRow.id} gen 抛错: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
       result = { outcome: "error", message: e instanceof Error ? e.message : String(e) };
     }
     try {

@@ -44,8 +44,8 @@ flowchart TB
 ```
 impl/server/
   src/
-    main.ts                    # 组装：配置+时区硬闸 → 建库建表 → seed admin → 路由 → serve → 每日任务 → 优雅退出
-    config.ts                  # 服务端配置（zod）：PORT/JWT_SECRET/配额/缓存/定时/LLM 端点字段
+    main.ts                    # 组装：配置+时区硬闸 → 建库建表 → seed admin → 日志初始化 → 路由 → serve → 每日窗口任务 → 优雅退出
+    config.ts                  # 服务端配置（zod）：PORT/JWT_SECRET/配额/缓存/每日生成窗口/LLM 端点字段
     db.ts                      # 服务端表 DDL（幂等）+ seedAdminIfNeeded + verifyAdminPassword
     auth.ts                    # AuthUser / AdminAuth 认证提取器（封禁/会话/角色校验）
     jwt.ts                     # App token 30 天 / Admin token 12 小时；iat == issued_at 毫秒精确
@@ -76,7 +76,7 @@ impl/server/
 | `services/admin_articles.ts` | 管理端文章读取与编辑：槽位审核视图（slot/article/review/history）、文章详情、审核期内容编辑（`PUT /api/admin/articles/:id`） |
 | `services/article_reader.ts` | **下发读取**：approved 过滤 + App 契约字段映射 + order_index/regenerate_count 派生（见 §4.3） |
 | `services/review_service.ts` | 审核状态机：`ensureReviewRows` / `approveArticle` / `rejectArticle` / `reRunSlot` / `retrySlot`（见 §4.2） |
-| `services/daily_task.ts` | 每日任务编排：启动补漏（今天+明天）+ 定时循环（`DAILY_GENERATE_HOUR:01`）+ 单步失败仅记日志（见 §8） |
+| `services/daily_task.ts` | 每日任务编排：窗口触发（`DAILY_GENERATE_WINDOW`）+ 当天三态判定 + 单步失败仅记日志（见 §8） |
 | `engine/` | 文章生成引擎（见 §4.1），对外入口：`generateArticle`、`generateDailyArticles`、`retryFailedSlots` |
 
 ### 2.1 依赖纪律
@@ -288,10 +288,14 @@ flowchart TD
 
 ## 8. 每日任务（`services/daily_task.ts`）
 
-`main.ts` 启动后 `new DailyTask(ctx).start()`（两个后台 void promise，进程退出即结束）：
+`main.ts` 启动后 `new DailyTask(ctx).start()`（单个后台 void promise，进程退出即结束；**启动不生成任何文章**）：
 
-- **startupFill（启动补漏）**：生成**今天 + 明天**（同一次 `now()` 推导，防跨午夜窗口；今天/明天的"今天"口径 = 配置时区 `localDate`）；失败只记日志，不阻止 serve。
-- **loop（每日循环）**：无限循环—— `nextTriggerWaitMs`：若 `now.hour < DAILY_GENERATE_HOUR`（默认 3）→ 等今天该时刻，否则等明天；触发时刻 = `DAILY_GENERATE_HOUR:01`（**整点后 1 分钟**，避开整点边界；`todayStartMillis + hour*3600000 + 60000`）。触发后 `runFill(今天)`（补：启动补漏失败后当天缺文自愈，幂等成本为零）+ `runFill(明天)`（主生成）；本轮 fill 完成后才进入下一次 sleep。
+- **loop（每日窗口循环）**：无限循环——
+  1. 不在窗口内（`isInDailyWindow` 为 false：未到/已过）→ `nextTriggerWaitMs` 睡到**下一窗口开始**（未到→今天窗口开始；**已过→明天窗口开始 = 当天错过，不补不重试**）；
+  2. 进入窗口（`DAILY_GENERATE_WINDOW`，默认 `08:00-08:15`，配置时区当日 `[start, end]` 闭区间）→ **三态判定当天**（日期 = 触发时刻当天 `localDate`）：
+     - 批次**已收口**（`isDailyBatchFinished`：`article_batches.status != 'running'`，含 completed_with_failures/failed）→ **跳过**（不再触碰，error 槽位留人工）；
+     - **没执行过**（无批次行）或**执行中**（status='running'，含中断未收口）→ `runFill(当天)`；
+  3. 处理完成 → 清理 7 天前旧日志（`cleanupOldLogs`）→ `nextTriggerWaitMs` 睡到**明日**窗口开始（今日窗口已开启，必然落到明天——避免窗口内立即重复触发）。
 - **runFill(date)** 四步（单步失败仅记日志，不中断后续）：
 
   1. `generateDailyArticles({runDate})` —— 引擎幂等生成（新批次 / 只补 running 批次的 pending / 已收口直接返回）；
@@ -300,13 +304,14 @@ flowchart TD
   4. `ensureReviewRows` —— 补齐 success 槽位的待审行。
 
 - **并发安全**：槽位级进程锁（`review_service` `slotLocks`）保证同槽 error 补跑与审核重生成串行；引擎侧 `usedUrls` 集合在单轮 run 内共享，拦截并行槽位重复抓取同一来源。
-- **手动补生成**：`POST /api/admin/articles/generate`（严格 ISO 校验）走同一 `generateDailyArticles` + `ensureReviewRows`。
+- **手动补生成**：`POST /api/admin/articles/generate`（严格 ISO 校验）走同一 `generateDailyArticles` + `ensureReviewRows`；错过的日期 / 收口批次的 error 槽位均可手动处置。
+- **日志**：`[daily-task]` 编排行与引擎 `log()` 同走 `logs/daily-<日期>.log`（7 天轮转，只进文件不进 stdout）；Web 侧日志见 `services/server_log.ts`（`logs/server-<日期>.log` + stdout）。
 
 ## 9. 时区纪律（部署关键约束）
 
 - **唯一口径**：所有日期语义（"今天"、日志时间戳、日志文件名、查词配额日界、文章日界）以 `TIMEZONE`（IANA 名，如 `Asia/Shanghai`）为准，统一经 `engine/utils/time.ts` 的 `localDate`/`localTimestamp`/`localFileStamp` + `src/time.ts` 的 `todayStartMillis` 取数——不用 UTC 时刻，避免跨日边界漂移。
 - **硬闸**：`assertSystemTimezone`（`engine/config.ts`）——启动时校验配置 `TIMEZONE` 与系统当前时区（`Intl.DateTimeFormat().resolvedOptions().timeZone`）**必须一致**，不一致直接 `process.exit(1)` 拒绝运行（不悄悄偏移）。部署必须 `timedatectl set-timezone Asia/Shanghai` 且 .env `TIMEZONE=Asia/Shanghai`。
-- **触发时刻**：`nextTriggerWaitMs` 用系统本地 Date 构造（零点多毫秒 + hour:01）——时区硬闸保证系统时区 = 配置时区，本地构造即配置时区时刻。
+- **窗口判定**：`isInDailyWindow` / `nextTriggerWaitMs` 用系统本地 Date 构造（`todayStartMillis + startMin*60000` 起步）——时区硬闸保证系统时区 = 配置时区，本地构造即配置时区时刻；日志文件名/行时间戳同口径。
 
 ## 10. 端点清单（以 routers 为准）
 
