@@ -27,7 +27,7 @@ export interface DeliveryResult {
   articles: ArticleForApp[]; // order_index = 交付内序号 1..N
 }
 
-/** approved + 槽位 success 过滤后的文章 id（与旧 listApprovedByDate 同谓词）。 */
+/** approved + 槽位 success 过滤后的文章 id（与旧 ?date= 端点同谓词）。 */
 function approvedArticleIds(
   db: Database,
   difficulty: string,
