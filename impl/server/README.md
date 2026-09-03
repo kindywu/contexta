@@ -62,7 +62,7 @@ impl/server/
     auth.ts / jwt.ts           # 认证提取器（封禁/会话/角色）/ JWT 签发校验（App 30d、admin 12h）
     response.ts                # 统一 envelope（{code,message,error_code}）+ ApiError 工厂
     routers/                   # HTTP 层：health / auth / llm / articles / admin
-    services/                  # 业务层：auth / llm（查词网关）/ admin / admin_articles / review（审核状态机）/ article_reader（下发）/ daily_task（每日任务）
+    services/                  # 业务层：auth / llm（查词网关）/ admin / admin_articles / review（审核状态机）/ article_delivery（投放）/ article_reader（投放映射）/ daily_task（每日任务）
     llm/                       # 查词网关侧：retry（callWithRetry + driverChat）/ prompt / lookup_parser
     engine/                    # 文章生成引擎（LangGraph 图 + graph/daily 编排 + sites 抓取 + render + CLIs）
   admin-ui/                    # Vue3 + antd 管理页（构建产物 dist/ 随仓库提交，服务端静态托管）
