@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:contexta/data/local/database.dart';
 import 'package:contexta/data/local/daos/article_daos.dart';
+import 'package:contexta/data/remote/dto/article_dto.dart';
 import 'package:contexta/data/sync/sync_articles_usecase.dart';
 import 'package:contexta/domain/model/article_batch.dart';
 import 'package:contexta/domain/model/user_settings.dart';
@@ -86,7 +87,10 @@ class FakeSyncArticles extends SyncArticlesUseCase {
          batchDao: ArticleBatchDao(_db),
          articleDao: ArticleDao(_db),
          paragraphDao: ArticleParagraphDao(_db),
-         fetchToday: () async => const [],
+         fetchDelivery: () async => const ArticleDeliveryDto(
+           deliveryDate: '2026-08-13',
+           articles: [],
+         ),
          timeProvider: const FakeTimeProvider(),
        );
 

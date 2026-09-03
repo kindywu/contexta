@@ -14,8 +14,8 @@ import 'package:contexta/domain/time/time_provider.dart';
 ///
 /// 可测设计：任务核心 [handleDailySyncTask] 的组装函数为参数注入（测试给
 /// fake 组装函数；生产 [syncCallbackDispatcher] 用 [buildSyncUseCase]）。
-/// 用真实 SyncArticlesUseCase + 内存库 + fake fetchToday 验证「确实同步」，
-/// 比 mock use case 更贴近 T4 的直连 DAO 测试风格。
+/// 用真实 SyncArticlesUseCase + 内存库 + fake fetchDelivery 验证「确实同步」，
+/// 比 mock use case 更贴近直连 DAO 测试风格。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -39,14 +39,14 @@ void main() {
 
   SyncArticlesUseCase buildUseCase(
     AppDatabase db,
-    Future<List<ArticleDto>> Function() fetch,
+    Future<ArticleDeliveryDto> Function() fetch,
   ) {
     return SyncArticlesUseCase(
       db: db,
       batchDao: ArticleBatchDao(db),
       articleDao: ArticleDao(db),
       paragraphDao: ArticleParagraphDao(db),
-      fetchToday: fetch,
+      fetchDelivery: fetch,
       timeProvider: _FakeTimeProvider(),
     );
   }
@@ -58,7 +58,13 @@ void main() {
     addTearDown(() => dir.delete(recursive: true));
     final file = File('${dir.path}/test.db');
     final db = AppDatabase.forTesting(NativeDatabase(file));
-    final useCase = buildUseCase(db, () async => [buildArticle()]);
+    final useCase = buildUseCase(
+      db,
+      () async => ArticleDeliveryDto(
+        deliveryDate: '2026-08-13',
+        articles: [buildArticle()],
+      ),
+    );
 
     final result = await handleDailySyncTask(dailySyncTaskName, () async => useCase);
 
