@@ -38,7 +38,7 @@ final class StartupReady extends StartupResult {
 /// 3. [SyncArticlesUseCase] 每日同步（失败降级：warn + 继续，不阻塞首页）
 /// 4. 今天无 daily_learning → 按用户难度找今天批次
 ///    [ArticleRepository.getBatchByDifficultyAndDate]（同步按
-///    (difficulty, generatedOn=服务端 target_date) 建批次）→
+///    (difficulty, generatedOn=服务端 delivery_date 投放日) 建批次）→
 ///    [ArticleRepository.assignBatchForToday]
 ///    （dailyCountSnapshot = settings.dailyArticleCount）
 /// 5. 返回 [StartupReady]（携带本次同步批次数）

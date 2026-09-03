@@ -1,4 +1,5 @@
-/// 服务端每日文章 DTO（GET /api/articles/today 契约，字段名精确 snake_case）：
+/// 服务端文章 DTO（GET /api/articles/delivery 投放响应的 articles 项契
+/// 约，字段名精确 snake_case）：
 ///
 /// ```json
 /// {id, target_date, difficulty, content_category, order_index, title,
@@ -24,7 +25,8 @@ class ArticleDto {
   /// 服务端文章 id（本地 article.server_article_id 幂等键）。
   final int id;
 
-  /// 审核通过日期（yyyy-MM-dd）；批次 generatedOn 取此值，非本地 today。
+  /// 审核通过日期（yyyy-MM-dd）；批次 generatedOn 取投放响应 delivery_date
+  /// （投放日），非本文值——投放集可跨天，同集各篇 targetDate 可能不同。
   final String targetDate;
 
   /// 'LOW' | 'MEDIUM' | 'HIGH'（批次 difficulty_level_snapshot）。

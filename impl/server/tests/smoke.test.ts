@@ -98,9 +98,9 @@ describe("buildApp 服务组装冒烟", () => {
     expect(res.headers.get("location")).toBe("/admin");
   });
 
-  test("GET /api/articles/today 无 token → 401 TOKEN_EXPIRED（路由已挂 + 鉴权生效）", async () => {
+  test("GET /api/articles/delivery 无 token → 401 TOKEN_EXPIRED（路由已挂 + 鉴权生效）", async () => {
     const app = makeApp();
-    const res = await app.request("/api/articles/today");
+    const res = await app.request("/api/articles/delivery?difficulty=LOW&count=3");
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({
       code: 401,
