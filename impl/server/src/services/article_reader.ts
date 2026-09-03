@@ -27,6 +27,48 @@ export interface ArticleForApp {
   paragraphs: ArticleParagraphForApp[];
 }
 
+/** 单篇文章 → App 契约（段落查询 + snake_case 映射）；orderIndex 由调用方给定。
+ *  regenerate_count 语义不变（spec §2）：该文章所在槽位的 rejected 审核行数
+ *  （旧 listApprovedByDate 的派生规则按文章 id 同样成立——reRun 后槽位指向
+ *  新文章，regenerate_count = 槽位 rejected 历史）。 */
+export function toArticleForApp(
+  db: Database,
+  articleId: number,
+  orderIndex: number,
+): ArticleForApp {
+  const row = db
+    .query("SELECT id, run_date, difficulty, category, title_en FROM articles WHERE id = ?")
+    .get(articleId) as {
+    id: number; run_date: string; difficulty: string;
+    category: string; title_en: string;
+  };
+  const regen = db
+    .query(
+      `SELECT COUNT(*) AS n FROM article_review rr
+       JOIN batch_slots s ON s.id = rr.slot_id
+       WHERE s.article_id = ? AND rr.status = 'rejected'`,
+    )
+    .get(articleId) as { n: number };
+  const paras = db
+    .query("SELECT paragraph_index, text_en, text_zh FROM article_paragraphs WHERE article_id = ? ORDER BY paragraph_index")
+    .all(articleId) as { paragraph_index: number; text_en: string; text_zh: string }[];
+  return {
+    id: row.id,
+    target_date: row.run_date,
+    difficulty: row.difficulty,
+    content_category: row.category,
+    order_index: orderIndex,
+    title: row.title_en,
+    status: "SUCCESS",
+    regenerate_count: regen.n,
+    paragraphs: paras.map((p) => ({
+      order_index: p.paragraph_index + 1,
+      english_text: p.text_en,
+      chinese_translation: p.text_zh,
+    })),
+  };
+}
+
 /**
  * 某 ISO 日期已过审（approved）且槽位成功（success）的文章，按难度字典序 + 槽位序号排序。
  * 槽位成功过滤：writeSlotResult 的 article_id = COALESCE(?, article_id) 从不清空，
@@ -37,9 +79,7 @@ export function listApprovedByDate(db: Database, date: string): ArticleForApp[] 
   const rows = db.query(`
     SELECT a.id, a.run_date, a.difficulty, a.category, a.title_en,
            s.slot_index,
-           (s.slot_index - m.min_slot + 1) AS order_index,
-           (SELECT COUNT(*) FROM article_review rr
-             WHERE rr.slot_id = s.id AND rr.status = 'rejected') AS regen_count
+           (s.slot_index - m.min_slot + 1) AS order_index
     FROM batch_slots s
     JOIN articles a ON a.id = s.article_id
     JOIN article_review r ON r.article_id = a.id AND r.status = 'approved'
@@ -57,29 +97,7 @@ export function listApprovedByDate(db: Database, date: string): ArticleForApp[] 
     title_en: string;
     slot_index: number;
     order_index: number;
-    regen_count: number;
   }[];
 
-  return rows.map((r) => {
-    const paras = db
-      .query(
-        "SELECT paragraph_index, text_en, text_zh FROM article_paragraphs WHERE article_id = ? ORDER BY paragraph_index",
-      )
-      .all(r.id) as { paragraph_index: number; text_en: string; text_zh: string }[];
-    return {
-      id: r.id,
-      target_date: r.run_date,
-      difficulty: r.difficulty,
-      content_category: r.category,
-      order_index: r.order_index,
-      title: r.title_en,
-      status: "SUCCESS",
-      regenerate_count: r.regen_count,
-      paragraphs: paras.map((p) => ({
-        order_index: p.paragraph_index + 1,
-        english_text: p.text_en,
-        chinese_translation: p.text_zh,
-      })),
-    };
-  });
+  return rows.map((r) => toArticleForApp(db, r.id, r.order_index));
 }
