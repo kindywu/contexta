@@ -73,3 +73,47 @@ impl/server/
 ```
 
 > 注：`src/` 下仍有 Rust 时期遗留的 `*.rs` 文件（Cargo 栈），**仅历史留档**——现行实现为 TS，待主会话确认后删除；文档一律以 TS 代码为准。
+
+
+## 打包Linux amd64镜像
+当前版本: 1.0
+arch: 
+* amd64 服务器
+* arm64 本地开发
+```bash
+container build \
+  --arch <arch> \
+  --tag contexta-server:<version>-<arch>\
+  .
+```
+
+### 本地测试
+
+```
+container run -d \
+  --name contexta-server \
+  -p 8080:8080 \
+  --env-file ./.env \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/output:/app/output \
+  contexta-server:<version>-<arch>
+```
+
+```
+定期清理
+container image prune
+```
+
+### 推送镜像
+
+```
+# 1. 登录
+container registry login --username=kindywu@aliyun.com crpi-ui1m3okieeg995dg.cn-shenzhen.personal.cr.aliyuncs.com
+
+# 2. 打 tag
+container image tag contexta-server:<version>-<arch> crpi-ui1m3okieeg995dg.cn-shenzhen.personal.cr.aliyuncs.com/contexta/contexta:<version>-<arch>
+
+# 3. 推送
+container image push crpi-ui1m3okieeg995dg.cn-shenzhen.personal.cr.aliyuncs.com/contexta/contexta:<version>-<arch>
+```
