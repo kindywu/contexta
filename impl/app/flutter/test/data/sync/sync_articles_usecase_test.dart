@@ -7,12 +7,17 @@ import 'package:contexta/data/remote/dto/article_dto.dart';
 import 'package:contexta/data/sync/sync_articles_usecase.dart';
 import 'package:contexta/domain/time/time_provider.dart';
 
-/// Task 4（计划 B）：每日文章同步幂等测试。
+/// Task 5（计划 B）：SyncArticlesUseCase 按投放集同步测试。
 ///
 /// SyncArticlesUseCase 直连 drift DAO（裁定：不走 ArticleRepository 大接口），
-/// fetchToday 函数注入——测试直接给假数据，不依赖网络 / ServerApiClient。
-/// 7 个场景覆盖简报：首次同步、重复同步幂等、服务端更新、段落 upsert、
-/// fetch 失败 / 空列表、难度分组、generatedOn = 服务端 target_date。
+/// fetchDelivery 函数注入——测试直接给假数据，不依赖网络 / ServerApiClient。
+/// 语义（简报裁定）：
+/// - 批次键 = 投放日 delivery_date（非文章 target_date——投放集可跨天）；
+/// - 空交付（articles 空）→ 0 批次 0 文章，不建批；
+/// - 投放是一次性交付单难度，其余幂等 / 事务 / 单飞语义与计划 B 简报一致。
+/// 11 个场景：首次投放、难度分组、重复同步幂等、服务端更新、段落 upsert、
+/// 事务回滚、fetch 失败、并发单飞、in-flight 清理、空交付、generatedOn =
+/// delivery_date。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -61,31 +66,27 @@ void main() {
     );
   }
 
-  /// 3 难度（LOW/MEDIUM/HIGH）各 5 篇，共 15 篇，每篇 2 段。
-  List<ArticleDto> buildTodayArticles({String targetDate = '2026-08-12'}) {
-    final list = <ArticleDto>[];
-    var id = 1;
-    const groups = [('LOW', 'life'), ('MEDIUM', 'tech'), ('HIGH', 'science')];
-    for (final (difficulty, category) in groups) {
-      for (var i = 1; i <= 5; i++) {
-        list.add(
-          buildArticle(
-            id: id,
-            difficulty: difficulty,
-            contentCategory: category,
-            orderIndex: i,
-            title: 'title-$difficulty-$i',
-            targetDate: targetDate,
-          ),
-        );
-        id++;
-      }
-    }
-    return list;
-  }
+  ArticleDeliveryDto buildDelivery({
+    required List<ArticleDto> articles,
+    String deliveryDate = '2026-08-13',
+  }) => ArticleDeliveryDto(deliveryDate: deliveryDate, articles: articles);
+
+  /// 单难度（LOW）3 篇（模拟一次投放集）。
+  List<ArticleDto> buildDeliveryArticles({String deliveryDate = '2026-08-13'}) => [
+    for (var i = 1; i <= 3; i++)
+      buildArticle(
+        id: i,
+        difficulty: 'LOW',
+        contentCategory: 'life',
+        orderIndex: i,
+        title: 'title-LOW-$i',
+        targetDate: '2026-08-12',
+        paragraphCount: 2,
+      ),
+  ];
 
   SyncArticlesUseCase buildUseCase(
-    Future<List<ArticleDto>> Function() fetch, {
+    Future<ArticleDeliveryDto> Function() fetch, {
     String now = '2026-08-13T09:00:00+08:00',
   }) {
     return SyncArticlesUseCase(
@@ -93,58 +94,43 @@ void main() {
       batchDao: batchDao,
       articleDao: articleDao,
       paragraphDao: paragraphDao,
-      fetchToday: fetch,
+      fetchDelivery: fetch,
       timeProvider: _FakeTimeProvider(now),
     );
   }
 
-  test('首次同步：3 难度各 5 篇 → 3 个 CURRENT 批次 + 15 篇 SUCCESS 文章 + 段落', () async {
-    final result = await buildUseCase(() async => buildTodayArticles()).call();
+  test('首次投放：1 个 CURRENT 批次（generatedOn = delivery_date）+ 3 篇 SUCCESS + 段落', () async {
+    final result = await buildUseCase(
+      () async => buildDelivery(articles: buildDeliveryArticles()),
+    ).call();
 
-    expect(result.syncedBatches, 3);
-    expect(result.syncedArticles, 15);
+    expect(result.syncedBatches, 1);
+    expect(result.syncedArticles, 3);
     expect(result.skippedAuth, isFalse);
 
     final batches = await db.select(db.articleBatches).get();
-    expect(batches, hasLength(3));
-    final batchByDifficulty = <String, int>{};
-    for (final b in batches) {
-      expect(b.status, 'CURRENT', reason: '批次必须 CURRENT（简报裁定，非仓储 PENDING 默认）');
-      expect(b.generatedOn, '2026-08-12');
-      expect(['LOW', 'MEDIUM', 'HIGH'], contains(b.difficultyLevelSnapshot));
-      batchByDifficulty[b.difficultyLevelSnapshot] = b.id;
-    }
+    expect(batches, hasLength(1));
+    final batch = batches.single;
+    expect(batch.status, 'CURRENT', reason: '批次必须 CURRENT（简报裁定，非仓储 PENDING 默认）');
+    expect(batch.difficultyLevelSnapshot, 'LOW');
+    // 批次键 = 投放日（delivery_date），不是文章 target_date（2026-08-12）
+    expect(batch.generatedOn, '2026-08-13');
 
     final articles = await db.select(db.articles).get();
-    expect(articles, hasLength(15));
-    for (final a in articles) {
+    expect(articles, hasLength(3));
+    final byServerId = {for (final a in articles) a.serverArticleId!: a};
+    for (var i = 1; i <= 3; i++) {
+      final a = byServerId[i]!;
       expect(a.status, 'SUCCESS');
       expect(a.accumulatedReadSeconds, 0);
-      expect(a.title, isNotNull);
-      // server id 1-5 → LOW，6-10 → MEDIUM，11-15 → HIGH
-      final serverId = a.serverArticleId!;
-      final expectedDifficulty = switch (serverId) {
-        <= 5 => 'LOW',
-        <= 10 => 'MEDIUM',
-        _ => 'HIGH',
-      };
-      final difficulty = batches
-          .firstWhere((b) => b.id == a.batchId)
-          .difficultyLevelSnapshot;
-      expect(difficulty, expectedDifficulty, reason: '文章必须落在同难度批次');
-      expect(a.contentCategory, switch (expectedDifficulty) {
-        'LOW' => 'life',
-        'MEDIUM' => 'tech',
-        _ => 'science',
-      });
-      final orderInGroup = serverId % 5 == 0 ? 5 : serverId % 5;
-      expect(a.orderIndex, orderInGroup);
-      expect(a.title, 'title-$expectedDifficulty-$orderInGroup');
+      expect(a.batchId, batch.id);
+      expect(a.contentCategory, 'life');
+      expect(a.orderIndex, i);
+      expect(a.title, 'title-LOW-$i');
     }
-    expect(batchByDifficulty.keys, hasLength(3));
 
     final paragraphs = await db.select(db.articleParagraphs).get();
-    expect(paragraphs, hasLength(30), reason: '15 篇 × 2 段');
+    expect(paragraphs, hasLength(6), reason: '3 篇 × 2 段');
     for (final p in paragraphs) {
       expect(p.englishText, startsWith('para'));
       expect(p.chineseTranslation, startsWith('段落'));
@@ -152,54 +138,111 @@ void main() {
     }
   });
 
+  test('难度分组：单投放集含 LOW（2 篇）+ MEDIUM（1 篇）→ 2 个 CURRENT 批次、文章落对应难度批次', () async {
+    final result = await buildUseCase(
+      () async => buildDelivery(
+        articles: [
+          buildArticle(
+            id: 1,
+            difficulty: 'LOW',
+            contentCategory: 'life',
+            orderIndex: 1,
+            title: 'title-LOW-1',
+          ),
+          buildArticle(
+            id: 2,
+            difficulty: 'LOW',
+            contentCategory: 'life',
+            orderIndex: 2,
+            title: 'title-LOW-2',
+          ),
+          buildArticle(
+            id: 3,
+            difficulty: 'MEDIUM',
+            contentCategory: 'life',
+            orderIndex: 1,
+            title: 'title-MEDIUM-1',
+          ),
+        ],
+      ),
+    ).call();
+
+    expect(result.syncedBatches, 2);
+    expect(result.syncedArticles, 3);
+
+    final batches = await db.select(db.articleBatches).get();
+    expect(batches, hasLength(2), reason: '同投放集按难度各建一批（不合并）');
+    final byDifficulty = {
+      for (final b in batches) b.difficultyLevelSnapshot: b,
+    };
+    for (final b in batches) {
+      expect(b.status, 'CURRENT');
+      expect(b.generatedOn, '2026-08-13', reason: '批次键 = 单 delivery_date');
+    }
+
+    // 文章各落对应难度批次（本地文章行无 difficulty 列，经 batchId 断言）
+    final articles = await db.select(db.articles).get();
+    expect(articles, hasLength(3));
+    final byServerId = {for (final a in articles) a.serverArticleId!: a};
+    expect(byServerId[1]!.batchId, byDifficulty['LOW']!.id);
+    expect(byServerId[2]!.batchId, byDifficulty['LOW']!.id);
+    expect(byServerId[3]!.batchId, byDifficulty['MEDIUM']!.id);
+  });
+
   test('重复同步（同数据）→ 行数不变（server_article_id 幂等）', () async {
-    final uc = buildUseCase(() async => buildTodayArticles());
+    final uc = buildUseCase(
+      () async => buildDelivery(articles: buildDeliveryArticles()),
+    );
     await uc.call();
     final countBatch = (await db.select(db.articleBatches).get()).length;
     final countArticle = (await db.select(db.articles).get()).length;
     final countParagraph = (await db.select(db.articleParagraphs).get()).length;
-    expect(countBatch, 3);
-    expect(countArticle, 15);
-    expect(countParagraph, 30);
+    expect(countBatch, 1);
+    expect(countArticle, 3);
+    expect(countParagraph, 6);
 
     final result = await uc.call();
-    expect(result.syncedBatches, 3);
-    expect(result.syncedArticles, 15);
+    expect(result.syncedBatches, 1);
+    expect(result.syncedArticles, 3);
     expect(await db.select(db.articleBatches).get(), hasLength(countBatch));
     expect(await db.select(db.articles).get(), hasLength(countArticle));
     expect(
       await db.select(db.articleParagraphs).get(),
       hasLength(countParagraph),
     );
-    // 批次仍只有 3 个 CURRENT（复用而非重建）
+    // 批次仍只有 1 个 CURRENT（复用而非重建）
     for (final b in await db.select(db.articleBatches).get()) {
       expect(b.status, 'CURRENT');
     }
   });
 
   test('服务端更新 title/orderIndex → 二次同步更新不新增', () async {
-    var data = buildTodayArticles();
+    var data = buildDelivery(articles: buildDeliveryArticles());
     final uc = buildUseCase(() async => data);
     await uc.call();
     final countBefore = (await db.select(db.articles).get()).length;
 
     // 服务端改了 id=3 的 title 与顺序；id=1 保持不变
-    data = [
-      for (final a in data)
-        if (a.id == 3)
-          buildArticle(
-            id: 3,
-            difficulty: 'LOW',
-            contentCategory: 'life',
-            orderIndex: 9,
-            title: 'updated-title',
-            paragraphCount: 1,
-          )
-        else
-          a,
-    ];
+    data = buildDelivery(
+      articles: [
+        for (final a in buildDeliveryArticles())
+          if (a.id == 3)
+            buildArticle(
+              id: 3,
+              difficulty: 'LOW',
+              contentCategory: 'life',
+              orderIndex: 9,
+              title: 'updated-title',
+              paragraphCount: 1,
+            )
+          else
+            a,
+      ],
+    );
 
-    await uc.call();
+    final result = await uc.call();
+    expect(result.syncedBatches, 1);
+    expect(result.syncedArticles, 3);
     final articles = await db.select(db.articles).get();
     expect(articles, hasLength(countBefore), reason: '更新不新增');
     final updated = articles.singleWhere((a) => a.serverArticleId == 3);
@@ -211,67 +254,70 @@ void main() {
   });
 
   test('段落 upsert：(article_id, order_index) 唯一——重复同步不重复、先删后插', () async {
-    var data = buildTodayArticles();
+    var data = buildDelivery(articles: buildDeliveryArticles());
     final uc = buildUseCase(() async => data);
     await uc.call();
     final countBefore = (await db.select(db.articleParagraphs).get()).length;
+    expect(countBefore, 6);
 
-    // 服务端改了 id=5 的段落文本（段数不变）→ 更新文本不增行
-    // 服务端把 id=6 的段落从 2 段改成 1 段 → 先删后插，该文剩 1 段
-    data = [
-      for (final a in data)
-        if (a.id == 5)
-          ArticleDto(
-            id: 5,
-            targetDate: '2026-08-12',
-            difficulty: 'LOW',
-            contentCategory: 'life',
-            orderIndex: 5,
-            title: 'title-LOW-5',
-            status: 'SUCCESS',
-            regenerateCount: 0,
-            paragraphs: const [
-              ArticleParagraphDto(
-                orderIndex: 1,
-                englishText: 'revised-para',
-                chineseTranslation: '修订段落',
-              ),
-              ArticleParagraphDto(
-                orderIndex: 2,
-                englishText: 'para2-of-5',
-                chineseTranslation: '段落2-5',
-              ),
-            ],
-          )
-        else if (a.id == 6)
-          buildArticle(
-            id: 6,
-            difficulty: 'MEDIUM',
-            contentCategory: 'tech',
-            orderIndex: 1,
-            title: 'title-MEDIUM-1',
-            paragraphCount: 1,
-          )
-        else
-          a,
-    ];
+    // 服务端改了 id=2 的段落文本（段数不变）→ 更新文本不增行
+    // 服务端把 id=3 的段落从 2 段改成 1 段 → 先删后插，该文剩 1 段
+    data = buildDelivery(
+      articles: [
+        for (final a in buildDeliveryArticles())
+          if (a.id == 2)
+            ArticleDto(
+              id: 2,
+              targetDate: '2026-08-12',
+              difficulty: 'LOW',
+              contentCategory: 'life',
+              orderIndex: 2,
+              title: 'title-LOW-2',
+              status: 'SUCCESS',
+              regenerateCount: 0,
+              paragraphs: const [
+                ArticleParagraphDto(
+                  orderIndex: 1,
+                  englishText: 'revised-para',
+                  chineseTranslation: '修订段落',
+                ),
+                ArticleParagraphDto(
+                  orderIndex: 2,
+                  englishText: 'para2-of-2',
+                  chineseTranslation: '段落2-2',
+                ),
+              ],
+            )
+          else if (a.id == 3)
+            buildArticle(
+              id: 3,
+              difficulty: 'LOW',
+              contentCategory: 'life',
+              orderIndex: 3,
+              title: 'title-LOW-3',
+              paragraphCount: 1,
+            )
+          else
+            a,
+      ],
+    );
 
     await uc.call();
     expect(
       await db.select(db.articleParagraphs).get(),
       hasLength(countBefore - 1),
-      reason: 'id=6 少一段；其余不重复',
+      reason: 'id=3 少一段；其余不重复',
     );
-    final article5 = await articlesByServerId(db, 5);
-    final paras5 = await paragraphDao.getByArticle(article5!.id);
-    expect(paras5, hasLength(2));
-    expect(paras5[0].englishText, 'revised-para');
-    expect(paras5[0].chineseTranslation, '修订段落');
-    expect(paras5[1].englishText, 'para2-of-5');
-    final article6 = await articlesByServerId(db, 6);
-    final paras6 = await paragraphDao.getByArticle(article6!.id);
-    expect(paras6, hasLength(1));
-    expect(paras6[0].englishText, 'para1-of-6');
+    final article2 = await articlesByServerId(db, 2);
+    final paras2 = await paragraphDao.getByArticle(article2!.id);
+    expect(paras2, hasLength(2));
+    expect(paras2[0].englishText, 'revised-para');
+    expect(paras2[0].chineseTranslation, '修订段落');
+    expect(paras2[1].englishText, 'para2-of-2');
+    final article3 = await articlesByServerId(db, 3);
+    final paras3 = await paragraphDao.getByArticle(article3!.id);
+    expect(paras3, hasLength(1));
+    expect(paras3[0].englishText, 'para1-of-3');
   });
 
   test('段落插入失败 → 整篇事务回滚（title 未更新、旧段落未丢）', () async {
@@ -286,39 +332,41 @@ void main() {
       END
     ''');
 
-    var data = buildTodayArticles();
+    var data = buildDelivery(articles: buildDeliveryArticles());
     final uc = buildUseCase(() async => data);
     await uc.call();
 
     // 服务端更新 id=3 的 title，且其段落含 'boom' → 段落插入失败
-    data = [
-      for (final a in data)
-        if (a.id == 3)
-          ArticleDto(
-            id: 3,
-            targetDate: '2026-08-12',
-            difficulty: 'LOW',
-            contentCategory: 'life',
-            orderIndex: 3,
-            title: 'should-not-stick',
-            status: 'SUCCESS',
-            regenerateCount: 0,
-            paragraphs: const [
-              ArticleParagraphDto(
-                orderIndex: 1,
-                englishText: 'boom',
-                chineseTranslation: '触发',
-              ),
-              ArticleParagraphDto(
-                orderIndex: 2,
-                englishText: 'para2-of-3',
-                chineseTranslation: '段落2-3',
-              ),
-            ],
-          )
-        else
-          a,
-    ];
+    data = buildDelivery(
+      articles: [
+        for (final a in buildDeliveryArticles())
+          if (a.id == 3)
+            ArticleDto(
+              id: 3,
+              targetDate: '2026-08-12',
+              difficulty: 'LOW',
+              contentCategory: 'life',
+              orderIndex: 3,
+              title: 'should-not-stick',
+              status: 'SUCCESS',
+              regenerateCount: 0,
+              paragraphs: const [
+                ArticleParagraphDto(
+                  orderIndex: 1,
+                  englishText: 'boom',
+                  chineseTranslation: '触发',
+                ),
+                ArticleParagraphDto(
+                  orderIndex: 2,
+                  englishText: 'para2-of-3',
+                  chineseTranslation: '段落2-3',
+                ),
+              ],
+            )
+          else
+            a,
+      ],
+    );
 
     await expectLater(uc.call(), throwsA(isA<SqliteException>()));
     // 回滚：title 未更新、段落未丢、无半同步残留
@@ -328,8 +376,8 @@ void main() {
     expect(paras3, hasLength(2));
     expect(paras3[0].englishText, 'para1-of-3');
     expect(paras3[1].englishText, 'para2-of-3');
-    expect(await db.select(db.articles).get(), hasLength(15));
-    expect(await db.select(db.articleParagraphs).get(), hasLength(30));
+    expect(await db.select(db.articles).get(), hasLength(3));
+    expect(await db.select(db.articleParagraphs).get(), hasLength(6));
   });
 
   test('fetch 失败 → 异常向上抛，不写任何行', () async {
@@ -344,114 +392,74 @@ void main() {
     var fetchCount = 0;
     final uc = buildUseCase(() async {
       fetchCount++;
-      return buildTodayArticles();
+      return buildDelivery(articles: buildDeliveryArticles());
     });
 
     final results = await Future.wait([uc.call(), uc.call()]);
     expect(fetchCount, 1, reason: '单飞：并发调用复用同一 in-flight Future');
-    expect(results[0].syncedBatches, 3);
-    expect(results[0].syncedArticles, 15);
-    expect(results[1].syncedBatches, 3);
-    expect(results[1].syncedArticles, 15);
+    expect(results[0].syncedBatches, 1);
+    expect(results[0].syncedArticles, 3);
+    expect(results[1].syncedBatches, 1);
+    expect(results[1].syncedArticles, 3);
     // 无双插：行数与单次一致（若无双飞保护，双 _ensureBatch 会撞
     // UNIQUE(difficulty, generated_on) 抛 SqliteException）
-    expect(await db.select(db.articleBatches).get(), hasLength(3));
-    expect(await db.select(db.articles).get(), hasLength(15));
-    expect(await db.select(db.articleParagraphs).get(), hasLength(30));
+    expect(await db.select(db.articleBatches).get(), hasLength(1));
+    expect(await db.select(db.articles).get(), hasLength(3));
+    expect(await db.select(db.articleParagraphs).get(), hasLength(6));
   });
 
   test('fetch 失败后 in-flight 清理：下一次同步恢复正常', () async {
     var fail = true;
     final uc = buildUseCase(() async {
       if (fail) throw StateError('boom');
-      return buildTodayArticles();
+      return buildDelivery(articles: buildDeliveryArticles());
     });
 
     await expectLater(uc.call(), throwsStateError);
     fail = false;
     final result = await uc.call();
-    expect(result.syncedBatches, 3);
-    expect(result.syncedArticles, 15);
-    expect(await db.select(db.articles).get(), hasLength(15));
+    expect(result.syncedBatches, 1);
+    expect(result.syncedArticles, 3);
+    expect(await db.select(db.articles).get(), hasLength(3));
   });
 
-  test('空列表 → 0 批次 0 文章', () async {
-    final result = await buildUseCase(() async => []).call();
+  test('空交付（articles: []）→ 0 批次 0 文章', () async {
+    final result = await buildUseCase(
+      () async => buildDelivery(articles: []),
+    ).call();
     expect(result.syncedBatches, 0);
     expect(result.syncedArticles, 0);
     expect(await db.select(db.articleBatches).get(), isEmpty);
     expect(await db.select(db.articles).get(), isEmpty);
+    expect(await db.select(db.articleParagraphs).get(), isEmpty);
   });
 
-  test('批次难度分组正确：输入乱序也按 difficulty 分组', () async {
-    // 乱序输入：HIGH 在前、LOW 在后、MEDIUM 夹中间
-    final shuffled = <ArticleDto>[
-      for (var i = 1; i <= 2; i++)
-        buildArticle(
-          id: 10 + i,
-          difficulty: 'HIGH',
-          contentCategory: 'science',
-          orderIndex: i,
-          title: 'h$i',
-        ),
-      buildArticle(
-        id: 6,
-        difficulty: 'MEDIUM',
-        contentCategory: 'tech',
-        orderIndex: 1,
-        title: 'm1',
-      ),
-      for (var i = 1; i <= 2; i++)
-        buildArticle(
-          id: i,
-          difficulty: 'LOW',
-          contentCategory: 'life',
-          orderIndex: i,
-          title: 'l$i',
-        ),
-      buildArticle(
-        id: 7,
-        difficulty: 'MEDIUM',
-        contentCategory: 'tech',
-        orderIndex: 2,
-        title: 'm2',
-      ),
-    ];
-
-    final result = await buildUseCase(() async => shuffled).call();
-    expect(result.syncedBatches, 3);
-    expect(result.syncedArticles, shuffled.length);
-
-    final batches = await db.select(db.articleBatches).get();
-    expect(batches, hasLength(3));
-    final batchByDifficulty = {
-      for (final b in batches) b.difficultyLevelSnapshot: b.id,
-    };
-    expect(batchByDifficulty.keys, containsAll(['LOW', 'MEDIUM', 'HIGH']));
-    for (final a in await db.select(db.articles).get()) {
-      final difficulty = batches
-          .firstWhere((b) => b.id == a.batchId)
-          .difficultyLevelSnapshot;
-      final serverId = a.serverArticleId!;
-      expect(difficulty, switch (serverId) {
-        <= 5 => 'LOW',
-        <= 10 => 'MEDIUM',
-        _ => 'HIGH',
-      });
-    }
-  });
-
-  test('generatedOn = 服务端 target_date（不是本地 today——跨日同步语义）', () async {
-    // 服务端返回 08-10 的文章（服务器时区/延迟），本地时钟已是 08-13
+  test('generatedOn = delivery_date（不是文章 target_date——投放集可跨天）', () async {
+    // 文章 target_date 是 08-10（审核通过日），投放集在 08-13 交付——
+    // 批次必须落在 delivery_date，跨天投放不再各自成批
     final uc = buildUseCase(
-      () async => buildTodayArticles(targetDate: '2026-08-10'),
+      () async => buildDelivery(
+        articles: [
+          buildArticle(
+            id: 1,
+            difficulty: 'LOW',
+            contentCategory: 'life',
+            orderIndex: 1,
+            title: 'title-LOW-1',
+            targetDate: '2026-08-10',
+          ),
+        ],
+        deliveryDate: '2026-08-13',
+      ),
     );
-    await uc.call();
+
+    final result = await uc.call();
+    expect(result.syncedBatches, 1);
+    expect(result.syncedArticles, 1);
     final batches = await db.select(db.articleBatches).get();
-    expect(batches, hasLength(3));
-    for (final b in batches) {
-      expect(b.generatedOn, '2026-08-10');
-    }
+    expect(batches, hasLength(1));
+    expect(batches.single.generatedOn, '2026-08-13');
+    expect(batches.single.difficultyLevelSnapshot, 'LOW');
   });
 
   group('ArticleDto.fromJson（服务端契约字段精确）', () {

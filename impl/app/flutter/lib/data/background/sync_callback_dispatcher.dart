@@ -43,7 +43,9 @@ Future<SyncArticlesUseCase?> buildSyncUseCase() async {
   try {
     final settings = await UserSettingsDao(db).get();
     final token = settings?.serverToken;
-    if (token == null || token.isEmpty) {
+    // settings == null 防护同时使 settings 提升为非空（token 分支保证非 null；
+    // Dart 会将 final 局部变量的提升带入其后创建的闭包）
+    if (settings == null || token == null || token.isEmpty) {
       debugPrint('[SyncDispatcher] 未登录（无 token），跳过今日同步');
       await db.close();
       return null;
@@ -60,12 +62,16 @@ Future<SyncArticlesUseCase?> buildSyncUseCase() async {
       baseUrl: AppConfig.serverBaseUrl,
       tokenProvider: () async => token,
     );
+    final api = ArticleApi(apiClient);
     return SyncArticlesUseCase(
       db: db,
       batchDao: ArticleBatchDao(db),
       articleDao: ArticleDao(db),
       paragraphDao: ArticleParagraphDao(db),
-      fetchToday: () => ArticleApi(apiClient).fetchTodayArticles(),
+      fetchDelivery: () => api.fetchDelivery(
+        difficulty: settings.difficultyLevel,
+        count: settings.dailyArticleCount,
+      ),
       timeProvider: ProdTimeProvider(),
     );
   } catch (_) {

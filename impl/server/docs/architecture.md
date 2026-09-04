@@ -16,9 +16,9 @@ flowchart TB
 
     subgraph server["服务端 Bun/TS 单进程（云主机）"]
         R["routers（HTTP 层）<br/>health / auth / llm / articles / admin / 静态"]
-        S["services（业务层）<br/>auth_service / llm_service / admin_service /<br/>admin_articles / review_service / article_reader / daily_task"]
+        S["services（业务层）<br/>auth_service / llm_service / admin_service /<br/>admin_articles / review_service / article_delivery /<br/>article_reader（映射）/ daily_task"]
         E["engine（文章生成引擎, 原样迁入）<br/>LangGraph 图 + graph/daily 编排 + sites 抓取"]
-        DB["contexta.db<br/>pipeline 4 表 + 服务端 5 表 + article_review"]
+        DB["contexta.db<br/>pipeline 4 表 + 服务端 6 表 + article_review"]
         CP["langgraph.sqlite<br/>检查点（checkpoints / writes）"]
         UI["admin-ui（Vue3 + antd，dist 随仓库静态托管）"]
     end
@@ -35,7 +35,7 @@ flowchart TB
 - **技术栈**：Bun（运行时）+ Hono 4（HTTP 框架）+ `bun:sqlite`（业务库与检查点库，WAL）+ jsonwebtoken（HS256）+ zod（配置/协议校验）+ LangChain/LangGraph（`@langchain/core`、`@langchain/langgraph`、`@langchain/langgraph-checkpoint`、`@langchain/openai`）+ turndown（正文 HTML → Markdown）。无编译步骤：TS 直接由 Bun 执行，`tsc --noEmit` 仅作类型校验。
 - **单进程**：HTTP 服务与后台任务（每日生成循环）同进程；进程退出即任务结束，无外部 cron。
 - **双数据库**：
-  - `contexta.db`（`DB_PATH`）：引擎 4 表（`article_batches`/`articles`/`article_paragraphs`/`batch_slots`）+ 服务端 5 表（`users`/`admin_user`/`device_sessions`/`usage_log`/`word_lookup_cache`）+ `article_review`。与旧 Rust 结构唯一差异：**`articles` 不再有 `embedding` 列**（pipeline 本地向量检索未迁移）。
+  - `contexta.db`（`DB_PATH`）：引擎 4 表（`article_batches`/`articles`/`article_paragraphs`/`batch_slots`）+ 服务端 6 表（`users`/`admin_user`/`device_sessions`/`usage_log`/`word_lookup_cache`/`article_delivery`）+ `article_review`。与旧 Rust 结构唯一差异：**`articles` 不再有 `embedding` 列**（pipeline 本地向量检索未迁移）。
   - `langgraph.sqlite`（`CHECKPOINT_PATH`）：LangGraph 检查点独立存储（`checkpoints`/`writes` 两表），与业务库无关——用于进程崩溃/网络故障后的断点续跑。
 - **引擎迁入差异**：pipeline 原样迁入（Rust 时期的 fetch 改 Bun.WebView、sqlx 改 bun:sqlite、axum 改 Hono），运行期唯一差异 = embedding 列移除。
 
@@ -74,7 +74,8 @@ impl/server/
 | `services/llm_service.ts` | 查词网关：缓存 → 配额 → LLM → 解析 → 记账 → 写缓存（见 §5） |
 | `services/admin_service.ts` | 管理侧：admin 登录 / 用户列表（含今日查词次数）/ 封禁解封 / 配额覆盖 / 今日用量汇总 |
 | `services/admin_articles.ts` | 管理端文章读取与编辑：文章列表（分页/排序/状态过滤/统计）、文章详情（含槽位历史）、审核期内容编辑（`PUT /api/admin/articles/:id`） |
-| `services/article_reader.ts` | **下发读取**：approved 过滤 + App 契约字段映射 + order_index/regenerate_count 派生（见 §4.3） |
+| `services/article_delivery.ts` | **投放**：`deliverArticles`——同日冻结 / id 游标 / 未读补位 / 配额截断 / 投放记账（见 §4.3） |
+| `services/article_reader.ts` | **投放映射**：`toArticleForApp` 单篇文章 → App 契约字段（snake_case 精确；order_index/regenerate_count 派生；source_url 绝不下发），选文逻辑见 article_delivery（§4.3） |
 | `services/review_service.ts` | 审核状态机：`ensureReviewRows` / `approveArticle` / `rejectArticle` / `reRunSlot` / `retrySlot`（见 §4.2） |
 | `services/daily_task.ts` | 每日任务编排：窗口触发（`DAILY_GENERATE_WINDOW`）+ 当天三态判定 + 单步失败仅记日志（见 §8） |
 | `engine/` | 文章生成引擎（见 §4.1），对外入口：`generateArticle`、`generateDailyArticles`、`retryFailedSlots` |
@@ -86,7 +87,7 @@ impl/server/
 - **引擎"纯编排"纪律**：LangGraph 图节点（`graph/nodes.ts`）是 `state → 部分 state 更新` 的纯函数，依赖（LLM、站点映射、随机数、URL 去重集合）经闭包注入；图上不碰业务库。持久化只发生在编排层（`graph/daily.ts` 的 `persistSlot`）与跨模块的 `review_service.reRunSlot`——生成结果三态（success/rejected/error）返回后由编排方决定落库形态。检查点库（langgraph.sqlite）由 `BunSqliteCheckpointer` 独占，业务代码不读它（replay/retry 工具除外）。
 - **测试 seam**：`llm_service.wordLookup(db, cfg, chat, ...)` 的 `chat`、`review_service` 的 `gen`、`DailyTask` 的全部分支（genDaily/retryFailed/reRun/ensure/now/sleep）均可注入假实现——生产用引擎真实现，测试不真调 LLM。
 
-## 3. 数据模型（contexta.db，引擎 4 表 + 服务端 5 表 + article_review）
+## 3. 数据模型（contexta.db，引擎 4 表 + 服务端 6 表 + article_review）
 
 建表由启动时 `ensureSchema(db)`（引擎）+ `ensureServerSchema(db)`（服务端）幂等执行（全部 `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`；**代码无 ALTER TABLE**——新结构对新建库生效，存量库演进见 config-and-deploy §5.2）。引擎索引随 `DROP TABLE` 语义处理（删除重建日库时），服务端索引随建表重建。`tool/migrations/001-init.sql` 为 Rust 时期遗留（结构已并入上述两个 ensure 函数，不再执行）；`tool/db_version` = 0（从未发布生产）。
 
@@ -99,15 +100,16 @@ impl/server/
 | `article_paragraphs` | id PK、article_id FK、paragraph_index（0 基）、text_en、text_zh | UNIQUE(article_id, paragraph_index) |
 | `batch_slots` | id PK、batch_id FK、run_date、slot_index、difficulty、thread_id、status CHECK(`pending`/`success`/`rejected`/`error`)、attempts（图内实际生成轮数）、article_id FK 可空、updated_at | UNIQUE(batch_id, slot_index)；索引 `(run_date)`；**槽位 = 文章占位**：每天 3 难度 × 5 篇 = 15 槽 |
 
-### 3.2 服务端 5 表 + article_review
+### 3.2 服务端 6 表 + article_review
 
 | 表 | 关键列 | 约束/索引 |
 |---|---|---|
-| `users` | phone **PK**、status（normal/banned）、banned_reason、quota_word_daily（null=全局默认）、quota_article_daily（预留，文章为全局池）、created_at、updated_at | 长期实体；时间戳 Unix millis INTEGER |
+| `users` | phone **PK**、status（normal/banned）、banned_reason、quota_word_daily（null=全局默认）、quota_article_daily（null=全局默认 `DEFAULT_ARTICLE_QUOTA_DAILY=5`）、created_at、updated_at | 长期实体；时间戳 Unix millis INTEGER |
 | `admin_user` | username **PK**、password_hash（argon2id）、created_at、updated_at | — |
 | `device_sessions` | id PK、phone、device_id、issued_at、last_active_at | UNIQUE(phone, device_id)；索引 `(phone)` |
 | `usage_log` | id PK、phone（可空=服务端任务侧）、endpoint（word_lookup/…）、prompt_tokens、completion_tokens、latency_ms、created_at | 索引 `(phone, created_at)`、`(created_at)`；流水账 |
 | `word_lookup_cache` | word **PK**、result_json、created_at | 跨用户共享缓存 |
+| `article_delivery` | id PK、phone、device_id、difficulty、article_id FK articles、delivery_date（yyyy-MM-dd TEXT）、created_at | UNIQUE(phone, article_id)——同一 phone（含重装换 device_id / 多设备）**永不重复投同一篇**（学习者是"人"，不读相同文章）；索引 `(phone, difficulty, delivery_date)`（同日冻结查询）；流水账（投放账本） |
 | `article_review` | id PK、article_id **UNIQUE** FK articles、slot_id FK batch_slots、status CHECK(`pending_review`/`approved`/`rejected`/`rejected_final`)、reject_reason、reviewed_by、reviewed_at、created_at、updated_at | 索引 `(slot_id)`；**审核行挂在文章上**，一篇文章至多一行（重生成产生新文章 → 新行，旧行保留为历史） |
 
 ### 3.3 langgraph.sqlite（检查点）
@@ -199,24 +201,41 @@ stateDiagram-v2
 - **审核期内容编辑**（`PUT /api/admin/articles/:id`）：守卫 = 有 review 行 + status=pending_review + 文章是槽位现指向；校验 title 非空、段落 ≥1、每段 en/zh 至少一个非空；单事务 UPDATE title_en（+paragraph_count）→ DELETE 旧段落 → 按请求序重插（paragraph_index 0 基）。title_zh 不动。
 - **手动补生成**（`POST /api/admin/articles/generate {date}`）：严格 ISO 校验（`2026-2-30`、`2026-13-01` 等 → 400 BAD_PARAM，回格式化全等判定）→ 引擎 `generateDailyArticles` → `ensureReviewRows` 收口（引擎不建审核行）。
 
-### 4.3 下发：approved 过滤 + 派生字段
+### 4.3 投放（delivery）：冻结 / 游标 / 未读补位 + App 契约映射
 
-`article_reader.listApprovedByDate(db, date)`（`GET /api/articles/today` / `GET /api/articles?date=`，均需 App JWT）：
+`deliverArticles(db, {phone, deviceId, difficulty, count, nowMs, timeZone})`（`GET /api/articles/delivery?difficulty=LOW|MEDIUM|HIGH&count=3`，需 App JWT；旧 `GET /api/articles/today` / `GET /api/articles?date=` 已删除）。**账户(phone)×难度**独立游标与账本；同日冻结按账号（任意设备）语义——学习者学的是"人"，同一天换设备读到同一批。
 
-- 查询条件：`batch_slots.status='success' AND article_review.status='approved'` 且文章为槽位现指向——writeSlotResult 的 `article_id = COALESCE(?, article_id)` 从不清空，reRun 失败会残留旧 approved 文章，**仅下发 success 槽位的最新文章**。
-- 排序：`difficulty ASC`（**字典序**：HIGH < LOW < MEDIUM——TEXT 排序，非自然难度序，App 端自行按 LOW/MEDIUM/HIGH 整理）、order_index ASC。
-- **不变式**：任意字符串 date 均安全（参数化查询无注入面），无匹配行即 200 空数组（非法日期不 400）。
-- **App 契约字段**（键名精确 snake_case，App DTO 按此解析）：
+**参数**：`difficulty` 必填（LOW/MEDIUM/HIGH，非法 → 400 BAD_PARAM）；`count` 必填（≥1 整数，缺失/非整/<1 → 400 BAD_PARAM）。
+
+**配额**：`count` 与 `users.quota_article_daily`（null → `DEFAULT_ARTICLE_QUOTA_DAILY=5`）取 min——**超配额不报错**，服务端静默截断（App 无需感知配额值）；`quota_article_daily` 为 0/负时按 0 截断（当日该难度无交付），服务端 `Math.max(quota, 0)` 行为。
+
+**响应**：`{code:0, data:{delivery_date, articles:[ArticleForApp...]}}`；`delivery_date` = 配置时区"今天"（`localDate(timeZone, now)`），App 本地批次键（generatedOn）取此值。
+
+**投放算法（单事务：冻结检查 + 选文 + 记账同快照，并发同日双请求由 SQLite 写锁串行化，后到者命中冻结返回首者结果）**：
+
+1. **同日冻结**：`article_delivery` 中已有 `(phone, difficulty, delivery_date=今天)` 交付 → 原样返回该批（order_index = 账本 id 顺序），**不推进游标、不新增记账**——同日第二次调用（含 08:00 生成窗口前后跨越）拿同一批；
+2. **游标**：`delivered` = 该 phone×难度已投全部 article_id 集合；`cursor = max(delivered)`（无则 0）；
+3. **新文章池**：`id > cursor` 的已过审文章按 **id DESC 最新优先** 取 count 篇——"新到旧"阅读顺序；
+4. **未读补位**：仍不足 → 从从未交付过的文章按 **id ASC 最早优先** 补足（跳过已投/已选，**永不重复已读**）；仍不足 → 返回剩余（可为空）；
+5. **记账**：仅**非空交付**写入账本（`device_id` 记录**当天首次交付**的设备——同日重复/换设备返回冻结集、不新增记录，不参与冻结/游标/已读逻辑）；**空交付不记账** → 同日（如 08:00 生成窗口后）再次调用可投到新文章。`UNIQUE(phone, article_id)` 保护：正常路径补位已排除全部已交付，插入冲突 = 算法 bug，用普通 INSERT 大声失败（不静默 OR IGNORE）。
+
+**已过审谓词**（与旧 `?date=` 端点同）：`batch_slots.status='success' AND article_review.status='approved'` 且文章为槽位现指向——writeSlotResult 的 `article_id = COALESCE(?, article_id)` 从不清空，reRun 失败会残留旧 approved 文章，**只投 success 槽位的最新文章**。
+
+**8 点前语义**：投放池 = 截至调用时刻已过审文章（含前一日窗口生成的篇章）。App 在每日 08:00 生成窗口（默认 08:00-08:15）**前**同步 → 拿到当时最新过审文章并因**同日冻结**锁定为当日批次；窗口内新生成的文章 id 更大，进入后续交付（最早次日新投，或经未读补位）——即"窗口前同步 = 当日批次取窗口前文章，同日窗口后再次同步不升级"。空交付因不记账不受此限（窗口后再次调用即可命中新文章）。
+
+**不变式**：参数化查询（无注入面）；无匹配行 → 200 空数组（空交付，非 404）。
+
+**App 契约字段**（键名精确 snake_case，App DTO 按此解析）：
 
 ```jsonc
 {
   "id": 123,
-  "target_date": "2026-08-28",          // = articles.run_date
+  "target_date": "2026-08-28",          // = articles.run_date（生成日；批次 generatedOn 取 delivery_date，非此值）
   "difficulty": "MEDIUM",
   "content_category": "news",
-  "order_index": 3,                      // 派生：slot_index - 同(日期,难度)最小 slot_index + 1
+  "order_index": 3,                      // 派生：交付内序号 1..N（非全局槽位序）
   "title": "…",
-  "status": "SUCCESS",                   // 恒为 SUCCESS（只下发 approved，无需透传真实状态）
+  "status": "SUCCESS",                   // 恒为 SUCCESS（只投 approved，无需透传真实状态）
   "regenerate_count": 2,                 // 派生：该槽位 article_review 累计 rejected 行数
   "paragraphs": [                        // order_index 1 起（存储层 paragraph_index 0 基 +1）
     { "order_index": 1, "english_text": "…", "chinese_translation": "…" }
@@ -225,7 +244,7 @@ stateDiagram-v2
 ```
 
 - `source_url` 属服务端内部审计字段，**绝不下发**（App 契约不含——"事实源不展示给用户"由不加字段保证，管理端可见）。
-- 文章为全局共享池：同难度用户读同批文章；下发需 JWT（防匿名批量爬取），与用户查词配额无关。
+- 文章为全局共享池（同难度文章同池）；**各账号独立游标/账本**（同池文章，各人进度不同）；下发需 JWT（防匿名批量爬取），与用户查词配额无关。
 
 ## 5. 查词网关链（`POST /api/llm/word-lookup`）
 
@@ -273,7 +292,7 @@ flowchart TD
 
 | HTTP | body `code` | `error_code` | 触发场景 | 说明 |
 |---|---|---|---|---|
-| 400 | 400 | `BAD_PARAM` | 空 word、登录缺 phone/device_id、非法 generate 日期、编辑校验失败、畸形 JSON body | |
+| 400 | 400 | `BAD_PARAM` | 空 word、登录缺 phone/device_id、非法 generate 日期、delivery 参数非法（difficulty/count）、编辑校验失败、畸形 JSON body | |
 | 400 | 40001 | `QUOTA_EXCEEDED` | 查词每日配额超限 | App 提示配额 |
 | 401 | 401 | `TOKEN_EXPIRED` | 未带/无效/过期 token；admin 用户名或密码错误（不区分，防枚举）；admin role 不符 | 重新登录 |
 | 401 | 401 | `EVICTED` | 会话被挤掉/登出（`iat != issued_at`） | 提示已在其他设备登录 |
@@ -324,8 +343,7 @@ flowchart TD
 | POST | `/api/auth/logout` | 删除会话行（body `{device_id?}`） |
 | GET | `/api/auth/me` | `{phone}` |
 | POST | `/api/llm/word-lookup` | `{word}` → WordDetail（查词兜底，§5 链路） |
-| GET | `/api/articles/today` | 当天已过审文章（配置时区"今天"） |
-| GET | `/api/articles?date=YYYY-MM-DD` | 指定日期（缺省今日）；非法日期 → 200 空结果（不 400） |
+| GET | `/api/articles/delivery?difficulty=LOW\|MEDIUM\|HIGH&count=3` | 文章投放（同日冻结 / 游标 / 未读补位 / 配额截断 / 记账；见 §4.3） |
 
 ### 管理员（admin JWT，`resolveAdminAuth`）
 
