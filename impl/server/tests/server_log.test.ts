@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { initServerLog, serverError, serverLog, serverWarn } from "../src/services/server_log";
+import { initServerLog, accessLog, serverError, serverLog, serverWarn } from "../src/services/server_log";
 import { localDate } from "../src/engine/utils/time";
 
 const TZ = "Asia/Shanghai";
@@ -37,5 +37,33 @@ describe("server_log", () => {
     expect(readFileSync(join(dirB, `server-${localDate(TZ)}.log`), "utf8")).toContain("to-b");
     rmSync(dirA, { recursive: true, force: true });
     rmSync(dirB, { recursive: true, force: true });
+  });
+
+  test("accessLog：app/web 分流到独立文件（app-*.log / admin-*.log），console 带通道颜色", () => {
+    const dir = mkdtempSync(join(tmpdir(), "srvlog-ch-"));
+    initServerLog(dir, TZ);
+    const calls: string[] = [];
+    const orig = console.log;
+    console.log = (m: string) => calls.push(m);
+    try {
+      serverLog("srv-seed");
+      accessLog("app", "app-line");
+      accessLog("web", "web-line");
+    } finally {
+      console.log = orig;
+    }
+    const day = localDate(TZ);
+    expect(readFileSync(join(dir, `app-${day}.log`), "utf8")).toContain("app-line");
+    expect(readFileSync(join(dir, `admin-${day}.log`), "utf8")).toContain("web-line");
+    // 通道互不串文件，也不进通用 server-*.log
+    expect(readFileSync(join(dir, `app-${day}.log`), "utf8")).not.toContain("web-line");
+    expect(readFileSync(join(dir, `server-${day}.log`), "utf8")).toContain("srv-seed");
+    expect(readFileSync(join(dir, `server-${day}.log`), "utf8")).not.toContain("app-line");
+    // console：app 青（\x1b[36m），web 品红（\x1b[35m）
+    expect(calls[1]).toContain("\x1b[36m");
+    expect(calls[1]).toContain("app-line");
+    expect(calls[2]).toContain("\x1b[35m");
+    expect(calls[2]).toContain("web-line");
+    rmSync(dir, { recursive: true, force: true });
   });
 });

@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import type { ServerConfig } from "./config";
 import { banned, unauthorized } from "./response";
-import { verifyToken, type AppClaims, type AdminClaims } from "./jwt";
+import { verifyAppToken, verifyAdminToken, type AppClaims, type AdminClaims } from "./jwt";
 import { authService } from "./services/auth_service";
 
 export interface AuthUser {
@@ -23,7 +23,7 @@ export function resolveAuthUser(
   if (!token) throw unauthorized("TOKEN_EXPIRED");
   let claims: AppClaims;
   try {
-    claims = verifyToken<AppClaims>(cfg, token);
+    claims = verifyAppToken(cfg, token);
   } catch {
     throw unauthorized("TOKEN_EXPIRED");
   }
@@ -43,7 +43,7 @@ export function resolveAdminAuth(
   if (!token) throw unauthorized("TOKEN_EXPIRED");
   let claims: AdminClaims;
   try {
-    claims = verifyToken<AdminClaims>(cfg, token);
+    claims = verifyAdminToken(cfg, token);
   } catch {
     throw unauthorized("TOKEN_EXPIRED");
   }

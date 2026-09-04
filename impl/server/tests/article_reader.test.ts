@@ -27,7 +27,7 @@ function seedOne(db: Database): number {
 }
 
 describe("articles router (delivery)", () => {
-  const cfg = loadServerConfig({ JWT_SECRET: "s".repeat(32), LLM_API_KEY: "k", TIMEZONE: "Asia/Shanghai" });
+  const cfg = loadServerConfig({ JWT_SECRET: "s".repeat(32), ADMIN_JWT_SECRET: "a".repeat(32), LLM_API_KEY: "k", TIMEZONE: "Asia/Shanghai" });
   function buildApp(db: Database) {
     const app = articlesRouter(db, cfg);
     app.route("/", healthRouter());

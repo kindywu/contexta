@@ -8,7 +8,7 @@ import { mkdirSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
-import type { Context } from "hono";
+import type { Context, Env } from "hono";
 import { serveStatic } from "hono/bun";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { DEFAULT_LOG_DIR, loadServerConfig, type ServerConfig } from "./config";
@@ -17,6 +17,8 @@ import { assertSystemTimezone, loadConfig, type AppConfig } from "./engine/confi
 import { ensureSchema } from "./engine/db";
 import { cleanupOldLogs, initLog } from "./engine/graph/log";
 import { ApiError, attachErrorHandler, badRequest, errorBody, internal } from "./response";
+import { requestLogger } from "./middleware/request_logger";
+import type { ApiEnv } from "./middleware/require_auth";
 import { adminRouter } from "./routers/admin";
 import { articlesRouter } from "./routers/articles";
 import { authRouter } from "./routers/auth";
@@ -43,7 +45,7 @@ export function defaultAdminDistDir(): string {
  * - dist/index.html 存在 → serveStatic（/admin/* → root + 剥离 /admin 前缀）+ SPA 回退 index.html；
  * - 不存在 → /admin 与 /admin/* 均为 200 占位文案（待 Task 12 构建后即真页面）。
  */
-function mountAdmin(app: Hono, distDir: string): void {
+function mountAdmin<E extends Env>(app: Hono<E>, distDir: string): void {
   const indexHtmlPath = join(distDir, "index.html");
   if (existsSync(indexHtmlPath)) {
     const indexHtml = readFileSync(indexHtmlPath, "utf8");
@@ -80,8 +82,12 @@ export function buildApp(
   cfg: ServerConfig,
   engineCfg: AppConfig,
   opts: BuildAppOpts = {},
-): Hono {
-  const app = new Hono();
+): Hono<ApiEnv> {
+  const app = new Hono<ApiEnv>();
+
+  // 请求访问日志（首位挂载，覆盖所有请求含匿名）：身份由各路由内登录保护
+  // 中间件写入上下文（appUser / adminUser），日志中间件自身不认证、不读库。
+  app.use("*", requestLogger());
 
   app.route("/", healthRouter());
   app.route("/", authRouter(db, cfg));

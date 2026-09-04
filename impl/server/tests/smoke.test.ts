@@ -23,6 +23,7 @@ function makeApp(adminDistDir?: string) {
   ensureServerSchema(db);
   const cfg = loadServerConfig({
     JWT_SECRET: "s".repeat(32),
+    ADMIN_JWT_SECRET: "a".repeat(32),
     LLM_API_KEY: "k",
     TIMEZONE: TZ,
   });

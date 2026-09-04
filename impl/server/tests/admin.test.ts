@@ -21,6 +21,7 @@ const RUN_DATE = "2026-09-02";
 
 const cfg: ServerConfig = loadServerConfig({
   JWT_SECRET: "s".repeat(32),
+  ADMIN_JWT_SECRET: "a".repeat(32),
   LLM_API_KEY: "k",
   TIMEZONE: "Asia/Shanghai",
 });

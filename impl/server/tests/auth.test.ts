@@ -8,7 +8,7 @@ import { resolveAuthUser } from "../src/auth";
 import { loadServerConfig } from "../src/config";
 import type { AppConfig } from "../src/engine/config";
 
-const cfg = loadServerConfig({ JWT_SECRET: "s".repeat(32), LLM_API_KEY: "k", TIMEZONE: "Asia/Shanghai" });
+const cfg = loadServerConfig({ JWT_SECRET: "s".repeat(32), ADMIN_JWT_SECRET: "a".repeat(32), LLM_API_KEY: "k", TIMEZONE: "Asia/Shanghai" });
 // Task 8 起 adminRouter 签名扩容（第三参 engineCfg）：本文件只用 login，占位配置即可
 const engineCfg: AppConfig = {
   llmApiKey: "k",
@@ -92,5 +92,17 @@ describe("admin login", () => {
     expect(res.status).toBe(200);
     const { data } = await res.json();
     expect(typeof data.token).toBe("string");
+  });
+  test("双密钥互斥：Admin 令牌打 App 接口、App 令牌打 Admin 接口均 401 TOKEN_EXPIRED", async () => {
+    const adminTok = (await (await app.request("/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username: "admin", password: "pw-123456" }) })).json()).data.token;
+    // Admin 令牌（adminJwtSecret 签发）→ App 接口：验签失败，不再走到会话比对
+    const me = await app.request("/api/auth/me", { headers: { authorization: `Bearer ${adminTok}` } });
+    expect(me.status).toBe(401);
+    expect((await me.json()).error_code).toBe("TOKEN_EXPIRED");
+    // App 令牌（appJwtSecret 签发）→ Admin 接口：验签失败
+    const appTok = (await (await app.request("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ phone: "13400000000", device_id: "d" }) })).json()).data.token;
+    const users = await app.request("/api/admin/users", { headers: { authorization: `Bearer ${appTok}` } });
+    expect(users.status).toBe(401);
+    expect((await users.json()).error_code).toBe("TOKEN_EXPIRED");
   });
 });

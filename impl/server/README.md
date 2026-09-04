@@ -24,7 +24,7 @@ bun run src/main.ts
 启动后：
 - 健康检查：`GET http://localhost:8080/api/health` → `{"code":0,"data":{"status":"ok"}}`
 - 管理页：`http://localhost:8080/admin`（首次启动前设 `ADMIN_INIT_PASSWORD` 即 seed 管理员 `admin`）
-- 启动自动：建库建表（幂等）→ seed admin → 监听服务（**启动不生成文章**）；每日 `DAILY_GENERATE_WINDOW`（默认 08:00-08:15）窗口内自动生成**当天** 15 篇，错过窗口跳过不补；生成日志 `logs/daily-<日期>.log`，Web 日志 `logs/server-<日期>.log`（7 天轮转）
+- 启动自动：建库建表（幂等）→ seed admin → 监听服务（**启动不生成文章**）；每日 `DAILY_GENERATE_WINDOW`（默认 08:00-08:15）窗口内自动生成**当天** 15 篇，错过窗口跳过不补；生成日志 `logs/daily-<日期>.log`，请求访问日志按面分流 `logs/app-<日期>.log`（手机端）/ `logs/admin-<日期>.log`（管理端），通用服务日志 `logs/server-<日期>.log`（均 7 天轮转；stdout 中 app 青色 / admin 品红）
 - 时区硬闸：`TIMEZONE` 与系统当前时区不一致 → 启动失败（`timedatectl set-timezone Asia/Shanghai`）
 
 ## 测试

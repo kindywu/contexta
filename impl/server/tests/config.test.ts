@@ -2,12 +2,18 @@ import { describe, expect, test } from "bun:test";
 import { formatWindow, loadServerConfig } from "../src/config";
 
 describe("loadServerConfig", () => {
-  const base = { JWT_SECRET: "x".repeat(32), LLM_API_KEY: "k", TIMEZONE: "Asia/Shanghai" };
+  const base = { JWT_SECRET: "x".repeat(32), ADMIN_JWT_SECRET: "y".repeat(32), LLM_API_KEY: "k", TIMEZONE: "Asia/Shanghai" };
   test("缺 JWT_SECRET 抛错", () => {
     expect(() => loadServerConfig({})).toThrow(/JWT_SECRET/);
   });
+  test("缺 ADMIN_JWT_SECRET 抛错", () => {
+    expect(() => loadServerConfig({ ...base, ADMIN_JWT_SECRET: undefined })).toThrow(/ADMIN_JWT_SECRET/);
+  });
   test("JWT_SECRET 短于 32 字符抛错", () => {
     expect(() => loadServerConfig({ ...base, JWT_SECRET: "short" })).toThrow(/32/);
+  });
+  test("ADMIN_JWT_SECRET 短于 32 字符抛错", () => {
+    expect(() => loadServerConfig({ ...base, ADMIN_JWT_SECRET: "short" })).toThrow(/32/);
   });
   test("默认值正确", () => {
     const c = loadServerConfig(base);

@@ -40,6 +40,7 @@ function makeCtx(overrides: Partial<DailyTaskCtx> = {}) {
   ensureServerSchema(db);
   const serverCfg = loadServerConfig({
     JWT_SECRET: "s".repeat(32),
+    ADMIN_JWT_SECRET: "a".repeat(32),
     LLM_API_KEY: "k",
     TIMEZONE: TZ,
   });
@@ -303,6 +304,7 @@ describe("daily_task loop（窗口触发 + 三态判定）", () => {
   test("自定义窗口生效（12:00-12:30）：08:10 不在窗口 → 睡到 12:00；12:10 在窗口 → 触发", async () => {
     const custom = loadServerConfig({
       JWT_SECRET: "s".repeat(32),
+      ADMIN_JWT_SECRET: "a".repeat(32),
       LLM_API_KEY: "k",
       TIMEZONE: TZ,
       DAILY_GENERATE_WINDOW: "12:00-12:30",

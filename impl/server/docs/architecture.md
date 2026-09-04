@@ -45,10 +45,13 @@ flowchart TB
 impl/server/
   src/
     main.ts                    # 组装：配置+时区硬闸 → 建库建表 → seed admin → 日志初始化 → 路由 → serve → 每日窗口任务 → 优雅退出
-    config.ts                  # 服务端配置（zod）：PORT/JWT_SECRET/配额/缓存/每日生成窗口/LLM 端点字段
+    config.ts                  # 服务端配置（zod）：PORT/双 JWT 密钥/配额/缓存/每日生成窗口/LLM 端点字段
     db.ts                      # 服务端表 DDL（幂等）+ seedAdminIfNeeded + verifyAdminPassword
     auth.ts                    # AuthUser / AdminAuth 认证提取器（封禁/会话/角色校验）
-    jwt.ts                     # App token 30 天 / Admin token 12 小时；iat == issued_at 毫秒精确
+    middleware/
+      require_auth.ts          # 登录保护中间件：requireAppAuth / requireAdminAuth（认证结果入上下文）
+      request_logger.ts        # 请求访问日志：app/web 通道分流（身份从上下文读，自身不认证）
+    jwt.ts                     # App/Admin 双密钥签发与验证；App token 30 天 / Admin 12 小时；iat == issued_at 毫秒精确
     time.ts                    # todayStartMillis（配置时区当地零点）
     response.ts                # 统一 envelope：ApiError/ok/errorBody + attachErrorHandler
     routers/                   # HTTP 层（每路由文件自带 attachErrorHandler）
@@ -65,10 +68,12 @@ impl/server/
 
 | 模块 | 职责要点 |
 |---|---|
-| `config.ts` | `loadServerConfig`（服务端）+ `engine/config.ts` 的 `loadConfig`（引擎）从同一份环境变量读取（`.env` 由 Bun 自动加载）；`JWT_SECRET` <32 字符、`LLM_API_KEY` 缺失、`TIMEZONE` 非法即启动失败 |
+| `config.ts` | `loadServerConfig`（服务端）+ `engine/config.ts` 的 `loadConfig`（引擎）从同一份环境变量读取（`.env` 由 Bun 自动加载）；**双 JWT 密钥**：`JWT_SECRET`（App 端签发/验证）与 `ADMIN_JWT_SECRET`（Admin 端），均 <32 字符、`LLM_API_KEY` 缺失、`TIMEZONE` 非法即启动失败 |
 | `db.ts` | `ensureServerSchema` 幂等建服务端表（逐条 `CREATE TABLE IF NOT EXISTS`）；`seedAdminIfNeeded`（argon2id 哈希，仅在无该 username 行时插入，不覆盖既有密码）；`verifyAdminPassword` |
-| `auth.ts` | `resolveAuthUser`：JWT 校验 → **先封禁后会话**（被封禁得 403 BANNED 而非 401 EVICTED）→ `iat == issued_at` 毫秒精确匹配，行不存在（登出/被挤掉）或落后一律 401 EVICTED。`resolveAdminAuth`：JWT + `role == "admin"` |
-| `jwt.ts` | App token 30 天（`APP_TOKEN_TTL_SECS`），admin token **12 小时**（`ADMIN_TOKEN_TTL_SECS`）。App token 的 `iat` 为**毫秒**（`authService.login` 落库的实际 `issued_at`），jsonwebtoken 原样透传无舍入——秒粒度无法区分同秒内两次重登 |
+| `auth.ts` | `resolveAuthUser`：JWT 校验 → **先封禁后会话**（被封禁得 403 BANNED 而非 401 EVICTED）→ `iat == issued_at` 毫秒精确匹配，行不存在（登出/被挤掉）或落后一律 401 EVICTED。`resolveAdminAuth`：JWT + `role == "admin"`。二者为认证提取器，调用方是 middleware（非 handler） |
+| `middleware/require_auth.ts` | 登录保护中间件：`requireAppAuth`（App 接口，`appUser` 写上下文）/ `requireAdminAuth`（`/api/admin/*`，login 公开放行，`adminUser` 写上下文）；认证失败抛原 ApiError（401 TOKEN_EXPIRED/EVICTED、403 BANNED），经子路由 attachErrorHandler 统一响应 |
+| `middleware/request_logger.ts` | 请求访问日志：挂主 app 首位覆盖所有请求；身份从上下文读取（appUser 打码手机号 / adminUser `admin:名` / anon），自身不认证不读库；`/admin*` 与 `/api/admin/*` → web 通道（admin-*.log，stdout 品红），其余 → app 通道（app-*.log，stdout 青色） |
+| `jwt.ts` | **双密钥**：App token 用 `appJwtSecret`（JWT_SECRET 签发/验证），admin token 用 `adminJwtSecret`——两端令牌互不通用（交叉使用验签失败 401 TOKEN_EXPIRED）。App token 30 天（`APP_TOKEN_TTL_SECS`），admin token **12 小时**（`ADMIN_TOKEN_TTL_SECS`）。App token 的 `iat` 为**毫秒**（`authService.login` 落库的实际 `issued_at`），jsonwebtoken 原样透传无舍入——秒粒度无法区分同秒内两次重登 |
 | `response.ts` | `ApiError(status, code, errorCode)` + 各类工厂（badRequest/quotaExceeded/unauthorized/banned/notFound/llmFatal/llmRecoverableExhausted/llmTimeout/pipelineBlocking/internal）；`attachErrorHandler` 挂到每个子路由（子路由错误就地消化，顶层 onError 只兜 main 侧） |
 | `services/auth_service.ts` | 免密直登：自动注册 → 封禁检查 → 会话行 `issued_at` 全局单调（`MAX(issued_at)+1` 与墙钟取大，防时钟回拨，单条 INSERT…SELECT 原子）→ 挤掉保留最新 2 条 → token 的 iat 取落库 `issued_at` |
 | `services/llm_service.ts` | 查词网关：缓存 → 配额 → LLM → 解析 → 记账 → 写缓存（见 §5） |
@@ -82,7 +87,7 @@ impl/server/
 
 ### 2.1 依赖纪律
 
-- **单向分层**：`routers → services → engine`。router 只做参数提取/鉴权/组包；service 承载业务语义；engine 只负责"生成一篇文章/一天文章"。
+- **单向分层**：`routers → services → engine`。router 只做参数提取/组包；**鉴权由 middleware 前置拦截**（require_auth 挂各路由工厂内，认证结果经上下文供 handler 读取）；service 承载业务语义；engine 只负责"生成一篇文章/一天文章"。
 - **业务库读写边界**：引擎侧库读写只允许 `engine/db.ts`（batch_slots/articles/article_paragraphs 的 select/insert/update）；服务端表读写只允许 `src/db.ts` 与各 services（users/device_sessions/usage_log/word_lookup_cache/article_review）。其余模块拿到的是 `Database` 连接但不得直接散布 SQL（models 集中在两处）。
 - **引擎"纯编排"纪律**：LangGraph 图节点（`graph/nodes.ts`）是 `state → 部分 state 更新` 的纯函数，依赖（LLM、站点映射、随机数、URL 去重集合）经闭包注入；图上不碰业务库。持久化只发生在编排层（`graph/daily.ts` 的 `persistSlot`）与跨模块的 `review_service.reRunSlot`——生成结果三态（success/rejected/error）返回后由编排方决定落库形态。检查点库（langgraph.sqlite）由 `BunSqliteCheckpointer` 独占，业务代码不读它（replay/retry 工具除外）。
 - **测试 seam**：`llm_service.wordLookup(db, cfg, chat, ...)` 的 `chat`、`review_service` 的 `gen`、`DailyTask` 的全部分支（genDaily/retryFailed/reRun/ensure/now/sleep）均可注入假实现——生产用引擎真实现，测试不真调 LLM。
@@ -325,7 +330,7 @@ flowchart TD
 
 - **并发安全**：槽位级进程锁（`review_service` `slotLocks`）保证同槽 error 补跑与审核重生成串行；引擎侧 `usedUrls` 集合在单轮 run 内共享，拦截并行槽位重复抓取同一来源。
 - **手动补生成**：`POST /api/admin/articles/generate`（严格 ISO 校验）走同一 `generateDailyArticles` + `ensureReviewRows`；错过的日期 / 收口批次的 error 槽位均可手动处置。
-- **日志**：`[daily-task]` 编排行与引擎 `log()` 同走 `logs/daily-<日期>.log`（7 天轮转，只进文件不进 stdout）；Web 侧日志见 `services/server_log.ts`（`logs/server-<日期>.log` + stdout）。
+- **日志**：`[daily-task]` 编排行与引擎 `log()` 同走 `logs/daily-<日期>.log`（7 天轮转，只进文件不进 stdout）；服务侧日志见 `services/server_log.ts`——通用日志 `logs/server-<日期>.log`（+stdout），请求访问日志按面分流 `logs/app-<日期>.log`（手机端）/ `logs/admin-<日期>.log`（管理端），stdout 中 app 青色 / admin 品红。
 
 ## 9. 时区纪律（部署关键约束）
 
