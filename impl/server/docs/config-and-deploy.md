@@ -25,6 +25,7 @@ cp .env.example .env   # 然后填入 LLM_API_KEY 与 JWT_SECRET
 | `PROXY_URL` | 空（不代理） | string | 出站 HTTP 代理（`http://` 形式）；空串转 undefined。作用于 LLM 调用（引擎 `createLLM` 与查词 `driverChat`） |
 | `PORT` | `8080` | int 1..65535 | 监听端口（Bun.serve） |
 | `JWT_SECRET` | **必填** | ≥32 字符 | HS256 密钥；`openssl rand -hex 32` 生成；<32 启动失败 |
+| `ADMIN_JWT_SECRET` | **必填** | ≥32 字符 | admin（Web 管理端）令牌密钥；双密钥鉴权——与 `JWT_SECRET` 分开，App 与 admin 令牌互不交叉 |
 | `ADMIN_INIT_PASSWORD` | 空 | string | 设置时启动 seed 管理员 `admin`（argon2id）；已有 admin 行则跳过不覆盖；seed 后可移出 .env |
 | `WORD_QUOTA_DAILY` | `200` | 正 int | 用户每日查词配额（只计真实 LLM 调用；`users.quota_word_daily` 可 per-user 覆盖） |
 | `CACHE_TTL_DAYS` | `30` | 正 int | 查词缓存 TTL（命中不调 LLM 不扣配额） |
@@ -75,7 +76,8 @@ mkdir -p /opt/contexta/server/{data,logs,output}
 touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.sqlite  # 空库
 ```
 
-- `.env`（权限 600）由 `.env.example` 生成：`JWT_SECRET`（`openssl rand -hex 32`）与 `ADMIN_INIT_PASSWORD` 自动生成填入；`TIMEZONE=Asia/Shanghai`；**`LLM_API_KEY` 必填**——缺真 key 时服务仍可启动（健康检查 200），但生成与查词调用会失败，需填入真 key 后 `docker compose up -d` 重启生效。
+- `.env`（权限 600）由 `.env.example` 生成：`JWT_SECRET` 与 `ADMIN_JWT_SECRET`（各 `openssl rand -hex 32`）及 `ADMIN_INIT_PASSWORD` 自动生成填入；`TIMEZONE=Asia/Shanghai`；**`LLM_API_KEY` 必填**——缺真 key 时服务仍可启动（健康检查 200），但生成与查词调用会失败，需填入真 key 后 `docker compose up -d` 重启生效。
+  > ⚠️ 注意：`.env.example` 曾漏掉必填项 `ADMIN_JWT_SECRET`（双密钥鉴权于 server-auth-and-log 引入），缺它容器反复 exit 1 重启——2026-09-07 已补。
 - 服务器 `authorized_keys` 收录 GHA 所用公钥（当前即 ECS PEM 对应公钥）。
 
 ### 3.3 数据准备（首次部署）
@@ -135,7 +137,7 @@ touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.
 
 ## 4. 首次启动顺序
 
-1. `.env` 就绪（`LLM_API_KEY` / `JWT_SECRET` / `TIMEZONE` 必须；`ADMIN_INIT_PASSWORD` 首次启动设置以 seed `admin`，seed 后可移出）
+1. `.env` 就绪（`LLM_API_KEY` / `JWT_SECRET` / `ADMIN_JWT_SECRET` / `TIMEZONE` 必须；`ADMIN_INIT_PASSWORD` 首次启动设置以 seed `admin`，seed 后可移出）
 2. `docker compose up -d`（备选路径为 `systemctl start contexta-server`）—— 启动自动：建库建表 → seed admin → 监听（**启动不生成任何文章**）；每日生成只由窗口循环触发
 3. 健康检查：`curl http://localhost:8080/api/health`；管理页 `https://api.example.com/admin`（`admin` + 初始密码）
 4. 当天缺文可手动补生成：`POST /api/admin/articles/generate {"date":"2026-08-13"}`（admin JWT）
