@@ -48,6 +48,8 @@ jobs:
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ADMIN_JWT_SECRET: ${{ secrets.ADMIN_JWT_SECRET }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
@@ -60,12 +62,11 @@ jobs:
           # 1) 同步 compose 文件
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes impl/server/docker-compose.yml \
             root@47.112.20.32:/opt/contexta/server/docker-compose.yml
-          # 2) 拉取最新镜像并滚动重启；LLM_API_KEY 从 Secret 注入（覆盖 .env），为空则回退 .env（本地直跑方式）
-          if [ -n "$LLM_API_KEY" ]; then
-            UP_CMD="LLM_API_KEY='$LLM_API_KEY' docker compose up -d"
-          else
-            UP_CMD="docker compose up -d"
-          fi
+          # 2) 拉取最新镜像并滚动重启；密钥从 Secret 注入（覆盖 .env），为空的项回退 .env（本地直跑方式）
+          UP_CMD="docker compose up -d"
+          [ -n "$LLM_API_KEY" ] && UP_CMD="LLM_API_KEY='$LLM_API_KEY' $UP_CMD"
+          [ -n "$JWT_SECRET" ] && UP_CMD="JWT_SECRET='$JWT_SECRET' $UP_CMD"
+          [ -n "$ADMIN_JWT_SECRET" ] && UP_CMD="ADMIN_JWT_SECRET='$ADMIN_JWT_SECRET' $UP_CMD"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@47.112.20.32 \
             "cd /opt/contexta/server && docker compose pull && $UP_CMD"
           # 3) 健康检查：30 次 × 2s 重试（宿主 443 → 容器 8080）
