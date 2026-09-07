@@ -47,6 +47,7 @@ jobs:
       - name: Sync compose + pull + restart + health check
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
@@ -59,13 +60,18 @@ jobs:
           # 1) 同步 compose 文件
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes impl/server/docker-compose.yml \
             root@47.112.20.32:/opt/contexta/server/docker-compose.yml
-          # 2) 拉取最新镜像并滚动重启
+          # 2) 拉取最新镜像并滚动重启；LLM_API_KEY 从 Secret 注入（覆盖 .env），为空则回退 .env（本地直跑方式）
+          if [ -n "$LLM_API_KEY" ]; then
+            UP_CMD="LLM_API_KEY='$LLM_API_KEY' docker compose up -d"
+          else
+            UP_CMD="docker compose up -d"
+          fi
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@47.112.20.32 \
-            'cd /opt/contexta/server && docker compose pull && docker compose up -d'
-          # 3) 健康检查：30 次 × 2s 重试
+            "cd /opt/contexta/server && docker compose pull && $UP_CMD"
+          # 3) 健康检查：30 次 × 2s 重试（宿主 443 → 容器 8080）
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@47.112.20.32 \
             'set -e; for i in $(seq 1 30); do
-               if curl -fsS http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
+               if curl -fsS http://127.0.0.1:443/api/health >/dev/null 2>&1; then
                  echo "[deploy] health check OK"; exit 0
                fi
                sleep 2

@@ -13,7 +13,7 @@ cp .env.example .env   # 然后填入 LLM_API_KEY 与 JWT_SECRET
 
 | 变量 | 默认值 | 校验 | 说明 |
 |---|---|---|---|
-| `LLM_API_KEY` | **必填** | 非空 string | 生成与查词共用的 LLM key（缺失启动失败） |
+| `LLM_API_KEY` | **必填** | 非空 string | 生成与查词共用的 LLM key（缺失启动失败）；**生产经 GHA Secret 注入**（compose `environment` 覆盖 `.env`，见 §3.1），本地可直接填 `.env` |
 | `LLM_BASE_URL` | `https://api.deepseek.com` | URL | OpenAI 兼容端点；可换网关 |
 | `LLM_MODEL` | `deepseek-v4-flash` | string | 模型名（注意：思考模型 maxTokens 已由代码设为 64000，无需配置） |
 | `TIMEZONE` | **必填**（`.env.example` 为 `Asia/Shanghai`） | IANA 名（`Intl` 校验） | 所有日期语义唯一口径；**启动时须与系统时区一致**（`assertSystemTimezone` 硬闸，不一致拒绝运行） |
@@ -23,7 +23,7 @@ cp .env.example .env   # 然后填入 LLM_API_KEY 与 JWT_SECRET
 | `BROWSER_CONCURRENCY` | `2` | 正 int | **保留配置**：当前引擎按"每槽一次图运行"执行，站点抓取（Bun.WebView）在节点内按需开合视图，此值尚未被消费（预留） |
 | `SLOT_CONCURRENCY` | `5` | 正 int | 每日生成并发槽位数上限（`runPool`）；每槽一条 LangGraph 线程 |
 | `PROXY_URL` | 空（不代理） | string | 出站 HTTP 代理（`http://` 形式）；空串转 undefined。作用于 LLM 调用（引擎 `createLLM` 与查词 `driverChat`） |
-| `PORT` | `8080` | int 1..65535 | 监听端口（Bun.serve） |
+| `PORT` | `8080` | int 1..65535 | 容器内监听端口（Bun.serve）；宿主经 compose 映射 `443:8080` 对外——安全组放行 443 |
 | `JWT_SECRET` | **必填** | ≥32 字符 | HS256 密钥；`openssl rand -hex 32` 生成；<32 启动失败 |
 | `ADMIN_INIT_PASSWORD` | 空 | string | 设置时启动 seed 管理员 `admin`（argon2id）；已有 admin 行则跳过不覆盖；seed 后可移出 .env |
 | `WORD_QUOTA_DAILY` | `200` | 正 int | 用户每日查词配额（只计真实 LLM 调用；`users.quota_word_daily` 可 per-user 覆盖） |
@@ -38,6 +38,7 @@ cp .env.example .env   # 然后填入 LLM_API_KEY 与 JWT_SECRET
 - **推荐**：香港/海外轻量云（免 ICP 备案）+ 域名 + Caddy 自动 HTTPS（App 端明文 HTTP 会被平台限制，HTTPS 必须）。备选：Cloudflare Tunnel（不买域名时）。
 - 内存：Bun + SQLite + 每槽 LangGraph（含 WebView 抓取）+ 并发 5 槽，建议 ≥ 2GB（**Bun.WebView 在 Linux 需要 webkit2gtk 依赖 + 显示环境，部署前务必 spike，见 §6**）。
 - 运行时：**Docker + Compose v2**（标准部署路径的唯一宿主要求，见 §3.1）——本机已装 Docker 29.8 + Compose v5.5.1；无需在宿主安装 bun。
+- **端口**：容器 8080，宿主映射 `443:8080`——**安全组放行 443** 后 App 即可访问 `http://47.112.20.32:443`（HTTPS / 域名 + Caddy 属下一步，见上）。
 - **时区必须设为上海**（`.env` 的 `TIMEZONE` 须与系统时区一致，硬闸）：
 
 ```bash
@@ -59,10 +60,11 @@ push main（impl/server/** 变更）/ 手动 dispatch
       ghcr.io/kindywu/contexta-server:latest（部署用）+ :sha-<commit>（回滚用）
   → [deploy] scp docker-compose.yml → /opt/contexta/server/
              docker compose pull && docker compose up -d
-             → 健康检查（curl :8080/api/health，30 次 × 2s 重试）失败即报红
+             → 健康检查（curl :443/api/health，30 次 × 2s 重试）失败即报红
 ```
 
 - **并发互斥**：`concurrency` 同组 `cancel-in-progress: true`——连续 push 只保留最后一个部署，不排队堆积。
+- **LLM_API_KEY 注入**：deploy 步骤从 `secrets.LLM_API_KEY` 以 `LLM_API_KEY='<值>' docker compose up -d` 传入远端（compose `environment` 覆盖 `.env`）；Secret 为空时回退 `.env`——本地 `docker compose up` 直跑即后者。更新 key：`gh secret set LLM_API_KEY` → 下一次部署/`up -d` 生效。
 - **凭据**：`DEPLOY_SSH_KEY`（服务器 SSH 私钥 = 阿里云 ECS PEM）存 GitHub Repo Secrets；`known_hosts` 指纹内联 workflow 防首次连接 MITM。
 - **镜像免认证拉取**：GHCR 包公开（仓库本身公开），服务器 `docker pull` 无需登录 token。
 - **回滚**：服务器上临时把 `docker-compose.yml` 的 `image:` 改为 `:sha-<旧commit>` → `docker compose up -d`（镜像历史保留在 GHCR）。
@@ -77,6 +79,7 @@ touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.
 
 - `.env`（权限 600）由 `.env.example` 生成：`JWT_SECRET`（`openssl rand -hex 32`）与 `ADMIN_INIT_PASSWORD` 自动生成填入；`TIMEZONE=Asia/Shanghai`；**`LLM_API_KEY` 必填**——缺真 key 时服务仍可启动（健康检查 200），但生成与查词调用会失败，需填入真 key 后 `docker compose up -d` 重启生效。
 - 服务器 `authorized_keys` 收录 GHA 所用公钥（当前即 ECS PEM 对应公钥）。
+- **`LLM_API_KEY` 注入（2026-09-07 起）**：生产 key 存 GitHub Secret `LLM_API_KEY`，GHA deploy 经 compose 注入容器——服务器 `.env` 中该行可保留占位或供本地直跑。⏩ 尚未配置 Secret 时 deploy 回退 `.env` 值（占位符 `__PENDING_REAL_KEY__` 时服务可启动但调 LLM 会失败）。
 
 ### 3.3 数据准备（首次部署）
 
@@ -167,7 +170,7 @@ touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.
 docker compose ps                                          # 服务状态
 docker compose logs -f contexta-server                    # 实时日志（Web 服务侧）
 tail -f logs/daily-$(date +%F).log                         # 每日任务/生成日志（仅文件）
-curl http://localhost:8080/api/health                     # 健康检查
+curl http://localhost:443/api/health                      # 健康检查（宿主 443 → 容器 8080）
 docker compose exec contexta-server bun run daily -- --date 2026-08-29    # 手动补生成某日
 docker compose exec contexta-server bun run retry -- --date 2026-08-29    # 中断恢复（同 thread 续跑）
 docker compose exec contexta-server bun run replay -- --thread daily-2026-08-29-3  # 步骤级重放
