@@ -12,6 +12,6 @@ data/
 tests
 tool
 
-# 前端：不要把本机admin‑ui的node_modules、dist打进镜像，镜像内部自己build
-admin‑ui/node_modules
-admin‑ui/dist
+# 前端：不要把本机admin-ui的node_modules、dist打进镜像，镜像内部自己build
+admin-ui/node_modules
+admin-ui/dist
