@@ -6,16 +6,18 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import type { ServerConfig } from "../config";
 import { attachErrorHandler, badRequest, ok } from "../response";
-import { resolveAuthUser } from "../auth";
 import { Difficulty } from "../engine/schema";
 import { deliverArticles } from "../services/article_delivery";
+import { requireAppAuth, type ApiEnv } from "../middleware/require_auth";
 
-export function articlesRouter(db: Database, cfg: ServerConfig): Hono {
-  const app = new Hono();
+export function articlesRouter(db: Database, cfg: ServerConfig): Hono<ApiEnv> {
+  const app = new Hono<ApiEnv>();
   attachErrorHandler(app);
 
+  app.use("/api/articles/delivery", requireAppAuth(db, cfg));
+
   app.get("/api/articles/delivery", (c) => {
-    const auth = resolveAuthUser(db, cfg, c.req.header("authorization"));
+    const auth = c.get("appUser")!;
     const parsed = Difficulty.safeParse(c.req.query("difficulty"));
     if (!parsed.success) throw badRequest("difficulty 应为 LOW|MEDIUM|HIGH");
     const count = Number(c.req.query("count"));

@@ -32,7 +32,7 @@ export function issueAppToken(
     iat: issuedAtMs,
     exp: Math.floor(Date.now() / 1000) + APP_TOKEN_TTL_SECS,
   };
-  return jwt.sign(claims, cfg.jwtSecret, { header: { alg: "HS256" } });
+  return jwt.sign(claims, cfg.appJwtSecret, { header: { alg: "HS256" } });
 }
 
 export function issueAdminToken(cfg: ServerConfig, username: string): string {
@@ -41,9 +41,15 @@ export function issueAdminToken(cfg: ServerConfig, username: string): string {
     role: "admin",
     exp: Math.floor(Date.now() / 1000) + ADMIN_TOKEN_TTL_SECS,
   };
-  return jwt.sign(claims, cfg.jwtSecret, { header: { alg: "HS256" } });
+  return jwt.sign(claims, cfg.adminJwtSecret, { header: { alg: "HS256" } });
 }
 
-export function verifyToken<T>(cfg: ServerConfig, token: string): T {
-  return jwt.verify(token, cfg.jwtSecret) as T;
+/** App 令牌验证：用 appJwtSecret；Admin 密钥签发的令牌在这里验签失败 → 401 TOKEN_EXPIRED。 */
+export function verifyAppToken(cfg: ServerConfig, token: string): AppClaims {
+  return jwt.verify(token, cfg.appJwtSecret) as AppClaims;
+}
+
+/** Admin 令牌验证：用 adminJwtSecret；App 密钥签发的令牌在这里验签失败 → 401 TOKEN_EXPIRED。 */
+export function verifyAdminToken(cfg: ServerConfig, token: string): AdminClaims {
+  return jwt.verify(token, cfg.adminJwtSecret) as AdminClaims;
 }

@@ -51,6 +51,7 @@ function setup(options: { gen?: (args: GenArgs) => Promise<ArticleResult> } = {}
   ).id;
   const serverCfg = loadServerConfig({
     JWT_SECRET: "s".repeat(32),
+    ADMIN_JWT_SECRET: "a".repeat(32),
     LLM_API_KEY: "k",
     TIMEZONE: "Asia/Shanghai",
   });

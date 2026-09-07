@@ -6,7 +6,7 @@ import { ensureServerSchema } from "../src/db";
 import { llmService } from "../src/services/llm_service";
 import { loadServerConfig } from "../src/config";
 
-const cfg = loadServerConfig({ JWT_SECRET: "s".repeat(32), LLM_API_KEY: "k", TIMEZONE: "Asia/Shanghai" });
+const cfg = loadServerConfig({ JWT_SECRET: "s".repeat(32), ADMIN_JWT_SECRET: "a".repeat(32), LLM_API_KEY: "k", TIMEZONE: "Asia/Shanghai" });
 
 const goodChat = async () => ({
   content: `<spelling>apple</spelling><sense><partOfSpeech>n.</partOfSpeech><chineseMeaning>苹果</chineseMeaning><englishDefinition>a fruit</englishDefinition></sense>`,

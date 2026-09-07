@@ -59,7 +59,9 @@ const windowSchema = z
 
 const serverEnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(8080),
+  // 双密钥：App（手机端）与 Admin（Web 管理端）各自签发/验证，互不通用
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+  ADMIN_JWT_SECRET: z.string().min(32, "ADMIN_JWT_SECRET must be at least 32 characters"),
   ADMIN_INIT_PASSWORD: z.string().optional().default(""),
   WORD_QUOTA_DAILY: z.coerce.number().int().positive().default(200),
   CACHE_TTL_DAYS: z.coerce.number().int().positive().default(30),
@@ -83,7 +85,10 @@ const serverEnvSchema = z.object({
 
 export interface ServerConfig {
   port: number;
-  jwtSecret: string;
+  /** App（手机端）令牌密钥：JWT_SECRET。 */
+  appJwtSecret: string;
+  /** Admin（Web 管理端）令牌密钥：ADMIN_JWT_SECRET。 */
+  adminJwtSecret: string;
   adminInitPassword?: string;
   wordQuotaDaily: number;
   cacheTtlDays: number;
@@ -109,7 +114,8 @@ export function loadServerConfig(
   const v = parsed.data;
   return {
     port: v.PORT,
-    jwtSecret: v.JWT_SECRET,
+    appJwtSecret: v.JWT_SECRET,
+    adminJwtSecret: v.ADMIN_JWT_SECRET,
     adminInitPassword: v.ADMIN_INIT_PASSWORD || undefined,
     wordQuotaDaily: v.WORD_QUOTA_DAILY,
     cacheTtlDays: v.CACHE_TTL_DAYS,

@@ -6,9 +6,9 @@ import type { AppConfig } from "../engine/config";
 import { generateDailyArticles } from "../engine/graph/daily";
 import { localDate } from "../engine/utils/time";
 import { attachErrorHandler, badRequest, notFound, ok } from "../response";
-import { resolveAdminAuth } from "../auth";
 import { adminService } from "../services/admin_service";
 import * as adminArticles from "../services/admin_articles";
+import { requireAdminAuth, type ApiEnv } from "../middleware/require_auth";
 import {
   approveArticle,
   ensureReviewRows,
@@ -61,12 +61,11 @@ export function adminRouter(
   cfg: ServerConfig,
   engineCfg: AppConfig,
   opts: AdminRouterOpts = {},
-): Hono {
-  const app = new Hono();
+): Hono<ApiEnv> {
+  const app = new Hono<ApiEnv>();
   attachErrorHandler(app);
   const ctx: ReviewCtx = { db, serverCfg: cfg, engineCfg, gen: opts.gen };
   const genDaily: GenDailyFn = opts.genDaily ?? generateDailyArticles;
-  const auth = (c: Context) => resolveAdminAuth(db, cfg, c.req.header("authorization"));
 
   app.post("/api/admin/login", async (c) => {
     const body = await c.req.json<{ username?: string; password?: string }>();
@@ -74,28 +73,27 @@ export function adminRouter(
     return c.json(ok({ token }));
   });
 
+  // 除 login（公开放行）外全部 /api/admin/* 需 Admin 认证
+  app.use("/api/admin/*", requireAdminAuth(db, cfg));
+
   // ---------- 用户 / 配额 / 用量 ----------
 
   app.get("/api/admin/users", (c) => {
-    auth(c);
     return c.json(ok(adminService.listUsers(db, cfg)));
   });
 
   app.post("/api/admin/users/:phone/ban", async (c) => {
-    auth(c);
     const body = await readJson<{ reason?: string }>(c);
     adminService.setStatus(db, c.req.param("phone"), "banned", body.reason);
     return c.json(ok({}));
   });
 
   app.post("/api/admin/users/:phone/unban", (c) => {
-    auth(c);
     adminService.setStatus(db, c.req.param("phone"), "normal", null);
     return c.json(ok({}));
   });
 
   app.put("/api/admin/users/:phone/quota", async (c) => {
-    auth(c);
     const body = await readJson<{ word_daily?: unknown }>(c);
     const wd = body.word_daily;
     // 只接受正整数或 null（null = 清覆盖）：非数字会被 SQLite 当 TEXT 存储，
@@ -108,14 +106,12 @@ export function adminRouter(
   });
 
   app.get("/api/admin/usage", (c) => {
-    auth(c);
     return c.json(ok(adminService.usageReport(db, cfg)));
   });
 
   // ---------- 文章列表 / 详情 / 编辑 ----------
 
   app.get("/api/admin/articles", (c) => {
-    auth(c);
     const today = localDate(cfg.timeZone);
     const startDate = c.req.query("start_date") ?? today;
     const endDate = c.req.query("end_date") ?? today;
@@ -153,14 +149,12 @@ export function adminRouter(
   });
 
   app.get("/api/admin/articles/:id", (c) => {
-    auth(c);
     const id = paramId(c.req.param("id"));
     if (!id) throw notFound("article not found");
     return c.json(ok(adminArticles.getArticleDetail(db, id)));
   });
 
   app.put("/api/admin/articles/:id", async (c) => {
-    auth(c);
     const id = paramId(c.req.param("id"));
     if (!id) throw notFound("article not editable");
     const body = await readJson<{ title?: unknown; paragraphs?: unknown }>(c);
@@ -169,7 +163,7 @@ export function adminRouter(
   });
 
   app.post("/api/admin/articles/:id/approve", (c) => {
-    const admin = auth(c);
+    const admin = c.get("adminUser")!;
     const id = paramId(c.req.param("id"));
     if (!id) throw notFound("article not reviewable");
     approveArticle(db, id, admin.username);
@@ -177,7 +171,7 @@ export function adminRouter(
   });
 
   app.post("/api/admin/articles/:id/reject", async (c) => {
-    const admin = auth(c);
+    const admin = c.get("adminUser")!;
     const id = paramId(c.req.param("id"));
     if (!id) throw notFound("article not reviewable");
     const body = await readJson<{ reason?: string }>(c);
@@ -188,7 +182,6 @@ export function adminRouter(
   // ---------- 槽位重跑 / 手动补生成 ----------
 
   app.post("/api/admin/slots/:id/retry", async (c) => {
-    auth(c);
     const id = paramId(c.req.param("id"));
     if (!id) throw notFound("slot not found");
     const row = db.query("SELECT * FROM batch_slots WHERE id = ?").get(id) as
@@ -205,7 +198,6 @@ export function adminRouter(
   });
 
   app.post("/api/admin/articles/generate", async (c) => {
-    auth(c);
     const body = await readJson<{ date?: string }>(c);
     const date = body.date;
     if (typeof date !== "string" || !isValidIsoDate(date)) {

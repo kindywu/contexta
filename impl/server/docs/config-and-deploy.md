@@ -98,15 +98,17 @@ unit 语义：`User=contexta` + `WorkingDirectory=/opt/contexta/server`（引擎
 
 ### 3.5 日志
 
-- **服务进程三类日志分离**（`logs/` 相对 `WorkingDirectory`，均带日期、**7 天一代自动清理**——启动时 + 每日窗口触发后各清一次）：
-  - `logs/server-<YYYY-MM-DD>.log` —— **Web 服务**日志（启动/退出/请求错误等），**同时输出 stdout**——`journalctl -u contexta-server -f` 仍可见；
+- **服务进程四类日志分离**（`logs/` 相对 `WorkingDirectory`，均带日期、**7 天一代自动清理**——启动时 + 每日窗口触发后各清一次）：
+  - `logs/server-<YYYY-MM-DD>.log` —— **通用服务**日志（启动/退出/未分流错误等），**同时输出 stdout**——`journalctl -u contexta-server -f` 仍可见；
+  - `logs/app-<YYYY-MM-DD>.log` —— **手机端**请求访问日志（状态码/方法/路径/耗时/打码手机号或 anon），stdout 中**青色**；
+  - `logs/admin-<YYYY-MM-DD>.log` —— **Web 管理端**请求访问日志（`/admin` 页面与 `/api/admin/*`），stdout 中**品红色**；
   - `logs/daily-<YYYY-MM-DD>.log` —— **生成**日志（引擎 `log()` + `[daily-task]` 编排行），**只进文件不进 stdout**（与 Web 日志互不干扰）；
   - `logs/run-<时间戳>.log` —— CLI 入口（`bun run daily` / `retry` / `replay`）每次运行一个新文件（`--log-level debug` 记 prompt 全文与 LLM 原始响应；`logs/` 时间戳一律取配置时区）。
 - **查看每日任务**：`tail -f logs/daily-$(date +%F).log`（或直接看 `logs/daily-*.log`）；实时 Web 日志 `journalctl -u contexta-server -f`。
 
 ## 4. 首次启动顺序
 
-1. `.env` 就绪（`LLM_API_KEY` / `JWT_SECRET` / `TIMEZONE` 必须；`ADMIN_INIT_PASSWORD` 首次启动设置以 seed `admin`，seed 后可移出）
+1. `.env` 就绪（`LLM_API_KEY` / `JWT_SECRET` / `ADMIN_JWT_SECRET` / `TIMEZONE` 必须；`ADMIN_INIT_PASSWORD` 首次启动设置以 seed `admin`，seed 后可移出）
 2. `systemctl start contexta-server` —— 启动自动：建库建表 → seed admin → 监听（**启动不生成任何文章**）；每日生成只由窗口循环触发
 3. 健康检查：`curl http://localhost:8080/api/health`；管理页 `https://api.example.com/admin`（`admin` + 初始密码）
 4. 当天缺文可手动补生成：`POST /api/admin/articles/generate {"date":"2026-08-13"}`（admin JWT）

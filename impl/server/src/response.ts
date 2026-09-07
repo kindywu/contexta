@@ -1,4 +1,4 @@
-import type { Hono } from "hono";
+import type { Env, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { serverError } from "./services/server_log";
 
@@ -65,7 +65,7 @@ export function errorBody(e: ApiError): { code: number; message: string; error_c
  * 子路由经 `app.route()` 挂载时 Hono 会组合子 app 的 errorHandler，嵌套仍生效——
  * 子路由内错误就地消化不上抛顶层（顶层 onError 只兜 main 侧代码）。
  */
-export function attachErrorHandler(app: Hono): void {
+export function attachErrorHandler<E extends Env>(app: Hono<E>): void {
   app.onError((err, c) => {
     if (err instanceof SyntaxError) {
       // 畸形 JSON body：仅来自 handler 内未保护的 c.req.json() 调用（如 auth/login）；

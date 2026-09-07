@@ -7,6 +7,7 @@ import '../../core/components/stat_card.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
+import '../../data/auth/auth_service.dart';
 import '../../di/providers.dart';
 import '../../domain/model/tts_voice.dart';
 import '../../domain/tts/tts_engine.dart';
@@ -34,11 +35,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _showTranslationModePicker = false;
   bool _showTtsSpeedPicker = false;
   bool _showTtsVoicePicker = false;
+  bool _showLogoutConfirm = false;
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(settingsControllerProvider);
     final controller = ref.read(settingsControllerProvider.notifier);
+    final authState = ref.watch(authServiceProvider);
 
     if (state.isLoading) {
       return const SizedBox.expand(child: LoadingIndicator());
@@ -76,6 +79,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       )
                     else
                       _StatsContent(stats: state.stats),
+                    if (_selectedTab == 0 &&
+                        authState.status == AuthStatus.loggedIn) ...[
+                      const SizedBox(height: AppSpacing.lg),
+                      _LogoutSection(
+                        phone: authState.phone,
+                        onLogout: () =>
+                            setState(() => _showLogoutConfirm = true),
+                      ),
+                    ],
                     const SizedBox(height: AppSpacing.xl),
                   ],
                 ),
@@ -179,7 +191,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           onConfirm: controller.confirmCountChange,
           onDismiss: controller.cancelCountChange,
         ),
+      if (_showLogoutConfirm)
+        _SettingsConfirmDialog(
+          title: '退出登录',
+          message: '退出后本地学习数据保留，可随时重新登录。',
+          confirmLabel: '退出',
+          danger: true,
+          onConfirm: _confirmLogout,
+          onDismiss: () => setState(() => _showLogoutConfirm = false),
+        ),
     ];
+  }
+
+  /// 确认退出的收尾：关弹窗 → 调 AuthService.logout（调 /api/auth/logout +
+  /// 清 token → loggedOut）。登出后本页按钮因状态非 loggedIn 自动消失，
+  /// 路由守卫放行本地浏览，首页横幅切回「未登录」。
+  Future<void> _confirmLogout() async {
+    setState(() => _showLogoutConfirm = false);
+    await ref.read(authServiceProvider.notifier).logout();
   }
 }
 
@@ -332,6 +361,57 @@ class _LearningSettingsContent extends StatelessWidget {
           description: '进入文章后自动播放朗读',
           checked: state.autoPlayAudio,
           onToggle: controller.toggleAutoPlayAudio,
+        ),
+      ],
+    );
+  }
+}
+
+/// 学习设置 tab 底部退出区：当前账号手机号 + 退出登录按钮（仅已登录时
+/// 渲染；点击后由父级打开确认弹窗）。
+class _LogoutSection extends StatelessWidget {
+  const _LogoutSection({required this.phone, required this.onLogout});
+
+  final String? phone;
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Divider(
+          height: 1,
+          thickness: 1,
+          color: AppColors.surfaceSoft.withValues(alpha: 0.6),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        if (phone != null) ...[
+          Text(
+            '当前账号：$phone',
+            style: AppType.textTheme.bodySmall
+                ?.copyWith(color: AppColors.muted),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        InkWell(
+          onTap: onLogout,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm + 2),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.logout, size: 20, color: AppColors.error),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  '退出登录',
+                  style: AppType.textTheme.titleMedium
+                      ?.copyWith(color: AppColors.error),
+                ),
+              ],
+            ),
+          ),
         ),
       ],
     );
@@ -753,7 +833,8 @@ class _SettingsInfoDialog extends StatelessWidget {
   }
 }
 
-/// 确认修改弹窗（对照 Kotlin SettingsConfirmDialog）。
+/// 确认修改弹窗（对照 Kotlin SettingsConfirmDialog）。[danger] = true 时
+/// 确认按钮用错误色（退出登录等破坏性操作）。
 class _SettingsConfirmDialog extends StatelessWidget {
   const _SettingsConfirmDialog({
     required this.title,
@@ -761,6 +842,7 @@ class _SettingsConfirmDialog extends StatelessWidget {
     required this.confirmLabel,
     required this.onConfirm,
     required this.onDismiss,
+    this.danger = false,
   });
 
   final String title;
@@ -768,6 +850,7 @@ class _SettingsConfirmDialog extends StatelessWidget {
   final String confirmLabel;
   final VoidCallback onConfirm;
   final VoidCallback onDismiss;
+  final bool danger;
 
   @override
   Widget build(BuildContext context) {
@@ -817,10 +900,10 @@ class _SettingsConfirmDialog extends StatelessWidget {
                   ),
                   child: Text(
                     confirmLabel,
-                    style: AppType.textTheme.labelLarge
-                        ?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary),
+                    style: AppType.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: danger ? AppColors.error : AppColors.primary,
+                    ),
                   ),
                 ),
               ),
