@@ -69,6 +69,21 @@ const serverEnvSchema = z.object({
   DAILY_GENERATE_WINDOW: windowSchema,
   LLM_TIMEOUT_SECS: z.coerce.number().int().positive().default(90),
   REGENERATE_LIMIT: z.coerce.number().int().positive().default(3),
+  // 飞书自定义机器人（每日生成完成通知）：两项都配置才发送，未配置静默跳过
+  // （compose 兜底会注入空串：GHA Secret 为空时 `${VAR:-}` 展开为 ""，须归一为 undefined）
+  FEISHU_WEBHOOK_URL: z
+    .string()
+    .optional()
+    .default("")
+    .transform((s) => {
+      if (s === "") return undefined;
+      return z.url().parse(s); // 非空时校验 URL 合法性（既非空又非法 → 报错）
+    }),
+  FEISHU_WEBHOOK_SECRET: z
+    .string()
+    .optional()
+    .default("")
+    .transform((s) => (s === "" ? undefined : s)),
   LLM_API_KEY: z.string().min(1),
   LLM_BASE_URL: z.url().default("https://api.deepseek.com"),
   LLM_MODEL: z.string().default("deepseek-v4-flash"),
@@ -101,6 +116,9 @@ export interface ServerConfig {
   llmBaseUrl: string;
   llmModel: string;
   proxyUrl?: string;
+  /** 飞书自定义机器人 webhook；未配置 → 每日通知静默跳过。 */
+  feishuWebhookUrl?: string;
+  feishuWebhookSecret?: string;
 }
 
 export function loadServerConfig(
@@ -128,5 +146,7 @@ export function loadServerConfig(
     llmBaseUrl: v.LLM_BASE_URL,
     llmModel: v.LLM_MODEL,
     proxyUrl: v.PROXY_URL,
+    feishuWebhookUrl: v.FEISHU_WEBHOOK_URL,
+    feishuWebhookSecret: v.FEISHU_WEBHOOK_SECRET,
   };
 }

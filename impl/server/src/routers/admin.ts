@@ -19,6 +19,7 @@ import {
   type GenFn,
   type ReviewCtx,
 } from "../services/review_service";
+import { notifyDailyResult, type DailyNotifyFn } from "../services/feishu_notify";
 
 /** 手动补生成注入 seam（测试注入假实现；缺省 = 引擎 generateDailyArticles）。 */
 export type GenDailyFn = (args: { runDate: string; config?: AppConfig }) => Promise<unknown>;
@@ -27,6 +28,8 @@ export type GenDailyFn = (args: { runDate: string; config?: AppConfig }) => Prom
 export interface AdminRouterOpts {
   gen?: GenFn;
   genDaily?: GenDailyFn;
+  /** 每日生成完成通知 seam（测试注入假实现；缺省 = notifyDailyResult 闭包）。 */
+  notify?: DailyNotifyFn;
 }
 
 /** 请求体安全解析：空体/非法 JSON → {}（交由各端点校验兜底 400/404，而非 500）。 */
@@ -67,6 +70,8 @@ export function adminRouter(
   attachErrorHandler(app);
   const ctx: ReviewCtx = { db, serverCfg: cfg, engineCfg, gen: opts.gen };
   const genDaily: GenDailyFn = opts.genDaily ?? generateDailyArticles;
+  const notify: DailyNotifyFn =
+    opts.notify ?? ((args) => notifyDailyResult({ db, serverCfg: cfg, engineCfg }, args));
 
   app.post("/api/admin/login", async (c) => {
     const body = await c.req.json<{ username?: string; password?: string }>();
@@ -241,8 +246,21 @@ export function adminRouter(
     if (typeof date !== "string" || !isValidIsoDate(date)) {
       throw badRequest("date must be a valid YYYY-MM-DD date");
     }
-    await genDaily({ runDate: date, config: engineCfg });
+    const startedAt = new Date();
+    try {
+      await genDaily({ runDate: date, config: engineCfg });
+    } catch (err) {
+      // 整体失败也发通知（未收口报告；步骤错误 = 本次抛错），随后保持 500 语义上抛
+      await notify({
+        runDate: date,
+        startedAt,
+        endedAt: new Date(),
+        stepErrors: [`引擎生成抛错: ${err instanceof Error ? err.message : String(err)}`],
+      });
+      throw err;
+    }
     ensureReviewRows(db); // 补生成的 success 槽位建立待审行（引擎不建，收口在此）
+    await notify({ runDate: date, startedAt, endedAt: new Date(), stepErrors: [] });
     return c.json(ok({}));
   });
 

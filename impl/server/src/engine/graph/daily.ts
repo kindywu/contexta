@@ -316,7 +316,14 @@ async function persistSlot(
     return;
   }
   const status: SlotStatus = result.outcome === "rejected" ? "rejected" : "error";
-  writeSlotResult(db, { slotId: row.id, threadId: row.threadId, status, attempts: result.genAttempts });
+  // errorMessage = 失败/拒绝真实原因（此前不持久化；飞书每日报告与管理端复用）。
+  writeSlotResult(db, {
+    slotId: row.id,
+    threadId: row.threadId,
+    status,
+    attempts: result.genAttempts,
+    errorMessage: result.outcome === "rejected" ? result.reason : result.message,
+  });
 }
 
 export interface RetryFailedArgs {

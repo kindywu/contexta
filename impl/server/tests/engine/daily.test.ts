@@ -117,6 +117,7 @@ test("slotAttemptLog: 明细行包含 slot/attempt/thread/outcome 字段", () =>
   const line = slotAttemptLog("daily", {
     id: 1, batchId: 1, runDate: "2026-08-29", slotIndex: 3, difficulty: "MEDIUM",
     threadId: "daily-2026-08-29-3", status: "pending", attempts: 1, articleId: null,
+    errorMessage: null,
   }, { attempt: 1, threadId: "daily-2026-08-29-3", outcome: "rejected", reason: "x", started: false });
   expect(line).toContain("slot 3");
   expect(line).toContain("[MEDIUM]");
