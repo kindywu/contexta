@@ -39,7 +39,7 @@ cp .env.example .env   # 本地开发：填入 LLM_API_KEY 与 JWT_SECRET
 ## 2. 云主机选型
 
 - **推荐**：香港/海外轻量云（免 ICP 备案）+ 域名 + Caddy 自动 HTTPS（App 端明文 HTTP 会被平台限制，HTTPS 必须）。备选：Cloudflare Tunnel（不买域名时）。
-- 内存：Bun + SQLite + 每槽 LangGraph（含 WebView 抓取）+ 并发 5 槽，建议 ≥ 2GB（**镜像已内置 Chromium 支撑 WebView 抓取，见 §6**）。
+- 内存：Bun + SQLite + 每槽 LangGraph（含 WebView 抓取）+ 并发 5 槽，建议 ≥ 2GB（**镜像内置 chrome-headless-shell 支撑 WebView 抓取，见 §6**）。
 - 运行时：**Docker + Compose v2**（标准部署路径的唯一宿主要求，见 §3.1）——本机已装 Docker 29.8 + Compose v5.5.1；无需在宿主安装 bun。
 - **端口**：容器 8080，宿主映射 `443:8080`——**安全组放行 443** 后 App 即可访问 `http://47.112.20.32:443`（HTTPS / 域名 + Caddy 属下一步，见上）。
 - **时区必须设为上海**（`.env` 的 `TIMEZONE` 须与系统时区一致，硬闸）：
@@ -184,16 +184,17 @@ docker compose exec contexta-server bun run delete-daily -- --date 2026-08-29 --
 
 > CLI 命令在容器内执行（src 与依赖在镜像内）；`data/`、`logs/` 经 bind mount 共享。备选 systemd 路径等价命令：`journalctl -u contexta-server -f` 与 `sudo -u contexta bun run ...`。
 
-## 6. 已知风险：Bun.WebView 在 Linux 驱动 Chrome
+## 6. 已知风险：Bun.WebView 在 Linux 驱动浏览器二进制
 
-- **机制**：站点抓取（`news`/`expository` 两条 pathA 类别）依赖 `Bun.WebView` 打开真实页面（`sites/common.ts` 的 `fetchAnchorSnapshots` / `fetchArticleHTML`）。Bun 1.4+：**macOS 用系统 WebKit；Linux/Windows 经 CDP 驱动 Chrome/Chromium/Edge**（零 npm 依赖，用的是系统既有 Chromium 二进制）——不需要 webkit2gtk，也不需要 X/Wayland（无头驱动）。
-- **实况（2026-09-08 生产验证）**：旧镜像 `oven/bun:1-alpine`（Alpine，无 Chrome）→ 所有站点报 `Failed to spawn Chrome (set BUN_CHROME_PATH, backend.path, or install Chrome/Chromium)` → `fetchLinks` 全挂 → pathA 槽位 `outcome=error`（9-8 手动补生成即有 3 个槽位因此 error）。**镜像必须内置 Chromium**。
-- **修复（已实现）**：Dockerfile 全阶段换 `oven/bun:1`（Debian bookworm 基底），runner 阶段 `apt-get install chromium` 并设 `ENV BUN_CHROME_PATH=/usr/bin/chromium` 显式指明 Bun.WebView 的 Chrome 后端。
-- **部署后验证 spike**（每次升级镜像后执行一次）：`docker compose exec contexta-server bun -e 'const v = new Bun.WebView({width:1440,height:2000}); console.log(await v.evaluate("1+1")); v.close()'`——期望输出 `2`。
-- **仍未覆盖的风险**：Chrome 以 root 运行需 `--no-sandbox`（Bun 是否自动补参，实现时已验证/待观察）；Chromium 版本随 `oven/bun:1` 漂移；站点反爬（CDN/风控）可能导致列表为空——届时按下面降级路径处置。
+- **机制**：站点抓取（`news`/`expository` 两条 pathA 类别）依赖 `Bun.WebView` 打开真实页面（`sites/common.ts` 的 `fetchAnchorSnapshots` / `fetchArticleHTML`）。Bun 1.4+：**macOS 用系统 WebKit；Linux/Windows 经 CDP 驱动浏览器二进制**——不需要 webkit2gtk，也不需要 X/Wayland（无头驱动）。Bun 官方支持的搭档是 **Playwright 分发的 `chrome-headless-shell`**（Bun 文档的二进制探测顺序第 5 条即 Playwright 缓存目录；oven-sh/bun#39819 修的就是 x64 下 Playwright 缓存的自动探测路径——**该修复未并入 1.4.2，必须 `BUN_CHROME_PATH`/`backend.path` 显式指向**）。全量 Chromium/Chrome（如 apt `chromium` 152）与 Bun 1.4.2 存在行为差异（navigate 骨架可走通但会话模型不一致），**勿用**。
+- **实况（2026-09-08 生产验证）**：旧镜像 `oven/bun:1-alpine`（Alpine，无浏览器）→ 所有站点报 `Failed to spawn Chrome (set BUN_CHROME_PATH, backend.path, or install Chrome/Chromium)` → `fetchLinks` 全挂 → pathA 槽位 `outcome=error`（9-8 手动补生成即有 3 个槽位因此 error）。
+- **修复（已实现，x64 spike 验证）**：Dockerfile 全阶段换 `oven/bun:1`（Debian 基底）；runner 阶段 `bunx playwright-core@1.63.0 install chrome-headless-shell`（`install-deps` 自动补全动态库），拷贝到固定路径 `<...>/chrome-headless-shell-bin` 并包一层 **wrapper 补 `--no-sandbox`**（root 容器内 Chrome 拒绝启动；Bun spawn 的默认 flags 不带该参数），`ENV BUN_CHROME_PATH=/usr/local/bin/chrome-headless-shell`（wrapper）。spike 结果：`evaluate("1+1")=2`，navigate 冒烟通过。
+- **⚠️ 行为注意**：Chrome 后端下 `evaluate()` 必须先有页面 target——**先 `navigate()`（或构造函数传 `url`）后 `evaluate()` 才可用**，否则报 `'Runtime.evaluate' wasn't found`。应用侧 `fetchAnchorSnapshots` 恰是先 `navigateLite` 再取快照，满足前置条件；改动抓取层时序时务必保留该顺序。
+- **部署后验证 spike**（每次升级镜像后执行一次；注意先 navigate）：`docker compose exec contexta-server bun -e 'const v = new Bun.WebView({width:1440,height:2000}); await v.navigate("data:text/html,<h1>ok</h1>"); console.log(await v.evaluate("1+1")); v.close()'`——期望输出 `2`。
+- **仍未覆盖的风险**：chrome-headless-shell rev 随 `playwright-core@1.63.0` 锁定（升级版本需重新 spike）；站点反爬（CDN/风控）可能导致列表为空——届时按下面降级路径处置。
 - **备选方案（必要时按 spike 结果选一）**：
   - 站点不支持时降级：`sites.config.ts` 去掉 chinadaily/tencent 配置行 → `news`/`expository` 变 pathB（模型知识生成，**失去事实锚定，有幻觉风险**——仅作临时降级，须人工审核把关）；
-  - 改造抓取层为 offscreen/无头渲染或 HTTP 抓取（属代码改动，另行决策）。
+  - 改造抓取层为 HTTP 抓取（属代码改动，另行决策）。
 - 若部署后 LLM 欠费/站点全挂：槽位 error 不阻塞服务，恢复后每日任务自动补跑 + 人工 retry/手动补生成即可自愈。
 
 ## 7. 部署约束快速索引（实现已裁决，改部署/客户端前必读）
