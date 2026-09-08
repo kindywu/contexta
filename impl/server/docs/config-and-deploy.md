@@ -81,7 +81,7 @@ touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.
 - `.env`（权限 600）由 `.env.example` 生成：`JWT_SECRET` 与 `ADMIN_JWT_SECRET`（各 `openssl rand -hex 32`）及 `ADMIN_INIT_PASSWORD` 自动生成填入；`TIMEZONE=Asia/Shanghai`；**`LLM_API_KEY` 必填**——缺真 key 时服务仍可启动（健康检查 200），但生成与查词调用会失败，需填入真 key 后 `docker compose up -d` 重启生效。
   > ⚠️ 注意：`.env.example` 曾漏掉必填项 `ADMIN_JWT_SECRET`（双密钥鉴权于 server-auth-and-log 引入），缺它容器反复 exit 1 重启——2026-09-07 已补。
 - 服务器 `authorized_keys` 收录 GHA 所用公钥（当前即 ECS PEM 对应公钥）。
-- **`LLM_API_KEY` 注入（2026-09-07 起）**：生产 key 存 GitHub Secret `LLM_API_KEY`，GHA deploy 经 compose 注入容器——服务器 `.env` 中该行可保留占位或供本地直跑。⏩ 尚未配置 Secret 时 deploy 回退 `.env` 值（占位符 `__PENDING_REAL_KEY__` 时服务可启动但调 LLM 会失败）。
+- **`LLM_API_KEY` 注入（2026-09-07 起）**：生产 key 存 GitHub Secret `LLM_API_KEY`，GHA deploy 经 compose 注入容器——服务器 `.env` 中该行已注释（注入优先；本地直跑可自行填值）。回退行为同 §3.1。
 
 ### 3.3 数据准备（首次部署）
 
