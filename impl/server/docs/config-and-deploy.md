@@ -24,9 +24,9 @@ cp .env.example .env   # 然后填入 LLM_API_KEY 与 JWT_SECRET
 | `SLOT_CONCURRENCY` | `5` | 正 int | 每日生成并发槽位数上限（`runPool`）；每槽一条 LangGraph 线程 |
 | `PROXY_URL` | 空（不代理） | string | 出站 HTTP 代理（`http://` 形式）；空串转 undefined。作用于 LLM 调用（引擎 `createLLM` 与查词 `driverChat`） |
 | `PORT` | `8080` | int 1..65535 | 容器内监听端口（Bun.serve）；宿主经 compose 映射 `443:8080` 对外——安全组放行 443 |
-| `JWT_SECRET` | **必填** | ≥32 字符 | HS256 密钥；`openssl rand -hex 32` 生成；<32 启动失败 |
-| `ADMIN_JWT_SECRET` | **必填** | ≥32 字符 | admin（Web 管理端）令牌密钥；双密钥鉴权——与 `JWT_SECRET` 分开，App 与 admin 令牌互不交叉 |
-| `ADMIN_INIT_PASSWORD` | 空 | string | 设置时启动 seed 管理员 `admin`（argon2id）；已有 admin 行则跳过不覆盖；seed 后可移出 .env |
+| `JWT_SECRET` | **必填** | ≥32 字符 | HS256 密钥（App 令牌）；`openssl rand -hex 32` 生成；<32 启动失败；**生产经 GHA Secret 注入**（与 ADMIN_JWT_SECRET 同机制，见 §3.1） |
+| `ADMIN_JWT_SECRET` | **必填** | ≥32 字符 | admin（Web 管理端）令牌密钥；双密钥鉴权——与 `JWT_SECRET` 分开，App 与 admin 令牌互不交叉；生产经 GHA Secret 注入（同 §3.1） |
+| `ADMIN_INIT_PASSWORD` | 空 | string | 设置时启动 seed 管理员 `admin`（argon2id）；已有 admin 行则跳过不覆盖；seed 后可移出 .env；生产可经 GHA Secret 注入（仅新库 seed 生效，同 §3.1） |
 | `WORD_QUOTA_DAILY` | `200` | 正 int | 用户每日查词配额（只计真实 LLM 调用；`users.quota_word_daily` 可 per-user 覆盖） |
 | `CACHE_TTL_DAYS` | `30` | 正 int | 查词缓存 TTL（命中不调 LLM 不扣配额） |
 | `CACHE_MAX_ROWS` | `5000` | 正 int | 查词缓存条数上限（超限删最旧 1 条） |
@@ -65,7 +65,7 @@ push main（impl/server/** 变更）/ 手动 dispatch
 ```
 
 - **并发互斥**：`concurrency` 同组 `cancel-in-progress: true`——连续 push 只保留最后一个部署，不排队堆积。
-- **LLM_API_KEY 注入**：deploy 步骤从 `secrets.LLM_API_KEY` 以 `LLM_API_KEY='<值>' docker compose up -d` 传入远端（compose `environment` 覆盖 `.env`）；Secret 为空时回退 `.env`——本地 `docker compose up` 直跑即后者。更新 key：`gh secret set LLM_API_KEY` → 下一次部署/`up -d` 生效。
+- **密钥注入（LLM_API_KEY / JWT_SECRET / ADMIN_JWT_SECRET / ADMIN_INIT_PASSWORD）**：deploy 步骤从 `secrets.*` 以 `KEY='<值>' docker compose up -d` 传入远端（compose `environment` 覆盖 `.env`）；Secret 为空时该键回退 `.env`——本地 `docker compose up` 直跑即后者。更新：`gh secret set <KEY>` → 下一次部署生效。注意：改 `JWT_SECRET` 会使已签发 token 全部失效（需重新登录）；`ADMIN_INIT_PASSWORD` 仅对无 admin 行的新库生效（seed 后该值不再读取）。
 - **凭据**：`DEPLOY_SSH_KEY`（服务器 SSH 私钥 = 阿里云 ECS PEM）存 GitHub Repo Secrets；`known_hosts` 指纹内联 workflow 防首次连接 MITM。
 - **镜像免认证拉取**：GHCR 包公开（仓库本身公开），服务器 `docker pull` 无需登录 token。
 - **回滚**：服务器上临时把 `docker-compose.yml` 的 `image:` 改为 `:sha-<旧commit>` → `docker compose up -d`（镜像历史保留在 GHCR）。

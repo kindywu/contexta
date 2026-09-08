@@ -8,8 +8,11 @@ services:
     env_file:
       - ./.env
     environment:
-      # LLM_API_KEY 注入：GHA deploy 从 Secret 传入（覆盖 .env）；本地直跑时 .env 兜底
+      # 密钥注入：GHA deploy 从 Secret 传入（覆盖 .env）；本地直跑时 .env 兜底
       - LLM_API_KEY=${LLM_API_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:-}
+      - ADMIN_INIT_PASSWORD=${ADMIN_INIT_PASSWORD:-}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
