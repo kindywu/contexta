@@ -154,7 +154,9 @@ export async function main(): Promise<void> {
 
   // 5) 组装 + 启动 HTTP 服务
   const app = buildApp(db, cfg, engineCfg);
-  const server = Bun.serve({ port: cfg.port, fetch: app.fetch });
+  // idleTimeout：Bun.serve 默认 10s（请求处理间隔超时即断连）——审核/重跑/补生成等
+  // 分钟级请求在 WebView/LLM 间隙会被掐断（客户端空响应、服务端照常完成→误判失败）。
+  const server = Bun.serve({ port: cfg.port, fetch: app.fetch, idleTimeout: 300_000 });
   serverLog(`[server] listening on :${cfg.port} (db: ${dbPath})`);
 
   // 6) 每日任务后台启动（窗口触发定时循环：启动不生成文章，错过窗口即跳过）

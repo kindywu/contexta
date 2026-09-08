@@ -72,6 +72,8 @@ export interface ArticleListStats {
   approved: number;
   /** rejected + rejected_final 合计。 */
   rejected: number;
+  /** 生成失败槽位数（无文章行，articles 视角不可见——列表摘要的"异常"入口）。 */
+  error_slots: number;
 }
 
 export interface ArticleListResult {
@@ -176,6 +178,11 @@ export function listArticles(db: Database, q: ArticleListQuery): ArticleListResu
     )
     .get(...params) as { c: number };
 
+  // 异常槽位计数：batch_slots 的 error（生成失败、无文章行——articles 视角不可见）
+  const errorSlots = db
+    .query(`SELECT COUNT(*) AS n FROM batch_slots WHERE run_date BETWEEN ? AND ? AND status = 'error'`)
+    .get(q.startDate, q.endDate) as { n: number };
+
   const statsRow = db
     .query(
       `SELECT COUNT(*) AS total,
@@ -191,6 +198,7 @@ export function listArticles(db: Database, q: ArticleListQuery): ArticleListResu
     pending_review: number | null;
     approved: number | null;
     rejected: number | null;
+    error_slots: number;
   };
 
   return {
@@ -224,6 +232,7 @@ export function listArticles(db: Database, q: ArticleListQuery): ArticleListResu
       pending_review: statsRow.pending_review ?? 0,
       approved: statsRow.approved ?? 0,
       rejected: statsRow.rejected ?? 0,
+      error_slots: errorSlots.n,
     },
   };
 }

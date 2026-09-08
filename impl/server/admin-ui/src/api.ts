@@ -98,6 +98,17 @@ export interface ArticleParagraph {
   chinese_translation: string
 }
 
+/** 异常槽位行（GET /api/admin/slots）：error/rejected——error 无文章行，articles 视角不可见。 */
+export interface ErrorSlotRow {
+  id: number
+  slot_index: number
+  difficulty: string
+  status: string
+  article_id: number | null
+  thread_id: string
+  updated_at: string
+}
+
 /** 文章列表行（文章视角）：articles 白名单列 + review 行 + 所属槽位 + 现指向标记。 */
 export interface ArticleListItem {
   id: number
@@ -192,6 +203,10 @@ export const api = {
     sort_by?: string
     sort_dir?: 'asc' | 'desc'
   }) => http.get<unknown, ArticleListResult>('/articles', { params }),
+
+  /** 异常槽位列表（时间段内非 success：error/rejected——含无文章行的 error 槽）。 */
+  errorSlots: (start_date: string, end_date: string) =>
+    http.get<unknown, { items: ErrorSlotRow[] }>('/slots', { params: { start_date, end_date } }),
 
   /** 文章详情：articles 全行 + 段落 + review + 所属槽位。 */
   getArticleDetail: (id: number) => http.get<unknown, ArticleDetail>(`/articles/${id}`),
