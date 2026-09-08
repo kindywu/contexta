@@ -186,10 +186,16 @@ export async function rejectArticle(
  * → ensureReviewRows 给新文补 pending_review；rejected/error → 只写槽位终态；
  * finally finalizeBatch。
  */
-export async function reRunSlot(ctx: ReviewCtx, slotRow: SlotRow, genSeq: number): Promise<void> {
+export async function reRunSlot(
+  ctx: ReviewCtx,
+  slotRow: SlotRow,
+  genSeq: number,
+  onProgress?: (stage: string, detail?: string) => void,
+): Promise<void> {
   await withSlotLock(slotRow.id, async () => {
     const { db, engineCfg } = ctx;
     const gen: GenFn = ctx.gen ?? generateArticle;
+    onProgress?.("generating", `正在生成槽位 ${slotRow.slotIndex}（抓取/LLM 分钟级）…`);
     const threadId = `daily-${slotRow.runDate}-${slotRow.slotIndex}-r${genSeq}`;
     const recent = listRecentArticles(db, slotRow.runDate, 5, 60);
     const recentTitles = recent.map((r) => r.titleEn);
@@ -230,10 +236,13 @@ export async function reRunSlot(ctx: ReviewCtx, slotRow: SlotRow, genSeq: number
           attempts: result.genAttempts,
         });
         ensureReviewRows(db); // 新文补 pending_review；旧文已有行（NOT EXISTS）跳过
+        onProgress?.("success", "生成成功，已入库");
         return;
       }
       const status: SlotStatus = result.outcome === "rejected" ? "rejected" : "error";
       writeSlotResult(db, { slotId: slotRow.id, threadId, status, attempts: result.genAttempts });
+      const reason = "reason" in result ? result.reason : ("message" in result ? result.message : undefined);
+      onProgress?.("error", reason ?? `生成结果 ${result.outcome}`);
     } finally {
       finalizeBatch(db, slotRow.batchId);
     }
@@ -248,6 +257,10 @@ export async function reRunSlot(ctx: ReviewCtx, slotRow: SlotRow, genSeq: number
  * 撞号；delete-daily 的 LIKE 'daily-<date>-%' 前缀仍连带清理 -r<Date.now()> 线程
  * （运行时进程锁保证同槽串行）。
  */
-export function retrySlot(ctx: ReviewCtx, slotRow: SlotRow): Promise<void> {
-  return reRunSlot(ctx, slotRow, Date.now());
+export function retrySlot(
+  ctx: ReviewCtx,
+  slotRow: SlotRow,
+  onProgress?: (stage: string, detail?: string) => void,
+): Promise<void> {
+  return reRunSlot(ctx, slotRow, Date.now(), onProgress);
 }

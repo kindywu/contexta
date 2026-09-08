@@ -154,6 +154,8 @@ export async function main(): Promise<void> {
 
   // 5) 组装 + 启动 HTTP 服务
   const app = buildApp(db, cfg, engineCfg);
+  // idleTimeout 保持 Bun 默认 10s（不调大治标）：分钟级慢请求（重跑/生成）走 SSE，
+  // SSE 心跳 8s < 10s 保证连接不被掐断——见 admin.ts slots/:id/retry 与 docs §6。
   const server = Bun.serve({ port: cfg.port, fetch: app.fetch });
   serverLog(`[server] listening on :${cfg.port} (db: ${dbPath})`);
 

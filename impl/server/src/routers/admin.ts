@@ -6,6 +6,7 @@ import type { AppConfig } from "../engine/config";
 import { generateDailyArticles } from "../engine/graph/daily";
 import { localDate } from "../engine/utils/time";
 import { attachErrorHandler, badRequest, notFound, ok } from "../response";
+import { streamSSE } from "hono/streaming";
 import { adminService } from "../services/admin_service";
 import * as adminArticles from "../services/admin_articles";
 import { requireAdminAuth, type ApiEnv } from "../middleware/require_auth";
@@ -181,6 +182,27 @@ export function adminRouter(
 
   // ---------- 槽位重跑 / 手动补生成 ----------
 
+  // 异常槽位列表（manage 摘要"异常槽位"区块数据源）：时间段内非 success 槽位（error/rejected），
+  // 含无文章行的 error 槽（articles 视角不可见）——管理端据此展示失败槽并给重跑入口。
+  app.get("/api/admin/slots", (c) => {
+    const today = localDate(cfg.timeZone);
+    const startDate = c.req.query("start_date") ?? today;
+    const endDate = c.req.query("end_date") ?? today;
+    for (const [name, v] of [["start_date", startDate], ["end_date", endDate]] as const) {
+      if (!isValidIsoDate(v)) throw badRequest(`${name} must be a valid YYYY-MM-DD date`);
+    }
+    if (startDate > endDate) throw badRequest("start_date must be <= end_date");
+    const items = db
+      .query(
+        `SELECT id, slot_index, difficulty, status, article_id, thread_id, updated_at
+         FROM batch_slots
+         WHERE run_date BETWEEN ? AND ? AND status != 'success'
+         ORDER BY run_date, slot_index`,
+      )
+      .all(startDate, endDate);
+    return c.json(ok({ items }));
+  });
+
   app.post("/api/admin/slots/:id/retry", async (c) => {
     const id = paramId(c.req.param("id"));
     if (!id) throw notFound("slot not found");
@@ -193,8 +215,24 @@ export function adminRouter(
     if (row.status !== "error" && row.status !== "rejected") {
       throw badRequest("slot not retryable");
     }
-    await retrySlot(ctx, toSlotRow(row));
-    return c.json(ok({}));
+    // SSE：重跑为分钟级（WebView/LLM），进度流回传——前端弹窗实时展示阶段事件；
+    // 心跳 8s < Bun.serve 默认 idleTimeout 10s（不该调大 idleTimeout 治标，见 main.ts 注释）。
+    return streamSSE(c, async (stream) => {
+      const heartbeat = setInterval(() => stream.write(`: ping\n\n`), 8_000);
+      try {
+        await retrySlot(ctx, toSlotRow(row), (stage, detail) =>
+          stream.writeSSE({ event: "progress", data: JSON.stringify({ stage, detail }) }),
+        );
+        await stream.writeSSE({ event: "done", data: "{}" });
+      } catch (e) {
+        await stream.writeSSE({
+          event: "error",
+          data: JSON.stringify({ message: e instanceof Error ? e.message : String(e) }),
+        });
+      } finally {
+        clearInterval(heartbeat);
+      }
+    });
   });
 
   app.post("/api/admin/articles/generate", async (c) => {

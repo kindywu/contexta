@@ -7,6 +7,7 @@ import {
   type ArticleDetail,
   type ArticleListItem,
   type ArticleParagraph,
+  type ErrorSlotRow,
 } from '../api'
 
 const loading = ref(false)
@@ -29,8 +30,60 @@ const range = ref<[Dayjs, Dayjs]>([dayjs(), dayjs()])
 // 状态过滤：'' = 全部（pending_review / approved / rejected 含 rejected_final）
 const statusFilter = ref<string>('')
 
-// 摘要统计（时间段内全量，不受状态筛选影响）
-const stats = ref({ total: 0, pending_review: 0, approved: 0, rejected: 0 })
+// 摘要统计（时间段内全量，不受状态筛选影响）；error_slots = 生成失败槽位数（articles 视角不可见）
+const stats = ref({ total: 0, pending_review: 0, approved: 0, rejected: 0, error_slots: 0 })
+
+// 异常槽位（error/rejected，无文章行）——摘要 tag 入口 + 重跑
+const errorState = reactive({
+  open: false,
+  loading: false,
+  runningId: 0,
+  progress: '',
+  items: [] as ErrorSlotRow[],
+})
+
+async function loadErrorSlots() {
+  errorState.loading = true
+  try {
+    const [s, e] = [range.value[0].format('YYYY-MM-DD'), range.value[1].format('YYYY-MM-DD')]
+    const res = await api.errorSlots(s, e)
+    errorState.items = res.items ?? []
+  } catch {
+    // 拦截器已提示
+  } finally {
+    errorState.loading = false
+  }
+}
+
+function openErrorSlots() {
+  errorState.open = true
+  loadErrorSlots()
+}
+
+const STAGE_TEXT: Record<string, string> = {
+  start: '开始重跑…',
+  generating: '生成中（分钟级，请稍候）…',
+  success: '生成成功',
+  error: '生成失败',
+}
+
+/** 槽位重跑（SSE 进度流，服务端完成/失败后关流；成功即刷新列表 + 异常列表）。 */
+async function retryErrorSlot(id: number) {
+  errorState.runningId = id
+  errorState.progress = '连接到服务端…'
+  try {
+    await api.retrySlot(id, (p) => {
+      errorState.progress = p.detail ?? STAGE_TEXT[p.stage] ?? ''
+    })
+    message.success('槽位重跑完成')
+    await Promise.all([load(), loadErrorSlots()])
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '重跑失败')
+  } finally {
+    errorState.runningId = 0
+    errorState.progress = ''
+  }
+}
 
 // 补生成：独立日期输入（防误触，不默认今天）
 const generateState = reactive({
@@ -412,8 +465,52 @@ async function saveEdit() {
         >
           {{ s.label }} {{ s.value }}
         </a-tag>
+        <a-tag
+          v-if="stats.error_slots > 0"
+          color="magenta"
+          class="stats-tag"
+          @click="openErrorSlots()"
+        >
+          异常槽位 {{ stats.error_slots }}
+        </a-tag>
       </div>
     </a-card>
+
+    <!-- 异常槽位抽屉：error/rejected 槽一句话简报 + 单槽重跑 -->
+    <a-modal v-model:open="errorState.open" title="异常槽位" :width="760" :footer="null">
+      <a-table
+        :data-source="errorState.items"
+        :loading="errorState.loading"
+        :pagination="false"
+        row-key="id"
+        size="small"
+      >
+        <a-table-column title="槽位" data-index="slot_index" width="110">
+          <template #default="{ record }">
+            <span style="font-weight: 600">slot {{ record.slot_index }}</span>
+            <a-tag size="small">{{ record.difficulty }}</a-tag>
+          </template>
+        </a-table-column>
+        <a-table-column title="状态" data-index="status" width="100" />
+        <a-table-column title="更新时间" data-index="updated_at" width="180" />
+        <a-table-column title="操作" key="action" width="90">
+          <template #default="{ record }">
+            <a-button
+              type="link"
+              size="small"
+              :loading="errorState.runningId === record.id"
+              :disabled="errorState.runningId !== 0"
+              @click="retryErrorSlot(record.id)"
+            >
+              重跑
+            </a-button>
+          </template>
+        </a-table-column>
+      </a-table>
+      <div v-if="errorState.progress" style="margin-top: 10px; color: #666">
+        {{ errorState.progress }}
+      </div>
+    </a-modal>
 
     <a-card :loading="loading" class="list-card">
       <a-table

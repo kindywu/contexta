@@ -365,7 +365,8 @@ flowchart TD
 | PUT | `/api/admin/articles/:id` | 审核期编辑（`{title, paragraphs:[{english_text, chinese_translation}]}`；守卫见 §4.2） |
 | POST | `/api/admin/articles/:id/approve` | 审核通过（守卫 + 条件 UPDATE） |
 | POST | `/api/admin/articles/:id/reject` | 审核拒绝（`{reason?}`；未达上限 → 同步 await 补生成） |
-| POST | `/api/admin/slots/:id/retry` | 槽位重跑（error/rejected 槽位；`retrySlot`） |
+| GET | `/api/admin/slots` | 异常槽位列表（`?start_date=&end_date=`，缺省当日；返回时间段内非 success 槽位——含无文章行的 error 槽，管理端"异常槽位"摘要/重跑入口数据源） |
+| POST | `/api/admin/slots/:id/retry` | 槽位重跑（error/rejected 槽位；`retrySlot`；**SSE 进度流**——progress/done/error 事件 + 8s 心跳，客户端 fetch 流解析；守卫失败仍为 JSON 400/404） |
 | POST | `/api/admin/articles/generate` | 手动补生成 `{date}`（严格 ISO 校验，非法 400） |
 
 ### 无鉴权

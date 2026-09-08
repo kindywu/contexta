@@ -401,7 +401,7 @@ describe("admin articles list", () => {
         reviewed_at: null,
       },
     });
-    expect(data.stats).toEqual({ total: 1, pending_review: 1, approved: 0, rejected: 0 });
+    expect(data.stats).toEqual({ total: 1, pending_review: 1, approved: 0, rejected: 0, error_slots: 1 });
   });
 
   test("时间段过滤：start_date/end_date 圈定 run_date；缺省默认当天", async () => {
@@ -457,7 +457,7 @@ describe("admin articles list", () => {
     expect(((await (await q("rejected")).json()).data).items.map((i: { id: number }) => i.id)).toEqual([ids[1], ids[2]]);
     // stats 不受 status 影响
     const s = (await (await q("approved")).json()).data.stats;
-    expect(s).toEqual({ total: 4, pending_review: 1, approved: 1, rejected: 2 });
+    expect(s).toEqual({ total: 4, pending_review: 1, approved: 1, rejected: 2, error_slots: 0 });
     // 无状态参数 = 全部
     expect((await (await app.request(`/api/admin/articles?start_date=${RUN_DATE}&end_date=${RUN_DATE}`, { headers: authHeader(tok) })).json()).data.total).toBe(4);
   });
@@ -849,7 +849,10 @@ describe("admin approve/reject/retry routes", () => {
 
     const res = await app.request(`/api/admin/slots/${slot.id}/retry`, { method: "POST", headers: authHeader(tok) });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ code: 0, data: {} });
+    // SSE 流：progress 事件（start/生成中/done）而非旧 JSON envelope
+    const stream = await new Response(res.body).text();
+    expect(stream).toContain("event: progress");
+    expect(stream).toContain("event: done");
     expect(calls).toHaveLength(1);
     expect(calls[0]!.threadId).toMatch(/^daily-2026-09-02-0-r\d+$/);
     const s = db.query("SELECT status, article_id FROM batch_slots WHERE id = ?").get(slot.id) as {
@@ -941,5 +944,51 @@ describe("admin articles generate", () => {
     // generate 后 ensureReviewRows：现有文章补 pending_review
     const r = db.query("SELECT status FROM article_review WHERE article_id = ?").get(articleId) as { status: string };
     expect(r.status).toBe("pending_review");
+  });
+});
+
+describe("异常槽位（GET /api/admin/slots + 列表 stats.error_slots）", () => {
+  test("error 槽无文章也可列出；rejected 一并列出；error 计数不进文章数", async () => {
+    const { db, app } = await buildApp();
+    const tok = await adminToken(app);
+    seedDay(db, [
+      { slotIndex: 0, difficulty: "LOW", status: "success" },
+      { slotIndex: 1, difficulty: "MEDIUM", status: "error" },
+      { slotIndex: 2, difficulty: "HIGH", status: "rejected" },
+    ]);
+
+    const res = await app.request(
+      `/api/admin/slots?start_date=${RUN_DATE}&end_date=${RUN_DATE}`,
+      { headers: authHeader(tok) },
+    );
+    expect(res.status).toBe(200);
+    const items = (await res.json()).data.items as Array<{ slot_index: number; status: string; article_id: number | null }>;
+    expect(items.map((i) => i.slot_index)).toEqual([1, 2]);
+    const errRow = items.find((i) => i.status === "error")!;
+    expect(errRow.article_id).toBeNull();
+
+    // 文章列表 stats：error 槽位单独计数，不进 total（无文章行）
+    const listRes = await app.request(
+      `/api/admin/articles?start_date=${RUN_DATE}&end_date=${RUN_DATE}`,
+      { headers: authHeader(tok) },
+    );
+    const stats = (await listRes.json()).data.stats;
+    expect(stats.error_slots).toBe(2); // error + rejected 均为异常槽位
+    expect(stats.total).toBe(1);
+  });
+
+  test("非法日期 / start > end → 400", async () => {
+    const { app } = await buildApp();
+    const tok = await adminToken(app);
+    for (const q of ["start_date=2026-02-30", "start_date=2026-09-03&end_date=2026-09-02"]) {
+      const res = await app.request(`/api/admin/slots?${q}`, { headers: authHeader(tok) });
+      expect(res.status).toBe(400);
+    }
+  });
+
+  test("未登录 → 401", async () => {
+    const { app } = await buildApp();
+    const res = await app.request(`/api/admin/slots?start_date=${RUN_DATE}&end_date=${RUN_DATE}`);
+    expect(res.status).toBe(401);
   });
 });
