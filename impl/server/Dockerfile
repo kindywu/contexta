@@ -30,19 +30,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV TZ=Asia/Shanghai
 
 # chrome-headless-shell（Bun.WebView 的浏览器后端）+ 其全部动态库依赖（install-deps 自动清单）
-# 1) 下载到 ~/.cache/ms-playwright（目录名含 rev，随版本漂移）
-# 2) 拷到固定路径 /usr/local/bin/chrome-headless-shell-bin
-# 3) wrapper 补 --no-sandbox：root 容器内 Chrome 拒绝启动（sandbox 仅本地桌面场景需要，
-#    容器内无沙箱可复用；Bun spawn 不带该参数，见 docs/config-and-deploy.md §6）
+# 下载到 ~/.cache/ms-playwright（目录名含 rev，随版本漂移）后**整个目录**拷贝到固定路径——
+# 单拷贝二进制会丢配套资源（icudtl.dat / *.pak），Chrome 启动即报 ICU 错误退出。
+# 注意：--no-sandbox 由应用侧 backend.argv 传入（src/engine/sites/common.ts），
+# 镜像层 shell wrapper 方案已被证伪（sh 进程链致 zygote socket 断开，见 docs §6）。
 RUN bunx playwright-core@1.63.0 install-deps chromium-headless-shell \
     && bunx playwright-core@1.63.0 install chromium-headless-shell \
-    && find /root/.cache/ms-playwright -name chrome-headless-shell -type f -exec cp {} /usr/local/bin/chrome-headless-shell-bin \; \
-    && chmod +x /usr/local/bin/chrome-headless-shell-bin \
-    && printf '#!/bin/sh\nexec /usr/local/bin/chrome-headless-shell-bin --no-sandbox "$@"\n' > /usr/local/bin/chrome-headless-shell \
-    && chmod +x /usr/local/bin/chrome-headless-shell
+    && mkdir -p /usr/local/bin/chrome-shell-dir \
+    && cp -r $(find /root/.cache/ms-playwright -type d -name chrome-headless-shell-linux64 | head -1)/. \
+        /usr/local/bin/chrome-shell-dir/
 
-# Bun.WebView 在 Linux 查找浏览器二进制的显式路径（wrapper）；不设则按固定路径探测（探测不到）
-ENV BUN_CHROME_PATH=/usr/local/bin/chrome-headless-shell
+# Bun.WebView 在 Linux 查找浏览器二进制的显式路径；不设则按固定路径探测（探测不到 Shell）
+ENV BUN_CHROME_PATH=/usr/local/bin/chrome-shell-dir/chrome-headless-shell
 
 # ... 其余保持不变
 COPY --from=backend-deps /app/node_modules ./node_modules
