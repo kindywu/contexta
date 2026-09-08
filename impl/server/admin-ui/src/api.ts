@@ -228,9 +228,46 @@ export const api = {
       { timeout: 300_000 },
     ),
 
-  /** 失败/被拒槽位重跑：同步等引擎生成（分钟级），5 分钟超时。 */
-  retrySlot: (id: number) =>
-    http.post<unknown, unknown>(`/slots/${id}/retry`, {}, { timeout: 300_000 }),
+  /**
+   * 失败/被拒槽位重跑（SSE）：服务端分钟级同步生成（WebView/LLM），进度流回传——
+   * progress 事件（stage: start/step/success/error + detail），done/心跳保活。
+   * 错误（守卫 400 等）为 JSON envelope，throw 给调用方展示。
+   */
+  retrySlot: async (
+    id: number,
+    onProgress: (p: { stage: string; detail?: string }) => void,
+  ): Promise<void> => {
+    const res = await fetch(`/api/admin/slots/${id}/retry`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken()}`, Accept: 'text/event-stream' },
+    })
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`
+      try { msg = (await res.json())?.message ?? msg } catch { /* 非 JSON */ }
+      throw new Error(msg)
+    }
+    const reader = res.body!.getReader()
+    const decoder = new TextDecoder()
+    let buf = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += decoder.decode(value, { stream: true })
+      let i: number
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const frame = buf.slice(0, i)
+        buf = buf.slice(i + 2)
+        const lines = frame.split('\n')
+        const event = (lines.find((l) => l.startsWith('event:')) ?? '').slice(6).trim()
+        const data = (lines.find((l) => l.startsWith('data:')) ?? '').slice(5).trim()
+        if (event === 'progress') onProgress(JSON.parse(data))
+        else if (event === 'error') {
+          throw new Error(JSON.parse(data).message ?? '重跑失败')
+        }
+        // done / 心跳注释帧：无动作（连接保持，服务端完成即关流）
+      }
+    }
+  },
 
   /** 手动补生成可达分钟级（15 篇 × LLM 串行），axios timeout 放宽到 5 分钟。 */
   generateArticles: (date: string, opts?: AxiosRequestConfig) =>

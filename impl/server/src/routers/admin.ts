@@ -6,6 +6,7 @@ import type { AppConfig } from "../engine/config";
 import { generateDailyArticles } from "../engine/graph/daily";
 import { localDate } from "../engine/utils/time";
 import { attachErrorHandler, badRequest, notFound, ok } from "../response";
+import { streamSSE } from "hono/streaming";
 import { adminService } from "../services/admin_service";
 import * as adminArticles from "../services/admin_articles";
 import { requireAdminAuth, type ApiEnv } from "../middleware/require_auth";
@@ -214,8 +215,24 @@ export function adminRouter(
     if (row.status !== "error" && row.status !== "rejected") {
       throw badRequest("slot not retryable");
     }
-    await retrySlot(ctx, toSlotRow(row));
-    return c.json(ok({}));
+    // SSE：重跑为分钟级（WebView/LLM），进度流回传——前端弹窗实时展示阶段事件；
+    // 心跳 8s < Bun.serve 默认 idleTimeout 10s（不该调大 idleTimeout 治标，见 main.ts 注释）。
+    return streamSSE(c, async (stream) => {
+      const heartbeat = setInterval(() => stream.write(`: ping\n\n`), 8_000);
+      try {
+        await retrySlot(ctx, toSlotRow(row), (stage, detail) =>
+          stream.writeSSE({ event: "progress", data: JSON.stringify({ stage, detail }) }),
+        );
+        await stream.writeSSE({ event: "done", data: "{}" });
+      } catch (e) {
+        await stream.writeSSE({
+          event: "error",
+          data: JSON.stringify({ message: e instanceof Error ? e.message : String(e) }),
+        });
+      } finally {
+        clearInterval(heartbeat);
+      }
+    });
   });
 
   app.post("/api/admin/articles/generate", async (c) => {

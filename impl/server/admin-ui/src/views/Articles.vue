@@ -38,6 +38,7 @@ const errorState = reactive({
   open: false,
   loading: false,
   runningId: 0,
+  progress: '',
   items: [] as ErrorSlotRow[],
 })
 
@@ -59,17 +60,28 @@ function openErrorSlots() {
   loadErrorSlots()
 }
 
-/** 槽位重跑（同步等引擎生成，分钟级；成功即刷新列表 + 异常列表）。 */
+const STAGE_TEXT: Record<string, string> = {
+  start: '开始重跑…',
+  generating: '生成中（分钟级，请稍候）…',
+  success: '生成成功',
+  error: '生成失败',
+}
+
+/** 槽位重跑（SSE 进度流，服务端完成/失败后关流；成功即刷新列表 + 异常列表）。 */
 async function retryErrorSlot(id: number) {
   errorState.runningId = id
+  errorState.progress = '连接到服务端…'
   try {
-    await api.retrySlot(id)
+    await api.retrySlot(id, (p) => {
+      errorState.progress = p.detail ?? STAGE_TEXT[p.stage] ?? ''
+    })
     message.success('槽位重跑完成')
     await Promise.all([load(), loadErrorSlots()])
-  } catch {
-    // 拦截器已提示
+  } catch (e) {
+    message.error(e instanceof Error ? e.message : '重跑失败')
   } finally {
     errorState.runningId = 0
+    errorState.progress = ''
   }
 }
 
@@ -495,6 +507,9 @@ async function saveEdit() {
           </template>
         </a-table-column>
       </a-table>
+      <div v-if="errorState.progress" style="margin-top: 10px; color: #666">
+        {{ errorState.progress }}
+      </div>
     </a-modal>
 
     <a-card :loading="loading" class="list-card">

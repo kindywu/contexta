@@ -849,7 +849,10 @@ describe("admin approve/reject/retry routes", () => {
 
     const res = await app.request(`/api/admin/slots/${slot.id}/retry`, { method: "POST", headers: authHeader(tok) });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ code: 0, data: {} });
+    // SSE 流：progress 事件（start/生成中/done）而非旧 JSON envelope
+    const stream = await new Response(res.body).text();
+    expect(stream).toContain("event: progress");
+    expect(stream).toContain("event: done");
     expect(calls).toHaveLength(1);
     expect(calls[0]!.threadId).toMatch(/^daily-2026-09-02-0-r\d+$/);
     const s = db.query("SELECT status, article_id FROM batch_slots WHERE id = ?").get(slot.id) as {
