@@ -38,6 +38,9 @@ jobs:
             crpi-ui1m3okieeg995dg.cn-shenzhen.personal.cr.aliyuncs.com/contexta/contexta:1.0-amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          # ACR 个人版不接受 OCI attestation 的 empty manifest（vnd.oci.empty.v1+json → denied），必须关闭
+          provenance: false
+          sbom: false
 
   deploy:
     needs: build-push
