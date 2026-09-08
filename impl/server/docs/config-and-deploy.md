@@ -8,8 +8,10 @@
 **单一 `.env` 文件**（Bun 启动自动加载，无需 dotenv）同时服务引擎（`engine/config.ts` 的 `loadConfig`）与服务端（`config.ts` 的 `loadServerConfig`）——两份 schema 从同一进程环境读取，重叠字段（LLM_*/TIMEZONE/PROXY_URL）两边各自校验。缺省值以两处代码为准；下表"必填"项缺失或非法 → 启动失败（`process.exit(1)`）。
 
 ```bash
-cp .env.example .env   # 然后填入 LLM_API_KEY 与 JWT_SECRET
+cp .env.example .env   # 本地开发：填入 LLM_API_KEY 与 JWT_SECRET
 ```
+
+> **生产服务器不落密钥**（2026-09-08 起）：`/opt/contexta/server/.env` 只含非密钥配置，`LLM_API_KEY` / `JWT_SECRET` / `ADMIN_JWT_SECRET` / `ADMIN_INIT_PASSWORD` 全部由 GHA Secret 注入（见 §3.1）；人工在服务器启动须带键前缀：`LLM_API_KEY=... JWT_SECRET=... ADMIN_JWT_SECRET=... docker compose up -d`（或临时写入 .env）。
 
 | 变量 | 默认值 | 校验 | 说明 |
 |---|---|---|---|
@@ -79,7 +81,7 @@ mkdir -p /opt/contexta/server/{data,logs,output}
 touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.sqlite  # 空库
 ```
 
-- `.env`（权限 600）由 `.env.example` 生成：`JWT_SECRET` 与 `ADMIN_JWT_SECRET`（各 `openssl rand -hex 32`）及 `ADMIN_INIT_PASSWORD` 自动生成填入；`TIMEZONE=Asia/Shanghai`；**`LLM_API_KEY` 必填**——缺真 key 时服务仍可启动（健康检查 200），但生成与查词调用会失败，需填入真 key 后 `docker compose up -d` 重启生效。
+- `.env`（权限 600）：**无任何密钥值**（2026-09-08 清空，密钥全由 GHA Secret 注入）；只保留非密钥配置（`TIMEZONE=Asia/Shanghai` 等）。首次建库时如无注入，可用带键前缀的手工命令启动（见 §1 注）。
   > ⚠️ 注意：`.env.example` 曾漏掉必填项 `ADMIN_JWT_SECRET`（双密钥鉴权于 server-auth-and-log 引入），缺它容器反复 exit 1 重启——2026-09-07 已补。
 - 服务器 `authorized_keys` 收录 GHA 所用公钥（当前即 ECS PEM 对应公钥）。
 - **`LLM_API_KEY` 注入（2026-09-07 起）**：生产 key 存 GitHub Secret `LLM_API_KEY`，GHA deploy 经 compose 注入容器——服务器 `.env` 中该行已注释（注入优先；本地直跑可自行填值）。回退行为同 §3.1。
