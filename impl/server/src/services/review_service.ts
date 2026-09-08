@@ -80,6 +80,7 @@ export function toSlotRow(row: Record<string, unknown>): SlotRow {
     status: row.status as SlotStatus,
     attempts: row.attempts as number,
     articleId: row.article_id as number | null,
+    errorMessage: (row.error_message as string | null) ?? null,
   };
 }
 
@@ -240,9 +241,9 @@ export async function reRunSlot(
         return;
       }
       const status: SlotStatus = result.outcome === "rejected" ? "rejected" : "error";
-      writeSlotResult(db, { slotId: slotRow.id, threadId, status, attempts: result.genAttempts });
-      const reason = "reason" in result ? result.reason : ("message" in result ? result.message : undefined);
-      onProgress?.("error", reason ?? `生成结果 ${result.outcome}`);
+      const reason = result.outcome === "rejected" ? result.reason : result.message;
+      writeSlotResult(db, { slotId: slotRow.id, threadId, status, attempts: result.genAttempts, errorMessage: reason });
+      onProgress?.("error", reason);
     } finally {
       finalizeBatch(db, slotRow.batchId);
     }

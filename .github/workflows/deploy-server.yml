@@ -54,6 +54,8 @@ jobs:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ADMIN_JWT_SECRET: ${{ secrets.ADMIN_JWT_SECRET }}
           ADMIN_INIT_PASSWORD: ${{ secrets.ADMIN_INIT_PASSWORD }}
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          FEISHU_WEBHOOK_SECRET: ${{ secrets.FEISHU_WEBHOOK_SECRET }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
@@ -72,6 +74,8 @@ jobs:
           [ -n "$JWT_SECRET" ] && UP_CMD="JWT_SECRET='$JWT_SECRET' $UP_CMD"
           [ -n "$ADMIN_JWT_SECRET" ] && UP_CMD="ADMIN_JWT_SECRET='$ADMIN_JWT_SECRET' $UP_CMD"
           [ -n "$ADMIN_INIT_PASSWORD" ] && UP_CMD="ADMIN_INIT_PASSWORD='$ADMIN_INIT_PASSWORD' $UP_CMD"
+          [ -n "$FEISHU_WEBHOOK_URL" ] && UP_CMD="FEISHU_WEBHOOK_URL='$FEISHU_WEBHOOK_URL' $UP_CMD"
+          [ -n "$FEISHU_WEBHOOK_SECRET" ] && UP_CMD="FEISHU_WEBHOOK_SECRET='$FEISHU_WEBHOOK_SECRET' $UP_CMD"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@47.112.20.32 \
             "cd /opt/contexta/server && docker compose pull && $UP_CMD"
           # 3) 健康检查：30 次 × 2s 重试（宿主 443 → 容器 8080）

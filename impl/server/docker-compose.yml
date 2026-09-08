@@ -13,6 +13,8 @@ services:
       - JWT_SECRET=${JWT_SECRET:-}
       - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:-}
       - ADMIN_INIT_PASSWORD=${ADMIN_INIT_PASSWORD:-}
+      - FEISHU_WEBHOOK_URL=${FEISHU_WEBHOOK_URL:-}
+      - FEISHU_WEBHOOK_SECRET=${FEISHU_WEBHOOK_SECRET:-}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

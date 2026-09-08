@@ -24,6 +24,8 @@ export interface SlotRow {
   status: SlotStatus;
   attempts: number;
   articleId: number | null;
+  /** 失败/拒绝原因（未持久化的旧数据/无原因时为 null；nullable 列）。 */
+  errorMessage: string | null;
 }
 
 /**
@@ -78,6 +80,7 @@ export function ensureSchema(db: Database): void {
         CHECK (status IN ('pending','success','rejected','error')),
       attempts INTEGER NOT NULL DEFAULT 1,
       article_id INTEGER REFERENCES articles(id),
+      error_message TEXT,
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE(batch_id, slot_index)
     );
@@ -86,6 +89,18 @@ export function ensureSchema(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_articles_batch_id ON articles(batch_id);
     CREATE INDEX IF NOT EXISTS idx_batch_slots_run_date ON batch_slots(run_date);
   `);
+  // 旧库补列（幂等建表不覆盖已存在的表）：
+  // - articles.thread_id（索引阶段旧库无该列；新库 CREATE 已含，幂等跳过）
+  // - batch_slots.error_message（失败/拒绝槽位的真实原因，供管理端与每日报告复用；
+  //   此前未持久化，详见运行日志）
+  const articleCols = db.query(`PRAGMA table_info(articles)`).all() as { name: string }[];
+  if (!articleCols.some((c) => c.name === "thread_id")) {
+    db.run(`ALTER TABLE articles ADD COLUMN thread_id TEXT`);
+  }
+  const slotCols = db.query(`PRAGMA table_info(batch_slots)`).all() as { name: string }[];
+  if (!slotCols.some((c) => c.name === "error_message")) {
+    db.run(`ALTER TABLE batch_slots ADD COLUMN error_message TEXT`);
+  }
 }
 
 function toBatchRow(row: Record<string, unknown>): BatchRow {
@@ -152,6 +167,7 @@ function toSlotRow(row: Record<string, unknown>): SlotRow {
     status: row.status as SlotStatus,
     attempts: row.attempts as number,
     articleId: row.article_id as number | null,
+    errorMessage: (row.error_message as string | null) ?? null,
   };
 }
 
@@ -172,14 +188,29 @@ export function listFailedSlots(db: Database, runDate: string): SlotRow[] {
  */
 export function writeSlotResult(
   db: Database,
-  { slotId, threadId, status, articleId, attempts }: { slotId: number; threadId: string; status: SlotStatus; articleId?: number; attempts?: number },
+  {
+    slotId,
+    threadId,
+    status,
+    articleId,
+    attempts,
+    errorMessage,
+  }: {
+    slotId: number;
+    threadId: string;
+    status: SlotStatus;
+    articleId?: number;
+    attempts?: number;
+    /** 失败/拒绝原因（success 或不传 → null 清空，避免残留上个失败的原因）。 */
+    errorMessage?: string | null;
+  },
 ): void {
   db.query(
     `UPDATE batch_slots
      SET status = ?, thread_id = ?, article_id = COALESCE(?, article_id),
-         attempts = COALESCE(?, attempts), updated_at = datetime('now')
+         attempts = COALESCE(?, attempts), error_message = ?, updated_at = datetime('now')
      WHERE id = ?`,
-  ).run(status, threadId, articleId ?? null, attempts ?? null, slotId);
+  ).run(status, threadId, articleId ?? null, attempts ?? null, errorMessage ?? null, slotId);
 }
 
 export interface RecentArticle {

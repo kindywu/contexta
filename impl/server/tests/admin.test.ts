@@ -11,6 +11,7 @@ import { loadServerConfig, type ServerConfig } from "../src/config";
 import { loadConfig, type AppConfig } from "../src/engine/config";
 import { createBatchAndSlots, ensureSchema, insertArticleWithParagraphs, listSlots, writeSlotResult } from "../src/engine/db";
 import { adminRouter, type GenDailyFn } from "../src/routers/admin";
+import type { DailyNotifyArgs } from "../src/services/feishu_notify";
 import { approveArticle } from "../src/services/review_service";
 import { todayStartMillis } from "../src/time";
 import type { ArticleResult, GeneratedArticle } from "../src/engine/graph/state";
@@ -126,7 +127,13 @@ function successGen() {
   return { gen, calls };
 }
 
-async function buildApp(opts: { gen?: (args: GenArgs) => Promise<ArticleResult>; genDaily?: GenDailyFn } = {}) {
+async function buildApp(
+  opts: {
+    gen?: (args: GenArgs) => Promise<ArticleResult>;
+    genDaily?: GenDailyFn;
+    notify?: (args: DailyNotifyArgs) => Promise<void>;
+  } = {},
+) {
   const db = new Database(":memory:");
   ensureSchema(db);
   ensureServerSchema(db);
@@ -944,6 +951,53 @@ describe("admin articles generate", () => {
     // generate 后 ensureReviewRows：现有文章补 pending_review
     const r = db.query("SELECT status FROM article_review WHERE article_id = ?").get(articleId) as { status: string };
     expect(r.status).toBe("pending_review");
+  });
+
+  test("合法日期生成成功 → notify seam 被调（runDate/起止/无 stepErrors）", async () => {
+    const genDaily: GenDailyFn = async () => ({
+      runDate: RUN_DATE,
+      total: 0,
+      results: [],
+      summary: { success: 0, rejected: 0, error: 0 },
+    });
+    const notifyCalls: DailyNotifyArgs[] = [];
+    const notify = async (a: DailyNotifyArgs) => {
+      notifyCalls.push(a);
+    };
+    const { app } = await buildApp({ genDaily, notify });
+    const tok = await adminToken(app);
+
+    const res = await app.request("/api/admin/articles/generate", {
+      method: "POST",
+      headers: { ...authHeader(tok), "content-type": "application/json" },
+      body: JSON.stringify({ date: RUN_DATE }),
+    });
+    expect(res.status).toBe(200);
+    expect(notifyCalls).toHaveLength(1);
+    expect(notifyCalls[0]!.runDate).toBe(RUN_DATE);
+    expect(notifyCalls[0]!.stepErrors).toEqual([]);
+    expect(notifyCalls[0]!.endedAt.getTime()).toBeGreaterThanOrEqual(notifyCalls[0]!.startedAt.getTime());
+  });
+
+  test("genDaily 抛错 → notify 也被调（stepErrors 记录抛错）+ 请求仍 500", async () => {
+    const genDaily: GenDailyFn = async () => {
+      throw new Error("LLM 网关挂了");
+    };
+    const notifyCalls: DailyNotifyArgs[] = [];
+    const notify = async (a: DailyNotifyArgs) => {
+      notifyCalls.push(a);
+    };
+    const { app } = await buildApp({ genDaily, notify });
+    const tok = await adminToken(app);
+
+    const res = await app.request("/api/admin/articles/generate", {
+      method: "POST",
+      headers: { ...authHeader(tok), "content-type": "application/json" },
+      body: JSON.stringify({ date: RUN_DATE }),
+    });
+    expect(res.status).toBe(500);
+    expect(notifyCalls).toHaveLength(1);
+    expect(notifyCalls[0]!.stepErrors![0]).toContain("LLM 网关挂了");
   });
 });
 

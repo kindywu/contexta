@@ -11,7 +11,7 @@
 cp .env.example .env   # 本地开发：填入 LLM_API_KEY 与 JWT_SECRET
 ```
 
-> **生产服务器不落密钥**（2026-09-08 起）：`/opt/contexta/server/.env` 只含非密钥配置，`LLM_API_KEY` / `JWT_SECRET` / `ADMIN_JWT_SECRET` / `ADMIN_INIT_PASSWORD` 全部由 GHA Secret 注入（见 §3.1）；人工在服务器启动须带键前缀：`LLM_API_KEY=... JWT_SECRET=... ADMIN_JWT_SECRET=... docker compose up -d`（或临时写入 .env）。
+> **生产服务器不落密钥**（2026-09-08 起）：`/opt/contexta/server/.env` 只含非密钥配置，`LLM_API_KEY` / `JWT_SECRET` / `ADMIN_JWT_SECRET` / `ADMIN_INIT_PASSWORD` / `FEISHU_WEBHOOK_URL` / `FEISHU_WEBHOOK_SECRET` 全部由 GHA Secret 注入（见 §3.1）；人工在服务器启动须带键前缀：`LLM_API_KEY=... JWT_SECRET=... ADMIN_JWT_SECRET=... docker compose up -d`（或临时写入 .env）。
 
 | 变量 | 默认值 | 校验 | 说明 |
 |---|---|---|---|
@@ -35,6 +35,8 @@ cp .env.example .env   # 本地开发：填入 LLM_API_KEY 与 JWT_SECRET
 | `DAILY_GENERATE_WINDOW` | `08:00-08:15` | `HH:MM-HH:MM`（开始必须早于结束） | 每日生成窗口（配置时区当日）：窗口内任意时刻触发，窗口内只生成**当天** 15 篇；错过窗口（进程不在/重启晚于窗口）**跳过不补不重试**——便于本地测试可直接改小/改后 |
 | `LLM_TIMEOUT_SECS` | `90` | 正 int | 查词链 LLM 调用硬预算（含 4 次尝试与退避等待；超预算 504 LLM_TIMEOUT） |
 | `REGENERATE_LIMIT` | `3` | 正 int | 单槽位拒绝补生成上限：同槽累计 rejected ≥ 上限 → `rejected_final` 不再自动补 |
+| `FEISHU_WEBHOOK_URL` | 空（不发） | URL（或空串） | 飞书群**自定义机器人** Webhook（每日生成完成通知，详见架构文档 §8）：与 `FEISHU_WEBHOOK_SECRET` **两项都配置才发送**，任一为空 → 静默跳过（compose 未注入时 `${VAR:-}` 空串自动归一为未配置）；生产经 GHA Secret 注入（同 §3.1，不落 .env），本地测试可临时填入 `.env` |
+| `FEISHU_WEBHOOK_SECRET` | 空（不发） | string | 机器人签名密钥（机器人"安全设置 → 签名校验"）；与 `FEISHU_WEBHOOK_URL` 配套；生产经 GHA Secret 注入（同 §3.1） |
 
 ## 2. 云主机选型
 
@@ -67,7 +69,7 @@ push main（impl/server/** 变更）/ 手动 dispatch
 ```
 
 - **并发互斥**：`concurrency` 同组 `cancel-in-progress: true`——连续 push 只保留最后一个部署，不排队堆积。
-- **密钥注入（LLM_API_KEY / JWT_SECRET / ADMIN_JWT_SECRET / ADMIN_INIT_PASSWORD）**：deploy 步骤从 `secrets.*` 以 `KEY='<值>' docker compose up -d` 传入远端（compose `environment` 覆盖 `.env`）；Secret 为空时该键回退 `.env`——本地 `docker compose up` 直跑即后者。更新：`gh secret set <KEY>` → 下一次部署生效。注意：改 `JWT_SECRET` 会使已签发 token 全部失效（需重新登录）；`ADMIN_INIT_PASSWORD` 仅对无 admin 行的新库生效（seed 后该值不再读取）。
+- **密钥注入（LLM_API_KEY / JWT_SECRET / ADMIN_JWT_SECRET / ADMIN_INIT_PASSWORD / FEISHU_WEBHOOK_URL / FEISHU_WEBHOOK_SECRET）**：deploy 步骤从 `secrets.*` 以 `KEY='<值>' docker compose up -d` 传入远端（compose `environment` 覆盖 `.env`）；Secret 为空时该键回退 `.env`——本地 `docker compose up` 直跑即后者。更新：`gh secret set <KEY>` → 下一次部署生效。注意：改 `JWT_SECRET` 会使已签发 token 全部失效（需重新登录）；`ADMIN_INIT_PASSWORD` 仅对无 admin 行的新库生效（seed 后该值不再读取）；`FEISHU_*` 为可选项（两项都为空 = 不发送每日通知，不影响其他功能）。
 - **凭据**：`DEPLOY_SSH_KEY`（服务器 SSH 私钥 = 阿里云 ECS PEM）存 GitHub Repo Secrets；`known_hosts` 指纹内联 workflow 防首次连接 MITM。
 - **镜像仓库（ACR 阿里云个人版）**：GHA 用 `ACR_USERNAME` / `ACR_PASSWORD`（Repo Secrets，账号为 `kindywu@aliyun.com`——docker login 用户名须用阿里云账号登录名，勿用其他绑定邮箱）推送；服务器拉取需 `docker login`（2026-09-08 已在服务器 root 侧登录——凭证存 `/root/.docker/config.json`，轮换密码时需重登：`docker login crpi-...aliyuncs.com`）。
   - ⚠️ **ACR 个人版限制**：不接受 OCI attestation（SBOM/provenance）的 empty manifest（`application/vnd.oci.empty.v1+json` → `denied: unknown manifest class`）——构建必须带 `provenance: false` + `sbom: false`（已在 workflow 固定，勿移除）。

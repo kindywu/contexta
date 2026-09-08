@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadServerConfig } from "../src/config";
 import { ensureServerSchema } from "../src/db";
+import type { DailyNotifyArgs } from "../src/services/feishu_notify";
 import { loadConfig, type AppConfig } from "../src/engine/config";
 import type { ArticleResult } from "../src/engine/graph/state";
 import {
@@ -174,7 +175,8 @@ describe("daily_task runFill", () => {
     };
     const { ctx } = makeCtx({ genDaily, retryFailed: f.retryFailed, reRun: f.reRun, ensure: f.ensure });
 
-    await expect(new DailyTask(ctx).runFill(RUN_DATE)).resolves.toBeUndefined();
+    const outcome = await new DailyTask(ctx).runFill(RUN_DATE);
+    expect(outcome.stepErrors[0]).toContain("引擎生成失败"); // 步骤错误随 outcome 收集
     expect(f.events).toEqual(["retry:2026-09-02", "ensure"]);
   });
 
@@ -188,7 +190,8 @@ describe("daily_task runFill", () => {
     writeSlotResult(db, { slotId: slots[0]!.id, threadId: slots[0]!.threadId, status: "success" });
     writeSlotResult(db, { slotId: slots[1]!.id, threadId: slots[1]!.threadId, status: "error" });
 
-    await expect(new DailyTask(ctx).runFill(RUN_DATE)).resolves.toBeUndefined();
+    const outcome = await new DailyTask(ctx).runFill(RUN_DATE);
+    expect(outcome.stepErrors[0]).toContain("补跑失败"); // 补跑错误收集进 outcome
     expect(f.events).toContain("ensure"); // 补跑失败不阻断收尾
     const after = listSlots(db, RUN_DATE);
     expect(after[1]!.status).toBe("error"); // 补跑仍失败 → 留 error
@@ -263,6 +266,24 @@ describe("daily_task loop（窗口触发 + 三态判定）", () => {
     // 处理后睡到明日窗口开始 = 今日零点 + 480min + 24h - 08:10
     const dayStart = todayStartMillis(TZ, fixedNow);
     expect(sleeps[0]).toBe(dayStart + 480 * 60_000 + 86_400_000 - fixedNow.getTime());
+  });
+
+  test("窗口内 runFill 完成后 → notify seam 被调（起止时刻 + stepErrors 传递）", async () => {
+    const fixedNow = new Date(2026, 8, 2, 8, 10, 0);
+    const sleeps: number[] = [];
+    const f = recorders();
+    const notifyCalls: DailyNotifyArgs[] = [];
+    const notify = async (a: DailyNotifyArgs) => {
+      notifyCalls.push(a);
+    };
+    const { ctx } = makeCtx({ ...f, now: () => fixedNow, sleep: stopLoopSleep(sleeps), notify });
+
+    await expect(new DailyTask(ctx).loop()).rejects.toThrow("stop-loop");
+
+    // 每轮运行结束都通知；假 seam 全成功 → stepErrors 为空
+    expect(notifyCalls).toEqual([
+      { runDate: RUN_DATE, startedAt: fixedNow, endedAt: fixedNow, stepErrors: [] },
+    ]);
   });
 
   test("未到窗口（07:00）→ 先睡到今日窗口开始，不触发生成", async () => {

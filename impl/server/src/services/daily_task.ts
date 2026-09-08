@@ -10,6 +10,8 @@
 // - 单步失败仅记日志（走引擎 log() → logs/daily-<date>.log，服务进程内不输出到 web stdout；
 //   CLI 场景 console 保留），不中断后续步骤与整个 fill
 // - 槽位级去重：error 补跑与审核重生成共用 Task 7 的进程锁（同槽串行）
+// - 收尾通知：每轮 runFill 结束发每日生成报告（成功/失败/未收口均发；通知只记日志不抛，
+//   未配置飞书 webhook 静默跳过——见 services/feishu_notify.ts）
 // 测试注入：genDaily/retryFailed/reRun/ensure/now/sleep 全部可替换（见 DailyTaskCtx）。
 import type { Database } from "bun:sqlite";
 import { DEFAULT_LOG_DIR, formatWindow, type DailyWindow, type ServerConfig } from "../config";
@@ -20,6 +22,7 @@ import { cleanupOldLogs, log } from "../engine/graph/log";
 import { localDate } from "../engine/utils/time";
 import { todayStartMillis } from "../time";
 import { ensureReviewRows, retrySlot, type GenFn } from "./review_service";
+import { notifyDailyResult, type DailyNotifyFn } from "./feishu_notify";
 
 /** 每日生成/重试 seam 入参（引擎 generateDailyArticles / retryFailedSlots 的子集）。 */
 export interface DailyGenArgs {
@@ -63,6 +66,17 @@ export interface DailyTaskCtx {
   now?: () => Date;
   /** 定时器注入：缺省 Bun.sleep（测试假 sleep 不真等） */
   sleep?: (ms: number) => Promise<void>;
+  /** 每轮运行结束后的通知 seam：缺省 notifyDailyResult（飞书报告；仅记日志不抛） */
+  notify?: DailyNotifyFn;
+}
+
+/** 单轮 fill 结果：起止时刻 + 运行内部步骤错误（未收口时随报告展示）。 */
+export interface FillOutcome {
+  runDate: string;
+  startedAt: Date;
+  endedAt: Date;
+  /** 步骤级失败（引擎生成/pending 恢复/单槽补跑/审核行补齐的 catch 文本）。 */
+  stepErrors: string[];
 }
 
 /** 每日生成窗口（配置时区当日）：now 是否落在 [start, end] 闭区间内。 */
@@ -87,7 +101,7 @@ export function nextTriggerWaitMs(now: Date, window: DailyWindow, timeZone: stri
 /** 模块级 in-flight 去重（按日期 → 进行中的 fill Promise）：并发可能同日双调
  * （loop 与手动入口）→ 同日期并发时返回同一 Promise，内层 genDaily/retryFailed/
  * 补跑只执行一次（不双跑）。settled（含失败）即删除条目。 */
-const fillInflight = new Map<string, Promise<void>>();
+const fillInflight = new Map<string, Promise<FillOutcome>>();
 
 /** 每日任务（main 组装时经 start() 后台启动；服务进程退出即结束）。 */
 export class DailyTask {
@@ -96,6 +110,7 @@ export class DailyTask {
   private readonly retryFailed: DailyGenFn;
   private readonly reRun: DailyReRunFn;
   private readonly ensure: typeof ensureReviewRows;
+  private readonly notify: DailyNotifyFn;
   private readonly now: () => Date;
   private readonly sleep: (ms: number) => Promise<void>;
 
@@ -107,17 +122,21 @@ export class DailyTask {
       ctx.retryFailed ?? ((args) => retryFailedSlots({ runDate: args.runDate, config: args.config }));
     this.reRun = ctx.reRun ?? ((c, s) => retrySlot(c, s));
     this.ensure = ctx.ensure ?? ensureReviewRows;
+    this.notify =
+      ctx.notify ??
+      ((args) => notifyDailyResult({ db: ctx.db, serverCfg: ctx.serverCfg, engineCfg: ctx.engineCfg }, args));
     this.now = ctx.now ?? (() => new Date());
     this.sleep = ctx.sleep ?? ((ms) => Bun.sleep(ms));
   }
 
   /**
    * 单日填充（幂等）：引擎生成 → pending 恢复 → error 槽每槽一次补跑 → 审核行补齐。
-   * 单步失败仅记日志（不中断后续步骤）；补跑仍失败留 error——err 不抛。
+   * 单步失败仅记日志（不中断后续步骤）并收集进 stepErrors（随通知报告展示）；
+   * 补跑仍失败留 error——err 不抛。返回本轮起止与步骤错误。
    * in-flight 去重：同一日期并发调用返回同一 Promise——双跑同一日期 = 双倍 LLM
    * 成本 + 并发写同槽位。
    */
-  runFill(date: string): Promise<void> {
+  runFill(date: string): Promise<FillOutcome> {
     const existing = fillInflight.get(date);
     if (existing) return existing;
     const fill = this.runFillInner(date).finally(() => fillInflight.delete(date));
@@ -125,16 +144,22 @@ export class DailyTask {
     return fill;
   }
 
-  private async runFillInner(date: string): Promise<void> {
+  private async runFillInner(date: string): Promise<FillOutcome> {
+    const startedAt = this.now();
+    const stepErrors: string[] = [];
     try {
       await this.genDaily({ runDate: date, config: this.ctx.engineCfg });
     } catch (err) {
-      log(`[daily-task] ${date} 引擎生成失败（继续后续步骤）: ${errText(err)}`);
+      const text = errText(err);
+      stepErrors.push(`引擎生成失败: ${text}`);
+      log(`[daily-task] ${date} 引擎生成失败（继续后续步骤）: ${text}`);
     }
     try {
       await this.retryFailed({ runDate: date, config: this.ctx.engineCfg });
     } catch (err) {
-      log(`[daily-task] ${date} pending 恢复失败（继续后续步骤）: ${errText(err)}`);
+      const text = errText(err);
+      stepErrors.push(`pending 恢复失败: ${text}`);
+      log(`[daily-task] ${date} pending 恢复失败（继续后续步骤）: ${text}`);
     }
     try {
       for (const slot of listSlots(this.ctx.db, date)) {
@@ -142,17 +167,24 @@ export class DailyTask {
         try {
           await this.reRun(this.ctx, slot);
         } catch (err) {
-          log(`[daily-task] ${date} slot ${slot.id}[${slot.slotIndex}] 补跑失败（留 error）: ${errText(err)}`);
+          const text = errText(err);
+          stepErrors.push(`槽位 ${slot.slotIndex} 补跑失败: ${text}`);
+          log(`[daily-task] ${date} slot ${slot.id}[${slot.slotIndex}] 补跑失败（留 error）: ${text}`);
         }
       }
     } catch (err) {
-      log(`[daily-task] ${date} 列槽失败: ${errText(err)}`);
+      const text = errText(err);
+      stepErrors.push(`列槽失败: ${text}`);
+      log(`[daily-task] ${date} 列槽失败: ${text}`);
     }
     try {
       this.ensure(this.ctx.db);
     } catch (err) {
-      log(`[daily-task] ${date} 审核行补齐失败: ${errText(err)}`);
+      const text = errText(err);
+      stepErrors.push(`审核行补齐失败: ${text}`);
+      log(`[daily-task] ${date} 审核行补齐失败: ${text}`);
     }
+    return { runDate: date, startedAt, endedAt: this.now(), stepErrors };
   }
 
   /**
@@ -178,7 +210,14 @@ export class DailyTask {
       if (isDailyBatchFinished(this.ctx.db, date)) {
         log(`[daily-task] ${date} 批次已收口，跳过本轮生成`);
       } else {
-        await this.runFill(date);
+        const outcome = await this.runFill(date);
+        // 每轮运行结束都通知（成功/失败/未收口均发；通知自身不抛，见 feishu_notify）
+        await this.notify({
+          runDate: outcome.runDate,
+          startedAt: outcome.startedAt,
+          endedAt: outcome.endedAt,
+          stepErrors: outcome.stepErrors,
+        });
       }
       cleanupOldLogs(DEFAULT_LOG_DIR, 7, tz); // 每日一次：清理 7 天前的旧日志
       await this.sleep(nextTriggerWaitMs(this.now(), w, tz)); // 睡到明日窗口（见函数注释）

@@ -152,3 +152,42 @@ test("insertArticleWithParagraphs: 中途抛错 → 事务回滚（无半写）"
   const paras = db.query("SELECT count(*) AS c FROM article_paragraphs").get() as { c: number };
   expect(paras.c).toBe(0);
 });
+
+test("ensureSchema: 旧库补 error_message 列（batch_slots）", () => {
+  const db = new Database(":memory:");
+  // 旧版 batch_slots（无 error_message）：ensureSchema 只补列，不重建表
+  db.exec(`
+    CREATE TABLE batch_slots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      batch_id INTEGER NOT NULL,
+      run_date TEXT NOT NULL,
+      slot_index INTEGER NOT NULL,
+      difficulty TEXT NOT NULL,
+      thread_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','success','rejected','error')),
+      attempts INTEGER NOT NULL DEFAULT 1,
+      article_id INTEGER,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(batch_id, slot_index)
+    )
+  `);
+  ensureSchema(db);
+  const cols = db.query("SELECT name FROM pragma_table_info('batch_slots')").all() as { name: string }[];
+  expect(cols.map((c) => c.name)).toContain("error_message");
+});
+
+test("writeSlotResult: errorMessage 落库，success 写回时清空", () => {
+  const db = new Database(":memory:");
+  ensureSchema(db);
+  createBatchAndSlots(db, "2026-09-09", 1, [{ slotIndex: 0, difficulty: "LOW", threadId: "t" }]);
+  const slot = listSlots(db, "2026-09-09")[0]!;
+  writeSlotResult(db, { slotId: slot.id, threadId: slot.threadId, status: "error", attempts: 1, errorMessage: "LLM 超时" });
+  expect(listSlots(db, "2026-09-09")[0]!.errorMessage).toBe("LLM 超时");
+  // 成功写回不传 errorMessage → 清空（不残留上个失败的原因）
+  writeSlotResult(db, { slotId: slot.id, threadId: slot.threadId, status: "success", attempts: 2 });
+  expect(listSlots(db, "2026-09-09")[0]!.errorMessage).toBeNull();
+  // 拒绝原因同样落库
+  writeSlotResult(db, { slotId: slot.id, threadId: slot.threadId, status: "rejected", errorMessage: "抓取失败" });
+  expect(listSlots(db, "2026-09-09")[0]!.errorMessage).toBe("抓取失败");
+});

@@ -103,7 +103,7 @@ impl/server/
 | `article_batches` | id PK、run_date **UNIQUE**、total_slots、completed_slots、failed_slots、status CHECK(`running`/`completed`/`completed_with_failures`/`failed`)、started_at、finished_at | 一天一批；收口后 status 不再为 running |
 | `articles` | id PK、batch_id FK、run_date、difficulty（LOW/MEDIUM/HIGH）、category（11 类）、path CHECK(`A`/`B`)、source_url 可空、title_en、title_zh、paragraph_count、markdown_path、thread_id、created_at | 索引 `(source_url)`、`(created_at)`、`(batch_id)`；**无 embedding 列** |
 | `article_paragraphs` | id PK、article_id FK、paragraph_index（0 基）、text_en、text_zh | UNIQUE(article_id, paragraph_index) |
-| `batch_slots` | id PK、batch_id FK、run_date、slot_index、difficulty、thread_id、status CHECK(`pending`/`success`/`rejected`/`error`)、attempts（图内实际生成轮数）、article_id FK 可空、updated_at | UNIQUE(batch_id, slot_index)；索引 `(run_date)`；**槽位 = 文章占位**：每天 3 难度 × 5 篇 = 15 槽 |
+| `batch_slots` | id PK、batch_id FK、run_date、slot_index、difficulty、thread_id、status CHECK(`pending`/`success`/`rejected`/`error`)、attempts（图内实际生成轮数）、article_id FK 可空、error_message（失败/拒绝原因，可空——新数据落库，旧库启动幂等补列）、updated_at | UNIQUE(batch_id, slot_index)；索引 `(run_date)`；**槽位 = 文章占位**：每天 3 难度 × 5 篇 = 15 槽 |
 
 ### 3.2 服务端 6 表 + article_review
 
@@ -330,6 +330,11 @@ flowchart TD
 
 - **并发安全**：槽位级进程锁（`review_service` `slotLocks`）保证同槽 error 补跑与审核重生成串行；引擎侧 `usedUrls` 集合在单轮 run 内共享，拦截并行槽位重复抓取同一来源。
 - **手动补生成**：`POST /api/admin/articles/generate`（严格 ISO 校验）走同一 `generateDailyArticles` + `ensureReviewRows`；错过的日期 / 收口批次的 error 槽位均可手动处置。
+- **通知（每日生成报告，`services/feishu_notify.ts`）**：每轮 `runFill` 结束与手动 `generate` 后（含整体抛错）→ `notifyDailyResult` 发飞书交互卡片——
+  - **内容**：执行日期（配置时区）、**本轮**起止时刻与耗时（`startedAt`/`endedAt`，非批次表时间——多次补跑场景批次时间失真）、成功/失败/拒绝/待定计数、失败槽位明细（`batch_slots.error_message`，单行截断 120 字符；旧数据无原因 → 占位"详见运行日志"）、批次状态；**未收口**（running / 无批次）时附运行步骤错误（runFill 四步 catch 文本）；
+  - **卡片状态**：绿 = `completed` 全成功；红 = 有失败；橙 = 未收口；
+  - **纪律**：通知失败仅记日志**绝不抛**（不中断生成流程）；`FEISHU_WEBHOOK_URL` / `FEISHU_WEBHOOK_SECRET` 任缺 → 静默跳过；按 `runDate` 进程内**去重**（当日只发第一条，发送成功才记账——同日手动补跑不再刷屏）；
+  - **签名**：自定义机器人算法 `base64(HMAC-SHA256(key = \`${timestamp}\n${secret}\`))`，payload `timestamp`（秒级字符串）与签名一致；5s 超时。
 - **日志**：`[daily-task]` 编排行与引擎 `log()` 同走 `logs/daily-<日期>.log`（7 天轮转，只进文件不进 stdout）；服务侧日志见 `services/server_log.ts`——通用日志 `logs/server-<日期>.log`（+stdout），请求访问日志按面分流 `logs/app-<日期>.log`（手机端）/ `logs/admin-<日期>.log`（管理端），stdout 中 app 青色 / admin 品红。
 
 ## 9. 时区纪律（部署关键约束）
