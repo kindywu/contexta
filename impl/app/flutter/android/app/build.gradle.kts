@@ -7,9 +7,10 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// ─── 构建期配置注入（DEEPSEEK 密钥等，镜像 Android 原版 build.gradle.kts） ───
-// 密钥等敏感配置放在 android/local.properties（已 gitignore，不提交仓库），
-// 打包时以 --dart-define 语义注入编译期常量（AppConfig.deepSeekApiKey 等）。
+// ─── 构建期配置注入（服务端地址等） ───
+// 配置放在 android/local.properties（已 gitignore，不提交仓库），
+// 打包时以 --dart-define 语义注入编译期常量（AppConfig.serverBaseUrl）。
+// 命令行 --dart-define 同名 key 优先（见下方 merge 逻辑）。
 // 编码与 flutter 工具 encodeDartDefines 一致：base64(utf8("NAME=value"))，逗号分隔。
 plugins.withId("dev.flutter.flutter-gradle-plugin") {
     // 读取 android/local.properties（不存在或字段缺失时静默跳过注入）
@@ -18,11 +19,8 @@ plugins.withId("dev.flutter.flutter-gradle-plugin") {
 
     // 收集注入项：key → 配置值；值为空则不注入（保持编译期默认值）
     val injected = listOfNotNull(
-        "DEEPSEEK_API_KEY" to (props.getProperty("deepseek.apiKey") ?: ""),
-        "DEEPSEEK_MODEL" to (props.getProperty("deepseek.model") ?: ""),
-        "DEEPSEEK_BASE_URL" to (props.getProperty("deepseek.baseUrl") ?: ""),
-        "FEISHU_WEBHOOK_URL" to (props.getProperty("feishu.webhookUrl") ?: ""),
-        "FEISHU_SIGN_SECRET" to (props.getProperty("feishu.signSecret") ?: ""),
+        // 服务端 API origin（无尾斜杠，如 http://47.112.20.32:443 → AppConfig.serverBaseUrl）
+        "SERVER_BASE_URL" to (props.getProperty("server.baseUrl") ?: ""),
     ).filter { it.second.isNotBlank() }
 
     fun String.b64(): String = Base64.getEncoder().encodeToString(toByteArray(Charsets.UTF_8))
