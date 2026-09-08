@@ -50,6 +50,7 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           ADMIN_JWT_SECRET: ${{ secrets.ADMIN_JWT_SECRET }}
+          ADMIN_INIT_PASSWORD: ${{ secrets.ADMIN_INIT_PASSWORD }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
@@ -67,6 +68,7 @@ jobs:
           [ -n "$LLM_API_KEY" ] && UP_CMD="LLM_API_KEY='$LLM_API_KEY' $UP_CMD"
           [ -n "$JWT_SECRET" ] && UP_CMD="JWT_SECRET='$JWT_SECRET' $UP_CMD"
           [ -n "$ADMIN_JWT_SECRET" ] && UP_CMD="ADMIN_JWT_SECRET='$ADMIN_JWT_SECRET' $UP_CMD"
+          [ -n "$ADMIN_INIT_PASSWORD" ] && UP_CMD="ADMIN_INIT_PASSWORD='$ADMIN_INIT_PASSWORD' $UP_CMD"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@47.112.20.32 \
             "cd /opt/contexta/server && docker compose pull && $UP_CMD"
           # 3) 健康检查：30 次 × 2s 重试（宿主 443 → 容器 8080）

@@ -12,6 +12,7 @@ services:
       - LLM_API_KEY=${LLM_API_KEY:-}
       - JWT_SECRET=${JWT_SECRET:-}
       - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:-}
+      - ADMIN_INIT_PASSWORD=${ADMIN_INIT_PASSWORD:-}
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
