@@ -66,6 +66,20 @@ async function navigateLite(view: Bun.WebView, pageUrl: string): Promise<void> {
 }
 
 /**
+ * WebView 构造选项（跨平台）。
+ * Linux：Bun.WebView 走 Chrome 后端（镜像内 chrome-headless-shell，镜像层
+ * BUN_CHROME_PATH 指向）；root 容器内 Chrome 必须以 --no-sandbox 启动——
+ * 容器内无砂箱可复用，而 Bun spawn 的默认参数不带该项（遗漏即 Chrome
+ * 启动即退，报 "Chrome process closed the pipe"，见 docs/config-and-deploy.md §6）。
+ * macOS：默认 WebKit 后端，无需 backend。
+ */
+function webViewOptions() {
+  return process.platform === "linux"
+    ? { backend: { type: "chrome" as const, argv: ["--no-sandbox"] } }
+    : {};
+}
+
+/**
  * 打开页面，等动态新闻列表填充后，返回匹配选择器的锚点快照。
  * 页面加载完成后视图即关闭，快照数组与浏览器生命周期无关。
  */
@@ -73,7 +87,11 @@ export async function fetchAnchorSnapshots(
   pageUrl: string,
   selector: string,
 ): Promise<AnchorSnap[]> {
-  const view = new Bun.WebView({ width: 1440, height: 2000 });
+  const view = new Bun.WebView({
+    width: 1440,
+    height: 2000,
+    ...webViewOptions(),
+  });
   try {
     await navigateLite(view, pageUrl);
     const tWait = performance.now();
@@ -155,7 +173,11 @@ export async function fetchArticleHTML(
   containerSelector: string,
   fallback?: string,
 ): Promise<string> {
-  const view = new Bun.WebView({ width: 1440, height: 2000 });
+  const view = new Bun.WebView({
+    width: 1440,
+    height: 2000,
+    ...webViewOptions(),
+  });
   try {
     await navigateLite(view, pageUrl);
     const tWait = performance.now();
