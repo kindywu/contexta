@@ -2,15 +2,20 @@
 
 > 对照迁移计划 Task 29：覆盖安装、核心链路、10 条关键行为、TTS。
 > 状态：🟢 通过 / 🟡 待验证 / 🔴 失败（附原因与修复 commit）
+>
+> ⚠️ 本文档为 Flutter 迁移期验收清单，部分条目对应迁移前的本地生成架构。
+> 2026-08-13 T6 起本地生成管道已删除（生成由服务端承担，App 走投放同步 +
+> 远程查词），3.2 / 3.3 / 3.5 / 3.6 / 3.7 / 3.9 等本地生成类条目不再适用于当前架构。
 
 ## 0. 环境
 
 - [x] 设备已连接（`adb devices`）
 - [x] Debug APK 构建成功（`flutter build apk --debug`）
 - [x] 构建期配置注入：`android/local.properties`（gitignore，不入库）的
-  `deepseek.apiKey` / `deepseek.model` / `deepseek.baseUrl` 在打包时经
-  Gradle 以 `--dart-define` 语义注入 `AppConfig`（镜像 Android 原版
-  `BuildConfig`，见 `android/app/build.gradle.kts`）
+  `server.baseUrl`（如 `http://47.112.20.32:443`，无尾斜杠）在打包时经
+  Gradle 以 `--dart-define` 语义注入 `AppConfig.serverBaseUrl`
+  （见 `android/app/build.gradle.kts`；命令行
+  `--dart-define=SERVER_BASE_URL=...` 同名 key 优先）
 
 ## 1. 覆盖安装（数据库兼容）
 
