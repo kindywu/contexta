@@ -57,8 +57,8 @@ timedatectl   # 确认 Local time 为 Asia/Shanghai
 
 ```
 push main（impl/server/** 变更）/ 手动 dispatch
-  → [build] buildx 构建 impl/server/Dockerfile（linux/amd64）→ 推 GHCR
-      ghcr.io/kindywu/contexta-server:latest（部署用）+ :sha-<commit>（回滚用）
+  → [build] buildx 构建 impl/server/Dockerfile（linux/amd64）→ 推 ACR（阿里云个人版）
+      crpi-ui1m3okieeg995dg.cn-shenzhen.personal.cr.aliyuncs.com/contexta/contexta:latest-amd64（部署用）+ :1.0-amd64（版本号，见 README 打包约定）
   → [deploy] scp docker-compose.yml → /opt/contexta/server/
              docker compose pull && docker compose up -d
              → 健康检查（curl :443/api/health，30 次 × 2s 重试）失败即报红
@@ -67,8 +67,8 @@ push main（impl/server/** 变更）/ 手动 dispatch
 - **并发互斥**：`concurrency` 同组 `cancel-in-progress: true`——连续 push 只保留最后一个部署，不排队堆积。
 - **密钥注入（LLM_API_KEY / JWT_SECRET / ADMIN_JWT_SECRET / ADMIN_INIT_PASSWORD）**：deploy 步骤从 `secrets.*` 以 `KEY='<值>' docker compose up -d` 传入远端（compose `environment` 覆盖 `.env`）；Secret 为空时该键回退 `.env`——本地 `docker compose up` 直跑即后者。更新：`gh secret set <KEY>` → 下一次部署生效。注意：改 `JWT_SECRET` 会使已签发 token 全部失效（需重新登录）；`ADMIN_INIT_PASSWORD` 仅对无 admin 行的新库生效（seed 后该值不再读取）。
 - **凭据**：`DEPLOY_SSH_KEY`（服务器 SSH 私钥 = 阿里云 ECS PEM）存 GitHub Repo Secrets；`known_hosts` 指纹内联 workflow 防首次连接 MITM。
-- **镜像免认证拉取**：GHCR 包公开（仓库本身公开），服务器 `docker pull` 无需登录 token。
-- **回滚**：服务器上临时把 `docker-compose.yml` 的 `image:` 改为 `:sha-<旧commit>` → `docker compose up -d`（镜像历史保留在 GHCR）。
+- **镜像仓库（ACR 阿里云个人版）**：GHA 用 `ACR_USERNAME` / `ACR_PASSWORD`（Repo Secrets，即阿里云账号 `kindywu@outlook.com`）推送；服务器拉取需 `docker login`（2026-09-08 已在服务器 root 侧登录——凭证存 `/root/.docker/config.json`，轮换密码时需重登：`docker login crpi-...aliyuncs.com`）。
+- **回滚**：服务器上临时把 `docker-compose.yml` 的 `image:` 改为旧 tag（ACR 上保留各次 `1.0-amd64`/`latest-amd64` 历史版本）→ `docker compose up -d`。
 - **GHA 不触碰的数据**：只同步 compose 文件与镜像，`/opt/contexta/server/.env` 与 `data/`、`logs/`、`output/` 留在宿主机（容器 bind mount），重建容器不丢数据。
 
 ### 3.2 服务器首次准备（一次性，2026-09-07 已完成于生产服务器 47.112.20.32）

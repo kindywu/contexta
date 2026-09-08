@@ -1,6 +1,6 @@
 services:
   contexta-server:
-    image: ghcr.io/kindywu/contexta-server:latest
+    image: crpi-ui1m3okieeg995dg.cn-shenzhen.personal.cr.aliyuncs.com/contexta/contexta:latest-amd64
     container_name: contexta-server
     restart: unless-stopped
     ports:
