@@ -973,7 +973,7 @@ describe("异常槽位（GET /api/admin/slots + 列表 stats.error_slots）", ()
       { headers: authHeader(tok) },
     );
     const stats = (await listRes.json()).data.stats;
-    expect(stats.error_slots).toBe(1);
+    expect(stats.error_slots).toBe(2); // error + rejected 均为异常槽位
     expect(stats.total).toBe(1);
   });
 

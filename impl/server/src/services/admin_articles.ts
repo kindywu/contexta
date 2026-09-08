@@ -72,7 +72,7 @@ export interface ArticleListStats {
   approved: number;
   /** rejected + rejected_final 合计。 */
   rejected: number;
-  /** 生成失败槽位数（无文章行，articles 视角不可见——列表摘要的"异常"入口）。 */
+  /** 异常槽位数：非 success（error/rejected，均无文章行，articles 视角不可见——摘要"异常"入口）。 */
   error_slots: number;
 }
 
@@ -178,9 +178,10 @@ export function listArticles(db: Database, q: ArticleListQuery): ArticleListResu
     )
     .get(...params) as { c: number };
 
-  // 异常槽位计数：batch_slots 的 error（生成失败、无文章行——articles 视角不可见）
+  // 异常槽位计数：非 success 槽位（error + rejected，均无文章行——articles 视角不可见；
+  // 摘要 tag“异常槽位”据此显示并与 GET /api/admin/slots 口径一致）
   const errorSlots = db
-    .query(`SELECT COUNT(*) AS n FROM batch_slots WHERE run_date BETWEEN ? AND ? AND status = 'error'`)
+    .query(`SELECT COUNT(*) AS n FROM batch_slots WHERE run_date BETWEEN ? AND ? AND status != 'success'`)
     .get(q.startDate, q.endDate) as { n: number };
 
   const statsRow = db
