@@ -29,8 +29,14 @@ import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interfac
 /// 时顶部 toast 显示 4s 后自动消失。
 
 /// 组合桩：实现 Reading 页依赖的全部仓储/客户端接口，测试可控配置。
-class _Stub implements ArticleRepository, SettingsRepository,
-    VocabularyRepository, StatsRepository, WordRepository, LlmApi {
+class _Stub
+    implements
+        ArticleRepository,
+        SettingsRepository,
+        VocabularyRepository,
+        StatsRepository,
+        WordRepository,
+        LlmApi {
   Article? article;
   UserSettings settings = const UserSettings(isOnboarded: true);
   WordDetail? lookupResult;
@@ -56,7 +62,9 @@ class _Stub implements ArticleRepository, SettingsRepository,
 
   @override
   Future<WordDetail?> lookupWord(
-      String spelling, Future<WordDetail?> Function(String) llmFallback) {
+    String spelling,
+    Future<WordDetail?> Function(String) llmFallback,
+  ) {
     final completer = lookupCompleter;
     if (completer != null) return completer.future;
     return Future.value(lookupResult);
@@ -75,7 +83,7 @@ class _TtsStub implements TtsEngine {
   int stopCount = 0;
   final List<String> spoken = [];
   void Function(String? utteranceId, int paragraphIndex, int total)?
-      onParagraphStarted;
+  onParagraphStarted;
   String? _lastId;
   void Function(String? utteranceId)? onFinished;
 
@@ -108,8 +116,8 @@ class _TtsStub implements TtsEngine {
 
   @override
   void setOnParagraphStarted(
-      void Function(String? utteranceId, int paragraphIndex, int total)?
-          callback) {
+    void Function(String? utteranceId, int paragraphIndex, int total)? callback,
+  ) {
     onParagraphStarted = callback;
   }
 
@@ -119,52 +127,53 @@ class _TtsStub implements TtsEngine {
 }
 
 Article makeArticle() => const Article(
-      id: 1,
-      batchId: 1,
+  id: 1,
+  batchId: 1,
+  orderIndex: 0,
+  contentCategory: 'NEWS',
+  title: 'A Day',
+  status: ArticleStatus.success,
+  accumulatedReadSeconds: 0,
+  readCompletedAt: null,
+  paragraphs: [
+    ArticleParagraph(
       orderIndex: 0,
-      contentCategory: 'NEWS',
-      title: 'A Day',
-      status: ArticleStatus.success,
-      accumulatedReadSeconds: 0,
-      readCompletedAt: null,
-      paragraphs: [
-        ArticleParagraph(
-          orderIndex: 0,
-          englishText: 'Hello',
-          chineseTranslation: '你好世界。',
-        ),
-      ],
-    );
+      englishText: 'Hello',
+      chineseTranslation: '你好世界。',
+    ),
+  ],
+);
 
 Article makeLongArticle() => Article(
-      id: 2,
-      batchId: 1,
-      orderIndex: 0,
-      contentCategory: 'NEWS',
-      title: 'Long Article',
-      status: ArticleStatus.success,
-      accumulatedReadSeconds: 0,
-      readCompletedAt: null,
-      paragraphs: [
-        for (var i = 0; i < 8; i++)
-          ArticleParagraph(
-            orderIndex: i,
-            englishText:
-                'Paragraph $i. This is a fairly long English sentence '
-                'used to make each paragraph tall enough to overflow the '
-                'test viewport and force scrolling between paragraphs.',
-            chineseTranslation: '第 $i 段中文译文。',
-          ),
-      ],
-    );
+  id: 2,
+  batchId: 1,
+  orderIndex: 0,
+  contentCategory: 'NEWS',
+  title: 'Long Article',
+  status: ArticleStatus.success,
+  accumulatedReadSeconds: 0,
+  readCompletedAt: null,
+  paragraphs: [
+    for (var i = 0; i < 8; i++)
+      ArticleParagraph(
+        orderIndex: i,
+        englishText:
+            'Paragraph $i. This is a fairly long English sentence '
+            'used to make each paragraph tall enough to overflow the '
+            'test viewport and force scrolling between paragraphs.',
+        chineseTranslation: '第 $i 段中文译文。',
+      ),
+  ],
+);
 
 /// 段落 widget 定位：按 GlobalObjectKey 的 value（内容相等）匹配。
 /// GlobalObjectKey 按 identical 判等，跨实例无法用 find.byKey 命中，
 /// 故按 key value 过滤。
 Finder paragraphFinder(int index) => find.byWidgetPredicate(
-      (w) => w.key is GlobalObjectKey &&
-          (w.key! as GlobalObjectKey).value == 'reading-para-$index',
-    );
+  (w) =>
+      w.key is GlobalObjectKey &&
+      (w.key! as GlobalObjectKey).value == 'reading-para-$index',
+);
 
 /// 段落顶部全局 y（段落未构建（懒构建范围外）时显式失败）。
 double paragraphTop(WidgetTester tester, int index) {
@@ -203,20 +212,20 @@ void main() {
   });
 
   Future<void> pumpScreen(WidgetTester tester) async {
-    await tester.pumpWidget(ProviderScope(
-      overrides: [
-        articleRepositoryProvider.overrideWithValue(stub),
-        settingsRepositoryProvider.overrideWithValue(stub),
-        vocabularyRepositoryProvider.overrideWithValue(stub),
-        statsRepositoryProvider.overrideWithValue(stub),
-        wordRepositoryProvider.overrideWithValue(stub),
-        llmApiProvider.overrideWithValue(stub),
-        ttsEngineProvider.overrideWith((ref) async => tts),
-      ],
-      child: MaterialApp(
-        home: ReadingScreen(articleId: 1, onBack: () {}),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          articleRepositoryProvider.overrideWithValue(stub),
+          settingsRepositoryProvider.overrideWithValue(stub),
+          vocabularyRepositoryProvider.overrideWithValue(stub),
+          statsRepositoryProvider.overrideWithValue(stub),
+          wordRepositoryProvider.overrideWithValue(stub),
+          llmApiProvider.overrideWithValue(stub),
+          ttsEngineProvider.overrideWith((ref) async => tts),
+        ],
+        child: MaterialApp(home: ReadingScreen(articleId: 1, onBack: () {})),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
   }
 
@@ -230,12 +239,10 @@ void main() {
       });
 
       await pumpScreen(tester);
-      expect(fake.toggles, [true],
-          reason: '进入阅读页应立即开启屏幕常亮');
+      expect(fake.toggles, [true], reason: '进入阅读页应立即开启屏幕常亮');
 
       await tester.pumpWidget(const SizedBox());
-      expect(fake.toggles, [true, false],
-          reason: '离开阅读页（dispose）应关闭常亮');
+      expect(fake.toggles, [true, false], reason: '离开阅读页（dispose）应关闭常亮');
     });
   });
 
@@ -272,10 +279,7 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.play_arrow));
       await tester.pump();
-      expect(
-        find.text(ReadingController.ttsErrorMessage),
-        findsOneWidget,
-      );
+      expect(find.text(ReadingController.ttsErrorMessage), findsOneWidget);
 
       // 4s 后自动清除（对照 Kotlin SnackbarHost + clearSnackbar）
       await tester.pump(const Duration(seconds: 4));
@@ -326,20 +330,12 @@ void main() {
       // loading 态
       expect(find.text('正在查询…'), findsOneWidget);
 
-      stub.lookupCompleter!.complete(WordDetail(
-        wordId: 10,
-        spellingDisplay: 'Hello',
-        phoneticIpa: '/həˈləʊ/',
-        primarySense: WordSense(
-          id: 1,
-          orderIndex: 1,
-          partOfSpeech: 'interj.',
-          chineseMeaning: '你好',
-          englishDefinition: 'Used as a greeting.',
-          examples: const [],
-        ),
-        allSenses: [
-          WordSense(
+      stub.lookupCompleter!.complete(
+        WordDetail(
+          wordId: 10,
+          spellingDisplay: 'Hello',
+          phoneticIpa: '/həˈləʊ/',
+          primarySense: WordSense(
             id: 1,
             orderIndex: 1,
             partOfSpeech: 'interj.',
@@ -347,8 +343,18 @@ void main() {
             englishDefinition: 'Used as a greeting.',
             examples: const [],
           ),
-        ],
-      ));
+          allSenses: [
+            WordSense(
+              id: 1,
+              orderIndex: 1,
+              partOfSpeech: 'interj.',
+              chineseMeaning: '你好',
+              englishDefinition: 'Used as a greeting.',
+              examples: const [],
+            ),
+          ],
+        ),
+      );
       await tester.pumpAndSettle();
       // 回填态
       expect(find.text('Hello'), findsOneWidget);
@@ -389,6 +395,90 @@ void main() {
       await tester.tap(find.byIcon(Icons.close));
       await tester.pumpAndSettle();
       expect(find.text('Hello'), findsNothing);
+    });
+
+    testWidgets('义项过多时弹窗可滚动，最后的义项可滚入视窗', (tester) async {
+      // 25 个义项使内容总高远超 AppModal 的 75% 屏高上限（600px 视口 → 450px），
+      // 弹窗内容必须可滚动，否则长义项被裁切且无法滚到。
+      stub.lookupResult = WordDetail(
+        wordId: 10,
+        spellingDisplay: 'Hello',
+        phoneticIpa: '/həˈləʊ/',
+        primarySense: null,
+        allSenses: [
+          for (var i = 0; i < 25; i++)
+            WordSense(
+              id: i + 1,
+              orderIndex: i + 1,
+              partOfSpeech: i.isEven ? 'n.' : 'v.',
+              chineseMeaning: '释义 $i',
+              englishDefinition:
+                  'Sense definition $i, deliberately long enough to make '
+                  'the sheet taller than the modal maximum height.',
+              examples: const [],
+            ),
+        ],
+      );
+      await pumpScreen(tester);
+
+      await tester.tap(wordInParagraph('Hello'));
+      await tester.pumpAndSettle();
+
+      // 弹窗内容必须包在可滚动容器中（否则长义项被 75% 屏高裁切）
+      final modalScrollable = find.descendant(
+        of: find.byType(AppModal),
+        matching: find.byType(SingleChildScrollView),
+      );
+      expect(modalScrollable, findsOneWidget);
+
+      // fling 滚到底后，内容末尾的「加入生词表」按钮完整进入视窗
+      // （修复前按钮被裁切在溢出区，不可见也不可点）
+      await tester.fling(modalScrollable, const Offset(0, -1200), 3000);
+      await tester.pumpAndSettle();
+      final addButton = find.text('加入生词表');
+      expect(addButton, findsOneWidget);
+      final rect = tester.getRect(addButton);
+      expect(rect.bottom, lessThanOrEqualTo(600.0), reason: '按钮应完整在视窗内');
+      expect(rect.top, greaterThanOrEqualTo(0));
+    });
+
+    testWidgets('长内容弹窗的关闭按钮固定在顶部，不随滚动移动', (tester) async {
+      stub.lookupResult = WordDetail(
+        wordId: 10,
+        spellingDisplay: 'Hello',
+        phoneticIpa: '/həˈləʊ/',
+        primarySense: null,
+        allSenses: [
+          for (var i = 0; i < 25; i++)
+            WordSense(
+              id: i + 1,
+              orderIndex: i + 1,
+              partOfSpeech: i.isEven ? 'n.' : 'v.',
+              chineseMeaning: '释义 $i',
+              englishDefinition:
+                  'Sense definition $i, deliberately long enough to make '
+                  'the sheet taller than the modal maximum height.',
+              examples: const [],
+            ),
+        ],
+      );
+      await pumpScreen(tester);
+
+      await tester.tap(wordInParagraph('Hello'));
+      await tester.pumpAndSettle();
+
+      final closeBtn = find.byIcon(Icons.close);
+      final before = tester.getTopLeft(closeBtn);
+
+      final scrollable = find.descendant(
+        of: find.byType(AppModal),
+        matching: find.byType(SingleChildScrollView),
+      );
+      await tester.fling(scrollable, const Offset(0, -1200), 3000);
+      await tester.pumpAndSettle();
+
+      final after = tester.getTopLeft(closeBtn);
+      expect(after.dy, closeTo(before.dy, 0.1), reason: '关闭按钮应固定置顶，不随内容滚动');
     });
   });
 
@@ -507,8 +597,10 @@ void main() {
       // 切到段落 2 → 段落 2 顶部对齐 (视口-段高)/3 处
       tts.simulateParagraphStarted(2);
       await tester.pumpAndSettle();
-      expect(paragraphTop(tester, 2),
-          closeTo(listViewTop + (listViewHeight - paraHeight) / 3, 1));
+      expect(
+        paragraphTop(tester, 2),
+        closeTo(listViewTop + (listViewHeight - paraHeight) / 3, 1),
+      );
     });
 
     testWidgets('单段播放不自动滚动', (tester) async {
@@ -525,10 +617,12 @@ void main() {
 
       // 点段 2 内联播放（全文播放的滚动是程序滚动，不触发手滚跳过；
       // .first 会命中段 0，须按段落定位）
-      await tester.tap(find.descendant(
-        of: paragraphFinder(2),
-        matching: find.byIcon(Icons.volume_up_outlined),
-      ));
+      await tester.tap(
+        find.descendant(
+          of: paragraphFinder(2),
+          matching: find.byIcon(Icons.volume_up_outlined),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(paragraphTop(tester, 2), before);
     });
@@ -560,8 +654,10 @@ void main() {
       // 段落 2 切换：恢复跟随
       tts.simulateParagraphStarted(2);
       await tester.pumpAndSettle();
-      expect(paragraphTop(tester, 2),
-          closeTo(listViewTop + (listViewHeight - paraHeight) / 3, 1));
+      expect(
+        paragraphTop(tester, 2),
+        closeTo(listViewTop + (listViewHeight - paraHeight) / 3, 1),
+      );
       expect(paragraphTop(tester, 1), isNot(closeTo(duringUserScroll, 1)));
     });
 
@@ -575,10 +671,12 @@ void main() {
       expect(tts.spoken, isNotEmpty);
 
       final position = tester
-          .state<ScrollableState>(find.descendant(
-            of: find.byType(ListView),
-            matching: find.byType(Scrollable),
-          ))
+          .state<ScrollableState>(
+            find.descendant(
+              of: find.byType(ListView),
+              matching: find.byType(Scrollable),
+            ),
+          )
           .position;
       // 滚动前快照 maxScrollExtent：SliverList 对未构建尾部按均值估算，
       // 滚动后尾部已构建该值会变化——须与兜底实现同一时刻读取

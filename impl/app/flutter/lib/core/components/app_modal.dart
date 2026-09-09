@@ -9,7 +9,7 @@ enum AppModalAlignment { center, bottom }
 /// 原型弹窗：全屏 Scrim 遮罩 + 画布底面板（淡入淡出 200ms）。
 ///
 /// - center（默认）：居中卡片，四角 16dp 圆角，宽 ≤ 360dp（参考页弹窗）
-/// - bottom：底部全宽弹层，仅上两角 16dp 圆角，高 ≤ 75% 屏高（查词弹窗）
+/// - bottom：底部全宽弹层，仅上两角 16dp 圆角，高 ≤ 85% 屏高（查词弹窗）
 ///
 /// 面板内部消费点击（无涟漪），防止点击面板空白区穿透触发关闭。
 /// 对照 Kotlin ui/components/AppModal.kt（AnimatedVisibility 淡入淡出）。
@@ -64,7 +64,7 @@ class AppModal extends StatelessWidget {
                   constraints: isBottom
                       ? BoxConstraints(
                           maxHeight:
-                              MediaQuery.of(context).size.height * 0.75,
+                              MediaQuery.of(context).size.height * 0.85,
                         )
                       : const BoxConstraints(maxWidth: 360),
                   child: Material(

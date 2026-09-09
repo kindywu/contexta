@@ -61,7 +61,9 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
   final Map<int, GlobalObjectKey<State<StatefulWidget>>> _paragraphKeys = {};
   GlobalObjectKey<State<StatefulWidget>> _paragraphKey(int index) =>
       _paragraphKeys.putIfAbsent(
-          index, () => GlobalObjectKey('reading-para-$index'));
+        index,
+        () => GlobalObjectKey('reading-para-$index'),
+      );
 
   Timer? _toastTimer;
 
@@ -134,8 +136,9 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
 
     // 副作用 1：TTS 不可用 toast 显示 4s 后自动清除
     ref.listen<String?>(
-      readingControllerProvider(widget.articleId)
-          .select((s) => s.snackbarMessage),
+      readingControllerProvider(
+        widget.articleId,
+      ).select((s) => s.snackbarMessage),
       (previous, next) {
         if (next == null) return;
         _toastTimer?.cancel();
@@ -152,20 +155,24 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
     // 副作用 2：TTS 不可用时拉起系统 TTS 设置（替代 Kotlin
     // ACTION_CHECK_TTS_DATA Intent）
     ref.listen<bool>(
-      readingControllerProvider(widget.articleId)
-          .select((s) => s.openTtsSettings),
+      readingControllerProvider(
+        widget.articleId,
+      ).select((s) => s.openTtsSettings),
       (previous, next) {
         if (!next) return;
         final uri = Uri.parse('android.settings.TTS_SETTINGS');
-        launchUrl(uri, mode: LaunchMode.externalApplication)
-            .catchError((_) => false);
+        launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        ).catchError((_) => false);
       },
     );
 
     // 副作用 3：全文朗读段落切换 → 自动滚动到 1/3 处
     ref.listen<int?>(
-      readingControllerProvider(widget.articleId)
-          .select((s) => s.speakingParagraphIndex),
+      readingControllerProvider(
+        widget.articleId,
+      ).select((s) => s.speakingParagraphIndex),
       (previous, next) {
         if (next == null || next < 0) return; // 标题段（-1）不滚动
         final state = ref.read(readingControllerProvider(widget.articleId));
@@ -183,34 +190,36 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-          Column(
-            children: [
-              // 3dp 珊瑚滚动进度条（宽 = 滚动比例）
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  width: MediaQuery.of(context).size.width * _scrollFraction,
-                  height: 3,
-                  color: AppColors.primary,
+            Column(
+              children: [
+                // 3dp 珊瑚滚动进度条（宽 = 滚动比例）
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    width: MediaQuery.of(context).size.width * _scrollFraction,
+                    height: 3,
+                    color: AppColors.primary,
+                  ),
                 ),
-              ),
-              _ReadingAppBar(
-                translationMode: state.translationMode,
-                isReadCompleted: state.isReadCompleted,
-                onBack: widget.onBack,
-                onCycleTranslationMode: () =>
-                    ref.read(readingControllerProvider(widget.articleId).notifier)
-                        .cycleTranslationMode(),
-              ),
-              Expanded(
-                child: switch ((state.isLoading, state.error)) {
-                  (true, _) => const LoadingIndicator(),
-                  (false, final String error) => EmptyState(
+                _ReadingAppBar(
+                  translationMode: state.translationMode,
+                  isReadCompleted: state.isReadCompleted,
+                  onBack: widget.onBack,
+                  onCycleTranslationMode: () => ref
+                      .read(
+                        readingControllerProvider(widget.articleId).notifier,
+                      )
+                      .cycleTranslationMode(),
+                ),
+                Expanded(
+                  child: switch ((state.isLoading, state.error)) {
+                    (true, _) => const LoadingIndicator(),
+                    (false, final String error) => EmptyState(
                       icon: Icons.error_outline,
                       message: error,
                       subMessage: '请返回重新选择',
                     ),
-                  (false, null) =>
+                    (false, null) =>
                       NotificationListener<ScrollStartNotification>(
                         onNotification: (notification) {
                           if (notification.dragDetails != null) {
@@ -221,121 +230,138 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
                         child: ListView(
                           controller: _scrollController,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: AppPage.horizontalPadding),
+                            horizontal: AppPage.horizontalPadding,
+                          ),
                           children: [
-                        const SizedBox(height: AppSpacing.sm),
-                        _TitleText(
-                          text: state.title ?? '文章',
-                          isSpeaking: state.speakingParagraphIndex ==
-                              kTitleParagraphIndex,
-                          vocabularyWords: state.vocabularyWords,
-                          onWordClick: (word) => ref
-                              .read(readingControllerProvider(widget.articleId)
-                                  .notifier)
-                              .showWordSheet(word),
+                            const SizedBox(height: AppSpacing.sm),
+                            _TitleText(
+                              text: state.title ?? '文章',
+                              isSpeaking:
+                                  state.speakingParagraphIndex ==
+                                  kTitleParagraphIndex,
+                              vocabularyWords: state.vocabularyWords,
+                              onWordClick: (word) => ref
+                                  .read(
+                                    readingControllerProvider(
+                                      widget.articleId,
+                                    ).notifier,
+                                  )
+                                  .showWordSheet(word),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            Container(height: 1, color: AppColors.hairline),
+                            const SizedBox(height: AppSpacing.lg),
+                            for (final (index, paragraph)
+                                in state.paragraphs.indexed)
+                              _ReadingParagraph(
+                                key: _paragraphKey(index),
+                                englishText: paragraph.englishText,
+                                chineseTranslation:
+                                    paragraph.chineseTranslation,
+                                translationMode: state.translationMode,
+                                isRevealed: state.revealedParagraphs.contains(
+                                  index,
+                                ),
+                                vocabularyWords: state.vocabularyWords,
+                                isSpeaking:
+                                    state.speakingParagraphIndex == index,
+                                onWordClick: (word) => ref
+                                    .read(
+                                      readingControllerProvider(
+                                        widget.articleId,
+                                      ).notifier,
+                                    )
+                                    .showWordSheet(word),
+                                onTranslationClick: () {
+                                  if (state.translationMode ==
+                                      TranslationMode.blurred) {
+                                    ref
+                                        .read(
+                                          readingControllerProvider(
+                                            widget.articleId,
+                                          ).notifier,
+                                        )
+                                        .revealTranslation(index);
+                                  }
+                                },
+                                onPlay: () => ref
+                                    .read(
+                                      readingControllerProvider(
+                                        widget.articleId,
+                                      ).notifier,
+                                    )
+                                    .playParagraph(index),
+                              ),
+                            const SizedBox(height: AppSpacing.lg),
+                            if (!state.isReadCompleted)
+                              AppButton(
+                                text: '标记已读',
+                                onClick: () => ref
+                                    .read(
+                                      readingControllerProvider(
+                                        widget.articleId,
+                                      ).notifier,
+                                    )
+                                    .markAsRead(),
+                                variant: AppButtonVariant.secondary,
+                              ),
+                            const SizedBox(height: AppSpacing.xs),
+                          ],
                         ),
-                        const SizedBox(height: AppSpacing.md),
-                        Container(height: 1, color: AppColors.hairline),
-                        const SizedBox(height: AppSpacing.lg),
-                        for (final (index, paragraph)
-                            in state.paragraphs.indexed)
-                          _ReadingParagraph(
-                            key: _paragraphKey(index),
-                            englishText: paragraph.englishText,
-                            chineseTranslation: paragraph.chineseTranslation,
-                            translationMode: state.translationMode,
-                            isRevealed:
-                                state.revealedParagraphs.contains(index),
-                            vocabularyWords: state.vocabularyWords,
-                            isSpeaking:
-                                state.speakingParagraphIndex == index,
-                            onWordClick: (word) => ref
-                                .read(readingControllerProvider(
-                                        widget.articleId)
-                                    .notifier)
-                                .showWordSheet(word),
-                            onTranslationClick: () {
-                              if (state.translationMode ==
-                                  TranslationMode.blurred) {
-                                ref
-                                    .read(readingControllerProvider(
-                                            widget.articleId)
-                                        .notifier)
-                                    .revealTranslation(index);
-                              }
-                            },
-                            onPlay: () => ref
-                                .read(readingControllerProvider(
-                                        widget.articleId)
-                                    .notifier)
-                                .playParagraph(index),
-                          ),
-                        const SizedBox(height: AppSpacing.lg),
-                        if (!state.isReadCompleted)
-                          AppButton(
-                            text: '标记已读',
-                            onClick: () => ref
-                                .read(readingControllerProvider(
-                                        widget.articleId)
-                                    .notifier)
-                                .markAsRead(),
-                            variant: AppButtonVariant.secondary,
-                          ),
-                        const SizedBox(height: AppSpacing.xs),
-                      ],
-                    ),
                       ),
-                },
-              ),
-              // 底部播放条：常驻（音乐播放器样式）
-              _ReadingPlayerBar(
-                isSpeaking: state.isSpeakingFullArticle,
-                ttsSpeed: state.ttsSpeed,
-                speechProgress: state.speechProgress,
-                speechTotalParagraphs: state.speechTotalParagraphs,
-                onTogglePlayback: () => ref
-                    .read(readingControllerProvider(widget.articleId).notifier)
-                    .toggleFullArticlePlayback(),
-                onToggleTtsSpeed: () => ref
-                    .read(readingControllerProvider(widget.articleId).notifier)
-                    .toggleTtsSpeed(),
-              ),
-            ],
-          ),
-          // 顶部 TTS 不可用提示（对照 Kotlin SnackbarHost TopCenter）
-          if (state.snackbarMessage != null)
-            Positioned(
-              top: MediaQuery.paddingOf(context).top + 8,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: AppToast(state.snackbarMessage!),
-              ),
+                  },
+                ),
+                // 底部播放条：常驻（音乐播放器样式）
+                _ReadingPlayerBar(
+                  isSpeaking: state.isSpeakingFullArticle,
+                  ttsSpeed: state.ttsSpeed,
+                  speechProgress: state.speechProgress,
+                  speechTotalParagraphs: state.speechTotalParagraphs,
+                  onTogglePlayback: () => ref
+                      .read(
+                        readingControllerProvider(widget.articleId).notifier,
+                      )
+                      .toggleFullArticlePlayback(),
+                  onToggleTtsSpeed: () => ref
+                      .read(
+                        readingControllerProvider(widget.articleId).notifier,
+                      )
+                      .toggleTtsSpeed(),
+                ),
+              ],
             ),
-          // 查词弹窗（底部全宽）
-          AppModal(
-            visible: state.isWordSheetVisible,
-            onDismiss: () => ref
-                .read(readingControllerProvider(widget.articleId).notifier)
-                .hideWordSheet(),
-            alignment: AppModalAlignment.bottom,
-            child: _WordSheetBody(
-              data: state.wordSheetData,
+            // 顶部 TTS 不可用提示（对照 Kotlin SnackbarHost TopCenter）
+            if (state.snackbarMessage != null)
+              Positioned(
+                top: MediaQuery.paddingOf(context).top + 8,
+                left: 0,
+                right: 0,
+                child: Center(child: AppToast(state.snackbarMessage!)),
+              ),
+            // 查词弹窗（底部全宽）
+            AppModal(
+              visible: state.isWordSheetVisible,
               onDismiss: () => ref
                   .read(readingControllerProvider(widget.articleId).notifier)
                   .hideWordSheet(),
-              onPlayWord: () => ref
-                  .read(readingControllerProvider(widget.articleId).notifier)
-                  .playWordPronunciation(),
-              onAddToVocabulary: () => ref
-                  .read(readingControllerProvider(widget.articleId).notifier)
-                  .addToVocabulary(),
-              onRemoveFromVocabulary: () => ref
-                  .read(readingControllerProvider(widget.articleId).notifier)
-                  .removeFromVocabulary(),
+              alignment: AppModalAlignment.bottom,
+              child: _WordSheetBody(
+                data: state.wordSheetData,
+                onDismiss: () => ref
+                    .read(readingControllerProvider(widget.articleId).notifier)
+                    .hideWordSheet(),
+                onPlayWord: () => ref
+                    .read(readingControllerProvider(widget.articleId).notifier)
+                    .playWordPronunciation(),
+                onAddToVocabulary: () => ref
+                    .read(readingControllerProvider(widget.articleId).notifier)
+                    .addToVocabulary(),
+                onRemoveFromVocabulary: () => ref
+                    .read(readingControllerProvider(widget.articleId).notifier)
+                    .removeFromVocabulary(),
+              ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -376,15 +402,17 @@ class _ReadingAppBar extends StatelessWidget {
             const SizedBox(width: AppSpacing.xxs),
             Text(
               '✓ 已读',
-              style: AppType.textTheme.labelMedium
-                  ?.copyWith(color: AppColors.mutedSoft),
+              style: AppType.textTheme.labelMedium?.copyWith(
+                color: AppColors.mutedSoft,
+              ),
             ),
           ],
           const Spacer(),
           Text(
             '译文',
-            style: AppType.textTheme.labelMedium
-                ?.copyWith(color: AppColors.mutedSoft),
+            style: AppType.textTheme.labelMedium?.copyWith(
+              color: AppColors.mutedSoft,
+            ),
           ),
           const SizedBox(width: AppSpacing.xs),
           InkWell(
@@ -403,14 +431,16 @@ class _ReadingAppBar extends StatelessWidget {
                 children: [
                   Text(
                     translationMode.label,
-                    style: AppType.textTheme.labelMedium
-                        ?.copyWith(color: AppColors.bodyText),
+                    style: AppType.textTheme.labelMedium?.copyWith(
+                      color: AppColors.bodyText,
+                    ),
                   ),
                   const SizedBox(width: AppSpacing.xxs),
                   Text(
                     '▾',
-                    style: AppType.textTheme.labelSmall
-                        ?.copyWith(color: AppColors.mutedSoft),
+                    style: AppType.textTheme.labelSmall?.copyWith(
+                      color: AppColors.mutedSoft,
+                    ),
                   ),
                 ],
               ),
@@ -499,10 +529,7 @@ class _ReadingPlayerBar extends StatelessWidget {
               onTap: onToggleTtsSpeed,
               borderRadius: BorderRadius.circular(6),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 child: Text(
                   _speedLabel(ttsSpeed),
                   style: AppType.textTheme.labelSmall?.copyWith(
@@ -546,11 +573,13 @@ class _WordSheetBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 关闭 X 固定置顶（不随内容滚动）；义项/按钮区包可滚动容器——
+    // 内容总高超过 AppModal 的 85% 屏高上限（底部弹层）时可滚动查看。
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // 关闭 X — 右上
+        // 关闭 X — 右上（固定头部，不随滚动）
         SizedBox(
           width: double.infinity,
           child: Align(
@@ -564,110 +593,123 @@ class _WordSheetBody extends StatelessWidget {
             ),
           ),
         ),
-        if (data != null) ...[
-          // 词头 + 发音
-          Row(
-            children: [
-              Text(
-                data!.word,
-                style: AppType.textTheme.headlineLarge
-                    ?.copyWith(fontSize: 26),
-              ),
-              const Spacer(),
-              if (!data!.isLoading)
-                AppIconButton(
-                  icon: Icons.volume_up_outlined,
-                  tooltip: '发音',
-                  onClick: onPlayWord,
-                  size: 36,
-                  tint: AppColors.primary,
-                ),
-            ],
-          ),
-          if (data!.phonetic != null && !data!.isLoading)
-            Text(
-              data!.phonetic!,
-              style: AppType.phonetic.copyWith(fontSize: 13),
-            ),
-          // 词形解析标注：homes 是 home 的复数形式
-          if (data!.inflectionNote != null && !data!.isLoading)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                data!.inflectionNote!,
-                style: AppType.textTheme.bodySmall
-                    ?.copyWith(color: AppColors.muted),
-              ),
-            ),
-          if (data!.isLoading) ...[
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+        Flexible(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.primary,
+                if (data != null) ...[
+                  // 词头 + 发音
+                  Row(
+                    children: [
+                      Text(
+                        data!.word,
+                        style: AppType.textTheme.headlineLarge?.copyWith(
+                          fontSize: 26,
+                        ),
+                      ),
+                      const Spacer(),
+                      if (!data!.isLoading)
+                        AppIconButton(
+                          icon: Icons.volume_up_outlined,
+                          tooltip: '发音',
+                          onClick: onPlayWord,
+                          size: 36,
+                          tint: AppColors.primary,
+                        ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  '正在查询…',
-                  style: AppType.textTheme.bodyMedium
-                      ?.copyWith(color: AppColors.muted),
-                ),
+                  if (data!.phonetic != null && !data!.isLoading)
+                    Text(
+                      data!.phonetic!,
+                      style: AppType.phonetic.copyWith(fontSize: 13),
+                    ),
+                  // 词形解析标注：homes 是 home 的复数形式
+                  if (data!.inflectionNote != null && !data!.isLoading)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        data!.inflectionNote!,
+                        style: AppType.textTheme.bodySmall?.copyWith(
+                          color: AppColors.muted,
+                        ),
+                      ),
+                    ),
+                  if (data!.isLoading) ...[
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.sm),
+                        Text(
+                          '正在查询…',
+                          style: AppType.textTheme.bodyMedium?.copyWith(
+                            color: AppColors.muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                  ] else if (data!.senses.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.sm),
+                    // 按词性分组：词性标签（珊瑚）只在组首出现
+                    for (final (index, sense) in data!.senses.indexed) ...[
+                      if (index == 0 ||
+                          sense.partOfSpeech !=
+                              data!.senses[index - 1].partOfSpeech) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          sense.partOfSpeech,
+                          style: AppType.textTheme.labelMedium?.copyWith(
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                      ] else ...[
+                        const SizedBox(height: 8),
+                      ],
+                      Text(
+                        sense.englishDefinition,
+                        style: AppType.textTheme.bodySmall?.copyWith(
+                          color: AppColors.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        sense.chineseMeaning,
+                        style: AppType.textTheme.bodySmall?.copyWith(
+                          color: AppColors.mutedSoft,
+                        ),
+                      ),
+                    ],
+                  ],
+                  const SizedBox(height: 20),
+                  // 全宽操作按钮（已入生词本 → 移除，否则 → 加入）
+                  SizedBox(
+                    width: double.infinity,
+                    child: data!.isInVocabulary
+                        ? AppButton(
+                            text: '从生词表移除',
+                            onClick: onRemoveFromVocabulary,
+                            variant: AppButtonVariant.secondary,
+                          )
+                        : AppButton(text: '加入生词表', onClick: onAddToVocabulary),
+                  ),
+                  const SizedBox(height: 4),
+                ],
               ],
             ),
-            const SizedBox(height: 20),
-          ] else if (data!.senses.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.sm),
-            // 按词性分组：词性标签（珊瑚）只在组首出现
-            for (final (index, sense) in data!.senses.indexed) ...[
-              if (index == 0 ||
-                  sense.partOfSpeech !=
-                      data!.senses[index - 1].partOfSpeech) ...[
-                const SizedBox(height: 16),
-                Text(
-                  sense.partOfSpeech,
-                  style: AppType.textTheme.labelMedium
-                      ?.copyWith(color: AppColors.primary),
-                ),
-                const SizedBox(height: 4),
-              ] else ...[
-                const SizedBox(height: 8),
-              ],
-              Text(
-                sense.englishDefinition,
-                style: AppType.textTheme.bodySmall
-                    ?.copyWith(color: AppColors.ink),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                sense.chineseMeaning,
-                style: AppType.textTheme.bodySmall
-                    ?.copyWith(color: AppColors.mutedSoft),
-              ),
-            ],
-          ],
-          const SizedBox(height: 20),
-          // 全宽操作按钮（已入生词本 → 移除，否则 → 加入）
-          SizedBox(
-            width: double.infinity,
-            child: data!.isInVocabulary
-                ? AppButton(
-                    text: '从生词表移除',
-                    onClick: onRemoveFromVocabulary,
-                    variant: AppButtonVariant.secondary,
-                  )
-                : AppButton(
-                    text: '加入生词表',
-                    onClick: onAddToVocabulary,
-                  ),
           ),
-          const SizedBox(height: 4),
-        ],
+        ),
       ],
     );
   }
@@ -761,9 +803,7 @@ class _TitleTextState extends State<_TitleText> {
         text: TextSpan(
           style: AppType.textTheme.displayMedium?.copyWith(
             color: AppColors.ink,
-            backgroundColor: widget.isSpeaking
-                ? const Color(0x2ECC785C)
-                : null,
+            backgroundColor: widget.isSpeaking ? const Color(0x2ECC785C) : null,
           ),
           children: _clickableWordSpans(
             text: widget.text,
@@ -859,39 +899,39 @@ class _ReadingParagraphState extends State<_ReadingParagraph> {
         // 中文译文：4 模式
         switch (widget.translationMode) {
           TranslationMode.full => Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: _TranslationText(
+              text: widget.chineseTranslation,
+              onTap: widget.onTranslationClick,
+            ),
+          ),
+          TranslationMode.dim => Opacity(
+            opacity: 0.55,
+            child: Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: _TranslationText(
                 text: widget.chineseTranslation,
                 onTap: widget.onTranslationClick,
               ),
             ),
-          TranslationMode.dim => Opacity(
-              opacity: 0.55,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: _TranslationText(
-                  text: widget.chineseTranslation,
-                  onTap: widget.onTranslationClick,
-                ),
-              ),
-            ),
+          ),
           TranslationMode.blurred => Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              // 点击揭示：isRevealed 时显示明文，否则模糊（对照 Kotlin
-              // ReadingScreen 的 BLURRED 分支 if (isRevealed) 拆解）
-              child: widget.isRevealed
-                  ? _TranslationText(
+            padding: const EdgeInsets.only(bottom: 4),
+            // 点击揭示：isRevealed 时显示明文，否则模糊（对照 Kotlin
+            // ReadingScreen 的 BLURRED 分支 if (isRevealed) 拆解）
+            child: widget.isRevealed
+                ? _TranslationText(
+                    text: widget.chineseTranslation,
+                    onTap: widget.onTranslationClick,
+                  )
+                : ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                    child: _TranslationText(
                       text: widget.chineseTranslation,
                       onTap: widget.onTranslationClick,
-                    )
-                  : ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                      child: _TranslationText(
-                        text: widget.chineseTranslation,
-                        onTap: widget.onTranslationClick,
-                      ),
                     ),
-            ),
+                  ),
+          ),
           TranslationMode.hidden => const SizedBox.shrink(),
         },
       ],
@@ -926,8 +966,9 @@ class _TranslationText extends StatelessWidget {
       onTap: onTap,
       child: Text(
         text,
-        style: AppType.textTheme.bodyMedium
-            ?.copyWith(color: AppColors.mutedSoft),
+        style: AppType.textTheme.bodyMedium?.copyWith(
+          color: AppColors.mutedSoft,
+        ),
       ),
     );
   }
@@ -935,10 +976,7 @@ class _TranslationText extends StatelessWidget {
 
 /// 段尾内联播放按钮（18dp；朗读中显示 Stop + Primary，否则 VolumeUp + MutedSoft）。
 class _InlinePlayButton extends StatelessWidget {
-  const _InlinePlayButton({
-    required this.isSpeaking,
-    required this.onClick,
-  });
+  const _InlinePlayButton({required this.isSpeaking, required this.onClick});
 
   final bool isSpeaking;
   final VoidCallback onClick;
