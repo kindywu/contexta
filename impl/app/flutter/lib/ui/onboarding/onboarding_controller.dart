@@ -78,9 +78,6 @@ class OnboardingController extends StateNotifier<OnboardingState> {
     await _activateSeedBatch(level, dailyCount);
     onComplete();
   }
-
-  /// 启动时检查：用户已完成引导则跳过。
-  Future<bool> isAlreadyOnboarded() => _settingsRepository.isOnboarded();
 }
 
 /// Onboarding 控制器 Provider。

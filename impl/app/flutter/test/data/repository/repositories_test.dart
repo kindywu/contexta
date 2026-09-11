@@ -499,7 +499,7 @@ void main() {
       expect(afterB2!.id, b2);
     });
 
-    test('getAssignedBatchForDate / getAllDailyLearningInfos', () async {
+    test('getAssignedBatchForDate / getDailyLearningInfosPage', () async {
       final b1 = await insertReadyBatchWithArticles('LOW', generatedOn: '2026-08-01');
       await articleRepo.assignBatchForToday(b1, '2026-08-01', 1);
 
@@ -507,11 +507,59 @@ void main() {
       final assigned = await articleRepo.getAssignedBatchForDate(today);
       expect(assigned!.id, b1);
 
-      final infos = await articleRepo.getAllDailyLearningInfos();
+      final infos = await articleRepo.getDailyLearningInfosPage(limit: 10);
       expect(infos.length, 1);
       expect(infos.first.learningDate, today);
       expect(infos.first.dailyCountSnapshot, 1);
       expect(infos.first.batch.id, b1);
+    });
+
+    test('getDailyLearningInfosPage：按日期降序 keyset 分页', () async {
+      // 5 天阅读记录（每天一个批次）
+      final dates = [
+        '2026-08-01',
+        '2026-08-02',
+        '2026-08-03',
+        '2026-08-04',
+        '2026-08-05',
+      ];
+      final batchByDate = <String, int>{};
+      for (final d in dates) {
+        final b = await insertReadyBatchWithArticles('LOW', generatedOn: d);
+        batchByDate[d] = b;
+        await db.into(db.dailyLearnings).insert(DailyLearningsCompanion.insert(
+              learningDate: d,
+              refBatchDate: d,
+              refBatchId: b,
+              dailyCountSnapshot: 3,
+            ));
+      }
+
+      // 首屏：最新 3 天（降序，含关联批次与快照）
+      final page1 = await articleRepo.getDailyLearningInfosPage(limit: 3);
+      expect(
+        page1.map((e) => e.learningDate).toList(),
+        ['2026-08-05', '2026-08-04', '2026-08-03'],
+      );
+      expect(page1.first.batch.id, batchByDate['2026-08-05']);
+      expect(page1.first.dailyCountSnapshot, 3);
+
+      // 下一页：严格早于游标日期（游标当天不重复返回）
+      final page2 = await articleRepo.getDailyLearningInfosPage(
+        beforeDate: '2026-08-03',
+        limit: 3,
+      );
+      expect(
+        page2.map((e) => e.learningDate).toList(),
+        ['2026-08-02', '2026-08-01'],
+      );
+
+      // 到底：空页（不是异常）
+      final page3 = await articleRepo.getDailyLearningInfosPage(
+        beforeDate: '2026-08-01',
+        limit: 3,
+      );
+      expect(page3, isEmpty);
     });
 
     test('阅读计时：addReadSeconds + tryMarkReadCompleted + force', () async {

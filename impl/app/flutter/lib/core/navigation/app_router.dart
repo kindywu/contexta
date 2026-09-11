@@ -24,6 +24,12 @@ import 'routes.dart';
 /// 进入 home 即离开 onboarding（路由表不保留 onboarding 子路由；
 /// Onboarding 完成时 context.go(home) 等价 popUpTo inclusive 清栈）。
 ///
+/// 启动落点（[isOnboarded] 非 null 时启用）：
+/// - 已引导 → `/onboarding` 重定向到 home，向导页**一帧都不渲染**。
+///   曾经的实现把跳过动作放在 OnboardingScreen 的 post-frame 回调里做异步
+///   查库，必然晚于首帧，已引导用户冷启动会闪一下向导页。
+/// - 未引导 / 查库失败 → 停留向导页。
+///
 /// 登录守卫（[authService] 非 null 时启用，服务端未配置 / 测试不启用）：
 /// - onboarding 不拦截（首次引导先于登录）
 /// - 状态 unknown → 先 ensureLoggedIn（本地 token 恢复 / 过期静默重登）
@@ -31,13 +37,16 @@ import 'routes.dart';
 /// - 已登录访问 /login → 回 from（校验后）/ 首页（登录成功回跳）
 /// 经 [_AuthRefreshListenable] 桥接为 GoRouter.refreshListenable：登录 /
 /// 登出 / 被踢状态变更时立即重估重定向，无需手动导航。
-GoRouter buildRouter({AuthService? authService}) {
+GoRouter buildRouter({
+  AuthService? authService,
+  Future<bool> Function()? isOnboarded,
+}) {
   return GoRouter(
     initialLocation: Routes.onboarding,
     refreshListenable: authService == null
         ? null
         : _AuthRefreshListenable(authService),
-    redirect: (context, state) => _authRedirect(authService, state),
+    redirect: (context, state) => _redirect(authService, isOnboarded, state),
     routes: [
       GoRoute(
         path: Routes.onboarding,
@@ -119,18 +128,29 @@ class _AuthRefreshListenable extends ChangeNotifier {
   }
 }
 
-/// 登录守卫（[auth] 为 null = 本地模式 / 测试，直接放行）。
+/// 启动落点 + 登录守卫（[auth] / [isOnboarded] 为 null = 本地模式 / 测试，
+/// 对应判定直接放行）。
 ///
-/// 裁定（2026-08 审查）：**未登录可浏览所有本地路由**（阅读/词汇/参考均
-/// 本地可用，唯一需登录的是同步与远程查词，各自有降级）——
+/// 顺序有意义：`/onboarding` 的已引导判定先于登录守卫——首次引导先于登录，
+/// 且这条分支不触发 ensureLoggedIn（引导期间不碰网络）。
+///
+/// 登录守卫裁定（2026-08 审查）：**未登录可浏览所有本地路由**（阅读/词汇/
+/// 参考均本地可用，唯一需登录的是同步与远程查词，各自有降级）——
 /// - loggedOut / unknown → 放行，不再重定向 /login；
 /// - evicted / banned → 清状态为 loggedOut（clearKickedStatus）后放行，
 ///   不强制重定向；登录页保持可达（首页横幅 / 按钮驱动）；
 /// - loggedIn 访问 /login → 回跳 from（校验：非空、以 / 开头、且非 /login，
 ///   防手工构造无限重定向循环），否则回首页。
-Future<String?> _authRedirect(AuthService? auth, GoRouterState state) async {
+Future<String?> _redirect(
+  AuthService? auth,
+  Future<bool> Function()? isOnboarded,
+  GoRouterState state,
+) async {
+  if (state.matchedLocation == Routes.onboarding) {
+    if (isOnboarded == null) return null;
+    return await _isOnboarded(isOnboarded) ? Routes.home : null;
+  }
   if (auth == null) return null;
-  if (state.matchedLocation == Routes.onboarding) return null;
   if (auth.status == AuthStatus.unknown) {
     // 启动 / 冷启动首跳：恢复本地登录态（读库快；过期静默重登失败也尽快落态）
     await auth.ensureLoggedIn();
@@ -154,4 +174,15 @@ Future<String?> _authRedirect(AuthService? auth, GoRouterState state) async {
     return validFrom ? from : Routes.home;
   }
   return null;
+}
+
+/// 查引导状态（容错）：读库失败时按「未引导」处理——留在向导页，
+/// 既不把异常抛进路由重定向（会中断导航），也不误跳进空首页。
+Future<bool> _isOnboarded(Future<bool> Function() read) async {
+  try {
+    return await read();
+  } catch (e) {
+    debugPrint('[router] 读取引导状态失败，停留向导页：$e');
+    return false;
+  }
 }

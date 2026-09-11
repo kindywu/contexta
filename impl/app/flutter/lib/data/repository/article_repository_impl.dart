@@ -45,8 +45,11 @@ class ArticleRepositoryImpl implements ArticleRepository {
   }
 
   @override
-  Future<List<DailyLearningInfo>> getAllDailyLearningInfos() async {
-    final reads = await _dailyLearningDao.getAll();
+  Future<List<DailyLearningInfo>> getDailyLearningInfosPage({
+    String? beforeDate,
+    required int limit,
+  }) async {
+    final reads = await _dailyLearningDao.getBefore(beforeDate, limit);
     final infos = <DailyLearningInfo>[];
     for (final read in reads) {
       final batch = await _batchDao.getById(read.refBatchId);

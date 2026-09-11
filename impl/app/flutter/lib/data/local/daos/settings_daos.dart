@@ -107,9 +107,20 @@ class DailyLearningDao {
 
   final AppDatabase _db;
 
-  Future<List<DailyLearningRow>> getAll() =>
-      (_db.select(_db.dailyLearnings)..orderBy([(t) => OrderingTerm.desc(t.learningDate)]))
-          .get();
+  /// 按 learning_date 降序取一批阅读记录（首页文章流分页用）。
+  ///
+  /// [beforeDate] 为 null 时从最新一条开始；非空时只取**严格早于**它的记录
+  /// （keyset 游标）。learning_date 是 ISO 日期文本，SQLite 的 TEXT 比较即
+  /// 字典序比较，与日期序一致。
+  Future<List<DailyLearningRow>> getBefore(String? beforeDate, int limit) {
+    final query = _db.select(_db.dailyLearnings)
+      ..orderBy([(t) => OrderingTerm.desc(t.learningDate)])
+      ..limit(limit);
+    if (beforeDate != null) {
+      query.where((t) => t.learningDate.isSmallerThanValue(beforeDate));
+    }
+    return query.get();
+  }
 
   Future<DailyLearningRow?> getLatest() =>
       (_db.select(_db.dailyLearnings)
