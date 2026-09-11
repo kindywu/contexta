@@ -3,11 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'data/background/sync_callback_dispatcher.dart';
+import 'core/platform/app_orientation.dart';
 import 'core/theme/app_theme.dart';
 import 'di/providers.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // 全局竖屏锁定（2026-09-11）：手机端不允许切横屏。原生侧
+  // （AndroidManifest screenOrientation / iOS Info.plist）已固定竖屏，
+  // 此处覆盖引擎启动后的运行期旋转，详见 docs/app-orientation.md。
+  await lockAppToPortrait();
   // 2026-08-14（计划 B Task 8）：workmanager 换每日同步任务——
   // 定时拉取服务端已审核文章（幂等 upsert）。首次任务延迟 2h
   // （启动编排已同步过，无需刚启动即重复）；之后每 24h 一次；
