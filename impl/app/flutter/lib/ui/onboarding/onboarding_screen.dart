@@ -5,59 +5,24 @@ import '../../core/components/app_button.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
-import '../../di/providers.dart';
 import 'onboarding_controller.dart';
 
 /// Onboarding 引导页（对照 Kotlin OnboardingScreen.kt）：
 /// 3 步向导（水平 → 每日篇数 → 确认），底部进度点 + 上一步/下一步按钮。
-/// 已引导用户自动跳过（对照 Kotlin LaunchedEffect isAlreadyOnboarded）。
-class OnboardingScreen extends ConsumerStatefulWidget {
+///
+/// 「已引导则跳过」的判定**不在这里**：由 router redirect 在首帧之前决定
+/// 落点（见 app_router.dart 的启动落点注释）。曾经的实现是本页在
+/// post-frame 回调里异步查库再跳首页，必然晚于首帧——已引导用户冷启动
+/// 会闪一下向导页。本页现在只在确实需要引导时被渲染，也不再自己等库就绪
+/// （数据库门禁由 MainApp 统一把守，本页渲染即意味着 DB 已就绪）。
+class OnboardingScreen extends ConsumerWidget {
   const OnboardingScreen({super.key, this.onComplete});
 
   /// 完成引导后的跳转回调（由路由层注入：context.go('/home')）。
   final VoidCallback? onComplete;
 
   @override
-  ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
-}
-
-class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
-  bool _checkedOnboarded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // 已引导用户自动跳首页——延迟到数据库就绪后检查（对照 Kotlin LaunchedEffect）
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _checkedOnboarded) return;
-      _checkedOnboarded = true;
-      _checkAlreadyOnboarded();
-    });
-  }
-
-  Future<void> _checkAlreadyOnboarded() async {
-    // 等待数据库就绪（databaseProvider 是 FutureProvider，hasValue=true 表示就绪）
-    final dbAsync = ref.read(databaseProvider);
-    if (!dbAsync.hasValue) return;
-    if (!mounted) return;
-    final onboarded = await ref
-        .read(onboardingControllerProvider.notifier)
-        .isAlreadyOnboarded();
-    if (!mounted) return;
-    if (onboarded) widget.onComplete?.call();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // 等待数据库就绪——若未就绪先建库，避免 downstream providers
-    // 在 AsyncLoading 上调用 .requireValue 抛 StateError
-    final dbAsync = ref.watch(databaseProvider);
-    if (!dbAsync.hasValue) {
-      return const Scaffold(
-        backgroundColor: AppColors.background,
-        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
-      );
-    }
+  Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(onboardingControllerProvider);
 
     return Scaffold(
@@ -149,7 +114,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                               controller.nextStep();
                             } else {
                               controller.completeOnboarding(
-                                  widget.onComplete ?? () {});
+                                  onComplete ?? () {});
                             }
                           },
                         ),

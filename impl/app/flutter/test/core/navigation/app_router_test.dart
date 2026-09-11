@@ -2,9 +2,12 @@ import 'package:contexta/core/components/bottom_nav_bar.dart';
 import 'package:contexta/core/navigation/app_router.dart';
 import 'package:contexta/core/navigation/routes.dart';
 import 'package:contexta/core/theme/app_colors.dart';
+import 'package:contexta/data/local/database.dart';
 import 'package:contexta/di/providers.dart';
 import 'package:contexta/domain/model/user_settings.dart';
 import 'package:contexta/domain/model/vocab_word.dart';
+import 'package:contexta/domain/model/tts_voice.dart';
+import 'package:contexta/domain/tts/tts_engine.dart';
 import 'package:contexta/data/remote/llm_api.dart';
 import 'package:contexta/domain/repository/article_repository.dart';
 import 'package:contexta/domain/repository/settings_repository.dart';
@@ -18,6 +21,7 @@ import 'package:contexta/ui/reading/reading_screen.dart';
 import 'package:contexta/ui/reference/reference_screen.dart';
 import 'package:contexta/ui/settings/settings_screen.dart';
 import 'package:contexta/ui/vocabulary/vocabulary_screen.dart';
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -74,6 +78,32 @@ class _FakeLlmApi implements LlmApi {
   @override
   dynamic noSuchMethod(Invocation invocation) => Future.value(null);
 }
+
+/// TTS 桩：reading/settings 页会 watch ttsEngineProvider，真实工厂在测试
+/// 环境会残留 Timer（"A Timer is still pending"）。
+class _TtsStub implements TtsEngine {
+  @override
+  bool isAvailable() => true;
+
+  @override
+  String? unavailabilityReason() => null;
+
+  @override
+  String? speak(String text, {double speed = 1.0, TtsVoice? voice}) => 'id';
+
+  @override
+  void stop() {}
+
+  @override
+  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
+
+  @override
+  void setOnParagraphStarted(
+    void Function(String? utteranceId, int paragraphIndex, int total)?
+        callback,
+  ) {}
+}
+
 void main() {
   late GoRouter router;
 
@@ -81,9 +111,16 @@ void main() {
     router = buildRouter();
   });
 
-  Future<void> pumpApp(WidgetTester tester) async {
+  /// 用指定 [r] 挂载 App（默认用 setUp 里的 router）。
+  Future<void> pumpWith(WidgetTester tester, GoRouter r) async {
+    // HomeScreen 的启动编排链（startupOrchestrationUseCase → syncArticles
+    // UseCase）直接对 databaseProvider 取 requireValue：用内存库避免打开
+    // 真实数据库。（空桩 settings 未引导 → 编排走 NeedsOnboarding 分支，
+    // 不触发同步 / 网络。）
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
     await tester.pumpWidget(ProviderScope(
       overrides: [
+        databaseProvider.overrideWith((ref) => db),
         // HomeScreen 已接入（Task 22）：避免触达真实数据库 provider
         articleRepositoryProvider.overrideWithValue(_FakeArticleRepo()),
         settingsRepositoryProvider.overrideWithValue(_FakeSettingsRepo()),
@@ -92,11 +129,15 @@ void main() {
         // Reading 查词（Task 24）：词库 + LLM 空桩
         wordRepositoryProvider.overrideWithValue(_FakeWordRepo()),
         llmApiProvider.overrideWithValue(_FakeLlmApi()),
+        // reading/settings 页会 watch TTS：真实工厂在测试环境残留 Timer
+        ttsEngineProvider.overrideWith((ref) async => _TtsStub()),
       ],
-      child: MaterialApp.router(routerConfig: router),
+      child: MaterialApp.router(routerConfig: r),
     ));
     await tester.pumpAndSettle();
   }
+
+  Future<void> pumpApp(WidgetTester tester) => pumpWith(tester, router);
 
   Future<void> go(WidgetTester tester, String path) async {
     router.go(path);
@@ -117,6 +158,29 @@ void main() {
       expect(find.text('Contexta'), findsOneWidget);
       expect(find.text('下一步'), findsOneWidget);
       expect(find.byType(BottomNavBar), findsNothing);
+    });
+  });
+
+  group('启动落点（已引导跳过向导）', () {
+    // 用户反馈：已登录（已引导）用户冷启动会闪一下向导页。原因是跳过动作
+    // 原本在 OnboardingScreen 的 post-frame 回调里做异步查库——必然晚于首帧。
+    // 修复后由 router redirect 在首帧前决定落点，向导页一次都不渲染。
+    testWidgets('已引导 → 直接落 home，向导页不渲染', (tester) async {
+      router = buildRouter(isOnboarded: () async => true);
+      await pumpWith(tester, router);
+
+      expect(find.byType(OnboardingScreen), findsNothing);
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(stackLocations(), [Routes.home]);
+    });
+
+    testWidgets('未引导 → 落在向导页', (tester) async {
+      router = buildRouter(isOnboarded: () async => false);
+      await pumpWith(tester, router);
+
+      expect(find.byType(OnboardingScreen), findsOneWidget);
+      expect(find.byType(HomeScreen), findsNothing);
+      expect(stackLocations(), [Routes.onboarding]);
     });
   });
 

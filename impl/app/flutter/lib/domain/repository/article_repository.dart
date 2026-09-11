@@ -24,8 +24,18 @@ abstract interface class ArticleRepository {
   /// 指定阅读日期已分配的批次。
   Future<ArticleBatch?> getAssignedBatchForDate(String readDate);
 
-  /// 所有阅读记录（含关联批次），按日期降序。
-  Future<List<DailyLearningInfo>> getAllDailyLearningInfos();
+  /// 分页读取阅读记录（含关联批次），按 `learning_date` 降序（最新在前）。
+  ///
+  /// [beforeDate] 为 null 时从最新一条开始；非空时只返回**严格早于**它的
+  /// 记录（keyset 分页游标：传上一页最后一条的 learningDate，游标当天不重复）。
+  /// 返回至多 [limit] 条，不到 [limit] 条即表示到底。
+  ///
+  /// 首页文章流按天分页加载用：判断「还有更多」由调用方传 `limit + 1` 取回后
+  /// 看是否多出一条 —— 避免额外的 COUNT 查询。
+  Future<List<DailyLearningInfo>> getDailyLearningInfosPage({
+    String? beforeDate,
+    required int limit,
+  });
 
   /// 将批次分配给今天（插入 daily_learning）。
   /// 返回是否成功插入（今天已有记录返回 false）。

@@ -118,8 +118,8 @@ void main() {
       await db.close();
     });
 
-    test('空表 getAll / getLatest 返回空', () async {
-      expect(await dao.getAll(), isEmpty);
+    test('空表 getBefore / getLatest 返回空', () async {
+      expect(await dao.getBefore(null, 10), isEmpty);
       expect(await dao.getLatest(), isNull);
     });
 
@@ -145,11 +145,36 @@ void main() {
         dailyCountSnapshot: 3,
       ));
 
-      final all = await dao.getAll();
+      final all = await dao.getBefore(null, 10);
       expect(all.map((r) => r.learningDate), ['2026-08-02', '2026-08-01']);
       expect((await dao.getLatest())!.learningDate, '2026-08-02');
       expect((await dao.getByLearningDate('2026-08-01'))!.learningDate, '2026-08-01');
       expect(await dao.getByLearningDate('2026-08-03'), isNull);
+    });
+
+    test('getBefore：limit 截断 + 游标严格早于（keyset 分页）', () async {
+      final batchId = await db.into(db.articleBatches).insert(ArticleBatchesCompanion.insert(
+            difficultyLevelSnapshot: 'LOW',
+            status: 'READY',
+            generatedOn: '2026-03-29',
+            lastUpdatedAt: isoOffsetDateTime(DateTime(2026, 3, 29, 12, 0)),
+          ));
+      for (final d in ['2026-08-01', '2026-08-02', '2026-08-03']) {
+        await dao.insert(DailyLearningsCompanion.insert(
+          learningDate: d,
+          refBatchDate: '2026-03-29',
+          refBatchId: batchId,
+          dailyCountSnapshot: 3,
+        ));
+      }
+
+      // 最新 2 条
+      final page1 = await dao.getBefore(null, 2);
+      expect(page1.map((r) => r.learningDate), ['2026-08-03', '2026-08-02']);
+
+      // 游标当天不重复返回
+      final page2 = await dao.getBefore('2026-08-02', 2);
+      expect(page2.map((r) => r.learningDate), ['2026-08-01']);
     });
 
     test('insert 同一天重复抛约束异常（learning_date 主键 ABORT）', () async {
@@ -174,7 +199,7 @@ void main() {
         )),
         throwsA(isA<SqliteException>()),
       );
-      expect((await dao.getAll()).length, 1);
+      expect((await dao.getBefore(null, 10)).length, 1);
     });
   });
 

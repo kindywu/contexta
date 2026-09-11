@@ -104,13 +104,20 @@ final authServiceProvider = StateNotifierProvider<AuthService, AuthState>((
   return service;
 });
 
-/// 应用路由（登录守卫：服务端配置且未登录 → /login 带来源回跳；
+/// 应用路由（启动落点：已引导 → 直接落首页不再渲染向导页；
+/// 登录守卫：服务端配置且未登录 → /login 带来源回跳；
 /// 登录成功（状态变更）经 refreshListenable 自动回跳）。
 final routerProvider = Provider<GoRouter>((ref) {
   final authService = ref.read(serverConfiguredProvider)
       ? ref.read(authServiceProvider.notifier)
       : null;
-  return buildRouter(authService: authService);
+  // DB 就绪由 MainApp 门禁保证（routerProvider 只在 databaseProvider 的
+  // data 分支被 watch），此处 requireValue 安全。
+  final settingsRepository = ref.read(settingsRepositoryProvider);
+  return buildRouter(
+    authService: authService,
+    isOnboarded: settingsRepository.isOnboarded,
+  );
 });
 
 /// 时间注入：ISO 偏移日期时间（与 Kotlin TimeProvider.nowDateTimeString 对齐）。

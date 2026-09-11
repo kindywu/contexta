@@ -29,23 +29,38 @@ import 'package:contexta/ui/home/home_screen.dart';
 /// - 三态：加载 / 生成中 EmptyState / 空态
 /// - refresh()：重跑同步编排 + 重载；下拉刷新接线
 
-/// 记录调用并转发给 [handler] 的 ArticleRepository 桩。
+/// ArticleRepository 桩：内存 keyset 分页（语义对齐 ArticleRepositoryImpl——
+/// learning_date 降序，beforeDate 为严格早于的游标）。
 class _FakeArticleRepo implements ArticleRepository {
-  _FakeArticleRepo({this.onAllDailyLearningInfos, this.onObserveArticles});
+  _FakeArticleRepo({this.infos = const [], this.observe});
 
-  final Future<List<DailyLearningInfo>> Function()? onAllDailyLearningInfos;
-  final Stream<List<Article>> Function(int batchId)? onObserveArticles;
+  /// 「库」里的阅读记录（顺序无关，读取时按 learning_date 降序排）。
+  List<DailyLearningInfo> infos;
+  Stream<List<Article>> Function(int batchId)? observe;
+
+  /// 每次分页请求的 (beforeDate, limit)——断言「首屏只请求一页」用。
+  final pageCalls = <(String?, int)>[];
 
   @override
-  Future<List<DailyLearningInfo>> getAllDailyLearningInfos() async {
-    final handler = onAllDailyLearningInfos;
-    if (handler != null) return handler();
-    return const [];
+  Future<List<DailyLearningInfo>> getDailyLearningInfosPage({
+    String? beforeDate,
+    required int limit,
+  }) async {
+    pageCalls.add((beforeDate, limit));
+    final sorted = [...infos]
+      ..sort((a, b) => b.learningDate.compareTo(a.learningDate));
+    var start = 0;
+    if (beforeDate != null) {
+      final idx = sorted.indexWhere((e) => e.learningDate == beforeDate);
+      if (idx < 0) return const [];
+      start = idx + 1;
+    }
+    return sorted.skip(start).take(limit).toList();
   }
 
   @override
   Stream<List<Article>> observeArticles(int batchId) {
-    final handler = onObserveArticles;
+    final handler = observe;
     if (handler != null) return handler(batchId);
     return const Stream.empty();
   }
@@ -184,12 +199,13 @@ class _NoopTimeProvider implements TimeProvider {
 
 Article makeArticle(
   int id, {
+  int batchId = 1,
   String category = 'NEWS',
   String? title,
   String? readAt,
 }) => Article(
   id: id,
-  batchId: 1,
+  batchId: batchId,
   orderIndex: 0,
   contentCategory: category,
   title: title,
@@ -206,6 +222,14 @@ String dateStr(int daysAgo) {
       '-${d.day.toString().padLeft(2, '0')}';
 }
 
+/// 分组日期标签（与 HomeController._dateLabelFor 语义一致：今天/昨天/日期）。
+String groupLabel(int daysAgo) {
+  if (daysAgo == 0) return '今天';
+  if (daysAgo == 1) return '昨天';
+  final d = DateTime.now().subtract(Duration(days: daysAgo));
+  return '${d.year}年${d.month}月${d.day}日';
+}
+
 DailyLearningInfo makeInfo(int daysAgo, int dailyCount) => DailyLearningInfo(
   learningDate: dateStr(daysAgo),
   dailyCountSnapshot: dailyCount,
@@ -218,6 +242,34 @@ DailyLearningInfo makeInfo(int daysAgo, int dailyCount) => DailyLearningInfo(
     articles: const [],
   ),
 );
+
+/// 第 [daysAgo] 天的阅读记录，批次 id 独立（分页测试需要按批次给不同文章）。
+DailyLearningInfo makeInfoAt(int daysAgo, int batchId) => DailyLearningInfo(
+  learningDate: dateStr(daysAgo),
+  dailyCountSnapshot: 3,
+  batch: ArticleBatch(
+    id: batchId,
+    status: BatchStatus.ready,
+    difficultyLevelSnapshot: 'MEDIUM',
+    generatedOn: dateStr(daysAgo),
+    lastUpdatedAt: '2026-08-07T12:00:00+08:00',
+    articles: const [],
+  ),
+);
+
+/// 给桩仓储灌 [days] 天记录（批次 id = daysAgo + 1），每天 1 篇 MEDIUM 文章。
+/// [articlesForBatch] 可覆盖某天的文章（返回空列表 = 该天没有可展示文章）。
+void _seedDays(
+  _FakeArticleRepo repo,
+  int days, {
+  List<Article> Function(int batchId)? articlesForBatch,
+}) {
+  repo.infos = [for (var i = 0; i < days; i++) makeInfoAt(i, i + 1)];
+  repo.observe = (batchId) => Stream.value(
+    articlesForBatch?.call(batchId) ??
+        [makeArticle(batchId * 100, batchId: batchId)],
+  );
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -250,8 +302,8 @@ void main() {
   group('controller', () {
     test('Ready：加载完成，文章按难度过滤 + 今天分组 + streak 传递', () async {
       articleRepo = _FakeArticleRepo(
-        onAllDailyLearningInfos: () async => [makeInfo(0, 3)],
-        onObserveArticles: (_) => Stream.value([
+        infos: [makeInfo(0, 3)],
+        observe: (_) => Stream.value([
           makeArticle(11, category: 'NEWS', title: '今日新闻'),
           makeArticle(12, category: 'SIMPLE_STORY', title: '简单故事'),
           makeArticle(
@@ -286,8 +338,8 @@ void main() {
     test('NeedsLogin：本地文章照常加载（横幅由 home_screen 按登录态显示）', () async {
       startupResult = const StartupNeedsLogin();
       articleRepo = _FakeArticleRepo(
-        onAllDailyLearningInfos: () async => [makeInfo(0, 3)],
-        onObserveArticles: (_) =>
+        infos: [makeInfo(0, 3)],
+        observe: (_) =>
             Stream.value([makeArticle(11, category: 'NEWS', title: '新闻')]),
       );
       final container = makeContainer();
@@ -303,8 +355,8 @@ void main() {
     test('同步失败（Ready(0)）：历史文章仍可读，不阻塞首页', () async {
       startupResult = const StartupReady(syncedBatches: 0);
       articleRepo = _FakeArticleRepo(
-        onAllDailyLearningInfos: () async => [makeInfo(1, 3)],
-        onObserveArticles: (_) =>
+        infos: [makeInfo(1, 3)],
+        observe: (_) =>
             Stream.value([makeArticle(21, category: 'NEWS', title: '昨天新闻')]),
       );
       final container = makeContainer();
@@ -336,8 +388,8 @@ void main() {
         ),
       );
       articleRepo = _FakeArticleRepo(
-        onAllDailyLearningInfos: () async => [currentInfo],
-        onObserveArticles: (batchId) => Stream.value(
+        infos: [currentInfo],
+        observe: (batchId) => Stream.value(
           batchId == 7
               ? [makeArticle(31, category: 'NEWS', title: '同步批次文章')]
               : const [],
@@ -369,8 +421,8 @@ void main() {
       );
       articleRepo = _FakeArticleRepo(
         // 今天 + 昨天两条记录；今天批次（id=1）文章流为空（生成中）
-        onAllDailyLearningInfos: () async => [makeInfo(0, 3), yesterdayInfo],
-        onObserveArticles: (batchId) => Stream.value(
+        infos: [makeInfo(0, 3), yesterdayInfo],
+        observe: (batchId) => Stream.value(
           batchId == 1
               ? const []
               : [makeArticle(21, category: 'NEWS', title: '昨天新闻')],
@@ -391,8 +443,8 @@ void main() {
 
     test('今天组有文章 → isGenerating=false', () async {
       articleRepo = _FakeArticleRepo(
-        onAllDailyLearningInfos: () async => [makeInfo(0, 3)],
-        onObserveArticles: (_) =>
+        infos: [makeInfo(0, 3)],
+        observe: (_) =>
             Stream.value([makeArticle(11, category: 'NEWS', title: '新闻')]),
       );
       final container = makeContainer();
@@ -407,8 +459,8 @@ void main() {
     test('refresh：重跑同步编排 + 重载文章流', () async {
       final orch = _StubStartupOrch(const StartupReady(syncedBatches: 2));
       articleRepo = _FakeArticleRepo(
-        onAllDailyLearningInfos: () async => [makeInfo(0, 3)],
-        onObserveArticles: (_) =>
+        infos: [makeInfo(0, 3)],
+        observe: (_) =>
             Stream.value([makeArticle(11, category: 'NEWS', title: '刷新新闻')]),
       );
       final container = makeContainer(orch: orch);
@@ -423,6 +475,87 @@ void main() {
       final state = container.read(homeControllerProvider);
       expect(state.isLoading, isFalse);
       expect(state.articleGroups.single.articles.single.title, '刷新新闻');
+    });
+
+    test('首屏只加载 3 个批次（页大小），且标记还有更多', () async {
+      _seedDays(articleRepo, 5);
+      final container = makeContainer();
+      await container.read(homeControllerProvider.notifier).load();
+
+      final state = container.read(homeControllerProvider);
+      expect(state.articleGroups.length, 3);
+      expect(state.hasMore, isTrue);
+      expect(state.isLoadingMore, isFalse);
+      // 只请求一页（页大小 3 + 1 条探测），不是全部历史
+      expect(articleRepo.pageCalls, [(null, 4)]);
+    });
+
+    test('loadMore：按游标追加下一页；到底后不再请求', () async {
+      _seedDays(articleRepo, 5);
+      final container = makeContainer();
+      final controller = container.read(homeControllerProvider.notifier);
+      await controller.load();
+
+      await controller.loadMore();
+
+      final state = container.read(homeControllerProvider);
+      expect(state.articleGroups.length, 5);
+      expect(state.hasMore, isFalse);
+      expect(state.isLoadingMore, isFalse);
+      // 第二页用第 1 页最后一条日期作 keyset 游标（游标当天不重复取）
+      expect(articleRepo.pageCalls.last, (dateStr(2), 4));
+      expect(
+        state.articleGroups.map((g) => g.dateLabel).toList(),
+        [for (var i = 0; i < 5; i++) groupLabel(i)],
+      );
+
+      final calls = articleRepo.pageCalls.length;
+      await controller.loadMore();
+      expect(articleRepo.pageCalls.length, calls, reason: '到底后不再请求');
+    });
+
+    test('回前台重载：保留已加载窗口（不截断回第 1 页）', () async {
+      _seedDays(articleRepo, 5);
+      final container = makeContainer();
+      final controller = container.read(homeControllerProvider.notifier);
+      await controller.load();
+      await controller.loadMore();
+      expect(container.read(homeControllerProvider).articleGroups.length, 5);
+
+      await controller.reloadWindow();
+
+      final state = container.read(homeControllerProvider);
+      expect(state.articleGroups.length, 5, reason: '用户滚到的页不能被截断');
+      expect(state.hasMore, isFalse);
+    });
+
+    test('toggleDateGroup：日期分组折叠/展开', () async {
+      _seedDays(articleRepo, 1);
+      final container = makeContainer();
+      final controller = container.read(homeControllerProvider.notifier);
+      await controller.load();
+
+      expect(container.read(homeControllerProvider).collapsedDates, isEmpty);
+      controller.toggleDateGroup('今天');
+      expect(container.read(homeControllerProvider).collapsedDates, {'今天'});
+      controller.toggleDateGroup('今天');
+      expect(container.read(homeControllerProvider).collapsedDates, isEmpty);
+    });
+
+    test('首屏分组全空但还有更早记录 → 自动补页（不静默空态）', () async {
+      // 今天未分配；最近 3 天有记录但批次里没有可展示文章，第 4 天有
+      articleRepo.infos = [for (var i = 1; i <= 4; i++) makeInfoAt(i, i)];
+      articleRepo.observe = (batchId) => Stream.value(
+        batchId == 4 ? [makeArticle(400, batchId: 4)] : const [],
+      );
+      final container = makeContainer();
+      await container.read(homeControllerProvider.notifier).load();
+
+      final state = container.read(homeControllerProvider);
+      expect(state.articleGroups.length, 1, reason: '补页把有内容的那天取回来了');
+      expect(state.articleGroups.single.dateLabel, groupLabel(4));
+      expect(state.hasMore, isFalse);
+      expect(state.isGenerating, isFalse, reason: '有内容可展示就不该显示同步中');
     });
   });
 
@@ -444,8 +577,8 @@ void main() {
 
     testWidgets('今天已分配但文章为空 → 同步中 EmptyState', (tester) async {
       articleRepo = _FakeArticleRepo(
-        onAllDailyLearningInfos: () async => [makeInfo(0, 3)],
-        onObserveArticles: (_) => Stream.value(const []),
+        infos: [makeInfo(0, 3)],
+        observe: (_) => Stream.value(const []),
       );
       final container = makeContainer();
       await pumpHome(tester, container);
@@ -464,8 +597,8 @@ void main() {
     testWidgets('streak>0 显示胶囊', (tester) async {
       statsRepo = _FakeStatsRepo(streak: 3);
       articleRepo = _FakeArticleRepo(
-        onAllDailyLearningInfos: () async => [makeInfo(0, 3)],
-        onObserveArticles: (_) =>
+        infos: [makeInfo(0, 3)],
+        observe: (_) =>
             Stream.value([makeArticle(11, category: 'NEWS', title: '新闻')]),
       );
       final container = makeContainer();
@@ -476,8 +609,8 @@ void main() {
 
     testWidgets('streak=0 不显示胶囊', (tester) async {
       articleRepo = _FakeArticleRepo(
-        onAllDailyLearningInfos: () async => [makeInfo(0, 3)],
-        onObserveArticles: (_) =>
+        infos: [makeInfo(0, 3)],
+        observe: (_) =>
             Stream.value([makeArticle(11, category: 'NEWS', title: '新闻')]),
       );
       final container = makeContainer();
@@ -488,8 +621,8 @@ void main() {
 
     testWidgets('点击文章卡片触发 onArticleClick', (tester) async {
       articleRepo = _FakeArticleRepo(
-        onAllDailyLearningInfos: () async => [makeInfo(0, 3)],
-        onObserveArticles: (_) =>
+        infos: [makeInfo(0, 3)],
+        observe: (_) =>
             Stream.value([makeArticle(11, category: 'NEWS', title: '今日新闻')]),
       );
       final container = makeContainer();
@@ -502,8 +635,8 @@ void main() {
     testWidgets('下拉刷新触发 refresh（同步编排重跑 + 重载）', (tester) async {
       final orch = _StubStartupOrch(const StartupReady(syncedBatches: 1));
       articleRepo = _FakeArticleRepo(
-        onAllDailyLearningInfos: () async => [makeInfo(0, 3)],
-        onObserveArticles: (_) =>
+        infos: [makeInfo(0, 3)],
+        observe: (_) =>
             Stream.value([makeArticle(11, category: 'NEWS', title: '新闻')]),
       );
       final container = makeContainer(orch: orch);
@@ -526,5 +659,65 @@ void main() {
 
       expect(orch.calls, 2);
     });
+
+    testWidgets('点击日期头折叠该组文章，再点展开', (tester) async {
+      articleRepo = _FakeArticleRepo(
+        infos: [makeInfo(0, 3)],
+        observe: (_) => Stream.value([makeArticle(11, title: '今日新闻')]),
+      );
+      final container = makeContainer();
+      await pumpHome(tester, container);
+
+      expect(find.text('今日新闻'), findsOneWidget);
+
+      // 回归：原实现的 _expanded 只换图标，文章列永远渲染 → 点了没反应
+      await tester.tap(find.text('今天'));
+      await tester.pumpAndSettle();
+      expect(find.text('今日新闻'), findsNothing, reason: '折叠后不再渲染文章列');
+
+      await tester.tap(find.text('今天'));
+      await tester.pumpAndSettle();
+      expect(find.text('今日新闻'), findsOneWidget);
+    });
+
+    testWidgets('列表底部：没有更多时提示「没有更多文章了」', (tester) async {
+      _seedDays(articleRepo, 2);
+      final container = makeContainer();
+      await pumpHome(tester, container);
+
+      expect(find.text('没有更多文章了'), findsOneWidget);
+      expect(find.text('上拉加载更多'), findsNothing);
+    });
+
+    testWidgets('滑到底部哨兵自动补下一页（还有更多 → hasMore 保持 true）',
+        (tester) async {
+      // 20 天保证一屏滚不完：首屏若未填满，底部哨兵可见会立即续取，
+      // 所以这里不假设「静止时恰好 3 天」（那是 controller 测试的断言）
+      _seedDays(articleRepo, 20, articlesForBatch: _threeArticles);
+      final container = makeContainer();
+      await pumpHome(tester, container);
+
+      final before = container.read(homeControllerProvider).articleGroups.length;
+      expect(container.read(homeControllerProvider).hasMore, isTrue);
+      expect(find.text('没有更多文章了'), findsNothing);
+
+      await tester.drag(
+        find.byType(CustomScrollView),
+        const Offset(0, -3000),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(homeControllerProvider).articleGroups.length,
+        greaterThan(before),
+        reason: '滑到底部哨兵出现 → 自动取下一页',
+      );
+    });
   });
 }
+
+/// 某个批次的 3 篇文章（首页每日展示上限 = dailyCountSnapshot = 3）。
+List<Article> _threeArticles(int batchId) => [
+  for (var i = 1; i <= 3; i++)
+    makeArticle(batchId * 10 + i, batchId: batchId, title: 'B$batchId-$i'),
+];

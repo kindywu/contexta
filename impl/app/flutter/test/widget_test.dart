@@ -1,3 +1,4 @@
+import 'package:contexta/data/local/database.dart';
 import 'package:contexta/di/providers.dart';
 import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
@@ -5,6 +6,7 @@ import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/usecase/activate_seed_batch_usecase.dart';
 import 'package:contexta/main.dart';
 import 'package:contexta/ui/onboarding/onboarding_screen.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -64,8 +66,12 @@ class _FakeActivateSeedBatch implements ActivateSeedBatchUseCase {
 void main() {
   testWidgets('App 启动渲染 Onboarding（MaterialApp.router + 主题接入）',
       (tester) async {
+    // MainApp 以 databaseProvider 为整棵树的门禁（未就绪只渲染 spinner）：
+    // 用内存库顶掉真实库打开，否则永远停在 loading、pumpAndSettle 超时。
+    final db = AppDatabase.forTesting(NativeDatabase.memory());
     await tester.pumpWidget(ProviderScope(
       overrides: [
+        databaseProvider.overrideWith((ref) => db),
         settingsRepositoryProvider.overrideWithValue(_FakeSettingsRepo()),
         activateSeedBatchUseCaseProvider.overrideWithValue(
             _FakeActivateSeedBatch()),
