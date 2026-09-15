@@ -329,12 +329,19 @@ flowchart TD
   4. `ensureReviewRows` —— 补齐 success 槽位的待审行。
 
 - **并发安全**：槽位级进程锁（`review_service` `slotLocks`）保证同槽 error 补跑与审核重生成串行；引擎侧 `usedUrls` 集合在单轮 run 内共享，拦截并行槽位重复抓取同一来源。
-- **手动补生成**：`POST /api/admin/articles/generate`（严格 ISO 校验）走同一 `generateDailyArticles` + `ensureReviewRows`；错过的日期 / 收口批次的 error 槽位均可手动处置。
-- **通知（每日生成报告，`services/feishu_notify.ts`）**：每轮 `runFill` 结束与手动 `generate` 后（含整体抛错）→ `notifyDailyResult` 发飞书交互卡片——
-  - **内容**：执行日期（配置时区）、**本轮**起止时刻与耗时（`startedAt`/`endedAt`，非批次表时间——多次补跑场景批次时间失真）、成功/失败/拒绝/待定计数、失败槽位明细（`batch_slots.error_message`，单行截断 120 字符；旧数据无原因 → 占位"详见运行日志"）、批次状态；**未收口**（running / 无批次）时附运行步骤错误（runFill 四步 catch 文本）；
-  - **卡片状态**：绿 = `completed` 全成功；红 = 有失败；橙 = 未收口；
-  - **纪律**：通知失败仅记日志**绝不抛**（不中断生成流程）；`FEISHU_WEBHOOK_URL` / `FEISHU_WEBHOOK_SECRET` 任缺 → 静默跳过；按 `runDate` 进程内**去重**（当日只发第一条，发送成功才记账——同日手动补跑不再刷屏）；
+- **手动补生成**：`POST /api/admin/articles/generate`（严格 ISO 校验）走同一 `generateDailyArticles` + `ensureReviewRows`，并经同一 `withDailyRunReport` 上报（开始卡 / 结束卡）；错过的日期 / 收口批次的 error 槽位均可手动处置。
+- **运行上报（`services/run_report.ts`；一次运行 = 两条消息）**：`withDailyRunReport(runDate, run)` 包住整日运行——**查余额 → 发开始卡 → 跑 → 查余额 → 发结束卡**；每日窗口 `runFill` 与管理端手动 `generate` 共用这一处实现（缺省 `defaultRunReport` 由两份 cfg 构造）。卡片渲染与发送在 `services/feishu_notify.ts`。
+  - **开始卡**（`notifyDailyStart`，蓝）：执行日期、开始时刻、**运行前余额**；
+  - **结束卡**（`notifyDailyResult`）：**本轮**起止时刻与耗时（`startedAt`/`endedAt`，非批次表时间——多次补跑场景批次时间失真）、成功/失败/拒绝/待定计数、失败槽位明细（`batch_slots.error_message`，单行截断 120 字符；旧数据无原因 → 占位"详见运行日志"）、批次状态、**本次成本**；**未收口**（running / 无批次）时附运行步骤错误（runFill 四步 catch 文本）。卡片状态：绿 = `completed` 全成功、红 = 有失败、橙 = 未收口；
+  - **"有开始必有结束"**：运行抛错时**也发结束卡**（stepErrors 记抛错）再向上重抛——因此"只收到开始卡、没有结束卡"即等价于本次运行卡死，这是人工比对的判定依据；
+  - **纪律**：通知与余额查询的任何失败**仅记日志绝不抛**（`safeNotify` 兜底——通知故障不得变成生成故障）；`FEISHU_WEBHOOK_URL` / `FEISHU_WEBHOOK_SECRET` 任缺 → 静默跳过；按 **`${runDate}:${phase}`** 进程内**去重**（start / end / alert 各记一条，发送成功才记账——同日手动补跑不再刷屏）；
   - **签名**：自定义机器人算法 `base64(HMAC-SHA256(key = \`${timestamp}\n${secret}\`))`，payload `timestamp`（秒级字符串）与签名一致；5s 超时。
+- **余额与成本（`services/llm_balance.ts`）**：`GET <LLM_BASE_URL>/user/balance`（复用 `LLM_API_KEY`，5s 超时）；`total_balance` 是字符串 → 转 number；多币种优先取 CNY。**任何失败一律返回 null**（网络 / 非 200 / 非 JSON / 字段缺失），渲染为"未知"——余额查询绝不阻断生成（每次整日运行 2 次调用）。
+  - **成本口径 = 运行前后余额差**：下降 → `本次成本 ≈ ¥0.42（3.65 → 3.23）`；**未变 → 标"计费约 5 分钟延迟尚未结算"**（DeepSeek 计费存在延迟，不假装本次免费）；上升 → 标"多为充值"；余额未知 → "未知"。
+  - **低余额提醒**：低于 `LOW_BALANCE_THRESHOLD`（1 元）→ **两条卡都**附"余额不足 ¥1，请立即充值（当前 ¥0.83）"；余额未知**不误报**。
+- **未收口告警（`services/daily_alert.ts`，独立看门狗）**：**不挂在生成循环上的第二条 async 链**——每日窗口结束 + `ALERT_GRACE_MINUTES`（60 分钟；正常一轮约 3 分钟）检查当天批次：**不存在** 或 **仍 running** → 发"未收口"告警卡（`notifyDailyUnclosed`，橙，按日去重）。
+  - **存在意义（2026-09-12 事故）**：`DailyTask.loop` 是 `await runFill`，站点抓取层一旦**永久挂起**（`Bun.WebView` 调用链无超时——CDP 双向对锁，进程仍健康），循环与结束卡一起静默：9-13/14/15 三天无生成、无日志、无通知，第四天才由人工发现。看门狗不依赖主循环是否活着（事件循环仍健康），卡死也照发。
+  - 只告警**不自动恢复**（恢复仍由人工决定：重启容器）；进程启动时若已过检查点会立即补查一次（重启当天即告警）。
 - **日志**：`[daily-task]` 编排行与引擎 `log()` 同走 `logs/daily-<日期>.log`（7 天轮转，只进文件不进 stdout）；服务侧日志见 `services/server_log.ts`——通用日志 `logs/server-<日期>.log`（+stdout），请求访问日志按面分流 `logs/app-<日期>.log`（手机端）/ `logs/admin-<日期>.log`（管理端），stdout 中 app 青色 / admin 品红。
 
 ## 9. 时区纪律（部署关键约束）

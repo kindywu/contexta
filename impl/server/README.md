@@ -30,7 +30,7 @@ bun run src/main.ts
 ## 测试
 
 ```bash
-bun test tests/*.test.ts              # 顶层确定性子集：113 用例，全绿
+bun test tests/*.test.ts              # 顶层确定性子集：220 用例，全绿
 bun test                              # 全量（含 tests/engine/）：218 用例
 bunx tsc --noEmit -p tsconfig.json   # 类型校验（bun run typecheck）
 ```
@@ -62,7 +62,9 @@ impl/server/
     auth.ts / jwt.ts           # 认证提取器（封禁/会话/角色）/ JWT 签发校验（App 30d、admin 12h）
     response.ts                # 统一 envelope（{code,message,error_code}）+ ApiError 工厂
     routers/                   # HTTP 层：health / auth / llm / articles / admin
-    services/                  # 业务层：auth / llm（查词网关）/ admin / admin_articles / review（审核状态机）/ article_delivery（投放）/ article_reader（投放映射）/ daily_task（每日任务）
+    services/                  # 业务层：auth / llm（查词网关）/ admin / admin_articles / review（审核状态机）/ article_delivery（投放）/ article_reader（投放映射）
+                               #          daily_task（每日任务编排）/ run_report（整轮上报：余额+开始/结束卡）/ feishu_notify（飞书卡片）
+                               #          llm_balance（DeepSeek 余额）/ daily_alert（未收口看门狗，独立于生成循环）
     llm/                       # 查词网关侧：retry（callWithRetry + driverChat）/ prompt / lookup_parser
     engine/                    # 文章生成引擎（LangGraph 图 + graph/daily 编排 + sites 抓取 + render + CLIs）
   admin-ui/                    # Vue3 + antd 管理页（构建产物 dist/ 随仓库提交，服务端静态托管）

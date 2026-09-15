@@ -11,7 +11,7 @@ import { loadServerConfig, type ServerConfig } from "../src/config";
 import { loadConfig, type AppConfig } from "../src/engine/config";
 import { createBatchAndSlots, ensureSchema, insertArticleWithParagraphs, listSlots, writeSlotResult } from "../src/engine/db";
 import { adminRouter, type GenDailyFn } from "../src/routers/admin";
-import type { DailyNotifyArgs } from "../src/services/feishu_notify";
+import type { RunReportFn } from "../src/services/run_report";
 import { approveArticle } from "../src/services/review_service";
 import { todayStartMillis } from "../src/time";
 import type { ArticleResult, GeneratedArticle } from "../src/engine/graph/state";
@@ -131,7 +131,7 @@ async function buildApp(
   opts: {
     gen?: (args: GenArgs) => Promise<ArticleResult>;
     genDaily?: GenDailyFn;
-    notify?: (args: DailyNotifyArgs) => Promise<void>;
+    report?: RunReportFn;
   } = {},
 ) {
   const db = new Database(":memory:");
@@ -140,7 +140,14 @@ async function buildApp(
   await seedAdminIfNeeded(db, "admin", "pw-123456");
   const dir = mkdtempSync(join(tmpdir(), "admin-"));
   const engineCfg = testEngineCfg(dir);
-  const app = adminRouter(db, cfg, engineCfg, opts);
+  const app = adminRouter(db, cfg, engineCfg, {
+    // 缺省上报 seam = 只跑回调：测试绝不触碰余额接口/飞书（真实现 = defaultRunReport）
+    report: async (_runDate, run) => {
+      const r = await run();
+      return { startedAt: new Date(), endedAt: new Date(), stepErrors: r.stepErrors };
+    },
+    ...opts,
+  });
   return { db, app, engineCfg };
 }
 
@@ -953,18 +960,20 @@ describe("admin articles generate", () => {
     expect(r.status).toBe("pending_review");
   });
 
-  test("合法日期生成成功 → notify seam 被调（runDate/起止/无 stepErrors）", async () => {
+  test("合法日期生成成功 → report seam 被调（runDate + 无 stepErrors）", async () => {
     const genDaily: GenDailyFn = async () => ({
       runDate: RUN_DATE,
       total: 0,
       results: [],
       summary: { success: 0, rejected: 0, error: 0 },
     });
-    const notifyCalls: DailyNotifyArgs[] = [];
-    const notify = async (a: DailyNotifyArgs) => {
-      notifyCalls.push(a);
+    const reportCalls: { runDate: string; stepErrors: string[] }[] = [];
+    const report: RunReportFn = async (runDate, run) => {
+      const r = await run();
+      reportCalls.push({ runDate, stepErrors: r.stepErrors });
+      return { startedAt: new Date(), endedAt: new Date(), stepErrors: r.stepErrors };
     };
-    const { app } = await buildApp({ genDaily, notify });
+    const { app } = await buildApp({ genDaily, report });
     const tok = await adminToken(app);
 
     const res = await app.request("/api/admin/articles/generate", {
@@ -973,21 +982,20 @@ describe("admin articles generate", () => {
       body: JSON.stringify({ date: RUN_DATE }),
     });
     expect(res.status).toBe(200);
-    expect(notifyCalls).toHaveLength(1);
-    expect(notifyCalls[0]!.runDate).toBe(RUN_DATE);
-    expect(notifyCalls[0]!.stepErrors).toEqual([]);
-    expect(notifyCalls[0]!.endedAt.getTime()).toBeGreaterThanOrEqual(notifyCalls[0]!.startedAt.getTime());
+    expect(reportCalls).toEqual([{ runDate: RUN_DATE, stepErrors: [] }]);
   });
 
-  test("genDaily 抛错 → notify 也被调（stepErrors 记录抛错）+ 请求仍 500", async () => {
+  test("genDaily 抛错 → report seam 仍被进入（包内发结束卡）+ 请求 500", async () => {
     const genDaily: GenDailyFn = async () => {
       throw new Error("LLM 网关挂了");
     };
-    const notifyCalls: DailyNotifyArgs[] = [];
-    const notify = async (a: DailyNotifyArgs) => {
-      notifyCalls.push(a);
+    let entered = false;
+    const report: RunReportFn = async (_runDate, run) => {
+      entered = true;
+      const r = await run(); // 抛错向上传播（真包装在这里发结束卡后重抛，见 run_report 测试）
+      return { startedAt: new Date(), endedAt: new Date(), stepErrors: r.stepErrors };
     };
-    const { app } = await buildApp({ genDaily, notify });
+    const { app } = await buildApp({ genDaily, report });
     const tok = await adminToken(app);
 
     const res = await app.request("/api/admin/articles/generate", {
@@ -996,8 +1004,7 @@ describe("admin articles generate", () => {
       body: JSON.stringify({ date: RUN_DATE }),
     });
     expect(res.status).toBe(500);
-    expect(notifyCalls).toHaveLength(1);
-    expect(notifyCalls[0]!.stepErrors![0]).toContain("LLM 网关挂了");
+    expect(entered).toBe(true);
   });
 });
 

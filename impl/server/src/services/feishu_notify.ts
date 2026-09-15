@@ -1,10 +1,13 @@
 // src/services/feishu_notify.ts
-// 每日生成完成 → 飞书群机器人通知（自定义 Webhook + 签名签体）：
-// - 触发：每日窗口 runFill 后 / 管理端手动 generate 后（触发点在 daily_task 与 admin.ts）
-// - 内容：执行日期/起止时间/耗时、成功与失败/拒绝/待定计数、失败槽位真实原因、
-//   批次状态；批次未收口（收口 = status != running）时附运行步骤错误
+// 每日运行 → 飞书群机器人通知（自定义 Webhook + 签名签体）：一次运行两条消息 + 一条独立告警。
+// - 触发：每日窗口 runFill / 管理端手动 generate（触发点在 run_report.ts 的包装里）；
+//   告警由 daily_alert.ts 的独立看门狗触发（不依赖生成循环是否活着）
+// - 开始卡（notifyDailyStart）：执行日期、开始时刻、运行前余额（低余额时附充值提醒）
+// - 结束卡（notifyDailyResult）：起止/耗时、成功与失败/拒绝/待定计数、失败槽位真实原因、
+//   批次状态、本次成本（运行前后余额差；未收口时附运行步骤错误）
+// - 未收口告警（notifyDailyUnclosed）：窗口结束仍未收口/无批次——"有开始没结束"的自动判定
 // - 纪律：通知任何失败只记日志绝不抛——通知永不中断生成流程；未配置 webhook 静默跳过；
-//   按 runDate 去重（进程内当日只发第一条，发送成功才记账）
+//   按 `${runDate}:${phase}` 去重（进程内每条只发一次，发送成功才记账）
 // - 签名：自定义机器人签名算法——base64(HMAC-SHA256(key = `${timestamp}\n${secret}`))，
 //   timestamp 为秒级字符串且 payload 内 timestamp 必须与签名一致
 import { createHmac } from "node:crypto";
@@ -13,6 +16,11 @@ import type { ServerConfig } from "../config";
 import type { AppConfig } from "../engine/config";
 import { getBatch, listSlots } from "../engine/db";
 import { log } from "../engine/graph/log";
+import {
+  isLowBalance,
+  LOW_BALANCE_THRESHOLD,
+  type BalanceSnapshot,
+} from "./llm_balance";
 
 /** 通知入参（触发点统一口径）：本次运行的起止时刻 + 运行内部步骤错误。 */
 export interface DailyNotifyArgs {
@@ -21,6 +29,37 @@ export interface DailyNotifyArgs {
   endedAt: Date;
   /** 运行步骤错误（引擎生成/pending 恢复/补跑/审核行补齐的 catch 文本）；批次未收口时展示 */
   stepErrors?: string[];
+  /** 运行前余额快照（缺省/null = 未查询或查询失败 → 成本未知） */
+  balanceBefore?: BalanceSnapshot | null;
+  /** 运行后余额快照（充值提醒依据） */
+  balanceAfter?: BalanceSnapshot | null;
+}
+
+/** 通知阶段：同日最多三条（start/end/alert），去重键 = `${runDate}:${phase}`。 */
+export type NotifyPhase = "start" | "end" | "alert";
+
+/** 开始卡入参。 */
+export interface DailyStartArgs {
+  runDate: string;
+  startedAt: Date;
+  /** 运行前余额（null = 查询失败，卡片如实标注） */
+  balanceBefore: BalanceSnapshot | null;
+}
+
+/** 未收口告警入参（看门狗触发）。 */
+export interface DailyAlertArgs {
+  runDate: string;
+  /** 检查时刻（配置时区渲染） */
+  checkedAt: Date;
+  /** 检查时的批次状态：getBatch 的 status，无批次传 "none" */
+  batchStatus: string;
+}
+
+/** 本次运行成本（余额差；currency 取运行后快照）。 */
+export interface DailyCost {
+  currency: string;
+  before: number;
+  after: number;
 }
 
 /** 通知函数 seam（DailyTask/admin 注入假实现；缺省 = notifyDailyResult 闭包）。 */
@@ -38,7 +77,7 @@ export interface FeishuNotifyCtx {
   notified?: Set<string>;
 }
 
-/** 模块级去重（进程生命周期内同日只发第一条；发送成功才记账）。 */
+/** 模块级去重（进程生命周期内每条只发一次；键 = `${runDate}:${phase}`；发送成功才记账）。 */
 export const notifiedDates = new Set<string>();
 
 /** 飞书自定义机器人签名：base64(HMAC-SHA256(key = `${timestamp}\n${secret}`))。 */
@@ -96,6 +135,10 @@ export interface DailyRunReport {
     reason: string;
   }>;
   stepErrors: string[];
+  /** 本次运行成本（余额差）；任一侧余额缺失 → null（渲染为"未知"） */
+  cost: DailyCost | null;
+  /** 运行后余额快照（渲染低余额提醒）；未知 → null */
+  balanceAfter: BalanceSnapshot | null;
 }
 
 export function buildDailyReport(db: Database, args: DailyNotifyArgs, timeZone: string): DailyRunReport {
@@ -114,9 +157,13 @@ export function buildDailyReport(db: Database, args: DailyNotifyArgs, timeZone: 
       attempts: s.attempts,
       reason: s.errorMessage ?? "原因未持久化（详见运行日志）",
     }));
+  const before = args.balanceBefore ?? null;
+  const after = args.balanceAfter ?? null;
   return {
     runDate: args.runDate,
     timeZone,
+    cost: before && after ? { currency: after.currency, before: before.total, after: after.total } : null,
+    balanceAfter: after,
     startedAt: args.startedAt,
     endedAt: args.endedAt,
     durationMs: Math.max(0, args.endedAt.getTime() - args.startedAt.getTime()),
@@ -145,9 +192,12 @@ export function buildDailyCard(report: DailyRunReport): Record<string, unknown> 
     `**开始**：${formatTime(report.startedAt, report.timeZone)}　**结束**：${formatTime(report.endedAt, report.timeZone)}　**耗时**：${formatDuration(report.durationMs)}`,
     `**结果**：成功 ${report.success}/${report.totalSlots} · 失败 ${report.error + report.rejected}（error ${report.error} / rejected ${report.rejected}）· 待定 ${report.pending}`,
   ];
+  lines.push(`**${formatCostLine(report.cost)}**`);
   const elements: Record<string, unknown>[] = [
     { tag: "div", text: { tag: "lark_md", content: lines.join("\n") } },
   ];
+  const warn = lowBalanceWarning(report.balanceAfter);
+  if (warn) elements.push({ tag: "div", text: { tag: "lark_md", content: warn } });
   if (report.failures.length > 0) {
     const detail = report.failures
       .map(
@@ -202,29 +252,145 @@ export async function sendFeishu(
   }
 }
 
+/** 统一发送器（非抛）：未配置 webhook / 该阶段已发 → 跳过；发送成功才记账。
+ * 卡片与成功日志明细都惰性构造（未配置时不做无用功）。 */
+async function notifyOnce(
+  ctx: FeishuNotifyCtx,
+  phase: NotifyPhase,
+  runDate: string,
+  label: string,
+  build: () => { card: Record<string, unknown>; detail: string },
+): Promise<void> {
+  const { serverCfg } = ctx;
+  if (!serverCfg.feishuWebhookUrl || !serverCfg.feishuWebhookSecret) {
+    log(`[feishu-notify] ${runDate} 未配置 FEISHU_WEBHOOK_URL/FEISHU_WEBHOOK_SECRET，跳过${label}`);
+    return;
+  }
+  const notified = ctx.notified ?? notifiedDates;
+  const key = `${runDate}:${phase}`;
+  if (notified.has(key)) {
+    log(`[feishu-notify] ${runDate} ${label}已发送过，跳过（去重）`);
+    return;
+  }
+  try {
+    const { card, detail } = build();
+    await sendFeishu(ctx, serverCfg.feishuWebhookUrl, serverCfg.feishuWebhookSecret, card);
+    notified.add(key);
+    log(`[feishu-notify] ${runDate} ${label}已发送${detail ? `（${detail}）` : ""}`);
+  } catch (err) {
+    log(
+      `[feishu-notify] ${runDate} ${label}发送失败（不影响生成流程）: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+/** 开始卡（一次运行的第一条消息）：看到它却看不到结束卡 = 本次运行没跑完。 */
+export function buildStartCard(args: DailyStartArgs, timeZone: string): Record<string, unknown> {
+  const lines = [
+    `**执行日期**：${args.runDate}（${timeZone}）`,
+    `**开始**：${formatTime(args.startedAt, timeZone)}`,
+    `**运行前余额**：${formatBalance(args.balanceBefore)}`,
+  ];
+  const elements: Record<string, unknown>[] = [
+    { tag: "div", text: { tag: "lark_md", content: lines.join("\n") } },
+  ];
+  const warn = lowBalanceWarning(args.balanceBefore);
+  if (warn) elements.push({ tag: "div", text: { tag: "lark_md", content: warn } });
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "blue", title: { tag: "plain_text", content: `🚀 每日生成开始 · ${args.runDate}` } },
+    elements,
+  };
+}
+
+/** 未收口告警卡（看门狗触发）：窗口结束仍未收口 → 明确"有开始没结束"。 */
+export function buildAlertCard(args: DailyAlertArgs, timeZone: string): Record<string, unknown> {
+  const reason =
+    args.batchStatus === "none"
+      ? "当天批次不存在（生成从未开始，或批次已被清理）"
+      : `当天批次仍未收口（status=${args.batchStatus}）`;
+  const lines = [
+    `**执行日期**：${args.runDate}（${timeZone}）`,
+    `**检查时刻**：${formatTime(args.checkedAt, timeZone)}`,
+    `**状态**：${reason}`,
+  ];
+  const elements: Record<string, unknown>[] = [
+    { tag: "div", text: { tag: "lark_md", content: lines.join("\n") } },
+    { tag: "hr" },
+    {
+      tag: "div",
+      text: {
+        tag: "lark_md",
+        content:
+          "本告警由**独立看门狗**发出（不依赖生成循环是否活着）。若收到开始卡却没收到结束卡，即为本次生成卡死——请检查服务器。",
+      },
+    },
+  ];
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "orange", title: { tag: "plain_text", content: `⚠️ 每日生成未收口 · ${args.runDate}` } },
+    elements,
+  };
+}
+
+/** 开始卡发送（非抛）。 */
+export async function notifyDailyStart(ctx: FeishuNotifyCtx, args: DailyStartArgs): Promise<void> {
+  await notifyOnce(ctx, "start", args.runDate, "开始通知", () => ({
+    card: buildStartCard(args, ctx.engineCfg.timezone),
+    detail: "",
+  }));
+}
+
+/** 未收口告警发送（非抛）。 */
+export async function notifyDailyUnclosed(ctx: FeishuNotifyCtx, args: DailyAlertArgs): Promise<void> {
+  await notifyOnce(ctx, "alert", args.runDate, "未收口告警", () => ({
+    card: buildAlertCard(args, ctx.engineCfg.timezone),
+    detail: `批次状态 ${args.batchStatus}`,
+  }));
+}
+
+/** 余额渲染（null = 查询失败）。 */
+export function formatBalance(b: BalanceSnapshot | null): string {
+  return b === null ? "查询失败" : `${currencyPrefix(b.currency)}${b.total.toFixed(2)}`;
+}
+
+/**
+ * 本次成本行。余额差是唯一口径：下降 = 成本；未变 = 计费延迟（约 5 分钟）尚未结算，
+ * 不假装本次免费；上升多为运行期间充值；余额未知则如实标"未知"。
+ */
+export function formatCostLine(cost: DailyCost | null): string {
+  if (cost === null) return "本次成本：未知（余额查询失败）";
+  const p = currencyPrefix(cost.currency);
+  const before = cost.before.toFixed(2);
+  const after = cost.after.toFixed(2);
+  if (cost.after > cost.before) return `本次成本：—（余额增加 ${before} → ${after}，多为充值）`;
+  if (cost.after === cost.before) {
+    return `本次成本 ≈ ${p}0.00（${before} → ${after}，计费约 5 分钟延迟尚未结算）`;
+  }
+  return `本次成本 ≈ ${p}${(cost.before - cost.after).toFixed(2)}（${before} → ${after}）`;
+}
+
+/** 低余额提醒文案；未低/未知 → null（查询失败不误报）。 */
+export function lowBalanceWarning(b: BalanceSnapshot | null): string | null {
+  if (b === null || !isLowBalance(b)) return null;
+  return `⚠️ 余额不足 ${currencyPrefix(b.currency)}${LOW_BALANCE_THRESHOLD}（当前 ${formatBalance(b)}），请立即充值`;
+}
+
+/** 货币前缀：CNY → ¥，其余用币种代码（避免给非人民币账户标错符号）。 */
+function currencyPrefix(currency: string): string {
+  return currency === "CNY" ? "¥" : `${currency} `;
+}
+
 /**
  * 每日运行结束后的通知入口（非抛）：未配置 webhook / 当日已发 → 跳过；
  * 发送成功才记账。任何失败仅记日志（通知不得中断生成流程）。
  */
 export async function notifyDailyResult(ctx: FeishuNotifyCtx, args: DailyNotifyArgs): Promise<void> {
-  const { serverCfg, db, engineCfg } = ctx;
-  if (!serverCfg.feishuWebhookUrl || !serverCfg.feishuWebhookSecret) {
-    log(`[feishu-notify] ${args.runDate} 未配置 FEISHU_WEBHOOK_URL/FEISHU_WEBHOOK_SECRET，跳过通知`);
-    return;
-  }
-  const notified = ctx.notified ?? notifiedDates;
-  if (notified.has(args.runDate)) {
-    log(`[feishu-notify] ${args.runDate} 今日已发送过，跳过（去重）`);
-    return;
-  }
-  const report = buildDailyReport(db, args, engineCfg.timezone);
-  try {
-    await sendFeishu(ctx, serverCfg.feishuWebhookUrl, serverCfg.feishuWebhookSecret, buildDailyCard(report));
-    notified.add(args.runDate);
-    log(
-      `[feishu-notify] ${args.runDate} 通知已发送（成功 ${report.success}/${report.totalSlots}，失败 ${report.error + report.rejected}）`,
-    );
-  } catch (err) {
-    log(`[feishu-notify] ${args.runDate} 通知发送失败（不影响生成流程）: ${err instanceof Error ? err.message : String(err)}`);
-  }
+  await notifyOnce(ctx, "end", args.runDate, "结束通知", () => {
+    const report = buildDailyReport(ctx.db, args, ctx.engineCfg.timezone);
+    return {
+      card: buildDailyCard(report),
+      detail: `成功 ${report.success}/${report.totalSlots}，失败 ${report.error + report.rejected}`,
+    };
+  });
 }
