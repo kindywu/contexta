@@ -10,17 +10,24 @@ import { ensureServerSchema } from "../src/db";
 import { loadConfig, type AppConfig } from "../src/engine/config";
 import { loadServerConfig, type ServerConfig } from "../src/config";
 import {
+  buildAlertCard,
   buildDailyCard,
   buildDailyReport,
+  buildStartCard,
+  formatCostLine,
   formatDuration,
   formatTime,
+  lowBalanceWarning,
   notifyDailyResult,
+  notifyDailyStart,
+  notifyDailyUnclosed,
   sendFeishu,
   signFeishu,
   truncateLine,
   type DailyNotifyArgs,
   type FeishuNotifyCtx,
 } from "../src/services/feishu_notify";
+import type { BalanceSnapshot } from "../src/services/llm_balance";
 import type { SlotStatus } from "../src/engine/db";
 
 const TZ = "Asia/Shanghai";
@@ -271,7 +278,7 @@ describe("notifyDailyResult（编排：跳过/去重/非抛）", () => {
     await notifyDailyResult(ctx, args());
     await notifyDailyResult(ctx, args()); // 同日第二次 → 去重
     expect(calls).toHaveLength(1);
-    expect(notified.has(RUN_DATE)).toBe(true);
+    expect(notified.has(`${RUN_DATE}:end`)).toBe(true);
     const payload = calls[0]!.payload;
     expect(payload.msg_type).toBe("interactive");
     expect(JSON.stringify(payload.card)).toContain("LLM 超时");
@@ -300,5 +307,161 @@ describe("notifyDailyResult（编排：跳过/去重/非抛）", () => {
     const { fn } = fakeFetch([], { ok: true, code: 19001, msg: "bad" });
     const ctx = notifyCtx({ fetch: fn });
     await expect(notifyDailyResult(ctx, args())).resolves.toBeUndefined();
+  });
+});
+
+// ───────────────────────── 余额 / 开始卡 / 告警卡（新增） ─────────────────────────
+
+/** 余额快照构造器（at 固定，断言可精确）。 */
+const snap = (total: number, currency = "CNY"): BalanceSnapshot => ({ currency, total, at: FIXED_TIME });
+
+describe("formatCostLine（本次成本渲染）", () => {
+  test("余额下降 → 成本 = 差值，括号内给出前后余额", () => {
+    expect(formatCostLine({ currency: "CNY", before: 3.65, after: 3.23 })).toBe(
+      "本次成本 ≈ ¥0.42（3.65 → 3.23）",
+    );
+  });
+  test("余额未变 → 标注计费延迟尚未结算（不假装本次免费）", () => {
+    const line = formatCostLine({ currency: "CNY", before: 3.23, after: 3.23 });
+    expect(line).toContain("¥0.00");
+    expect(line).toContain("延迟");
+  });
+  test("余额增加 → 标注多为充值，且不出现负数成本", () => {
+    const line = formatCostLine({ currency: "CNY", before: 3.23, after: 13.23 });
+    expect(line).toContain("充值");
+    expect(line).not.toContain("-");
+  });
+  test("余额未知（查询失败）→ 成本未知", () => {
+    expect(formatCostLine(null)).toContain("未知");
+  });
+  test("非 CNY 币种 → 用币种代码而非 ¥", () => {
+    const line = formatCostLine({ currency: "USD", before: 1, after: 0.9 });
+    expect(line).toContain("USD");
+    expect(line).not.toContain("¥");
+  });
+});
+
+describe("lowBalanceWarning（低余额提醒）", () => {
+  test("低于阈值 → 文案含阈值与当前余额", () => {
+    const w = lowBalanceWarning(snap(0.83));
+    expect(w).toContain("充值");
+    expect(w).toContain("¥1");
+    expect(w).toContain("0.83");
+  });
+  test("达标或未知 → null（查不到余额不误报）", () => {
+    expect(lowBalanceWarning(snap(1))).toBeNull();
+    expect(lowBalanceWarning(snap(50))).toBeNull();
+    expect(lowBalanceWarning(null)).toBeNull();
+  });
+});
+
+describe("buildStartCard（开始卡）", () => {
+  test("含日期 / 开始时刻（配置时区）/ 运行前余额", () => {
+    const card = buildStartCard(
+      { runDate: RUN_DATE, startedAt: FIXED_TIME, balanceBefore: snap(3.23) },
+      TZ,
+    ) as Record<string, any>;
+    expect(card.header.title.content).toContain(RUN_DATE);
+    const text = JSON.stringify(card.elements);
+    expect(text).toContain("08:10:12"); // FIXED_TIME = 00:10:12Z → Asia/Shanghai
+    expect(text).toContain("3.23");
+  });
+  test("余额低于阈值 → 带充值提醒", () => {
+    const card = buildStartCard(
+      { runDate: RUN_DATE, startedAt: FIXED_TIME, balanceBefore: snap(0.83) },
+      TZ,
+    ) as Record<string, any>;
+    expect(JSON.stringify(card.elements)).toContain("充值");
+  });
+  test("余额未知 → 如实显示查询失败，不编造数字", () => {
+    const card = buildStartCard(
+      { runDate: RUN_DATE, startedAt: FIXED_TIME, balanceBefore: null },
+      TZ,
+    ) as Record<string, any>;
+    const text = JSON.stringify(card.elements);
+    expect(text).toContain("查询失败");
+    expect(text).not.toContain("充值");
+  });
+});
+
+describe("buildAlertCard（未收口告警卡）", () => {
+  const CHECKED = new Date("2026-09-09T01:15:00Z"); // 09:15:00 Asia/Shanghai
+  test("无批次 → 指明批次不存在", () => {
+    const card = buildAlertCard({ runDate: RUN_DATE, checkedAt: CHECKED, batchStatus: "none" }, TZ) as Record<string, any>;
+    expect(card.header.title.content).toContain(RUN_DATE);
+    const text = JSON.stringify(card.elements);
+    expect(text).toContain("09:15:00");
+    expect(text).toContain("不存在");
+  });
+  test("批次仍 running → 指明未收口", () => {
+    const card = buildAlertCard({ runDate: RUN_DATE, checkedAt: CHECKED, batchStatus: "running" }, TZ) as Record<string, any>;
+    const text = JSON.stringify(card.elements);
+    expect(text).toContain("未收口");
+    expect(text).toContain("running");
+  });
+});
+
+describe("notifyDailyStart / notifyDailyUnclosed（编排：记账与去重按阶段）", () => {
+  test("开始卡与结束卡互不干扰：各发一条、各自记账、各自去重", async () => {
+    const { fn, calls } = fakeFetch([], { ok: true, code: 0, msg: "success" });
+    const notified = new Set<string>();
+    const ctx = notifyCtx({ fetch: fn, notified });
+    seedDay(ctx.db, [{ status: "success" }]);
+    const startArgs = { runDate: RUN_DATE, startedAt: FIXED_TIME, balanceBefore: snap(3.23) };
+
+    await notifyDailyStart(ctx, startArgs);
+    await notifyDailyResult(ctx, args());
+    expect(calls).toHaveLength(2);
+    expect(notified.has(`${RUN_DATE}:start`)).toBe(true);
+    expect(notified.has(`${RUN_DATE}:end`)).toBe(true);
+
+    await notifyDailyStart(ctx, startArgs); // 已发过 → 去重
+    await notifyDailyResult(ctx, args());
+    expect(calls).toHaveLength(2);
+  });
+  test("未配置 webhook → 开始卡与告警卡都静默跳过", async () => {
+    const { fn, calls } = fakeFetch([], { ok: true, code: 0, msg: "success" });
+    const ctx = notifyCtx({
+      serverCfg: serverCfg({ FEISHU_WEBHOOK_URL: "", FEISHU_WEBHOOK_SECRET: "" }),
+      fetch: fn,
+    });
+    await notifyDailyStart(ctx, { runDate: RUN_DATE, startedAt: FIXED_TIME, balanceBefore: null });
+    await notifyDailyUnclosed(ctx, { runDate: RUN_DATE, checkedAt: FIXED_TIME, batchStatus: "none" });
+    expect(calls).toHaveLength(0);
+  });
+  test("告警卡发送失败 → 不抛（看门狗不得因通知失败而中断）", async () => {
+    const fn = (async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+    const ctx = notifyCtx({ fetch: fn, notified: new Set() });
+    await expect(
+      notifyDailyUnclosed(ctx, { runDate: RUN_DATE, checkedAt: FIXED_TIME, batchStatus: "running" }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("notifyDailyResult 的余额扩展（成本进结束卡）", () => {
+  test("传入前后余额 → 结束卡含本次成本", async () => {
+    const { fn, calls } = fakeFetch([], { ok: true, code: 0, msg: "success" });
+    const ctx = notifyCtx({ fetch: fn });
+    seedDay(ctx.db, [{ status: "success" }]);
+    await notifyDailyResult(ctx, args({ balanceBefore: snap(3.65), balanceAfter: snap(3.23) }));
+    const text = JSON.stringify(calls[0]!.payload.card);
+    expect(text).toContain("本次成本");
+    expect(text).toContain("0.42");
+  });
+  test("余额低于阈值 → 结束卡带充值提醒", async () => {
+    const { fn, calls } = fakeFetch([], { ok: true, code: 0, msg: "success" });
+    const ctx = notifyCtx({ fetch: fn });
+    seedDay(ctx.db, [{ status: "success" }]);
+    await notifyDailyResult(ctx, args({ balanceBefore: snap(1.5), balanceAfter: snap(0.83) }));
+    expect(JSON.stringify(calls[0]!.payload.card)).toContain("充值");
+  });
+  test("未传余额（缺省）→ 结束卡标成本未知，不崩", async () => {
+    const { fn, calls } = fakeFetch([], { ok: true, code: 0, msg: "success" });
+    const ctx = notifyCtx({ fetch: fn });
+    seedDay(ctx.db, [{ status: "success" }]);
+    await notifyDailyResult(ctx, args());
+    expect(JSON.stringify(calls[0]!.payload.card)).toContain("未知");
   });
 });

@@ -25,6 +25,7 @@ import { authRouter } from "./routers/auth";
 import { healthRouter } from "./routers/health";
 import { llmRouter } from "./routers/llm";
 import { DailyTask } from "./services/daily_task";
+import { DailyAlertWatchdog } from "./services/daily_alert";
 import { initServerLog, serverError, serverLog } from "./services/server_log";
 
 /** dist 缺失时的占位文案（Task 12 构建出 admin-ui/dist 后即真页面）。 */
@@ -161,6 +162,8 @@ export async function main(): Promise<void> {
 
   // 6) 每日任务后台启动（窗口触发定时循环：启动不生成文章，错过窗口即跳过）
   new DailyTask({ db, engineCfg, serverCfg: cfg }).start();
+  // 未收口看门狗（独立于生成循环的第二条链）：窗口结束 + 60min 仍未收口 → 飞书告警
+  new DailyAlertWatchdog({ db, engineCfg, serverCfg: cfg }).start();
 
   // 7) 优雅退出：SIGINT/SIGTERM → server.stop() + exit(0)；二次信号强制退出
   let shuttingDown = false;

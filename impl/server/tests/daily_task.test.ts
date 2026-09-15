@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadServerConfig } from "../src/config";
 import { ensureServerSchema } from "../src/db";
-import type { DailyNotifyArgs } from "../src/services/feishu_notify";
+import type { RunReportFn } from "../src/services/run_report";
 import { loadConfig, type AppConfig } from "../src/engine/config";
 import type { ArticleResult } from "../src/engine/graph/state";
 import {
@@ -51,7 +51,17 @@ function makeCtx(overrides: Partial<DailyTaskCtx> = {}) {
     checkpointPath: join(tmpdir(), "dt-cp.sqlite"),
     outputDir: join(tmpdir(), "dt-out"),
   };
-  const ctx: DailyTaskCtx = { db, engineCfg, serverCfg, ...overrides };
+  const ctx: DailyTaskCtx = {
+    db,
+    engineCfg,
+    serverCfg,
+    // 缺省上报 seam = 只跑回调：测试绝不触碰余额接口/飞书（真实现 = defaultRunReport）
+    report: async (_runDate, run) => {
+      const r = await run();
+      return { startedAt: new Date(), endedAt: new Date(), stepErrors: r.stepErrors };
+    },
+    ...overrides,
+  };
   return { db, serverCfg, engineCfg, ctx };
 }
 
@@ -268,22 +278,22 @@ describe("daily_task loop（窗口触发 + 三态判定）", () => {
     expect(sleeps[0]).toBe(dayStart + 480 * 60_000 + 86_400_000 - fixedNow.getTime());
   });
 
-  test("窗口内 runFill 完成后 → notify seam 被调（起止时刻 + stepErrors 传递）", async () => {
+  test("窗口内 runFill 完成后 → report seam 被调（runDate + stepErrors 透传）", async () => {
     const fixedNow = new Date(2026, 8, 2, 8, 10, 0);
     const sleeps: number[] = [];
     const f = recorders();
-    const notifyCalls: DailyNotifyArgs[] = [];
-    const notify = async (a: DailyNotifyArgs) => {
-      notifyCalls.push(a);
+    const reportCalls: { runDate: string; stepErrors: string[] }[] = [];
+    const report: RunReportFn = async (runDate, run) => {
+      const r = await run();
+      reportCalls.push({ runDate, stepErrors: r.stepErrors });
+      return { startedAt: fixedNow, endedAt: fixedNow, stepErrors: r.stepErrors };
     };
-    const { ctx } = makeCtx({ ...f, now: () => fixedNow, sleep: stopLoopSleep(sleeps), notify });
+    const { ctx } = makeCtx({ ...f, now: () => fixedNow, sleep: stopLoopSleep(sleeps), report });
 
     await expect(new DailyTask(ctx).loop()).rejects.toThrow("stop-loop");
 
-    // 每轮运行结束都通知；假 seam 全成功 → stepErrors 为空
-    expect(notifyCalls).toEqual([
-      { runDate: RUN_DATE, startedAt: fixedNow, endedAt: fixedNow, stepErrors: [] },
-    ]);
+    // 每轮运行结束都上报（开始卡/结束卡在包装内）；假 seam 全成功 → stepErrors 为空
+    expect(reportCalls).toEqual([{ runDate: RUN_DATE, stepErrors: [] }]);
   });
 
   test("未到窗口（07:00）→ 先睡到今日窗口开始，不触发生成", async () => {

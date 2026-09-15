@@ -10,8 +10,9 @@
 // - 单步失败仅记日志（走引擎 log() → logs/daily-<date>.log，服务进程内不输出到 web stdout；
 //   CLI 场景 console 保留），不中断后续步骤与整个 fill
 // - 槽位级去重：error 补跑与审核重生成共用 Task 7 的进程锁（同槽串行）
-// - 收尾通知：每轮 runFill 结束发每日生成报告（成功/失败/未收口均发；通知只记日志不抛，
-//   未配置飞书 webhook 静默跳过——见 services/feishu_notify.ts）
+// - 收尾上报：每轮 runFill 由 services/run_report 包装统一发出"开始卡 + 结束卡（含本次成本）"，
+//   通知/余额查询只记日志不抛，未配置飞书 webhook 静默跳过；"有开始没结束"的告警
+//   由 services/daily_alert 的独立看门狗负责（与本循环无关，卡死也能告警）
 // 测试注入：genDaily/retryFailed/reRun/ensure/now/sleep 全部可替换（见 DailyTaskCtx）。
 import type { Database } from "bun:sqlite";
 import { DEFAULT_LOG_DIR, formatWindow, type DailyWindow, type ServerConfig } from "../config";
@@ -22,7 +23,7 @@ import { cleanupOldLogs, log } from "../engine/graph/log";
 import { localDate } from "../engine/utils/time";
 import { todayStartMillis } from "../time";
 import { ensureReviewRows, retrySlot, type GenFn } from "./review_service";
-import { notifyDailyResult, type DailyNotifyFn } from "./feishu_notify";
+import { defaultRunReport, type RunReportFn } from "./run_report";
 
 /** 每日生成/重试 seam 入参（引擎 generateDailyArticles / retryFailedSlots 的子集）。 */
 export interface DailyGenArgs {
@@ -66,8 +67,8 @@ export interface DailyTaskCtx {
   now?: () => Date;
   /** 定时器注入：缺省 Bun.sleep（测试假 sleep 不真等） */
   sleep?: (ms: number) => Promise<void>;
-  /** 每轮运行结束后的通知 seam：缺省 notifyDailyResult（飞书报告；仅记日志不抛） */
-  notify?: DailyNotifyFn;
+  /** 整轮上报 seam：缺省 defaultRunReport（查余额 + 开始卡 + 结束卡；仅记日志不抛） */
+  report?: RunReportFn;
 }
 
 /** 单轮 fill 结果：起止时刻 + 运行内部步骤错误（未收口时随报告展示）。 */
@@ -110,7 +111,7 @@ export class DailyTask {
   private readonly retryFailed: DailyGenFn;
   private readonly reRun: DailyReRunFn;
   private readonly ensure: typeof ensureReviewRows;
-  private readonly notify: DailyNotifyFn;
+  private readonly report: RunReportFn;
   private readonly now: () => Date;
   private readonly sleep: (ms: number) => Promise<void>;
 
@@ -122,9 +123,7 @@ export class DailyTask {
       ctx.retryFailed ?? ((args) => retryFailedSlots({ runDate: args.runDate, config: args.config }));
     this.reRun = ctx.reRun ?? ((c, s) => retrySlot(c, s));
     this.ensure = ctx.ensure ?? ensureReviewRows;
-    this.notify =
-      ctx.notify ??
-      ((args) => notifyDailyResult({ db: ctx.db, serverCfg: ctx.serverCfg, engineCfg: ctx.engineCfg }, args));
+    this.report = ctx.report ?? defaultRunReport(ctx.db, ctx.serverCfg, ctx.engineCfg);
     this.now = ctx.now ?? (() => new Date());
     this.sleep = ctx.sleep ?? ((ms) => Bun.sleep(ms));
   }
@@ -145,7 +144,19 @@ export class DailyTask {
   }
 
   private async runFillInner(date: string): Promise<FillOutcome> {
-    const startedAt = this.now();
+    // 上报包装（services/run_report）：查余额 → 开始卡 → 跑 → 查余额 → 结束卡（含本次成本）。
+    // 通知与余额查询的任何异常都不影响生成——通知故障不得变成生成故障。
+    const outcome = await this.report(date, async () => ({ stepErrors: await this.runSteps(date) }));
+    return {
+      runDate: date,
+      startedAt: outcome.startedAt,
+      endedAt: outcome.endedAt,
+      stepErrors: outcome.stepErrors,
+    };
+  }
+
+  /** 一轮运行的四个步骤（错误只收集不抛）：引擎生成 → pending 恢复 → error 槽补跑 → 审核行补齐。 */
+  private async runSteps(date: string): Promise<string[]> {
     const stepErrors: string[] = [];
     try {
       await this.genDaily({ runDate: date, config: this.ctx.engineCfg });
@@ -184,7 +195,7 @@ export class DailyTask {
       stepErrors.push(`审核行补齐失败: ${text}`);
       log(`[daily-task] ${date} 审核行补齐失败: ${text}`);
     }
-    return { runDate: date, startedAt, endedAt: this.now(), stepErrors };
+    return stepErrors;
   }
 
   /**
@@ -210,14 +221,7 @@ export class DailyTask {
       if (isDailyBatchFinished(this.ctx.db, date)) {
         log(`[daily-task] ${date} 批次已收口，跳过本轮生成`);
       } else {
-        const outcome = await this.runFill(date);
-        // 每轮运行结束都通知（成功/失败/未收口均发；通知自身不抛，见 feishu_notify）
-        await this.notify({
-          runDate: outcome.runDate,
-          startedAt: outcome.startedAt,
-          endedAt: outcome.endedAt,
-          stepErrors: outcome.stepErrors,
-        });
+        await this.runFill(date); // 上报（开始卡/结束卡/本次成本）在 runFill 内部完成
       }
       cleanupOldLogs(DEFAULT_LOG_DIR, 7, tz); // 每日一次：清理 7 天前的旧日志
       await this.sleep(nextTriggerWaitMs(this.now(), w, tz)); // 睡到明日窗口（见函数注释）

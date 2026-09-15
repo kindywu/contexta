@@ -35,7 +35,7 @@ cp .env.example .env   # 本地开发：填入 LLM_API_KEY 与 JWT_SECRET
 | `DAILY_GENERATE_WINDOW` | `08:00-08:15` | `HH:MM-HH:MM`（开始必须早于结束） | 每日生成窗口（配置时区当日）：窗口内任意时刻触发，窗口内只生成**当天** 15 篇；错过窗口（进程不在/重启晚于窗口）**跳过不补不重试**——便于本地测试可直接改小/改后 |
 | `LLM_TIMEOUT_SECS` | `90` | 正 int | 查词链 LLM 调用硬预算（含 4 次尝试与退避等待；超预算 504 LLM_TIMEOUT） |
 | `REGENERATE_LIMIT` | `3` | 正 int | 单槽位拒绝补生成上限：同槽累计 rejected ≥ 上限 → `rejected_final` 不再自动补 |
-| `FEISHU_WEBHOOK_URL` | 空（不发） | URL（或空串） | 飞书群**自定义机器人** Webhook（每日生成完成通知，详见架构文档 §8）：与 `FEISHU_WEBHOOK_SECRET` **两项都配置才发送**，任一为空 → 静默跳过（compose 未注入时 `${VAR:-}` 空串自动归一为未配置）；生产经 GHA Secret 注入（同 §3.1，不落 .env），本地测试可临时填入 `.env` |
+| `FEISHU_WEBHOOK_URL` | 空（不发） | URL（或空串） | 飞书群**自定义机器人** Webhook（每日运行**开始/结束两条**通知 + 未收口告警，详见架构文档 §8）：与 `FEISHU_WEBHOOK_SECRET` **两项都配置才发送**，任一为空 → 静默跳过（compose 未注入时 `${VAR:-}` 空串自动归一为未配置）；生产经 GHA Secret 注入（同 §3.1，不落 .env），本地测试可临时填入 `.env` |
 | `FEISHU_WEBHOOK_SECRET` | 空（不发） | string | 机器人签名密钥（机器人"安全设置 → 签名校验"）；与 `FEISHU_WEBHOOK_URL` 配套；生产经 GHA Secret 注入（同 §3.1） |
 
 ## 2. 云主机选型
