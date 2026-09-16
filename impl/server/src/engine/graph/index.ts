@@ -2,6 +2,7 @@ import { loadConfig, type AppConfig } from "../config";
 import type { Category, Difficulty } from "../schema";
 import type { SiteEntry } from "../sites";
 import { byCategory } from "../sites.config";
+import { setBrowserConcurrency } from "../sites/common";
 import { createLLM, type LLM } from "../llm";
 import { BunSqliteCheckpointer } from "./checkpointer";
 import { buildArticleGraph } from "./graph";
@@ -74,6 +75,9 @@ export async function generateArticle(
 ): Promise<ArticleResult> {
   const cfg = args.config ?? loadConfig();
   const llm = args.llm ?? createLLM(cfg);
+  // 浏览器并发闸：抓取层（sites/common）是模块级状态，每次进入生成时按配置对齐
+  // （BROWSER_CONCURRENCY，缺省 2）——限制同时打开的 Bun.WebView 视图数。
+  setBrowserConcurrency(cfg.browserConcurrency);
   const sitesByCategory = byCategory;
   const threadId = args.threadId ?? `manual-${args.runDate}-${Date.now()}`;
   const checkpointer = new BunSqliteCheckpointer(cfg.checkpointPath);
