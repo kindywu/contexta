@@ -22,7 +22,7 @@ cp .env.example .env   # 本地开发：填入 LLM_API_KEY 与 JWT_SECRET
 | `DB_PATH` | `./data/pipeline.sqlite`（`.env.example` 设 `./data/contexta.db`） | string | 业务库：引擎 4 表 + 服务端表 + `article_review` 同库；父目录启动时自动创建 |
 | `CHECKPOINT_PATH` | `./data/langgraph.sqlite` | string | LangGraph 检查点库（独立文件；**首次部署需放置可写空文件/目录**，见 §3.5） |
 | `OUTPUT_DIR` | `./output` | string | 生成文章的 Markdown 落盘目录（文件名 `run_date-category-<ts>.md`） |
-| `BROWSER_CONCURRENCY` | `2` | 正 int | **保留配置**：当前引擎按"每槽一次图运行"执行，站点抓取（Bun.WebView）在节点内按需开合视图，此值尚未被消费（预留） |
+| `BROWSER_CONCURRENCY` | `2` | 正 int | **同时打开的 Bun.WebView 视图数上限**（抓取层信号量，`sites/common.ts`）：满则排队等前一个视图关闭。Chrome **每进程一个**、所有视图共享它，而每个视图自带 renderer 与 1440×2000 合成缓冲（吃 /dev/shm）——不设闸时实际并发由 `SLOT_CONCURRENCY`（5）决定 |
 | `SLOT_CONCURRENCY` | `5` | 正 int | 每日生成并发槽位数上限（`runPool`）；每槽一条 LangGraph 线程 |
 | `PROXY_URL` | 空（不代理） | string | 出站 HTTP 代理（`http://` 形式）；空串转 undefined。作用于 LLM 调用（引擎 `createLLM` 与查词 `driverChat`） |
 | `PORT` | `8080` | int 1..65535 | 容器内监听端口（Bun.serve）；宿主经 compose 映射 `443:8080` 对外——安全组放行 443 |
@@ -41,7 +41,7 @@ cp .env.example .env   # 本地开发：填入 LLM_API_KEY 与 JWT_SECRET
 ## 2. 云主机选型
 
 - **推荐**：香港/海外轻量云（免 ICP 备案）+ 域名 + Caddy 自动 HTTPS（App 端明文 HTTP 会被平台限制，HTTPS 必须）。备选：Cloudflare Tunnel（不买域名时）。
-- 内存：Bun + SQLite + 每槽 LangGraph（含 WebView 抓取）+ 并发 5 槽，建议 ≥ 2GB（**镜像内置 chrome-headless-shell 支撑 WebView 抓取，见 §6**）。
+- 内存：Bun + SQLite + 每槽 LangGraph（含 WebView 抓取）+ 并发 5 槽，建议 ≥ 2GB（**镜像内置 chrome-headless-shell 支撑 WebView 抓取，见 §6**）；**compose 必须给 `shm_size: 1gb`**——Chrome 的合成缓冲放 /dev/shm，Docker 缺省 64MB 远不够（见 §6）。
 - 运行时：**Docker + Compose v2**（标准部署路径的唯一宿主要求，见 §3.1）——本机已装 Docker 29.8 + Compose v5.5.1；无需在宿主安装 bun。
 - **端口**：容器 8080，宿主映射 `443:8080`——**安全组放行 443** 后 App 即可访问 `http://47.112.20.32:443`（HTTPS / 域名 + Caddy 属下一步，见上）。
 - **时区必须设为上海**（`.env` 的 `TIMEZONE` 须与系统时区一致，硬闸）：
@@ -195,6 +195,10 @@ docker compose exec contexta-server bun run delete-daily -- --date 2026-08-29 --
 - **⚠️ 已证伪方案（勿回退）**：为 `--no-sandbox` 在镜像层包 shell wrapper 脚本——Bun spawn 经由 `/bin/sh` 进程链后 **zygote socket 断开**（`Failed to send GetTerminationStatus message to zygote` / `Socket closed prematurely`），Chrome 启动失败。`--no-sandbox` 只能走 `backend.argv`（Bun 官方 spawn 通道）。
 - **⚠️ 行为注意**：Chrome 后端下 `evaluate()` 必须先有页面 target——**先 `navigate()`（或构造函数传 `url`）后 `evaluate()` 才可用**，否则报 `'Runtime.evaluate' wasn't found`。应用侧 `fetchAnchorSnapshots` 恰是先 `navigateLite` 再取快照，满足前置条件；改动抓取层时序时务必保留该顺序。
 - **部署后验证 spike**（每次升级镜像后执行一次；注意先 navigate）：`docker compose exec contexta-server bun -e 'const v = new Bun.WebView({width:1440,height:2000}); await v.navigate("data:text/html,<h1>ok</h1>"); console.log(await v.evaluate("1+1")); v.close()'`——期望输出 `2`。
+- **⚠️ 实测挂死模式（2026-09-16）**：Chrome 侧 renderer/compositor 发生 CHECK 失败时（内核日志 `traps: ... trap int3 ... in chrome-headless-shell`，**各处 OOM 计数全 0、容器内存峰值仅 552MB**——不是被系统杀的），**挂起的那次 `evaluate` 永不 settle**：`pollUntil` 的 30s 超时只管“两次轮询之间”，救不了卡在 `await check()` 里的一次调用，`navigateLite` 的 navigate/evaluate 更是全无超时。后果不是“某个槽位失败”而是**整批静默卡死**——槽位连一行 `[sites]` 日志都没有、批次永不收口、结束卡永不发出，只能靠看门狗在窗口结束 +60 分钟兜底告警。当日实测：15 槽中 2 槽（slot 6/8）永久挂起；6 次视图调用成功、1 次容器超时后换篇成功。
+- **并发与 /dev/shm（相关性成立，根因未隔离）**：WebView 尺寸 1440×2000（单帧约 11.5MB），每个视图多吃一份 /dev/shm。崩溃既与并发数相关（9-15 那次 5 并发冒烟测试五个 compositor 同秒全崩），也与“抓的是哪个站点”相关（9-9/10/11 三天从未抽中 tencent、零崩溃；9-12 与 9-16 都抽中 tencent、都挂——腾讯首页填充 2035ms vs 中国日报 400ms）。**两道加固已实现**：compose 给 `shm_size: 1gb`（缺省 64MB 是 Chrome in Docker 的经典坑），`BROWSER_CONCURRENCY`（缺省 2）经抓取层信号量真正限制同时打开的视图数——不设闸时实际并发由 `SLOT_CONCURRENCY`（5）决定。两者均未在生产实测验证。
+- **调用超时（已实现，2026-09-16）**：抓取层每次 `navigate` / `evaluate` / `pollUntil` / 清洗都带硬超时（导航 15s；取快照 30s；轮询与清洗各 45s——后两者自身预算 30s，越过才是真卡死）。**到点即调 `Bun.WebView.closeAll()` 强杀浏览器子进程**：Bun 文档保证"所有视图上挂起的 promise 在下一个事件循环 tick reject"，这是唯一能解开已卡死 CDP 调用的手段（换新视图没用——Chrome 每进程一个，只会复用同一个卡住的实例）；随后 `new Bun.WebView()` 会重新拉起 Chrome。**代价**：closeAll 会打断同进程内其他并发抓取，它们各自记为失败——远好于整批静默卡死（本机制已用"永不 resolve 的 evaluate"实测验证：closeAll 后原 promise 以 `WebView host process killed by signal 9` reject）。
+- **追踪日志（已实现，2026-09-16）**：`sites/common.ts` 对视图全生命周期打点——`[wv#N]` 单调编号归属并发抓取，创建/就绪/空白导航/软导航/轮询/提取/清洗/关闭各一行；可能永久挂起的调用挂**阻塞心跳**（一次性调用 5s/15s/30s/60s…，轮询与正文清洗越过其自身 30s 预算才报 35s/65s/125s…），心跳**只记日志不改语义**。每行带**活动视图数**与**存活 chrome 进程数**（仅 Linux，读 `/proc` 统计带 `--remote-debugging-pipe` 的浏览器主进程）——活动视图归零而 chrome 数不降即为进程泄漏。排查按 `[wv#N]` 串一次抓取的完整时序。
 - **仍未覆盖的风险**：chrome-headless-shell rev 随 `playwright-core@1.63.0` 锁定（升级版本需重新 spike）；站点反爬（CDN/风控）可能导致列表为空——届时按下面降级路径处置。
 - **备选方案（必要时按 spike 结果选一）**：
   - 站点不支持时降级：`sites.config.ts` 去掉 chinadaily/tencent 配置行 → `news`/`expository` 变 pathB（模型知识生成，**失去事实锚定，有幻觉风险**——仅作临时降级，须人工审核把关）；

@@ -162,7 +162,7 @@ flowchart TD
 
 - **pickCategory**（无 LLM）：按难度从类别池均匀随机（`rng` 注入）：LOW=daily_conversation/scene_description/simple_story；MEDIUM=news/expository/argumentative/personal_essay；HIGH=academic_abstract/debate_speech/legal_document/art_criticism。
 - **path 判定**（`resolvePath`）：类别在 `sites.config.ts` 配置了 ≥1 个权威站点 → A（有来源支撑），否则 B（模型知识）。当前配置：chinadaily + tencent 覆盖 `news`/`expository`，其余 9 类走 B。
-- **A 链**：`fetchLinks`（随机洗牌本站点抓列表：Bun.WebView 打开首页 → 等待 JS 懒加载列表 → 锚点快照 → 站点规则抽取 `ArticleLink[]`；新鲜度过滤 = 近 5 天已用 URL + 本轮共享 `usedUrls` 去重；标题含受限人名直接出局）→ `chooseArticle`（随机选篇 → 抓正文 HTML → 清洗 → turndown 转 Markdown（截断 12000 字符）→ 正文含受限人名则跳过换篇；命中即从候选列表移出）→ `extractFacts`（LLM 结构化抽取 FactSheet：who/what/when/where/why/how/keyNumbers/keyNames；全空 = 源不适配 → 回 chooseArticle 换篇，封顶 3 次 → rejected）→ `generateA`。
+- **A 链**：`fetchLinks`（随机洗牌本站点抓列表：Bun.WebView 打开首页 → 等待 JS 懒加载列表 → 锚点快照 → 站点规则抽取 `ArticleLink[]`——**视图受 `BROWSER_CONCURRENCY` 信号量限流、每次调用带硬超时**，见 config-and-deploy.md §6；新鲜度过滤 = 近 5 天已用 URL + 本轮共享 `usedUrls` 去重；标题含受限人名直接出局）→ `chooseArticle`（随机选篇 → 抓正文 HTML → 清洗 → turndown 转 Markdown（截断 12000 字符）→ 正文含受限人名则跳过换篇；命中即从候选列表移出）→ `extractFacts`（LLM 结构化抽取 FactSheet：who/what/when/where/why/how/keyNumbers/keyNames；全空 = 源不适配 → 回 chooseArticle 换篇，封顶 3 次 → rejected）→ `generateA`。
 - **B 链**：直接 `generateB`（模型知识生成，prompt 含"基于可靠常识、虚构需标明、禁用受限人名"）。
 - **generate（A/B 共用实现）**：结构化输出 `GenerateResult` 判别联合——`{"type":"article", titleEn, titleZh, paragraphs:[{en,zh}]}` 或 `{"type":"cannot_write"}`（模型判主题违规/缺依据 → 业务拒答，A 回边换源、B 短路）。其余失败（空白/结构畸形/技术错误）→ error 终态，不做自动重试（手动重试见 replay）。prompt 注入：素材（pathA 的来源标题/URL/正文/事实卡）+ 上轮违规反馈（lastViolations）+ 近 5 天成功文章标题（避免雷同选题）。
 - **leadersCheck**（无 LLM，A/B 共用）：文章标题/段落中英全文子串匹配 `const/coreLeaders.ts` 受限人名名单，命中即整篇 rejected（设计：名单为硬限制，不回边重试）。
@@ -340,9 +340,9 @@ flowchart TD
   - **成本口径 = 运行前后余额差**：下降 → `本次成本 ≈ ¥0.42（3.65 → 3.23）`；**未变 → 标"计费约 5 分钟延迟尚未结算"**（DeepSeek 计费存在延迟，不假装本次免费）；上升 → 标"多为充值"；余额未知 → "未知"。
   - **低余额提醒**：低于 `LOW_BALANCE_THRESHOLD`（1 元）→ **两条卡都**附"余额不足 ¥1，请立即充值（当前 ¥0.83）"；余额未知**不误报**。
 - **未收口告警（`services/daily_alert.ts`，独立看门狗）**：**不挂在生成循环上的第二条 async 链**——每日窗口结束 + `ALERT_GRACE_MINUTES`（60 分钟；正常一轮约 3 分钟）检查当天批次：**不存在** 或 **仍 running** → 发"未收口"告警卡（`notifyDailyUnclosed`，橙，按日去重）。
-  - **存在意义（2026-09-12 事故）**：`DailyTask.loop` 是 `await runFill`，站点抓取层一旦**永久挂起**（`Bun.WebView` 调用链无超时——CDP 双向对锁，进程仍健康），循环与结束卡一起静默：9-13/14/15 三天无生成、无日志、无通知，第四天才由人工发现。看门狗不依赖主循环是否活着（事件循环仍健康），卡死也照发。
+  - **存在意义（2026-09-12 事故）**：`DailyTask.loop` 是 `await runFill`，站点抓取层一旦**永久挂起**（`Bun.WebView` 调用链无超时——CDP 双向对锁，进程仍健康），循环与结束卡一起静默：9-13/14/15 三天无生成、无日志、无通知，第四天才由人工发现。看门狗不依赖主循环是否活着（事件循环仍健康），卡死也照发。**2026-09-16 复现**：Chrome compositor CHECK 失败 → 挂起的那次 `evaluate` 永不 settle → 2 槽永久挂起、批次未收口、结束卡未发出——正是本判定链命中的场景（证据、并发与 /dev/shm 的未定论、以及新增的 `[wv#N]` 追踪日志见 config-and-deploy.md §6）。
   - 只告警**不自动恢复**（恢复仍由人工决定：重启容器）；进程启动时若已过检查点会立即补查一次（重启当天即告警）。
-- **日志**：`[daily-task]` 编排行与引擎 `log()` 同走 `logs/daily-<日期>.log`（7 天轮转，只进文件不进 stdout）；服务侧日志见 `services/server_log.ts`——通用日志 `logs/server-<日期>.log`（+stdout），请求访问日志按面分流 `logs/app-<日期>.log`（手机端）/ `logs/admin-<日期>.log`（管理端），stdout 中 app 青色 / admin 品红。
+- **日志**：`[sites] [wv#N]` = 抓取层视图全生命周期追踪（创建/就绪/导航/轮询/清洗/关闭 + 超时/失败 + 活动视图与 chrome 进程数）；每次调用带硬超时，到点 `Bun.WebView.closeAll()` 强杀浏览器子进程并让挂起 promise reject——两道加固与代价见 config-and-deploy.md §6；`[daily-task]` 编排行与引擎 `log()` 同走 `logs/daily-<日期>.log`（7 天轮转，只进文件不进 stdout）；服务侧日志见 `services/server_log.ts`——通用日志 `logs/server-<日期>.log`（+stdout），请求访问日志按面分流 `logs/app-<日期>.log`（手机端）/ `logs/admin-<日期>.log`（管理端），stdout 中 app 青色 / admin 品红。
 
 ## 9. 时区纪律（部署关键约束）
 

@@ -15,6 +15,10 @@ services:
       - ADMIN_INIT_PASSWORD=${ADMIN_INIT_PASSWORD:-}
       - FEISHU_WEBHOOK_URL=${FEISHU_WEBHOOK_URL:-}
       - FEISHU_WEBHOOK_SECRET=${FEISHU_WEBHOOK_SECRET:-}
+    # Chrome（Bun.WebView 后端）把 1440x2000 的合成缓冲放在 /dev/shm；
+    # Docker 缺省只有 64MB，多开几个视图即触顶 —— 2026-09-16 实测 compositor
+    # CHECK 失败（内核 trap int3）、槽位永久挂起的事故现场。给足 1GB。
+    shm_size: 1gb
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
