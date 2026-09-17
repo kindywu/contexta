@@ -78,10 +78,13 @@ jobs:
           [ -n "$FEISHU_WEBHOOK_SECRET" ] && UP_CMD="FEISHU_WEBHOOK_SECRET='$FEISHU_WEBHOOK_SECRET' $UP_CMD"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@47.112.20.32 \
             "cd /opt/contexta/server && docker compose pull && $UP_CMD"
-          # 3) 健康检查：30 次 × 2s 重试（宿主 443 → 容器 8080）
+          # 3) 健康检查：30 次 × 2s 重试（宿主 443 → 容器 8080）。
+          #    先 HTTPS（-k：自签名 IP 证书浏览器/curl 不认锚点）后 HTTP——
+          #    TLS_CERT_PATH 未配置的部署（证书尚未落盘）仍走 HTTP，不误报红。
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@47.112.20.32 \
             'set -e; for i in $(seq 1 30); do
-               if curl -fsS http://127.0.0.1:443/api/health >/dev/null 2>&1; then
+               if curl -kfsS https://127.0.0.1:443/api/health >/dev/null 2>&1 \
+                  || curl -fsS http://127.0.0.1:443/api/health >/dev/null 2>&1; then
                  echo "[deploy] health check OK"; exit 0
                fi
                sleep 2

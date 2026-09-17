@@ -15,6 +15,11 @@ services:
       - ADMIN_INIT_PASSWORD=${ADMIN_INIT_PASSWORD:-}
       - FEISHU_WEBHOOK_URL=${FEISHU_WEBHOOK_URL:-}
       - FEISHU_WEBHOOK_SECRET=${FEISHU_WEBHOOK_SECRET:-}
+      # TLS（自签名 HTTPS）：路径即容器内挂载点，值取自服务器 .env（非密钥配置，
+      # 不随 GHA 注入）。留空串 = 不启用 TLS（应用按未配置处理）——本地/无证书环境
+      # 可照常走 HTTP；生产在 .env 写入下面两行即启用 HTTPS。
+      - TLS_CERT_PATH=${TLS_CERT_PATH:-}
+      - TLS_KEY_PATH=${TLS_KEY_PATH:-}
     # Chrome（Bun.WebView 后端）把 1440x2000 的合成缓冲放在 /dev/shm；
     # Docker 缺省只有 64MB，多开几个视图即触顶 —— 2026-09-16 实测 compositor
     # CHECK 失败（内核 trap int3）、槽位永久挂起的事故现场。给足 1GB。
@@ -23,3 +28,6 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./output:/app/output
+      # TLS 证书（自签名）：证书与私钥只存宿主机，只读挂载进容器。
+      # 目录不存在时 Docker 会以 root 自动创建空目录；未启用 TLS 时无影响。
+      - ./certs:/app/certs:ro

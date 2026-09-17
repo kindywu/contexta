@@ -4,6 +4,10 @@
 # 真机数据库备份（迁移用），不提交
 .backup/
 
+# TLS 私钥与证书（自签名，生成于本地/服务器，不进仓库）
+.local/
+impl/server/certs/
+
 .superpowers/*.**
 
 docs/superpowers/*.**
