@@ -31,8 +31,13 @@ const double kEdgeTapMinWidth = 24;
 ///
 /// - 翻页：PageView 原生横滑；页边空白区点击（正文内的点按留给查词）
 /// - 帧内不测量：分页由 [ArticlePaginator] 预先算好，本组件只负责渲染
+/// - 滚动不重建本组件：页码由 [_PageIndicator] 自己监听 [pageController]。
+///   书页里的 `ReadingParagraph` 每次重建都会给每个单词新建一个
+///   `TapGestureRecognizer`（只在 dispose 释放），整屏重建会在一次滑动里
+///   堆积成千上万个 recognizer，故重建范围必须收窄到那一行 Text。
 ///
-/// 页码是本地展示状态：监听 [pageController] 重建底栏，不引入外部状态。
+/// 「是否已读」由块列表本身表达（已读的文章不产生 [MarkAsReadBlock]），
+/// 本组件不需要额外的 isReadCompleted 开关。
 class SpreadReader extends StatefulWidget {
   const SpreadReader({
     super.key,
@@ -46,7 +51,6 @@ class SpreadReader extends StatefulWidget {
     required this.vocabularyWords,
     required this.speakingParagraphIndex,
     required this.speakingSentenceIndex,
-    required this.isReadCompleted,
     required this.paragraphKey,
     required this.paragraphTextKey,
     required this.onWordClick,
@@ -69,7 +73,6 @@ class SpreadReader extends StatefulWidget {
   final Set<String> vocabularyWords;
   final int? speakingParagraphIndex;
   final int? speakingSentenceIndex;
-  final bool isReadCompleted;
   final GlobalObjectKey Function(int index) paragraphKey;
   final GlobalObjectKey Function(int index) paragraphTextKey;
   final ValueChanged<String> onWordClick;
@@ -86,32 +89,6 @@ class SpreadReader extends StatefulWidget {
 }
 
 class _SpreadReaderState extends State<SpreadReader> {
-  @override
-  void initState() {
-    super.initState();
-    widget.pageController.addListener(_handleControllerChanged);
-  }
-
-  @override
-  void didUpdateWidget(covariant SpreadReader oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.pageController, widget.pageController)) {
-      oldWidget.pageController.removeListener(_handleControllerChanged);
-      widget.pageController.addListener(_handleControllerChanged);
-    }
-  }
-
-  @override
-  void dispose() {
-    widget.pageController.removeListener(_handleControllerChanged);
-    super.dispose();
-  }
-
-  /// PageController 每次变化（含手指拖动中、jumpToPage）刷新页码。
-  void _handleControllerChanged() {
-    if (mounted) setState(() {});
-  }
-
   @override
   Widget build(BuildContext context) {
     final pageCount = widget.paginated.pages.length;
@@ -162,18 +139,11 @@ class _SpreadReaderState extends State<SpreadReader> {
           ),
         ),
         _PageIndicator(
-          rightPageNumber: _rightPageNumber(pageCount),
+          pageController: widget.pageController,
           totalPages: pageCount,
         ),
       ],
     );
-  }
-
-  /// 底栏页码：右页页号（左页为奇数页）。首帧控制器尚无 client，回落到首页。
-  int _rightPageNumber(int pageCount) {
-    final controller = widget.pageController;
-    final spread = controller.hasClients ? (controller.page?.round() ?? 0) : 0;
-    return math.min((spread + 1) * 2, pageCount);
   }
 
   void _go(int spreadIndex) {
@@ -326,22 +296,36 @@ class _EdgeTapZone extends StatelessWidget {
 }
 
 /// 底部页码：右页页号 / 总页数（左页为奇数页）。
+///
+/// 自己监听 [pageController]（横滑中每帧、jumpToPage 都通知）：重建范围只有
+/// 这一行 Text，书页内容不受影响（见 [SpreadReader] 的说明）。
 class _PageIndicator extends StatelessWidget {
-  const _PageIndicator({required this.rightPageNumber, required this.totalPages});
+  const _PageIndicator({required this.pageController, required this.totalPages});
 
-  final int rightPageNumber;
+  final PageController pageController;
   final int totalPages;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-      child: Text(
-        '$rightPageNumber / $totalPages',
-        style: AppType.textTheme.labelMedium?.copyWith(
-          color: AppColors.mutedSoft,
+    return AnimatedBuilder(
+      animation: pageController,
+      builder: (context, _) => Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+        child: Text(
+          '${_rightPageNumber()} / $totalPages',
+          style: AppType.textTheme.labelMedium?.copyWith(
+            color: AppColors.mutedSoft,
+          ),
         ),
       ),
     );
+  }
+
+  /// 右页页号（左页为奇数页）。首帧控制器尚无 client，回落到首页。
+  int _rightPageNumber() {
+    final spread = pageController.hasClients
+        ? (pageController.page?.round() ?? 0)
+        : 0;
+    return math.min((spread + 1) * 2, totalPages);
   }
 }

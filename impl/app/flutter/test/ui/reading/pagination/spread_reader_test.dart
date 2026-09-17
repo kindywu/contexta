@@ -3,6 +3,7 @@ import 'package:contexta/domain/model/article.dart';
 import 'package:contexta/ui/reading/pagination/article_paginator.dart';
 import 'package:contexta/ui/reading/pagination/reading_block.dart';
 import 'package:contexta/ui/reading/pagination/spread_reader.dart';
+import 'package:contexta/ui/reading/reading_widgets.dart';
 import 'package:contexta/ui/reading/translation_visibility.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -76,7 +77,6 @@ void main() {
             vocabularyWords: const {},
             speakingParagraphIndex: null,
             speakingSentenceIndex: null,
-            isReadCompleted: false,
             paragraphKey: paragraphKey,
             paragraphTextKey: paragraphTextKey,
             onWordClick: tappedWords.add,
@@ -138,6 +138,43 @@ void main() {
 
     expect(spreadIndex, 1);
     expect(userDrags, greaterThan(0)); // 手指拖动（程序化翻页不计）
+  });
+
+  testWidgets('拖动中页码实时更新，且不重建书页（重建范围只有页码行）', (tester) async {
+    tester.view.physicalSize = const Size(1600, 813);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await pumpReader(tester, fourPages());
+    expect(find.text('2 / 4'), findsOneWidget);
+
+    // 书页里的段落 widget 实例：整屏重建会换新实例（进而给每个单词重建
+    // TapGestureRecognizer，一次滑动堆积成千上万个）
+    final paragraphBefore = tester.widget<ReadingParagraph>(
+      find.byType(ReadingParagraph).first,
+    );
+
+    final gesture = await tester.startGesture(const Offset(800, 400));
+    await gesture.moveBy(const Offset(-900, 0)); // 拖过半屏宽
+    await tester.pump(); // 不松手、不 settle：此刻仍是拖动中
+
+    expect(
+      find.text('4 / 4'),
+      findsOneWidget,
+      reason: '页码须在拖动中实时跟随，不能等翻页落定',
+    );
+    expect(
+      identical(
+        tester.widget<ReadingParagraph>(find.byType(ReadingParagraph).first),
+        paragraphBefore,
+      ),
+      isTrue,
+      reason: '拖动中不得重建书页——ReadingParagraph 实例须保持不变',
+    );
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(spreadIndex, 1);
   });
 
   testWidgets('正文内点按单词仍走查词（页边点击区不覆盖正文列）', (tester) async {
