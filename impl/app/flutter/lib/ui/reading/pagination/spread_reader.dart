@@ -24,6 +24,12 @@ const double kSpreadMaxWidth = 1100;
 const double kPageTopPadding = AppSpacing.sm;
 const double kPageBottomPadding = AppSpacing.xs;
 
+/// 底部页码行的高度（定值，见 [_PageIndicator]）。
+///
+/// 页码行在 PageView **下方**，页内容盒高度 = 可用高 − 本值 − 页内上下留白；
+/// 分页器必须按同一个式子算页高，否则会往页里塞过多内容（溢出页底）。
+const double kPageIndicatorHeight = 28;
+
 /// 页边点击区最小宽度：窄于此则不启用页边点击（退化为仅横滑）。
 const double kEdgeTapMinWidth = 24;
 
@@ -309,12 +315,16 @@ class _PageIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: pageController,
-      builder: (context, _) => Padding(
-        padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-        child: Text(
-          '${_rightPageNumber()} / $totalPages',
-          style: AppType.textTheme.labelMedium?.copyWith(
-            color: AppColors.mutedSoft,
+      // 定高：分页按 kPageIndicatorHeight 扣页高，行高不随字体缩放漂移
+      builder: (context, _) => SizedBox(
+        height: kPageIndicatorHeight,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+          child: Text(
+            '${_rightPageNumber()} / $totalPages',
+            style: AppType.textTheme.labelMedium?.copyWith(
+              color: AppColors.mutedSoft,
+            ),
           ),
         ),
       ),
