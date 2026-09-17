@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:contexta/data/tts/kitten_tts_engine.dart';
 import 'package:contexta/data/tts/kitten_tts_session.dart';
 import 'package:contexta/domain/model/tts_voice.dart';
+import 'package:contexta/domain/tts/tts_engine.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// KittenTtsEngine 测试：用 fake session 验证 speak/stop/完成回调/初始化失败。
@@ -55,17 +56,19 @@ void main() {
     expect(finished, ['ktk-0']);
   });
 
-  test('setOnParagraphStarted 透传给 session', () async {
+  test('setOnSentenceStarted 透传给 session', () async {
     final session = _FakeSession();
     final engine = _engine(factory: _withSession(session));
     await engine.init();
 
-    final started = <(String, int, int)>[];
+    final started = <(String, int, int, int)>[];
     // 引擎层签名 id 可空（对齐 TtsEngine 接口）；session 契约保证非空，透传时收缩安全
-    engine.setOnParagraphStarted((id, index, total) => started.add((id!, index, total)));
-    session.simulateParagraphStarted(1);
+    engine.setOnSentenceStarted(
+        (id, paragraphIndex, sentenceIndex, total) =>
+            started.add((id!, paragraphIndex, sentenceIndex, total)));
+    session.simulateSentenceStarted(1, 2);
 
-    expect(started, [('ktk-0', 1, 3)]);
+    expect(started, [('ktk-0', 1, 2, 3)]);
   });
 
   test('speak 转发 text/speed/id 到 session', () async {
@@ -98,7 +101,7 @@ void main() {
     expect(factory.created, hasLength(1));
   });
 
-  test('speak/speakParagraphs/speakFullArticle 透传 voice 到会话', () async {
+  test('speak/speakSentences/speakFullArticle 透传 voice 到会话', () async {
     final session = _FakeSession();
     final engine = _engine(factory: _withSession(session));
     await engine.init();
@@ -106,12 +109,16 @@ void main() {
     engine.speak('hello', voice: TtsVoice.hugo);
     expect(session.lastVoice, 'hugo');
 
-    await engine.speakParagraphs(
-        texts: ['a'], paragraphIds: [1], speed: 1.0, voice: TtsVoice.leo);
+    await engine.speakSentences(
+        sentences: [(paragraphId: 1, sentenceIndex: 0, text: 'a')],
+        speed: 1.0,
+        voice: TtsVoice.leo);
     expect(session.lastVoice, 'leo');
 
     await engine.speakFullArticle(
-        paragraphs: [(id: 1, text: 'a')], speed: 1.0, voice: TtsVoice.luna);
+        sentences: [(paragraphId: 1, sentenceIndex: 0, text: 'a')],
+        speed: 1.0,
+        voice: TtsVoice.luna);
     expect(session.lastVoice, 'luna');
   });
 
@@ -173,7 +180,7 @@ class _FakeSession implements KittenTtsSession {
   @override
   Future<void> speakFullArticle({
     String? title,
-    required List<({int id, String text})> paragraphs,
+    required List<SentenceUnit> sentences,
     required double speed,
     required String utteranceId,
     String? voice,
@@ -182,9 +189,8 @@ class _FakeSession implements KittenTtsSession {
   }
 
   @override
-  Future<void> speakParagraphs(
-    List<String> texts, {
-    required List<int> paragraphIds,
+  Future<void> speakSentences(
+    List<SentenceUnit> sentences, {
     required double speed,
     required String utteranceId,
     String? voice,
@@ -194,9 +200,6 @@ class _FakeSession implements KittenTtsSession {
 
   @override
   Future<bool> playFile(String filePath, {required String utteranceId}) async => true;
-
-  @override
-  Future<void> playFiles(List<String> filePaths, {required String utteranceId}) async {}
 
   @override
   Future<void> stop() async {
@@ -216,24 +219,26 @@ class _FakeSession implements KittenTtsSession {
   void setProgressListener(
       void Function(String utteranceId, int done, int total)? listener) {}
 
-  void Function(String utteranceId, int paragraphIndex, int total)?
-      _paragraphStartedListener;
+  void Function(String utteranceId, int paragraphIndex, int sentenceIndex,
+      int total)? _sentenceStartedListener;
 
   @override
-  void setOnParagraphStarted(
-      void Function(String utteranceId, int paragraphIndex, int total)?
+  void setOnSentenceStarted(
+      void Function(String utteranceId, int paragraphIndex, int sentenceIndex,
+              int total)?
           listener) {
-    _paragraphStartedListener = listener;
+    _sentenceStartedListener = listener;
   }
 
-  /// 测试触发：模拟第 [index] 段开始播放（3 段总正文）。
-  void simulateParagraphStarted(int index) {
-    _paragraphStartedListener?.call('ktk-0', index, 3);
+  /// 测试触发：模拟第 [paragraphIndex] 段第 [sentenceIndex] 句开始播放
+  /// （正文共 3 句）。
+  void simulateSentenceStarted(int paragraphIndex, int sentenceIndex) {
+    _sentenceStartedListener?.call('ktk-0', paragraphIndex, sentenceIndex, 3);
   }
 
   @override
-  Future<void> pregenerateParagraphs({
-    required List<({int paragraphId, String text})> paragraphs,
+  Future<void> pregenerateSentences({
+    required List<SentenceUnit> sentences,
     required double speed,
     String? voice,
   }) async {

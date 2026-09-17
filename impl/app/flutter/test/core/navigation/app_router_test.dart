@@ -98,10 +98,10 @@ class _TtsStub implements TtsEngine {
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
 
   @override
-  void setOnParagraphStarted(
-    void Function(String? utteranceId, int paragraphIndex, int total)?
-        callback,
-  ) {}
+  void setOnSentenceStarted(
+      void Function(String? utteranceId, int paragraphIndex, int sentenceIndex,
+              int total)?
+          callback) {}
 }
 
 void main() {

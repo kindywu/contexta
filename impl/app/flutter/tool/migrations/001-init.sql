@@ -20,6 +20,11 @@
 -- generation_error_log 两表删除；article_batch 删 blocked_reason/blocked_at/
 -- ready_notified_at；article 删 generation_started_at/generation_completed_at/
 -- retry_count/last_retry_at/max_retries/next_retry_at（status 列保留）。
+--
+-- 2026-09-17：朗读单元由段落改为句子——tts_cache 加 sentence_index 列
+-- （缓存键 = article_paragraph_id + sentence_index + speed + voice_id）。
+-- 旧行是整段音频、无句序语义，库内由自愈补列时清空（database.dart
+-- selfHealTtsSentenceColumn），本脚本描述补列后的 v1 标准结构。
 
 BEGIN IMMEDIATE;
 
@@ -167,6 +172,7 @@ CREATE TABLE IF NOT EXISTS `daily_learning` (
 CREATE TABLE IF NOT EXISTS `tts_cache` (
   `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   `article_paragraph_id` INTEGER REFERENCES `article_paragraph` (`id`) ON DELETE CASCADE,
+  `sentence_index` INTEGER NOT NULL,
   `word_id` INTEGER,
   `speed` REAL NOT NULL,
   `voice_id` TEXT NOT NULL,

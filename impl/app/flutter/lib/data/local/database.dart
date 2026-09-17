@@ -66,6 +66,7 @@ class AppDatabase extends _$AppDatabase {
           await selfHealVoiceColumns(this);
           await selfHealServerAuthColumns(this);
           await selfHealArticleSyncColumn(this);
+          await selfHealTtsSentenceColumn(this);
         },
       );
 }
@@ -118,9 +119,28 @@ Future<void> selfHealArticleSyncColumn(AppDatabase db) async {
   );
 }
 
+/// 开发期 v1 结构变更自愈：tts_cache 加 `sentence_index`（句子级缓存键，
+/// 朗读单元由段落改为句子）。旧行携带的是**整段**音频、没有句序语义，补列后
+/// 会被读成「该段第 0 句」而播出错误音频——故补列同时清空 tts_cache（纯缓存，
+/// 可再生，清空无数据损失；磁盘 WAV 由 TtsCacheManager 启动时按孤儿文件清理）。
+/// 列已存在时完全不动（幂等，重复打开安全）。
+Future<void> selfHealTtsSentenceColumn(AppDatabase db) async {
+  final added = await _ensureColumn(
+    db,
+    'tts_cache',
+    'sentence_index',
+    'sentence_index INTEGER NOT NULL DEFAULT 0',
+  );
+  if (added) {
+    await db.customStatement('DELETE FROM tts_cache');
+  }
+}
+
 /// 幂等补列：列不存在时执行 ADD COLUMN（SQLite 无 ADD COLUMN IF NOT EXISTS）。
-/// 仅用于开发期 v1 结构变更；发布后结构变更走编号迁移脚本（tool/migrations/NNN-*.sql）。
-Future<void> _ensureColumn(
+/// 返回是否真的补了列（调用方借此做一次性的数据迁移，见
+/// [selfHealTtsSentenceColumn]）。仅用于开发期 v1 结构变更；发布后结构变更走
+/// 编号迁移脚本（tool/migrations/NNN-*.sql）。
+Future<bool> _ensureColumn(
   AppDatabase db,
   String table,
   String column,
@@ -131,5 +151,7 @@ Future<void> _ensureColumn(
   ).get();
   if (rows.isEmpty) {
     await db.customStatement('ALTER TABLE $table ADD COLUMN $ddl');
+    return true;
   }
+  return false;
 }

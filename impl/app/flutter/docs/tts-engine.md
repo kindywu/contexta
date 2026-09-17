@@ -6,7 +6,7 @@
 
 ## 业务功能线
 
-用户点击朗读后，阅读页控制器（ReadingController）通过 `ttsEngineProvider`（`lib/di/providers.dart`，FutureProvider 懒加载）取得引擎，调用 `speak` / `speakFullArticle` / `speakParagraphs` 发声。用户无感知的是语音由哪条引擎链发声——KittenTTS 可用则用 KittenTTS（本地合成、音质好、不依赖系统引擎），否则静默回退系统 TTS。
+用户点击朗读后，阅读页控制器（ReadingController）通过 `ttsEngineProvider`（`lib/di/providers.dart`，FutureProvider 懒加载）取得引擎，调用 `speak` / `speakFullArticle` / `speakSentences` 发声（朗读单元 = 句子，见 [reading-sentence-highlight.md](reading-sentence-highlight.md)）。用户无感知的是语音由哪条引擎链发声——KittenTTS 可用则用 KittenTTS（本地合成、音质好、不依赖系统引擎），否则静默回退系统 TTS。
 
 **音色选择**：KittenTTS 内置 8 个英语音色（Bella/Jasper/Luna/Bruno/Rosie/Hugo/Kiki/Leo）。设置页提供音色选择器（含逐音色试听），选择持久化到 `user_settings.tts_voice_id`，此后所有朗读入口（阅读页全文/段落/单词、参考页例句、词汇页单词）按当前音色发声。系统 TTS 回退时音色不生效（系统引擎没有音色概念），但功能不受影响。
 
@@ -32,7 +32,7 @@ flowchart TD
 
 - `TtsEngineFactory.create()`（`lib/data/tts/tts_engine_factory.dart`）：`kittenInitTimeout = 45s`，超时接住后按失败回退系统 TTS，不阻塞朗读链路。
 - KittenTtsEngine 惰性初始化（首次 speak 前触发 `init()`），失败记录 `_failureReason`，`speak` 返回 null。
-- 会话层 `KittenTtsPluginSession` 包装插件：WAV 生成 → audioplayers 播放 → 完成/段落回调（段落回调细节见 [reading-paragraph-highlight.md](reading-paragraph-highlight.md)）。
+- 会话层 `KittenTtsPluginSession` 包装插件：WAV 生成 → audioplayers 播放 → 完成/句子回调（句子回调与句子级缓存细节见 [reading-sentence-highlight.md](reading-sentence-highlight.md)）。
 
 ### 音色选择（TtsVoice → 引擎 → SDK）
 
@@ -44,7 +44,7 @@ flowchart TD
 
 `fromDbValue` 对未知值抛 `ArgumentError`（新 APK 遇旧值属 bug，快速暴露）；`sdkVoiceId => name`（小写枚举名 = SDK voice id）。
 
-**透传链（每调用覆盖）**：`speak`/`speakFullArticle`/`speakParagraphs`/`pregenerateParagraphs` 的 `voice` 参数（`TtsVoice?`，null = 引擎默认 bella）沿引擎 → 会话 → SDK 逐层透传，KittenTTS SDK 的 `generate(text, voice: …)` **每次调用显式传 voice**，不依赖 config.defaultVoice——同一会话内切换音色立即生效。
+**透传链（每调用覆盖）**：`speak`/`speakFullArticle`/`speakSentences`/`pregenerateSentences` 的 `voice` 参数（`TtsVoice?`，null = 引擎默认 bella）沿引擎 → 会话 → SDK 逐层透传，KittenTTS SDK 的 `generate(text, voice: …)` **每次调用显式传 voice**，不依赖 config.defaultVoice——同一会话内切换音色立即生效。
 
 ```mermaid
 sequenceDiagram
@@ -59,7 +59,7 @@ sequenceDiagram
 ```
 
 - **SystemTtsEngine 忽略 voice**：系统引擎无音色概念，参数仅接受不消费（契约测试断言兼容）。
-- **缓存键含音色维度**：`tts_cache` 加 `voice_id` 列，UNIQUE 联合 `(article_paragraph_id, word_id, speed, voice_id)`、文件名 `p_<id>_<speed>_<VOICE>.wav`——不同音色各自缓存，切换音色不互相污染。方法签名统一 `voice: TtsVoice voice = TtsVoice.bella`（非空默认），引擎/会话层的 `null` 语义在缓存调用点归一为 `TtsVoice.bella`。
+- **缓存键 = 段落 + 句子 + 语速 + 音色**：`tts_cache` 由 `voice_id`（Task 2）与 `sentence_index`（句子级朗读）两列参与缓存键——键 `(article_paragraph_id, sentence_index, speed, voice_id)`、文件名 `p_<段id>_s<句序号>_<speed>_<VOICE>.wav`；同段不同句、同句不同音色各自缓存，互不串音不串句。方法签名统一 `voice: TtsVoice voice = TtsVoice.bella`（非空默认），引擎/会话层的 `null` 语义在缓存调用点归一为 `TtsVoice.bella`。
 - **当前音色 Provider（`lib/di/providers.dart`）**：`currentTtsVoiceProvider = FutureProvider<TtsVoice>`，读 `user_settings.tts_voice_id`（缺省 bella）。设置页 `updateTtsVoice` 成功后 `ref.invalidate(currentTtsVoiceProvider)` 使缓存失效——FutureProvider 结果缓存后不自动重算，不 invalidate 则参考页/词汇页继续读旧音色。参考/词汇页在 speak 时 `ref.read(currentTtsVoiceProvider).valueOrNull ?? TtsVoice.bella`（**read 而非 watch**：闭包内 watch 会注册依赖，voice 变化触发 StateNotifierProvider 重建 → dispose 后 use-after-dispose，实测崩溃）。阅读页不走 provider，按文章加载 settings 时读入 `ReadingUiState.ttsVoice`。
 - **设置页**：`_VoicePickerDialog` 8 行单选（喇叭图标逐音色试听，固定例句 `'Hi, this is <EnglishName> speaking.'`，播放中再点即停；关闭弹窗即停掉试听），选择即持久化 + invalidate provider。
 
@@ -95,7 +95,7 @@ flowchart TD
 ## 数据模型线
 
 - 资产文件为二进制（onnx 模型、npz 音色、词典文本），无数据库实体。
-- 朗读音频缓存见 TtsCacheManager（段落级 WAV，FIFO 50MB，表 `tts_cache`，缓存键含 `voice_id` 维度——见上文「缓存键含音色维度」）。
+- 朗读音频缓存见 TtsCacheManager（**句子级** WAV，FIFO 50MB，表 `tts_cache`，缓存键含 `sentence_index` 与 `voice_id` 维度——见上文「缓存键 = 段落 + 句子 + 语速 + 音色」）。
 - 音色选择持久化在 `user_settings.tts_voice_id`（`TEXT NOT NULL`，dbValue 大写枚举名，缺省由应用代码填 `'BELLA'`；开发期补列路径用 `DEFAULT 'BELLA'`，见 [database-schema.md](database-schema.md) 打开自愈一节）。
 
 ## 错误处理与边界

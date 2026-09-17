@@ -39,6 +39,12 @@ void main() {
         'speed REAL NOT NULL, file_path TEXT NOT NULL, '
         'file_size INTEGER NOT NULL, created_at INTEGER NOT NULL, '
         'last_accessed_at INTEGER NOT NULL)');
+      // 旧行 = 段落级音频（无句序语义）：补列后必须清空，否则会被读成
+      // 「该段第 0 句」而播出错误音频
+      raw.execute(
+        'INSERT INTO tts_cache (article_paragraph_id, word_id, speed, '
+        'file_path, file_size, created_at, last_accessed_at) VALUES '
+        "(7, NULL, 1.0, '/tmp/old.wav', 10, 1, 1)");
 
       // closeUnderlyingOnClose 默认 true：db.close() 会顺带关闭 raw 连接
       final db = AppDatabase.forTesting(NativeDatabase.opened(raw));
@@ -56,6 +62,14 @@ void main() {
         expect(
           cacheCols.map((r) => r.read<String>('name')),
           contains('voice_id'));
+        expect(
+          cacheCols.map((r) => r.read<String>('name')),
+          contains('sentence_index'),
+        );
+        // 补 sentence_index 的同时清空旧段落级缓存（纯缓存，可再生）
+        final cacheRows =
+            await db.customSelect('SELECT id FROM tts_cache').get();
+        expect(cacheRows, isEmpty);
 
         final row = await db.customSelect(
           'SELECT tts_voice_id FROM user_settings WHERE id = 1',

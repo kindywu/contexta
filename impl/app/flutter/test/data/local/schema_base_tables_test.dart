@@ -87,11 +87,14 @@ void main() {
       expect(await tableSql('user_settings'), isNot(contains('AUTOINCREMENT')));
     });
 
-    test('tts_cache 表结构（对照 TtsCacheEntity.kt：9 列，Task 2 加 voice_id）', () async {
+    test('tts_cache 表结构（对照 TtsCacheEntity.kt：10 列，Task 2 加 voice_id、'
+        '句子级缓存加 sentence_index）', () async {
       final cols = await tableInfo('tts_cache');
-      expect(cols.length, 9);
+      expect(cols.length, 10);
       expectCol(cols, 'id', type: 'INTEGER', notNull: true, pk: true);
       expectCol(cols, 'article_paragraph_id', type: 'INTEGER', notNull: false, pk: false);
+      // 句子级缓存键：段内句序号（0 起；旧库补列走自愈 ALTER，带 DEFAULT 0）
+      expectCol(cols, 'sentence_index', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'word_id', type: 'INTEGER', notNull: false, pk: false);
       expectCol(cols, 'speed', type: 'REAL', notNull: true, pk: false);
       // Task 2 加列：音色（TtsVoice.dbValue），无 DEFAULT（Room 纪律）

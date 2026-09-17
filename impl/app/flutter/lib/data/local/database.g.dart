@@ -5889,6 +5889,17 @@ class $TtsCachesTable extends TtsCaches
       'REFERENCES article_paragraph (id) ON DELETE CASCADE',
     ),
   );
+  static const VerificationMeta _sentenceIndexMeta = const VerificationMeta(
+    'sentenceIndex',
+  );
+  @override
+  late final GeneratedColumn<int> sentenceIndex = GeneratedColumn<int>(
+    'sentence_index',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _wordIdMeta = const VerificationMeta('wordId');
   @override
   late final GeneratedColumn<int> wordId = GeneratedColumn<int>(
@@ -5966,6 +5977,7 @@ class $TtsCachesTable extends TtsCaches
   List<GeneratedColumn> get $columns => [
     id,
     articleParagraphId,
+    sentenceIndex,
     wordId,
     speed,
     voiceId,
@@ -5997,6 +6009,17 @@ class $TtsCachesTable extends TtsCaches
           _articleParagraphIdMeta,
         ),
       );
+    }
+    if (data.containsKey('sentence_index')) {
+      context.handle(
+        _sentenceIndexMeta,
+        sentenceIndex.isAcceptableOrUnknown(
+          data['sentence_index']!,
+          _sentenceIndexMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_sentenceIndexMeta);
     }
     if (data.containsKey('word_id')) {
       context.handle(
@@ -6072,6 +6095,10 @@ class $TtsCachesTable extends TtsCaches
         DriftSqlType.int,
         data['${effectivePrefix}article_paragraph_id'],
       ),
+      sentenceIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sentence_index'],
+      )!,
       wordId: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}word_id'],
@@ -6115,6 +6142,13 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
   /// 段落关联（paragraph → TTS 缓存）；级联删除文章段落时自动清缓存。
   final int? articleParagraphId;
 
+  /// 段内句子序号（0 起；朗读单元 = 句子，见 reading-sentence-highlight.md）。
+  /// 缓存键 = article_paragraph_id + sentence_index + speed + voice_id；
+  /// 旧库补列时同时清空旧段落级缓存（database.dart selfHealTtsSentenceColumn）。
+  /// 无 DEFAULT（Room 建表纪律：默认值由应用代码填充）——旧库 ALTER 补列
+  /// 必需的 `DEFAULT 0` 只出现在自愈 DDL 里（与 voice_id 同模式）。
+  final int sentenceIndex;
+
   /// 单词关联（word → TTS 缓存，短期不用但预留）。
   final int? wordId;
 
@@ -6138,6 +6172,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
   const TtsCacheRow({
     required this.id,
     this.articleParagraphId,
+    required this.sentenceIndex,
     this.wordId,
     required this.speed,
     required this.voiceId,
@@ -6153,6 +6188,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
     if (!nullToAbsent || articleParagraphId != null) {
       map['article_paragraph_id'] = Variable<int>(articleParagraphId);
     }
+    map['sentence_index'] = Variable<int>(sentenceIndex);
     if (!nullToAbsent || wordId != null) {
       map['word_id'] = Variable<int>(wordId);
     }
@@ -6171,6 +6207,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
       articleParagraphId: articleParagraphId == null && nullToAbsent
           ? const Value.absent()
           : Value(articleParagraphId),
+      sentenceIndex: Value(sentenceIndex),
       wordId: wordId == null && nullToAbsent
           ? const Value.absent()
           : Value(wordId),
@@ -6191,6 +6228,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
     return TtsCacheRow(
       id: serializer.fromJson<int>(json['id']),
       articleParagraphId: serializer.fromJson<int?>(json['articleParagraphId']),
+      sentenceIndex: serializer.fromJson<int>(json['sentenceIndex']),
       wordId: serializer.fromJson<int?>(json['wordId']),
       speed: serializer.fromJson<double>(json['speed']),
       voiceId: serializer.fromJson<String>(json['voiceId']),
@@ -6206,6 +6244,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'articleParagraphId': serializer.toJson<int?>(articleParagraphId),
+      'sentenceIndex': serializer.toJson<int>(sentenceIndex),
       'wordId': serializer.toJson<int?>(wordId),
       'speed': serializer.toJson<double>(speed),
       'voiceId': serializer.toJson<String>(voiceId),
@@ -6219,6 +6258,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
   TtsCacheRow copyWith({
     int? id,
     Value<int?> articleParagraphId = const Value.absent(),
+    int? sentenceIndex,
     Value<int?> wordId = const Value.absent(),
     double? speed,
     String? voiceId,
@@ -6231,6 +6271,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
     articleParagraphId: articleParagraphId.present
         ? articleParagraphId.value
         : this.articleParagraphId,
+    sentenceIndex: sentenceIndex ?? this.sentenceIndex,
     wordId: wordId.present ? wordId.value : this.wordId,
     speed: speed ?? this.speed,
     voiceId: voiceId ?? this.voiceId,
@@ -6245,6 +6286,9 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
       articleParagraphId: data.articleParagraphId.present
           ? data.articleParagraphId.value
           : this.articleParagraphId,
+      sentenceIndex: data.sentenceIndex.present
+          ? data.sentenceIndex.value
+          : this.sentenceIndex,
       wordId: data.wordId.present ? data.wordId.value : this.wordId,
       speed: data.speed.present ? data.speed.value : this.speed,
       voiceId: data.voiceId.present ? data.voiceId.value : this.voiceId,
@@ -6262,6 +6306,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
     return (StringBuffer('TtsCacheRow(')
           ..write('id: $id, ')
           ..write('articleParagraphId: $articleParagraphId, ')
+          ..write('sentenceIndex: $sentenceIndex, ')
           ..write('wordId: $wordId, ')
           ..write('speed: $speed, ')
           ..write('voiceId: $voiceId, ')
@@ -6277,6 +6322,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
   int get hashCode => Object.hash(
     id,
     articleParagraphId,
+    sentenceIndex,
     wordId,
     speed,
     voiceId,
@@ -6291,6 +6337,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
       (other is TtsCacheRow &&
           other.id == this.id &&
           other.articleParagraphId == this.articleParagraphId &&
+          other.sentenceIndex == this.sentenceIndex &&
           other.wordId == this.wordId &&
           other.speed == this.speed &&
           other.voiceId == this.voiceId &&
@@ -6303,6 +6350,7 @@ class TtsCacheRow extends DataClass implements Insertable<TtsCacheRow> {
 class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
   final Value<int> id;
   final Value<int?> articleParagraphId;
+  final Value<int> sentenceIndex;
   final Value<int?> wordId;
   final Value<double> speed;
   final Value<String> voiceId;
@@ -6313,6 +6361,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
   const TtsCachesCompanion({
     this.id = const Value.absent(),
     this.articleParagraphId = const Value.absent(),
+    this.sentenceIndex = const Value.absent(),
     this.wordId = const Value.absent(),
     this.speed = const Value.absent(),
     this.voiceId = const Value.absent(),
@@ -6324,6 +6373,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
   TtsCachesCompanion.insert({
     this.id = const Value.absent(),
     this.articleParagraphId = const Value.absent(),
+    required int sentenceIndex,
     this.wordId = const Value.absent(),
     required double speed,
     required String voiceId,
@@ -6331,7 +6381,8 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
     required int fileSize,
     required int createdAt,
     required int lastAccessedAt,
-  }) : speed = Value(speed),
+  }) : sentenceIndex = Value(sentenceIndex),
+       speed = Value(speed),
        voiceId = Value(voiceId),
        filePath = Value(filePath),
        fileSize = Value(fileSize),
@@ -6340,6 +6391,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
   static Insertable<TtsCacheRow> custom({
     Expression<int>? id,
     Expression<int>? articleParagraphId,
+    Expression<int>? sentenceIndex,
     Expression<int>? wordId,
     Expression<double>? speed,
     Expression<String>? voiceId,
@@ -6352,6 +6404,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
       if (id != null) 'id': id,
       if (articleParagraphId != null)
         'article_paragraph_id': articleParagraphId,
+      if (sentenceIndex != null) 'sentence_index': sentenceIndex,
       if (wordId != null) 'word_id': wordId,
       if (speed != null) 'speed': speed,
       if (voiceId != null) 'voice_id': voiceId,
@@ -6365,6 +6418,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
   TtsCachesCompanion copyWith({
     Value<int>? id,
     Value<int?>? articleParagraphId,
+    Value<int>? sentenceIndex,
     Value<int?>? wordId,
     Value<double>? speed,
     Value<String>? voiceId,
@@ -6376,6 +6430,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
     return TtsCachesCompanion(
       id: id ?? this.id,
       articleParagraphId: articleParagraphId ?? this.articleParagraphId,
+      sentenceIndex: sentenceIndex ?? this.sentenceIndex,
       wordId: wordId ?? this.wordId,
       speed: speed ?? this.speed,
       voiceId: voiceId ?? this.voiceId,
@@ -6394,6 +6449,9 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
     }
     if (articleParagraphId.present) {
       map['article_paragraph_id'] = Variable<int>(articleParagraphId.value);
+    }
+    if (sentenceIndex.present) {
+      map['sentence_index'] = Variable<int>(sentenceIndex.value);
     }
     if (wordId.present) {
       map['word_id'] = Variable<int>(wordId.value);
@@ -6424,6 +6482,7 @@ class TtsCachesCompanion extends UpdateCompanion<TtsCacheRow> {
     return (StringBuffer('TtsCachesCompanion(')
           ..write('id: $id, ')
           ..write('articleParagraphId: $articleParagraphId, ')
+          ..write('sentenceIndex: $sentenceIndex, ')
           ..write('wordId: $wordId, ')
           ..write('speed: $speed, ')
           ..write('voiceId: $voiceId, ')
@@ -11304,6 +11363,7 @@ typedef $$TtsCachesTableCreateCompanionBuilder =
     TtsCachesCompanion Function({
       Value<int> id,
       Value<int?> articleParagraphId,
+      required int sentenceIndex,
       Value<int?> wordId,
       required double speed,
       required String voiceId,
@@ -11316,6 +11376,7 @@ typedef $$TtsCachesTableUpdateCompanionBuilder =
     TtsCachesCompanion Function({
       Value<int> id,
       Value<int?> articleParagraphId,
+      Value<int> sentenceIndex,
       Value<int?> wordId,
       Value<double> speed,
       Value<String> voiceId,
@@ -11360,6 +11421,11 @@ class $$TtsCachesTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sentenceIndex => $composableBuilder(
+    column: $table.sentenceIndex,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -11436,6 +11502,11 @@ class $$TtsCachesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get sentenceIndex => $composableBuilder(
+    column: $table.sentenceIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get wordId => $composableBuilder(
     column: $table.wordId,
     builder: (column) => ColumnOrderings(column),
@@ -11506,6 +11577,11 @@ class $$TtsCachesTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get sentenceIndex => $composableBuilder(
+    column: $table.sentenceIndex,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get wordId =>
       $composableBuilder(column: $table.wordId, builder: (column) => column);
@@ -11585,6 +11661,7 @@ class $$TtsCachesTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<int?> articleParagraphId = const Value.absent(),
+                Value<int> sentenceIndex = const Value.absent(),
                 Value<int?> wordId = const Value.absent(),
                 Value<double> speed = const Value.absent(),
                 Value<String> voiceId = const Value.absent(),
@@ -11595,6 +11672,7 @@ class $$TtsCachesTableTableManager
               }) => TtsCachesCompanion(
                 id: id,
                 articleParagraphId: articleParagraphId,
+                sentenceIndex: sentenceIndex,
                 wordId: wordId,
                 speed: speed,
                 voiceId: voiceId,
@@ -11607,6 +11685,7 @@ class $$TtsCachesTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<int?> articleParagraphId = const Value.absent(),
+                required int sentenceIndex,
                 Value<int?> wordId = const Value.absent(),
                 required double speed,
                 required String voiceId,
@@ -11617,6 +11696,7 @@ class $$TtsCachesTableTableManager
               }) => TtsCachesCompanion.insert(
                 id: id,
                 articleParagraphId: articleParagraphId,
+                sentenceIndex: sentenceIndex,
                 wordId: wordId,
                 speed: speed,
                 voiceId: voiceId,
