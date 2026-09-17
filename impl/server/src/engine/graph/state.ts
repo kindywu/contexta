@@ -75,6 +75,9 @@ export const ArticleGenState = Annotation.Root({
   sourceMarkdown: Annotation<string>,
   factSheet: Annotation<FactSheet>,
   // --- 生成与校验 ---
+  /** 本槽选题（pickTopic 节点产出，仅 pathB）。空 = 模型自由选题（pathA 的选题由来源决定；
+   *  pathB 规划失败时兜底退回旧行为）。断点恢复时从 checkpoint 取回，不重复规划。 */
+  topic: Annotation<string>,
   draft: Annotation<BilingualArticle>,
   /** 生成轮数（每次 generate +1，首试 = 1）。校验违规时带违规反馈回边重写，封顶见 graph.ts 的 maxGenRounds。 */
   genAttempts: Annotation<number>,

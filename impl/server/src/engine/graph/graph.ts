@@ -9,6 +9,7 @@ import {
   LEADERS_REJECTION_MESSAGE,
   LEADERS_SOURCE_REJECTION_MESSAGE,
   pickCategoryNode,
+  pickTopicNode,
   resolvePath,
   route,
   validateNode,
@@ -66,7 +67,7 @@ export function sourceRetryDecision(
  * 组装文章生成图（设计见 docs/ 目录下的设计记录）：
  *
  *   START → pickCategory -(类别)→ A: fetchLinks → chooseArticle → extractFacts → generateA → validateA → END
- *                                └──────────── B(其余9类):  generateB → validateB → END
+ *                                └──────────── B(其余9类): pickTopic → generateB → validateB → END
  *   generateA/B 模型拒答（genFailure=refused）→ A 回 chooseArticle、B 短路（见下方回边说明）
  *
  * 业务回边/短路（默认 3 轮含首试，可注入）：
@@ -86,6 +87,7 @@ export function buildArticleGraph(options: BuildGraphOptions) {
   const graph = new StateGraph(ArticleGenState)
     .setNodeDefaults({ retryPolicy: retryPolicy ?? { maxAttempts: 3 } })
     .addNode("pickCategory", (s) => pickCategoryNode(s, deps))
+    .addNode("pickTopic", (s) => pickTopicNode(s, deps))
     .addNode("fetchLinks", (s) => fetchLinksNode(s, deps))
     .addNode("chooseArticle", (s) => chooseArticleNode(s, deps))
     .addNode("extractFacts", (s) => extractFactsNode(s, deps, { maxSourcePicks }))
@@ -95,10 +97,12 @@ export function buildArticleGraph(options: BuildGraphOptions) {
     .addNode("validateA", (s) => validateNode(s, deps, { path: "A", maxGenRounds }))
     .addNode("validateB", (s) => validateNode(s, deps, { path: "B", maxGenRounds }))
     .addEdge(START, "pickCategory")
+    // pathB 先定选题再写（防同批选题雷同，见 pickTopicNode）；pathA 的选题由来源决定
     .addConditionalEdges("pickCategory", (s) => route(s, deps), {
       A: "fetchLinks",
-      B: "generateB",
+      B: "pickTopic",
     })
+    .addEdge("pickTopic", "generateB")
     // fetchLinks/chooseArticle 可能因名单过滤耗尽而业务性 rejected（state.reason 区分），
     // 短路收尾；stale rejected（extractFacts 换篇重试轮留下的）不短路，继续抽取
     .addConditionalEdges(

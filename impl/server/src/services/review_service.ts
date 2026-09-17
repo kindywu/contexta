@@ -22,6 +22,7 @@ import {
 } from "../engine/db";
 import { generateArticle } from "../engine/graph";
 import { log } from "../engine/graph/log";
+import { TopicRegistry } from "../engine/graph/topics";
 import type { ArticleResult } from "../engine/graph/state";
 import type { Difficulty } from "../engine/schema";
 import { renderMarkdown } from "../engine/render";
@@ -36,6 +37,7 @@ export interface GenArgs {
   recentTitles?: string[];
   recentUsedUrls?: string[];
   usedUrls?: Set<string>;
+  topicRegistry?: TopicRegistry;
 }
 
 /** 生成函数 seam（与引擎 LLM 接口并列）：测试注入假实现，生产用引擎 generateArticle。 */
@@ -214,6 +216,9 @@ export async function reRunSlot(
         recentTitles,
         recentUsedUrls,
         usedUrls: new Set<string>(),
+        // 单槽重跑也走选题规划（自有登记簿）：新选题会避开近 5 天已发布题材，
+        // 否则重跑出来的文章容易和当日既有文章撞题材
+        topicRegistry: new TopicRegistry(),
       });
     } catch (e) {
       log(`reRunSlot slot=${slotRow.id} gen 抛错: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);

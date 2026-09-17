@@ -63,6 +63,15 @@ export const GenerateResult = z.discriminatedUnion("type", [
 export type GenerateResult = z.infer<typeof GenerateResult>;
 
 
+/**
+ * 选题规划（pickTopic 节点）的模型输出：单个槽位一个选题。
+ * 选题是"写什么"（subject + angle），与 category（怎么写）正交。
+ */
+export const TopicPlan = z.object({
+  topic: z.string(),
+});
+export type TopicPlan = z.infer<typeof TopicPlan>;
+
 export const PipelineState = z.object({
   // --- scheduling input ---
   runDate: z.string(), // ISO date, e.g. "2026-08-21"

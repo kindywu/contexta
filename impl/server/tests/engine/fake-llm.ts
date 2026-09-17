@@ -1,5 +1,6 @@
 /**
- * 测试专用假 LLM：按 system prompt 特征识别 generate/validate 两类调用，
+ * 测试专用假 LLM：按 system prompt 特征识别 pickTopic（选题规划）/ extractFacts /
+ * generate / validate 各类调用，
  * 按预设判定序列驱动图内校验重试；记录每次 generate 收到的 user prompt 原文
  * 以便断言「违规反馈确实带到了下一次请求」。
  * 非测试文件（不含 test()），供 graph-retry / retry 等测试共享。
@@ -29,12 +30,20 @@ export const EMPTY_FACT_CARD: FactCard = {
   keyNumbers: [], keyNames: [],
 };
 
+/** 选题规划缺省返回的选题词表：单词且彼此无公共内容词（否则会被相似度校验拦下）。 */
+const DEFAULT_TOPICS = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel"];
+
 export class FakeLLM implements LLM {
   /** 每次 generate 收到的 user prompt 原文（含 feedback 块） */
   generatePrompts: string[] = [];
   validateCalls = 0;
   /** extractFacts 调用次数（事实卡脚本消费） */
   factCalls = 0;
+  /** 选题规划返回脚本（按调用次数消费；null = 抛错模拟规划失败）；缺省按 DEFAULT_TOPICS 递增 */
+  topicPlans: (string | null)[] | null = null;
+  /** 每次选题规划收到的 user prompt 原文（断言"近期标题/已占选题带到了规划器"） */
+  topicPrompts: string[] = [];
+  topicCalls = 0;
 
   constructor(
     private readonly verdicts: VerdictSeq,
@@ -59,6 +68,15 @@ export class FakeLLM implements LLM {
   private async respond(messages: BaseMessage[]): Promise<unknown> {
     const sys = String(messages[0]!.content);
     const user = String(messages[1]!.content);
+    if (sys.includes("editorial planner of a bilingual")) {
+      this.topicPrompts.push(user);
+      const plan = this.topicPlans
+        ? this.topicPlans[Math.min(this.topicCalls, this.topicPlans.length - 1)]
+        : DEFAULT_TOPICS[this.topicCalls % DEFAULT_TOPICS.length];
+      this.topicCalls++;
+      if (plan === null) throw new Error("FakeLLM: 选题规划失败（脚本指定）");
+      return { topic: plan };
+    }
     if (sys.includes("bilingual English-learning article writer")) {
       this.generatePrompts.push(user);
       const n = this.generatePrompts.length;

@@ -24,6 +24,7 @@ import {
   REJECTION_MESSAGE,
 } from "./prompts";
 import { SafetyVerdict, type ArticleGenState } from "./state";
+import { planTopic, type TopicRegistry } from "./topics";
 import { log } from "./log";
 
 /** 权威正文喂给 LLM 前的截断上限（字符），防止上下文超长。 */
@@ -37,6 +38,9 @@ export interface NodeDeps {
   rng: () => number;
   /** 进程内共享的 source_url 去重集合（多个并行槽位共享，防 fetchSource 抓取重复；Task 5 消费；generateArticle 总是传入，其余入口可缺省 undefined） */
   usedUrls?: Set<string>;
+  /** 进程内共享的选题登记簿（同批并行槽位共享，防选题雷同；见 topics.ts）。
+   *  generateArticle 缺省自建一个；不含该依赖时 pickTopic 不规划（退回自由选题）。 */
+  topicRegistry?: TopicRegistry;
 }
 
 type State = typeof ArticleGenState.State;
@@ -57,6 +61,46 @@ export async function pickCategoryNode(state: State, deps: NodeDeps): Promise<Up
   const category = rngPick(cats, deps.rng);
   log(`pickCategory: difficulty=${state.difficulty} -> ${category} (candidates: ${cats.join(",")})`);
   return { category };
+}
+
+/**
+ * 节点1.5（仅 pathB，见 graph.ts 接线）：规划本槽选题——先定"写什么"，再生成。
+ *
+ * 为什么在生成之前单独规划：只给类别和难度的生成 prompt 会让模型自由选题，而
+ * LOW 类别的选题分布极窄（雨伞/公交站/拿错东西），同批并发槽位的 prompt 又完全
+ * 相同 → 一批三篇"伞文"（2026-09-17）。规划经 `TopicRegistry` 串行取号，保证同批
+ * 槽位拿到不同选题，并显式避开近 5 天已发布的题材。
+ *
+ * 兜底：规划失败/取不到不重复的选题 → 不写 topic（退回自由选题），绝不让选题规划
+ * 变成新的生成故障点。断点恢复时 state.topic 已在 checkpoint 里，不重复规划。
+ */
+export async function pickTopicNode(state: State, deps: NodeDeps): Promise<Update> {
+  if (state.topic) return {};
+  const registry = deps.topicRegistry;
+  if (!registry) return {};
+  try {
+    const topic = await registry.reserve(async (taken) => {
+      const planned = await planTopic({
+        llm: deps.llm,
+        runDate: state.runDate,
+        difficulty: state.difficulty,
+        category: state.category,
+        recentTitles: state.recentTitles ?? [],
+        takenTopics: [...taken],
+      });
+      if (!planned) {
+        log(`pickTopic: 未取到可用选题（同批已占 ${taken.length} 条）→ 本槽沿用自由选题`);
+      }
+      return planned;
+    });
+    if (!topic) return {};
+    log(`pickTopic: [${state.category}/${state.difficulty}] 选题 = ${topic}`);
+    return { topic };
+  } catch (e) {
+    // planTopic 自身不抛；此处只兜底登记簿的意外，选题规划不得拖垮槽位
+    log(`pickTopic: 规划异常，本槽沿用自由选题: ${e instanceof Error ? e.message : String(e)}`);
+    return {};
+  }
 }
 
 /**
@@ -281,6 +325,7 @@ export async function generateNode(
     factSheetJson: JSON.stringify(state.factSheet ?? {}),
     lastViolations: state.lastViolations ?? [],
     recentTitles: state.recentTitles ?? [],
+    topic: state.topic ?? "",
   });
   try {
     const result = await callLLMStructured(
