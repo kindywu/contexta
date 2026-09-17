@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:contexta/core/components/article_card.dart';
 import 'package:contexta/data/local/database.dart';
 import 'package:contexta/data/local/daos/article_daos.dart';
 import 'package:contexta/data/remote/dto/article_dto.dart';
@@ -678,6 +679,53 @@ void main() {
       await tester.tap(find.text('今天'));
       await tester.pumpAndSettle();
       expect(find.text('今日新闻'), findsOneWidget);
+    });
+
+    testWidgets('pad 横屏下同一天的卡片排成两列', (tester) async {
+      _seedDays(
+        articleRepo,
+        1,
+        articlesForBatch: (batchId) => [
+          makeArticle(batchId * 100, batchId: batchId),
+          makeArticle(batchId * 100 + 1, batchId: batchId),
+        ],
+      );
+      final container = makeContainer();
+      await container.read(homeControllerProvider.notifier).load();
+
+      tester.view.physicalSize = const Size(2438, 1626); // 逻辑 1219×813
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await pumpHome(tester, container);
+
+      final cards = find.byType(ArticleCard);
+      expect(cards, findsNWidgets(2));
+      final a = tester.getTopLeft(cards.at(0));
+      final b = tester.getTopLeft(cards.at(1));
+      expect(b.dy, a.dy, reason: '同一行的两张卡片顶边对齐');
+      expect(b.dx, greaterThan(a.dx), reason: '第二张在第一张右侧');
+    });
+
+    testWidgets('手机宽度下卡片仍是单列', (tester) async {
+      _seedDays(
+        articleRepo,
+        1,
+        articlesForBatch: (batchId) => [
+          makeArticle(batchId * 100, batchId: batchId),
+          makeArticle(batchId * 100 + 1, batchId: batchId),
+        ],
+      );
+      final container = makeContainer();
+      await container.read(homeControllerProvider.notifier).load();
+      await pumpHome(tester, container); // 默认窗口 800×600 = medium
+
+      final cards = find.byType(ArticleCard);
+      expect(cards, findsNWidgets(2));
+      final a = tester.getTopLeft(cards.at(0));
+      final b = tester.getTopLeft(cards.at(1));
+      expect(b.dy, greaterThan(a.dy), reason: '手机仍是上下单列');
     });
 
     testWidgets('列表底部：没有更多时提示「没有更多文章了」', (tester) async {

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/components/article_card.dart';
 import '../../core/components/loading_indicator.dart';
+import '../../core/layout/window_size.dart';
 import '../../core/navigation/routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
@@ -229,7 +230,7 @@ class _StreakBadge extends StatelessWidget {
 
 /// 按日期分组的文章列表（对照 Kotlin DayGroup）：
 /// 可折叠日期头（展开时 ExpandLess / 收起时 ExpandMore），
-/// 文章卡片垂直间距 8dp。
+/// 文章卡片间距 8dp；大屏（expanded）双列，手机 / pad 竖屏单列。
 ///
 /// 折叠态由 [HomeUiState.collapsedDates] 托管（本组件无状态）：SliverList 会
 /// dispose 滑出缓存区的子项，留在 State 里的折叠态一滚就丢。
@@ -287,17 +288,32 @@ class _DayGroup extends StatelessWidget {
             padding: const EdgeInsets.symmetric(
               horizontal: AppPage.horizontalPadding,
             ),
-            child: Column(
-              children: [
-                for (final article in articles)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                    child: _ArticleCardView(
-                      article: article,
-                      onClick: () => onArticleClick(article.id),
-                    ),
-                  ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // 大屏（expanded）双列；手机 / pad 竖屏单列。
+                // 纵向间距仍由每张卡片自带的 bottom padding 提供（含末张，
+                // 与原 Column 完全一致），故 Wrap 只设 spacing。
+                final columns = context.isExpandedLayout ? 2 : 1;
+                const gap = AppSpacing.xs;
+                final cardWidth =
+                    (constraints.maxWidth - gap * (columns - 1)) / columns;
+                return Wrap(
+                  spacing: gap,
+                  children: [
+                    for (final article in articles)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: gap),
+                        child: SizedBox(
+                          width: cardWidth,
+                          child: _ArticleCardView(
+                            article: article,
+                            onClick: () => onArticleClick(article.id),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
         const SizedBox(height: AppSpacing.xs),
