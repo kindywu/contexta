@@ -62,25 +62,42 @@ timedatectl   # 确认 Local time 为 Asia/Shanghai
 | 决策 | 理由 |
 |---|---|
 | 证书为 **IP 直连自签名 leaf**（CN=IP + `subjectAltName=IP:47.112.20.32`，P-256，10 年） | 无域名，Let's Encrypt 类 CA 不签发 IP 证书；SAN 必须含客户端连接的写法（IP 只能进 IP SAN，不能写 DNS） |
-| App 端把**该证书内嵌**为信任锚（Android `network_security_config`，只作用于 47.112.20.32，其余域名走系统信任库） | 免设备安装 CA、免用户点击"继续访问"；作用域收窄到单主机，无全局信任风险 |
+| App 端把**同一份证书内嵌**为信任锚（Flutter asset → 启动注入 Dart `SecurityContext`） | 免设备安装 CA、免用户点击"继续访问"；作用域收窄到单证书。**实测（2026-09-17 真机）：Android network security config 对 Dart/Flutter 网络栈无效——Dart TLS 走 BoringSSL 自带信任链，不读 NSC**，仅配 NSC 会 `CERTIFICATE_VERIFY_FAILED: self signed certificate`，必须显式注入 |
 | 有效期 10 年 | 自签名无法自动续期；到期前必须重新生成并重发 App（见下） |
 | `curl`/浏览器需 `-k` 或忽略告警 | 自签名证书不在系统信任库；管理页首次访问点"继续前往"即可 |
+
+**客户端信任链（App 端，两份公钥副本必须同源）**：
+
+| 位置 | 作用 | 是否进仓库 |
+|---|---|---|
+| `.local/tls/server.crt`（本地生成产物） | 生成源头 | 否（gitignore） |
+| `/opt/contexta/server/certs/server.crt`（服务器） | 服务端下发 | 否（只读挂载进容器） |
+| `impl/app/flutter/assets/certs/server.crt`（App asset） | Dart `SecurityContext` 信任锚 | **是**（公钥可公开） |
+
+App 侧读取链路（`lib/di/providers.dart` + `lib/main.dart`）：启动 `loadServerTrustCert()` 经 `rootBundle` 读 asset → `SecurityContext(withTrustedRoots: false)` 注入 `IOHttpClientAdapter`——**只信任内嵌证书**；证书缺失时回退默认信任库（本地开发场景）。
+
+> ⚠️ 踩坑记录（2026-09-17 真机实测）：先按 Android `network_security_config`（NSC）方案实现，
+> 真机报 `HandshakeException: CERTIFICATE_VERIFY_FAILED: self signed certificate`——**Dart 的 TLS 栈
+> 不读 NSC**（NSC 只约束原生栈：OkHttp/WebView）。且 debug 模式下 Flutter asset 不在文件系统里，
+> 直接按路径读必失败，只能走 `rootBundle`。两条教训都写进了实现注释。
 
 **生成与部署**（本地生成，私钥不进仓库；生成后必须同步 App 内嵌副本）：
 
 ```bash
-# ① 生成（写在仓库外或 .local/，两者均 gitignore）
+# ① 生成（生成到 gitignore 的 .local/）
 impl/server/deploy/generate_tls_cert.sh --ip 47.112.20.32 --cert .local/tls/server.crt --key .local/tls/server.key
-# ② 推证书到服务器（私钥文件权限 600）
+# ② 推证书到服务器（私钥权限 600）
 ssh -i ~/.ssh/<pem> root@47.112.20.32 'mkdir -p /opt/contexta/server/certs'
 scp .local/tls/server.crt .local/tls/server.key root@47.112.20.32:/opt/contexta/server/certs/
-# ③ 服务器 .env 启用（路径是容器内视角；certs 目录已只读挂载到 /app/certs）
+# ③ 同步 App 内嵌副本（换 IP / 重签后必做，见下 ⚠️）
+cp .local/tls/server.crt impl/app/flutter/assets/certs/server.crt
+# ④ 服务器 .env 启用（路径是容器内视角；certs 目录已只读挂载到 /app/certs）
 #    TLS_CERT_PATH=/app/certs/server.crt
 #    TLS_KEY_PATH=/app/certs/server.key
-# ④ 重启生效（GHA 部署自动带上；手工重启见 §5.3 注意 compose 环境注入）
+# ⑤ 部署生效：合并后 GHA 自动（含健康检查）；手工重启注意 compose 环境注入（§5.3）
 ```
 
-**⚠️ 重新生成证书 = 已装 App 全部失联**（App 内嵌旧证书做锚点校验 → 新连接握手即断）。改 IP、换证书、证书到期前，必须走完整链路：重签 → 推服务器 → **更新 `impl/app/flutter/android/app/src/main/res/raw/contexta_server.crt`（同一份证书文件）→ 重新打包 App 并分发**。所以：**证书公钥可以进仓库（App 内嵌），私钥永远不进**；管理端浏览器只需重新点一次"继续前往"。
+**⚠️ 重新生成证书 = 已装 App 全部失联**（App 内嵌旧证书做锚点校验 → 新连接握手即断）。改 IP、换证书、证书到期前，必须走完整链路：重签 → 推服务器 → **替换 `impl/app/flutter/assets/certs/server.crt` → 重新打包 App 并分发**。所以：**证书公钥可以进仓库，私钥永远不进**；管理端浏览器只需重新点一次"继续前往"。
 
 **服务端启动日志**自证协议：`[server] listening on :8080 (https, db: …)`——HTTP 时为 `(http, …)`，部署后用它或 `curl -k https://127.0.0.1:443/api/health` 确认。
 
@@ -257,5 +274,5 @@ docker compose exec contexta-server bun run delete-daily -- --date 2026-08-29 --
 | 8 | **免密直登** | App 登录不校验验证码（beta 简化），保留 `code` 字段；风险靠封禁兜底 | `services/auth_service.ts` |
 | 9 | **文章为全局共享池** | 同难度用户读同批文章（3 难度 × 5 篇/天）；下发需 JWT，与查词配额无关 | 设计决策 |
 | 10 | **source_url 不下发** | 文章 App 契约不含 `source_url`（仅管理端可见）；`regenerate_count`/`order_index` 为派生字段 | `article_reader.ts` |
-| 11 | **TLS 证书三重绑定** | 证书 SAN = 客户端连接的 IP（IP 必须进 IP SAN）；私钥只存服务器 `certs/`（600，gitignore）；App 内嵌同一证书为信任锚——**重签证书 = 必须重发 App**（§2.1） | `config.ts`、`deploy/generate_tls_cert.sh`、`network_security_config.xml` |
+| 11 | **TLS 证书三重绑定** | 证书 SAN = 客户端连接的 IP（IP 必须进 IP SAN）；私钥只存服务器 `certs/`（600，gitignore）；App 内嵌同一份证书注入 Dart `SecurityContext`（NSC 对 Dart 无效）——**重签证书 = 必须重发 App**（§2.1） | `config.ts`、`deploy/generate_tls_cert.sh`、`providers.dart`、`main.dart` |
 | 12 | **TLS 二选一硬闸** | `TLS_CERT_PATH`/`TLS_KEY_PATH` 只配一项或文件缺失 → 启动失败（不静默回退 HTTP）；两项都空 = HTTP（本地开发） | `config.ts` `refine`/`superRefine` |

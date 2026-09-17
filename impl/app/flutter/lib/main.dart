@@ -13,6 +13,9 @@ Future<void> main() async {
   // （AndroidManifest screenOrientation / iOS Info.plist）已固定竖屏，
   // 此处覆盖引擎启动后的运行期旋转，详见 docs/app-orientation.md。
   await lockAppToPortrait();
+  // 自签名 HTTPS 信任锚：预载内嵌证书（Dart TLS 栈不读 Android NSC，必须显式注入，
+  // 见 di/providers.dart；失败仅告警，本地开发/无证书场景继续默认信任库）
+  await loadServerTrustCert();
   // 2026-08-14（计划 B Task 8）：workmanager 换每日同步任务——
   // 定时拉取服务端已审核文章（幂等 upsert）。首次任务延迟 2h
   // （启动编排已同步过，无需刚启动即重复）；之后每 24h 一次；
