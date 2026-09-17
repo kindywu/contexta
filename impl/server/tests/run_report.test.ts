@@ -1,5 +1,6 @@
-// 每日运行上报包装（查余额 → 开始卡 → 跑 → 查余额 → 结束卡；抛错也发再重抛）：
-// probe/notifyStart/notifyEnd 全部注入记录型假实现——不调余额接口、不发飞书、不跑引擎。
+// 每日运行上报包装（查余额 → 开始卡 → 跑 → 查余额 → 结束卡 →（成本 0 时）排延迟复核；
+// 抛错也发结束卡再重抛）：probe/notifyStart/notifyEnd/recheck 全部注入记录型假实现——
+// 不调余额接口、不发飞书、不跑引擎、不真等 10 分钟。
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { tmpdir } from "node:os";
@@ -8,6 +9,7 @@ import { loadServerConfig } from "../src/config";
 import { ensureServerSchema } from "../src/db";
 import { loadConfig, type AppConfig } from "../src/engine/config";
 import { ensureSchema } from "../src/engine/db";
+import type { CostRecheckArgs } from "../src/services/cost_recheck";
 import type { DailyNotifyArgs, DailyStartArgs } from "../src/services/feishu_notify";
 import type { BalanceSnapshot } from "../src/services/llm_balance";
 import { withDailyRunReport, type RunReportCtx } from "../src/services/run_report";
@@ -100,6 +102,68 @@ describe("withDailyRunReport（编排顺序与成本取数）", () => {
     expect(starts[0]!.balanceBefore).toBeNull();
     expect(ends[0]!.balanceBefore).toBeNull();
     expect(ends[0]!.balanceAfter).toBeNull();
+  });
+
+  test("成本为 0（前后余额相等）→ 结束卡后排一次延迟复核，入参为两侧余额", async () => {
+    const scheduled: CostRecheckArgs[] = [];
+    const { ctx, events } = makeCtx([snap(3.23), snap(3.23)], {
+      recheck: (a) => {
+        events.push("recheck");
+        scheduled.push(a);
+      },
+    });
+    await withDailyRunReport(ctx, RUN_DATE, async () => {
+      events.push("run");
+      return { stepErrors: [] };
+    });
+
+    expect(events).toEqual(["probe", "start", "run", "probe", "end", "recheck"]);
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]!.runDate).toBe(RUN_DATE);
+    expect(scheduled[0]!.balanceBefore.total).toBe(3.23);
+    expect(scheduled[0]!.balanceAfter.total).toBe(3.23);
+  });
+
+  test("成本非 0（已结算/充值）→ 不排复核", async () => {
+    const scheduled: CostRecheckArgs[] = [];
+    const recheck = (a: CostRecheckArgs) => scheduled.push(a);
+    for (const after of [snap(2.81), snap(13.23)]) {
+      const { ctx } = makeCtx([snap(3.23), after], { recheck });
+      await withDailyRunReport(ctx, RUN_DATE, async () => ({ stepErrors: [] }));
+    }
+    expect(scheduled).toHaveLength(0);
+  });
+
+  test("余额未知（查询失败）→ 不排复核（0 成本必须是查到的相等）", async () => {
+    const scheduled: CostRecheckArgs[] = [];
+    const { ctx } = makeCtx([null, null], { recheck: (a) => scheduled.push(a) });
+    await withDailyRunReport(ctx, RUN_DATE, async () => ({ stepErrors: [] }));
+    expect(scheduled).toHaveLength(0);
+  });
+
+  test("运行抛错 + 成本为 0 → 结束卡后仍排复核，再向上重抛", async () => {
+    const scheduled: CostRecheckArgs[] = [];
+    const { ctx } = makeCtx([snap(3.23), snap(3.23)], { recheck: (a) => scheduled.push(a) });
+    await expect(
+      withDailyRunReport(ctx, RUN_DATE, async () => {
+        throw new Error("LLM 网关挂了");
+      }),
+    ).rejects.toThrow("LLM 网关挂了");
+    expect(scheduled).toHaveLength(1);
+  });
+
+  test("复核调度 seam 抛错 → 不阻断运行（与通知同纪律）", async () => {
+    const { ctx, events } = makeCtx([snap(3.23), snap(3.23)], {
+      recheck: () => {
+        throw new Error("scheduler down");
+      },
+    });
+    const out = await withDailyRunReport(ctx, RUN_DATE, async () => {
+      events.push("run");
+      return { stepErrors: [] };
+    });
+    expect(events).toContain("run");
+    expect(out.stepErrors).toEqual([]);
   });
 
   test("通知 seam 抛错 → 不阻断运行（通知故障绝不中断生成）", async () => {

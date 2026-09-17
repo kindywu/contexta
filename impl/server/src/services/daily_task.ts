@@ -11,6 +11,7 @@
 //   CLI 场景 console 保留），不中断后续步骤与整个 fill
 // - 槽位级去重：error 补跑与审核重生成共用 Task 7 的进程锁（同槽串行）
 // - 收尾上报：每轮 runFill 由 services/run_report 包装统一发出"开始卡 + 结束卡（含本次成本）"，
+//   成本为 0 时再排一次延迟余额复核（services/cost_recheck，fire-and-forget 不拖住本循环）；
 //   通知/余额查询只记日志不抛，未配置飞书 webhook 静默跳过；"有开始没结束"的告警
 //   由 services/daily_alert 的独立看门狗负责（与本循环无关，卡死也能告警）
 // 测试注入：genDaily/retryFailed/reRun/ensure/now/sleep 全部可替换（见 DailyTaskCtx）。
