@@ -120,6 +120,12 @@ class _TtsStub implements TtsEngine {
   ) {
     onSentenceStarted = callback;
   }
+
+  /// 模拟第 [paragraphIndex] 段第 [sentenceIndex] 句开始发声（总句数默认 2）。
+  void simulateSentenceStarted(int paragraphIndex, int sentenceIndex,
+      {int total = 2}) {
+    onSentenceStarted?.call('ctx-1', paragraphIndex, sentenceIndex, total);
+  }
 }
 
 Article makeArticle() => const Article(
@@ -203,6 +209,13 @@ int spreadCount(WidgetTester tester) {
   final delegate = pageView.childrenDelegate as SliverChildBuilderDelegate;
   return delegate.childCount ?? 0;
 }
+
+/// 当前 PageView 的跨页序号。
+int currentSpread(WidgetTester tester) => tester
+    .widget<PageView>(find.byType(PageView))
+    .controller!
+    .page!
+    .round();
 
 void main() {
   late _Stub stub;
@@ -332,5 +345,70 @@ void main() {
     expect(find.text('✓ 已读'), findsOneWidget);
     expect(find.text('标记已读'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  group('朗读自动翻页', () {
+    testWidgets('全文朗读跨页时自动翻到目标跨页', (tester) async {
+      stub.article = makePagedArticle();
+      setPadLandscape(tester);
+      await pumpScreen(tester);
+      await tester.tap(find.byIcon(Icons.play_arrow));
+      await tester.pumpAndSettle();
+      expect(currentSpread(tester), 0);
+
+      // 报到最后一段（多段文章里必不在第 1 跨页）
+      final last = makePagedArticle().paragraphs.length - 1;
+      tts.simulateSentenceStarted(last, 0, total: 2);
+      await tester.pumpAndSettle();
+
+      expect(currentSpread(tester), greaterThan(0), reason: '朗读跨页应自动翻页');
+      expect(paragraphFinder(last), findsWidgets, reason: '应翻到含目标段的跨页');
+    });
+
+    testWidgets('用户刚手动翻页时跳过一次自动翻页', (tester) async {
+      stub.article = makePagedArticle();
+      setPadLandscape(tester);
+      await pumpScreen(tester);
+      await tester.tap(find.byIcon(Icons.play_arrow));
+      await tester.pumpAndSettle();
+
+      await tester.drag(find.byType(PageView), const Offset(-800, 0));
+      await tester.pumpAndSettle();
+      final afterDrag = currentSpread(tester);
+      expect(afterDrag, greaterThan(0), reason: '手拖应真的翻过去，否则用例无意义');
+
+      // 目标句在第 1 页（第 0 跨页）——若不被跳过就会翻回去
+      tts.simulateSentenceStarted(0, 0, total: 2);
+      await tester.pumpAndSettle();
+
+      expect(currentSpread(tester), afterDrag, reason: '手刚拖过，本次不自动翻');
+
+      // 跳过一次即恢复跟随（不是永久停用）
+      tts.simulateSentenceStarted(0, 1, total: 2);
+      await tester.pumpAndSettle();
+      expect(currentSpread(tester), 0, reason: '下一次句子切换应恢复跟随');
+    });
+
+    testWidgets('单段播放不触发自动翻页', (tester) async {
+      stub.article = makePagedArticle();
+      setPadLandscape(tester);
+      await pumpScreen(tester);
+
+      // 不点全文播放，直接点第 1 段的内联播放钮（书页内按段落定位）
+      await tester.tap(
+        find.descendant(
+          of: paragraphFinder(0),
+          matching: find.byIcon(Icons.volume_up_outlined),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(currentSpread(tester), 0);
+
+      final last = makePagedArticle().paragraphs.length - 1;
+      tts.simulateSentenceStarted(last, 0, total: 2);
+      await tester.pumpAndSettle();
+
+      expect(currentSpread(tester), 0, reason: '单段播放只高亮不翻页（与手机一致）');
+    });
   });
 }

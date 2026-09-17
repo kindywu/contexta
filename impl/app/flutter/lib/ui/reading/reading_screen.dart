@@ -234,7 +234,8 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
       },
     );
 
-    // 副作用 3：全文朗读句子切换 → 自动滚动到 1/3 处
+    // 副作用 3：全文朗读句子切换 → 手机模式滚动到 1/3 处，书页模式翻到
+    // 目标跨页（手滚 / 手翻跳过本次，下次切换恢复）
     ref.listen<(int?, int?)>(
       readingControllerProvider(widget.articleId)
           .select((s) => (s.speakingParagraphIndex, s.speakingSentenceIndex)),
@@ -248,6 +249,14 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
         if (!state.isSpeakingFullArticle) return; // 单段播放只高亮不滚动
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
+          if (_isSpreadMode) {
+            if (_userScrolling) {
+              _userScrolling = false; // 手翻跳过本次，下次切换恢复
+              return;
+            }
+            turnToPageOfParagraph(paragraphIndex);
+            return;
+          }
           final sentences = paragraphIndex < state.sentencesByParagraph.length
               ? state.sentencesByParagraph[paragraphIndex]
               : const <ArticleSentence>[];
