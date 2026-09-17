@@ -201,7 +201,7 @@ RULES:
 - The topic must differ from every ALREADY USED entry in BOTH subject and angle: vary the setting, the main object, the characters, and the type of situation. Renaming the same thing (e.g. "The Blue Umbrella" instead of "The Yellow Umbrella") is NOT a new topic, and neither is the same plot with a different object.
 - Match the slot's difficulty (CEFR level) and its category format guidance.
 - Prefer concrete everyday situations: clear characters, one simple event or exchange.
-- Keep it safe and neutral: no politics, no real named people, no risky or sensitive subjects.
+- Keep the topic inside the platform's safety red lines (a bad topic wastes a whole article, and the red lines are strict): no politics, geopolitics or modern political history; never build a topic around a real public or political figure (especially Chinese leaders), a living celebrity, or a named organization; no religion, sex, violence, crime, drugs, gambling, or medical/financial advice. Invent ordinary characters instead of naming real people.
 Respond strictly in the given JSON schema.`;
 }
 
