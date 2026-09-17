@@ -514,4 +514,33 @@ void main() {
       expect(find.textContaining('13800000000'), findsNothing);
     });
   });
+
+  // 规格 §6.5 的「expanded 两列」收敛为单列限宽 640：设置项是自上而下的
+  // 语义列表，拆两列会打断阅读顺序（YAGNI）。
+  group('宽屏限宽', () {
+    testWidgets('pad 横屏下设置列表限宽 640 且居中', (tester) async {
+      tester.view.physicalSize = const Size(2438, 1626); // 逻辑 1219×813
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpScreen(tester);
+
+      final list = find.byType(ListView);
+      expect(tester.getSize(list).width, 640);
+      final left = tester.getTopLeft(list).dx;
+      final right = 1219 - tester.getTopRight(list).dx;
+      expect((left - right).abs(), lessThan(2), reason: '左右留白近似相等');
+    });
+
+    testWidgets('手机下设置列表仍占满宽度', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2340); // 逻辑 360×780
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpScreen(tester);
+
+      expect(tester.getSize(find.byType(ListView)).width, 360);
+      expect(find.text('英文水平'), findsOneWidget);
+    });
+  });
 }

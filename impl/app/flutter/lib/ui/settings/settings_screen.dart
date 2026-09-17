@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/components/app_modal.dart';
 import '../../core/components/loading_indicator.dart';
 import '../../core/components/stat_card.dart';
+import '../../core/layout/content_width.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
@@ -60,36 +61,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               const SizedBox(height: AppSpacing.xs),
               Expanded(
-                child: ListView(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                  children: [
-                    if (_selectedTab == 0)
-                      _LearningSettingsContent(
-                        state: state,
-                        controller: controller,
-                        onShowLevelPicker: () =>
-                            setState(() => _showLevelPicker = true),
-                        onShowTranslationModePicker: () => setState(
-                            () => _showTranslationModePicker = true),
-                        onShowTtsSpeedPicker: () =>
-                            setState(() => _showTtsSpeedPicker = true),
-                        onShowTtsVoicePicker: () =>
-                            setState(() => _showTtsVoicePicker = true),
-                      )
-                    else
-                      _StatsContent(stats: state.stats),
-                    if (_selectedTab == 0 &&
-                        authState.status == AuthStatus.loggedIn) ...[
-                      const SizedBox(height: AppSpacing.lg),
-                      _LogoutSection(
-                        phone: authState.phone,
-                        onLogout: () =>
-                            setState(() => _showLogoutConfirm = true),
-                      ),
+                // 设置项是自上而下的语义列表，宽屏下不拆两列，只限宽居中
+                // （640）；手机（可用宽 < 640）渲染不变。
+                child: ContentWidth(
+                  child: ListView(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                    children: [
+                      if (_selectedTab == 0)
+                        _LearningSettingsContent(
+                          state: state,
+                          controller: controller,
+                          onShowLevelPicker: () =>
+                              setState(() => _showLevelPicker = true),
+                          onShowTranslationModePicker: () => setState(
+                              () => _showTranslationModePicker = true),
+                          onShowTtsSpeedPicker: () =>
+                              setState(() => _showTtsSpeedPicker = true),
+                          onShowTtsVoicePicker: () =>
+                              setState(() => _showTtsVoicePicker = true),
+                        )
+                      else
+                        _StatsContent(stats: state.stats),
+                      if (_selectedTab == 0 &&
+                          authState.status == AuthStatus.loggedIn) ...[
+                        const SizedBox(height: AppSpacing.lg),
+                        _LogoutSection(
+                          phone: authState.phone,
+                          onLogout: () =>
+                              setState(() => _showLogoutConfirm = true),
+                        ),
+                      ],
+                      const SizedBox(height: AppSpacing.xl),
                     ],
-                    const SizedBox(height: AppSpacing.xl),
-                  ],
+                  ),
                 ),
               ),
             ],
