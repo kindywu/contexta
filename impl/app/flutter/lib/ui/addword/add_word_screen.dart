@@ -6,6 +6,7 @@ import '../../core/components/app_button.dart';
 import '../../core/components/app_card.dart';
 import '../../core/components/app_top_bar.dart';
 import '../../core/components/loading_indicator.dart';
+import '../../core/layout/content_width.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
@@ -53,17 +54,20 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
           children: [
             AppTopBar(title: '录入单词', onBack: widget.onBack),
             Expanded(
-              child: state.success != null
-                  ? _AddWordResultContent(
-                      success: state.success!,
-                      onAddAnother: controller.reset,
-                      onDone: widget.onBack,
-                    )
-                  : _AddWordInputContent(
-                      state: state,
-                      controller: controller,
-                      inputController: _inputController,
-                    ),
+              // 宽屏（pad 横屏）下表单列限宽居中；手机不产生任何影响
+              child: ContentWidth(
+                child: state.success != null
+                    ? _AddWordResultContent(
+                        success: state.success!,
+                        onAddAnother: controller.reset,
+                        onDone: widget.onBack,
+                      )
+                    : _AddWordInputContent(
+                        state: state,
+                        controller: controller,
+                        inputController: _inputController,
+                      ),
+              ),
             ),
           ],
         ),

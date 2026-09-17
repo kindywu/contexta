@@ -294,4 +294,46 @@ void main() {
     expect(activateSeed.activatedLevel, 'MEDIUM');
     expect(activateSeed.activatedCount, 3);
   });
+
+  group('宽屏限宽', () {
+    testWidgets('pad 横屏下步骤内容限宽 640 居中；品牌区 / 底部操作区不变',
+        (tester) async {
+      tester.view.physicalSize = const Size(2438, 1626); // 逻辑 1219×813
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final container = makeContainer();
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: OnboardingScreen(onComplete: null)),
+      ));
+
+      // 第 1 步内容列限宽居中
+      final step = find.byType(SingleChildScrollView);
+      expect(tester.getSize(step).width, 640);
+      final left = tester.getTopLeft(step).dx;
+      final right = 1219 - tester.getTopRight(step).dx;
+      expect((left - right).abs(), lessThan(2), reason: '左右留白近似相等');
+
+      // 品牌区仍整屏居中（未被限宽列收窄）
+      expect(tester.getCenter(find.text('Contexta')).dx, 1219 / 2);
+      // 底部操作区仍贴整屏左右 24dp（不受限宽影响）
+      final next = find.widgetWithText(AppButton, '下一步');
+      expect(tester.getTopRight(next).dx, 1219 - 24);
+    });
+
+    testWidgets('手机下步骤内容仍占满宽度', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2340); // 逻辑 360×780
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final container = makeContainer();
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: OnboardingScreen(onComplete: null)),
+      ));
+
+      expect(tester.getSize(find.byType(SingleChildScrollView)).width, 360);
+    });
+  });
 }

@@ -281,4 +281,34 @@ void main() {
       expect(adapter.lastRequest, isNull);
     });
   });
+
+  group('宽屏限宽', () {
+    testWidgets('pad 横屏下表单列限宽 640 且居中', (tester) async {
+      tester.view.physicalSize = const Size(2438, 1626); // 逻辑 1219×813
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      line1 = '13800000000';
+      await pumpLogin(tester);
+
+      final list = find.byType(ListView);
+      expect(tester.getSize(list).width, 640);
+      final left = tester.getTopLeft(list).dx;
+      final right = 1219 - tester.getTopRight(list).dx;
+      expect((left - right).abs(), lessThan(2), reason: '左右留白近似相等');
+      expect(find.text('本机号码快速登录'), findsOneWidget);
+    });
+
+    testWidgets('手机下表单列仍占满宽度', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2340); // 逻辑 360×780
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      line1 = '13800000000';
+      await pumpLogin(tester);
+
+      expect(tester.getSize(find.byType(ListView)).width, 360);
+      expect(tester.getTopLeft(find.byType(ListView)).dx, 0);
+    });
+  });
 }

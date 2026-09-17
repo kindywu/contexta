@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/components/app_button.dart';
+import '../../core/layout/content_width.dart';
 import '../../core/navigation/routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
@@ -122,70 +123,73 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('登录')),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppPage.horizontalPadding,
-          vertical: AppSpacing.xl,
-        ),
-        children: [
-          Icon(Icons.smartphone_outlined,
-              size: 48, color: AppColors.primary),
-          const SizedBox(height: AppSpacing.lg),
-          Text(
-            '手机号免密登录',
-            textAlign: TextAlign.center,
-            style: AppType.textTheme.titleMedium,
+      // 宽屏（pad 横屏）下表单列限宽居中；手机不产生任何影响
+      body: ContentWidth(
+        child: ListView(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppPage.horizontalPadding,
+            vertical: AppSpacing.xl,
           ),
-          const SizedBox(height: AppSpacing.sm),
-          Text(
-            '登录后可同步文章与学习记录',
-            textAlign: TextAlign.center,
-            style: AppType.textTheme.bodyMedium
-                ?.copyWith(color: AppColors.muted),
-          ),
-          const SizedBox(height: AppSpacing.xl),
-          AppButton(
-            text: _loading ? '登录中…' : '本机号码快速登录',
-            onClick: _quickLogin,
-            enabled: serverConfigured && !_loading,
-          ),
-          if (!serverConfigured) ...[
-            const SizedBox(height: AppSpacing.md),
+          children: [
+            Icon(Icons.smartphone_outlined,
+                size: 48, color: AppColors.primary),
+            const SizedBox(height: AppSpacing.lg),
             Text(
-              '服务端未配置，当前为本地模式',
+              '手机号免密登录',
               textAlign: TextAlign.center,
-              style: AppType.textTheme.bodySmall
+              style: AppType.textTheme.titleMedium,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Text(
+              '登录后可同步文章与学习记录',
+              textAlign: TextAlign.center,
+              style: AppType.textTheme.bodyMedium
                   ?.copyWith(color: AppColors.muted),
             ),
-          ],
-          if (_manualMode) ...[
-            const SizedBox(height: AppSpacing.lg),
-            TextField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-              maxLength: 11,
-              decoration: const InputDecoration(
-                labelText: '手机号',
-                hintText: '请输入 11 位手机号',
-                counterText: '',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
+            const SizedBox(height: AppSpacing.xl),
             AppButton(
-              text: _loading ? '登录中…' : '登录',
-              onClick: _manualLogin,
+              text: _loading ? '登录中…' : '本机号码快速登录',
+              onClick: _quickLogin,
               enabled: serverConfigured && !_loading,
             ),
+            if (!serverConfigured) ...[
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                '服务端未配置，当前为本地模式',
+                textAlign: TextAlign.center,
+                style: AppType.textTheme.bodySmall
+                    ?.copyWith(color: AppColors.muted),
+              ),
+            ],
+            if (_manualMode) ...[
+              const SizedBox(height: AppSpacing.lg),
+              TextField(
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                maxLength: 11,
+                decoration: const InputDecoration(
+                  labelText: '手机号',
+                  hintText: '请输入 11 位手机号',
+                  counterText: '',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: AppSpacing.md),
+              AppButton(
+                text: _loading ? '登录中…' : '登录',
+                onClick: _manualLogin,
+                enabled: serverConfigured && !_loading,
+              ),
+            ],
+            const SizedBox(height: AppSpacing.lg),
+            TextButton(
+              onPressed: _loading
+                  ? null
+                  : () => context.go(Routes.home),
+              child: const Text('暂不登录，先逛逛'),
+            ),
           ],
-          const SizedBox(height: AppSpacing.lg),
-          TextButton(
-            onPressed: _loading
-                ? null
-                : () => context.go(Routes.home),
-            child: const Text('暂不登录，先逛逛'),
-          ),
-        ],
+        ),
       ),
     );
   }

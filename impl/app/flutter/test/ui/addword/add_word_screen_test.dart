@@ -284,6 +284,56 @@ void main() {
       expect(find.text('重试'), findsOneWidget);
     });
   });
+
+  group('宽屏限宽', () {
+    testWidgets('pad 横屏下内容列限宽 640 且居中（输入态）', (tester) async {
+      tester.view.physicalSize = const Size(2438, 1626); // 逻辑 1219×813
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpScreen(
+        tester,
+        AddWordResultSuccess(detail: _detail, addedToVocabulary: true),
+      );
+
+      final list = find.byType(ListView);
+      expect(tester.getSize(list).width, 640);
+      final left = tester.getTopLeft(list).dx;
+      final right = 1219 - tester.getTopRight(list).dx;
+      expect((left - right).abs(), lessThan(2), reason: '左右留白近似相等');
+    });
+
+    testWidgets('pad 横屏下内容列限宽 640 且居中（结果态）', (tester) async {
+      tester.view.physicalSize = const Size(2438, 1626);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpScreen(
+        tester,
+        AddWordResultSuccess(detail: _detail, addedToVocabulary: true),
+      );
+      await enterWord(tester, 'serendipity');
+      await tester.tap(find.text('生成释义并加入生词库'));
+      await tester.pumpAndSettle();
+      expect(find.text('再录一个'), findsOneWidget);
+
+      expect(tester.getSize(find.byType(ListView)).width, 640);
+    });
+
+    testWidgets('手机下内容列仍占满宽度', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2340); // 逻辑 360×780
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpScreen(
+        tester,
+        const AddWordResultInvalidInput(message: '只能输入英文字母'),
+      );
+
+      expect(tester.getSize(find.byType(ListView)).width, 360);
+      expect(tester.getTopLeft(find.byType(ListView)).dx, 0);
+    });
+  });
 }
 
 void _noop() {}

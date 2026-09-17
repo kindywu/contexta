@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/components/app_button.dart';
+import '../../core/layout/content_width.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
@@ -47,36 +48,41 @@ class OnboardingScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 32),
 
-            // 步骤内容（第 1-2 步可滚动，第 3 步居中全屏）
+            // 步骤内容（第 1-2 步可滚动，第 3 步居中全屏）。
+            // 宽屏（pad 横屏）下限宽居中；品牌区 / 底部操作区不受影响。
             if (state.currentStep < 3)
               Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: switch (state.currentStep) {
-                    1 => _Step1Level(
-                        selectedLevel: state.selectedLevel,
-                        onSelectLevel: ref
-                            .read(onboardingControllerProvider.notifier)
-                            .selectLevel,
-                      ),
-                    2 => _Step2DailyCount(
-                        selectedDailyCount: state.selectedDailyCount,
-                        onSelectCount: ref
-                            .read(onboardingControllerProvider.notifier)
-                            .selectDailyCount,
-                      ),
-                    _ => const SizedBox.shrink(),
-                  },
+                child: ContentWidth(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: switch (state.currentStep) {
+                      1 => _Step1Level(
+                          selectedLevel: state.selectedLevel,
+                          onSelectLevel: ref
+                              .read(onboardingControllerProvider.notifier)
+                              .selectLevel,
+                        ),
+                      2 => _Step2DailyCount(
+                          selectedDailyCount: state.selectedDailyCount,
+                          onSelectCount: ref
+                              .read(onboardingControllerProvider.notifier)
+                              .selectDailyCount,
+                        ),
+                      _ => const SizedBox.shrink(),
+                    },
+                  ),
                 ),
               )
             else
               Expanded(
-                child: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: _Step3Confirmation(
-                      level: state.selectedLevel ?? '',
-                      dailyCount: state.selectedDailyCount ?? 0,
+                child: ContentWidth(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: _Step3Confirmation(
+                        level: state.selectedLevel ?? '',
+                        dailyCount: state.selectedDailyCount ?? 0,
+                      ),
                     ),
                   ),
                 ),
