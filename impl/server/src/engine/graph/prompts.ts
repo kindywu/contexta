@@ -138,7 +138,14 @@ OUTPUT FORMAT: strictly the JSON schema given — for the article:
 for refusal: {"type":"cannot_write"}.`;
 }
 
-/** 生成节点的 user 内容：素材 + 上一次校验的违规反馈（若有）+ 近期文章标题（软约束，避免雷同选题）。 */
+/**
+ * 生成节点的 user 内容：素材 + 上次校验的违规反馈（若有）+ 本槽选题（若有）
+ * + 近期文章标题（去重约束）。
+ *
+ * topic 由 pickTopic 节点规划（pathB；pathA 的选题由来源决定，不传）。带着选题生成时，
+ * 近期标题块的措辞必须从"你自己挑一个不一样的"改成"题材已定，别借用这些的写法"——
+ * 否则两条指令互相打架，模型会退回自由选题（2026-09-17 三篇伞文事故）。
+ */
 export function buildGenerateUserContent(params: {
   category: Category;
   path: "A" | "B";
@@ -148,6 +155,8 @@ export function buildGenerateUserContent(params: {
   factSheetJson: string;
   lastViolations: Violation[];
   recentTitles: string[];
+  /** 本槽选题（pickTopic 产出）；空 = 模型自由选题（pathA / 规划失败时的兜底） */
+  topic?: string;
 }): string {
   const { category, path, lastViolations, recentTitles } = params;
   const material =
@@ -165,12 +174,61 @@ export function buildGenerateUserContent(params: {
 ${lastViolations.map((v) => `  - [${v.ruleId}] ${v.message}`).join("\n")}
 Remove or rewrite the offending content; do not argue with the reviewer.`
       : "";
-  const dedup =
-    recentTitles.length > 0
-      ? `\n\nRECENTLY PUBLISHED ARTICLES (choose a topic and angle NOT similar to these; do not retell the same event, facts, example, or news story, even in a different category):
+  const topic = params.topic?.trim();
+  const topicBlock = topic
+    ? `\nTOPIC — write about exactly this subject; do not switch to another topic: ${topic}`
+    : "";
+  const dedup = recentTitles.length > 0
+    ? topic
+      ? `\n\nALREADY PUBLISHED RECENTLY (the TOPIC above stays fixed — keep it, but do not reuse any of these titles' subject, setting, objects, characters, or plot):
 ${recentTitles.map((t) => `- "${t}"`).join("\n")}`
-      : "";
-  return `Write a bilingual English-learning article for category "${category}".${material}${feedback}${dedup}`;
+      : `\n\nRECENTLY PUBLISHED ARTICLES (choose a topic and angle NOT similar to these; do not retell the same event, facts, example, or news story, even in a different category):
+${recentTitles.map((t) => `- "${t}"`).join("\n")}`
+    : "";
+  return `Write a bilingual English-learning article for category "${category}".${topicBlock}${material}${feedback}${dedup}`;
+}
+
+/**
+ * 选题规划（pickTopic 节点）的 system prompt：为单个槽位规划一个"没写过"的选题。
+ * 关键约束：题材必须在**主题 + 角度**两个维度上都与已用过的不同——只换名词修饰语
+ * （蓝伞/黄伞/拿错的伞）不算新选题；这正是 2026-09-17 三篇伞文的失败形态。
+ */
+export function buildTopicPlannerSystem(): string {
+  return `You are the editorial planner of a bilingual (English/Chinese) English-learning article pipeline. Propose ONE topic for the article slot described in the user message, so the pipeline keeps publishing varied material.
+
+RULES:
+- Reply with exactly one topic, written in English as a single short concrete phrase (no quotes, no trailing period) naming who/what/where — e.g. "a first-time subway rider is helped by a stranger".
+- The topic must differ from every ALREADY USED entry in BOTH subject and angle: vary the setting, the main object, the characters, and the type of situation. Renaming the same thing (e.g. "The Blue Umbrella" instead of "The Yellow Umbrella") is NOT a new topic, and neither is the same plot with a different object.
+- Match the slot's difficulty (CEFR level) and its category format guidance.
+- Prefer concrete everyday situations: clear characters, one simple event or exchange.
+- Keep it safe and neutral: no politics, no real named people, no risky or sensitive subjects.
+Respond strictly in the given JSON schema.`;
+}
+
+/** 选题规划的 user 内容：槽位规格（难度/类别/文体）+ 已用过的标题与选题。 */
+export function buildTopicPlannerUser(params: {
+  runDate: string;
+  difficulty: Difficulty;
+  category: Category;
+  recentTitles: string[];
+  takenTopics: string[];
+  /** 上一轮被拒的选题（附拒绝原因），让模型知道为什么重问 */
+  rejectedTopic?: string;
+}): string {
+  const { runDate, difficulty, category, recentTitles, takenTopics, rejectedTopic } = params;
+  const cefr = CEFR_BY_DIFFICULTY[difficulty];
+  const used = [
+    ...recentTitles.map((t) => `- title: "${t}"`),
+    ...takenTopics.map((t) => `- topic already assigned today: "${t}"`),
+  ].join("\n");
+  const retry = rejectedTopic
+    ? `\n\nYOUR PREVIOUS SUGGESTION WAS REJECTED: "${rejectedTopic}" — it repeats what is already covered above. Propose a clearly different one.`
+    : "";
+  return `TODAY: ${runDate}
+SLOT: difficulty ${difficulty} (CEFR ${cefr}) | category ${category} | format: ${CATEGORY_GUIDANCE[category]}
+
+ALREADY USED (do not repeat):
+${used || "- (none)"}${retry}`;
 }
 
 /** 事实卡抽取（extractFacts）：只允许提取原文出现的字段。 */

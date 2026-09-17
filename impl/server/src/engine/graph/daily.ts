@@ -19,6 +19,7 @@ import {
   type SlotStatus,
 } from "../db";
 import { BunSqliteCheckpointer } from "./checkpointer";
+import { TopicRegistry } from "./topics";
 import { generateArticle, toResult, type ArticleResult } from "./index";
 import { ArticleGenState, GeneratedArticle } from "./state";
 import { log } from "./log";
@@ -152,6 +153,7 @@ export async function generateDailyArticles(
     const recentTitles = recent.map((r) => r.titleEn);
     const recentUsedUrls = recent.flatMap((r) => (r.sourceUrl ? [r.sourceUrl] : []));
     const usedUrls = new Set<string>(); // 进程内共享：并跑槽位间去重
+    const topicRegistry = new TopicRegistry(); // 进程内共享：并跑槽位间选题去重
 
     // ② 存在但未执行完（running，中断/收口前崩溃）→ 修复：只补跑该批次已有的 pending
     // 槽位（已终态槽位不重复生成），不掺入今日计划、不补插新槽位
@@ -159,7 +161,7 @@ export async function generateDailyArticles(
     if (existing) {
       const pendingRows = listSlots(db, runDate).filter((r) => r.status === "pending");
       return await runDay(db, cfg, existing, pendingRows, {
-        runDate, recentTitles, recentUsedUrls, usedUrls, limit, llm: args.llm,
+        runDate, recentTitles, recentUsedUrls, usedUrls, topicRegistry, limit, llm: args.llm,
       });
     }
 
@@ -171,7 +173,7 @@ export async function generateDailyArticles(
     }));
     const batch = createBatchAndSlots(db, runDate, slots.length, planned);
     return await runDay(db, cfg, batch, listSlots(db, runDate), {
-      runDate, recentTitles, recentUsedUrls, usedUrls, limit, llm: args.llm,
+      runDate, recentTitles, recentUsedUrls, usedUrls, topicRegistry, limit, llm: args.llm,
     });
   } finally {
     db.close();
@@ -194,6 +196,8 @@ async function runDay(
     recentTitles: string[];
     recentUsedUrls: string[];
     usedUrls: Set<string>;
+    /** 并跑槽位共享的选题登记簿（同批选题互不重复；见 topics.ts） */
+    topicRegistry: TopicRegistry;
     limit: number;
     llm?: LLM;
   },
@@ -210,6 +214,7 @@ async function runDay(
         recentTitles: ctx.recentTitles,
         recentUsedUrls: ctx.recentUsedUrls,
         usedUrls: ctx.usedUrls,
+        topicRegistry: ctx.topicRegistry,
         config: cfg,
         llm: ctx.llm,
       });
@@ -422,6 +427,7 @@ export async function retryFailedSlots(args: RetryFailedArgs): Promise<RetryResu
     const recentTitles = recent.map((r) => r.titleEn);
     const recentUsedUrls = recent.flatMap((r) => (r.sourceUrl ? [r.sourceUrl] : []));
     const usedUrls = new Set<string>(); // 进程内共享：并跑槽位间去重
+    const topicRegistry = new TopicRegistry(); // 进程内共享：并跑槽位间选题去重
     const cp = new BunSqliteCheckpointer(cfg.checkpointPath);
 
     // 分派：pending 查 checkpoint → resume / sync
@@ -450,6 +456,7 @@ export async function retryFailedSlots(args: RetryFailedArgs): Promise<RetryResu
           recentTitles,
           recentUsedUrls,
           usedUrls,
+          topicRegistry,
           config: cfg,
           llm: args.llm,
         });

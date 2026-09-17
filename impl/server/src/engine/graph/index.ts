@@ -5,6 +5,7 @@ import { byCategory } from "../sites.config";
 import { setBrowserConcurrency } from "../sites/common";
 import { createLLM, type LLM } from "../llm";
 import { BunSqliteCheckpointer } from "./checkpointer";
+import { TopicRegistry } from "./topics";
 import { buildArticleGraph } from "./graph";
 import { resolvePath } from "./nodes";
 import {
@@ -28,6 +29,12 @@ export interface GenerateArticleArgs {
   recentTitles?: string[];      // 最近5天成功文章标题（生成 prompt 避免雷同；缺省 []）
   recentUsedUrls?: string[];    // 最近5天成功文章 source_url（fetchSource 去重；缺省 []）
   usedUrls?: Set<string>;       // 进程内共享去重集合（并行槽位竞态；缺省 new Set()）
+  /**
+   * 进程内共享的选题登记簿（并行槽位选题去重；缺省自建一个）。
+   * 同批槽位必须传同一个实例，否则各槽各建一簿、彼此看不见，选题会撞车
+   * （2026-09-17 三篇伞文即由此而来）。
+   */
+  topicRegistry?: TopicRegistry;
 }
 
 export type { ArticleResult, GeneratedArticle };
@@ -83,7 +90,13 @@ export async function generateArticle(
   const checkpointer = new BunSqliteCheckpointer(cfg.checkpointPath);
 
   const graph = buildArticleGraph({
-    deps: { llm, sitesByCategory, rng: Math.random, usedUrls: args.usedUrls ?? new Set<string>() },
+    deps: {
+      llm,
+      sitesByCategory,
+      rng: Math.random,
+      usedUrls: args.usedUrls ?? new Set<string>(),
+      topicRegistry: args.topicRegistry ?? new TopicRegistry(),
+    },
     checkpointer, // 每个 superstep 落盘，进程中断后同 threadId 可断点续跑
   });
 
