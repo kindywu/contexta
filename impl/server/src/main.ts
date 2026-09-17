@@ -116,6 +116,21 @@ export function buildApp(
 }
 
 /**
+ * 组装 Bun.serve 的 tls 选项（证书未配置 → undefined = 走 HTTP）。
+ *
+ * ⚠️ 必须传 PEM 内容而非文件路径：Bun 1.4.2 的 `tls.cert/key` 给路径时不读文件，
+ * 直接把路径字符串当 PEM 解析（ERR_OSSL_PEM_NO_START_LINE，2026-09-17 实测）。
+ * 文件存在性已由 config.ts schema 校验（缺文件启动即失败，带明确原因）。
+ */
+export function appTlsFromConfig(cfg: ServerConfig): { cert: string; key: string } | undefined {
+  if (!cfg.tlsCertPath || !cfg.tlsKeyPath) return undefined;
+  return {
+    cert: readFileSync(cfg.tlsCertPath, "utf8"),
+    key: readFileSync(cfg.tlsKeyPath, "utf8"),
+  };
+}
+
+/**
  * 服务入口：时区硬闸失败/配置缺失 → console.error + exit(1)（不启动服务）。
  */
 export async function main(): Promise<void> {
@@ -153,12 +168,13 @@ export async function main(): Promise<void> {
     await seedAdminIfNeeded(db, "admin", cfg.adminInitPassword);
   }
 
-  // 5) 组装 + 启动 HTTP 服务
+  // 5) 组装 + 启动服务（TLS 证书配置了就 HTTPS，否则 HTTP——见 config.ts TLS_CERT_PATH）
   const app = buildApp(db, cfg, engineCfg);
   // idleTimeout 保持 Bun 默认 10s（不调大治标）：分钟级慢请求（重跑/生成）走 SSE，
   // SSE 心跳 8s < 10s 保证连接不被掐断——见 admin.ts slots/:id/retry 与 docs §6。
-  const server = Bun.serve({ port: cfg.port, fetch: app.fetch });
-  serverLog(`[server] listening on :${cfg.port} (db: ${dbPath})`);
+  const tls = appTlsFromConfig(cfg);
+  const server = Bun.serve({ port: cfg.port, fetch: app.fetch, ...(tls ? { tls } : {}) });
+  serverLog(`[server] listening on :${cfg.port} (${tls ? "https" : "http"}, db: ${dbPath})`);
 
   // 6) 每日任务后台启动（窗口触发定时循环：启动不生成文章，错过窗口即跳过）
   new DailyTask({ db, engineCfg, serverCfg: cfg }).start();

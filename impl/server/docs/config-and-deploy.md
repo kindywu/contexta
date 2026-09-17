@@ -26,6 +26,8 @@ cp .env.example .env   # 本地开发：填入 LLM_API_KEY 与 JWT_SECRET
 | `SLOT_CONCURRENCY` | `5` | 正 int | 每日生成并发槽位数上限（`runPool`）；每槽一条 LangGraph 线程 |
 | `PROXY_URL` | 空（不代理） | string | 出站 HTTP 代理（`http://` 形式）；空串转 undefined。作用于 LLM 调用（引擎 `createLLM` 与查词 `driverChat`） |
 | `PORT` | `8080` | int 1..65535 | 容器内监听端口（Bun.serve）；宿主经 compose 映射 `443:8080` 对外——安全组放行 443 |
+| `TLS_CERT_PATH` | 空（HTTP） | string（路径） | TLS 证书 PEM 路径（容器内视角，如 `/app/certs/server.crt`）；与 `TLS_KEY_PATH` **成对配置才启用 HTTPS**，只配一项或文件不存在 → 启动失败；见 §2.1 |
+| `TLS_KEY_PATH` | 空（HTTP） | string（路径） | TLS 私钥 PEM 路径（同上前提）；密钥只存宿主机 `./certs/`（gitignore），只读挂载进容器 |
 | `JWT_SECRET` | **必填** | ≥32 字符 | HS256 密钥（App 令牌）；`openssl rand -hex 32` 生成；<32 启动失败；**生产经 GHA Secret 注入**（与 ADMIN_JWT_SECRET 同机制，见 §3.1） |
 | `ADMIN_JWT_SECRET` | **必填** | ≥32 字符 | admin（Web 管理端）令牌密钥；双密钥鉴权——与 `JWT_SECRET` 分开，App 与 admin 令牌互不交叉；生产经 GHA Secret 注入（同 §3.1） |
 | `ADMIN_INIT_PASSWORD` | 空 | string | 设置时启动 seed 管理员 `admin`（argon2id）；已有 admin 行则跳过不覆盖；seed 后可移出 .env；生产可经 GHA Secret 注入（仅新库 seed 生效，同 §3.1） |
@@ -43,13 +45,46 @@ cp .env.example .env   # 本地开发：填入 LLM_API_KEY 与 JWT_SECRET
 - **推荐**：香港/海外轻量云（免 ICP 备案）+ 域名 + Caddy 自动 HTTPS（App 端明文 HTTP 会被平台限制，HTTPS 必须）。备选：Cloudflare Tunnel（不买域名时）。
 - 内存：Bun + SQLite + 每槽 LangGraph（含 WebView 抓取）+ 并发 5 槽，建议 ≥ 2GB（**镜像内置 chrome-headless-shell 支撑 WebView 抓取，见 §6**）；**compose 必须给 `shm_size: 1gb`**——Chrome 的合成缓冲放 /dev/shm，Docker 缺省 64MB 远不够（见 §6）。
 - 运行时：**Docker + Compose v2**（标准部署路径的唯一宿主要求，见 §3.1）——本机已装 Docker 29.8 + Compose v5.5.1；无需在宿主安装 bun。
-- **端口**：容器 8080，宿主映射 `443:8080`——**安全组放行 443** 后 App 即可访问 `http://47.112.20.32:443`（HTTPS / 域名 + Caddy 属下一步，见上）。
+- **端口**：容器 8080，宿主映射 `443:8080`——**安全组放行 443** 后 App 访问 `https://47.112.20.32`（自签名 HTTPS，实现见 §2.1；将来换域名 + 正式证书时只需替换证书文件，应用配置不变）。
 - **时区必须设为上海**（`.env` 的 `TIMEZONE` 须与系统时区一致，硬闸）：
 
 ```bash
 timedatectl set-timezone Asia/Shanghai
 timedatectl   # 确认 Local time 为 Asia/Shanghai
 ```
+
+### 2.1 HTTPS（自签名证书 + 固定 IP，无域名场景）
+
+**现状**：生产 `https://47.112.20.32`（自签名），TLS 终止在应用进程内（`Bun.serve({ tls })`，`main.ts`）——不引入 nginx/Caddy 容器，证书读取失败=启动即失败（config schema 校验文件存在性）。
+
+**信任链与设计决策**：
+
+| 决策 | 理由 |
+|---|---|
+| 证书为 **IP 直连自签名 leaf**（CN=IP + `subjectAltName=IP:47.112.20.32`，P-256，10 年） | 无域名，Let's Encrypt 类 CA 不签发 IP 证书；SAN 必须含客户端连接的写法（IP 只能进 IP SAN，不能写 DNS） |
+| App 端把**该证书内嵌**为信任锚（Android `network_security_config`，只作用于 47.112.20.32，其余域名走系统信任库） | 免设备安装 CA、免用户点击"继续访问"；作用域收窄到单主机，无全局信任风险 |
+| 有效期 10 年 | 自签名无法自动续期；到期前必须重新生成并重发 App（见下） |
+| `curl`/浏览器需 `-k` 或忽略告警 | 自签名证书不在系统信任库；管理页首次访问点"继续前往"即可 |
+
+**生成与部署**（本地生成，私钥不进仓库；生成后必须同步 App 内嵌副本）：
+
+```bash
+# ① 生成（写在仓库外或 .local/，两者均 gitignore）
+impl/server/deploy/generate_tls_cert.sh --ip 47.112.20.32 --cert .local/tls/server.crt --key .local/tls/server.key
+# ② 推证书到服务器（私钥文件权限 600）
+ssh -i ~/.ssh/<pem> root@47.112.20.32 'mkdir -p /opt/contexta/server/certs'
+scp .local/tls/server.crt .local/tls/server.key root@47.112.20.32:/opt/contexta/server/certs/
+# ③ 服务器 .env 启用（路径是容器内视角；certs 目录已只读挂载到 /app/certs）
+#    TLS_CERT_PATH=/app/certs/server.crt
+#    TLS_KEY_PATH=/app/certs/server.key
+# ④ 重启生效（GHA 部署自动带上；手工重启见 §5.3 注意 compose 环境注入）
+```
+
+**⚠️ 重新生成证书 = 已装 App 全部失联**（App 内嵌旧证书做锚点校验 → 新连接握手即断）。改 IP、换证书、证书到期前，必须走完整链路：重签 → 推服务器 → **更新 `impl/app/flutter/android/app/src/main/res/raw/contexta_server.crt`（同一份证书文件）→ 重新打包 App 并分发**。所以：**证书公钥可以进仓库（App 内嵌），私钥永远不进**；管理端浏览器只需重新点一次"继续前往"。
+
+**服务端启动日志**自证协议：`[server] listening on :8080 (https, db: …)`——HTTP 时为 `(http, …)`，部署后用它或 `curl -k https://127.0.0.1:443/api/health` 确认。
+
+**本地开发**：不配 `TLS_*` 两变量即 HTTP，零影响（compose 展开空串 → 应用按未配置处理）。
 
 ## 3. 部署
 
@@ -83,7 +118,8 @@ mkdir -p /opt/contexta/server/{data,logs,output}
 touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.sqlite  # 空库
 ```
 
-- `.env`（权限 600）：**无任何密钥值**（2026-09-08 清空，密钥全由 GHA Secret 注入）；只保留非密钥配置（`TIMEZONE=Asia/Shanghai` 等）。首次建库时如无注入，可用带键前缀的手工命令启动（见 §1 注）。
+- `.env`（权限 600）：**无任何密钥值**（2026-09-08 清空，密钥全由 GHA Secret 注入）；只保留非密钥配置（`TIMEZONE=Asia/Shanghai` 等）与 **TLS 两变量**（`TLS_CERT_PATH` / `TLS_KEY_PATH`，§2.1）。首次建库时如无注入，可用带键前缀的手工命令启动（见 §1 注）。
+- `certs/`（自签名证书与私钥）：`generate_tls_cert.sh` 生成后 scp 到 `/opt/contexta/server/certs/`（私钥 600）；compose 只读挂载到容器 `/app/certs`，**不在镜像里、不进仓库**（§2.1）。
   > ⚠️ 注意：`.env.example` 曾漏掉必填项 `ADMIN_JWT_SECRET`（双密钥鉴权于 server-auth-and-log 引入），缺它容器反复 exit 1 重启——2026-09-07 已补。
 - 服务器 `authorized_keys` 收录 GHA 所用公钥（当前即 ECS PEM 对应公钥）。
 - **`LLM_API_KEY` 注入（2026-09-07 起）**：生产 key 存 GitHub Secret `LLM_API_KEY`，GHA deploy 经 compose 注入容器——服务器 `.env` 中该行已注释（注入优先；本地直跑可自行填值）。回退行为同 §3.1。
@@ -169,6 +205,7 @@ touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.
   1. **新库重建**：停服 → 新目录部署新版 → 空库自动建表 → `tool/import-data.ts` 重新导入管线数据（历史文章标 approved）→ 启动；同日之内文章缺失由每日任务/手动补生成补齐。
   2. **就地重启**：同版本小改（无 schema 变更）→ 同步代码 + `bun install` → `systemctl restart contexta-server`（数据文件不动）。
 - 任一 schema 变更前：**备份先行**（§5.1 三件套）→ 验证（integrity_check / 表数 / 行数）→ 再重启。
+- **证书类变更**（换 IP / 证书到期 / 私钥轮换）：`generate_tls_cert.sh` 重签 → 推服务器 `certs/` → 重启 → **同步 App 内嵌证书并重新打包**（否则已装 App 全部失联，见 §2.1 ⚠️）。
 - 若 schema 变更是"发布后"性质（db_version ≥ 1），才启用编号迁移 + drift 双写纪律——当前不适用。
 
 ### 5.3 运维速查（标准 = Compose 路径）
@@ -177,7 +214,8 @@ touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.
 docker compose ps                                          # 服务状态
 docker compose logs -f contexta-server                    # 实时日志（Web 服务侧）
 tail -f logs/daily-$(date +%F).log                         # 每日任务/生成日志（仅文件）
-curl http://localhost:443/api/health                      # 健康检查（宿主 443 → 容器 8080）
+curl -k https://127.0.0.1:443/api/health                  # 健康检查（TLS 自签名需 -k；宿主 443 → 容器 8080）
+curl http://127.0.0.1:443/api/health                      # 备用：未启用 TLS 的部署（§2.1）
 docker compose exec contexta-server bun run daily -- --date 2026-08-29    # 手动补生成某日
 docker compose exec contexta-server bun run retry -- --date 2026-08-29    # 中断恢复（同 thread 续跑）
 docker compose exec contexta-server bun run replay -- --thread daily-2026-08-29-3  # 步骤级重放
@@ -219,3 +257,5 @@ docker compose exec contexta-server bun run delete-daily -- --date 2026-08-29 --
 | 8 | **免密直登** | App 登录不校验验证码（beta 简化），保留 `code` 字段；风险靠封禁兜底 | `services/auth_service.ts` |
 | 9 | **文章为全局共享池** | 同难度用户读同批文章（3 难度 × 5 篇/天）；下发需 JWT，与查词配额无关 | 设计决策 |
 | 10 | **source_url 不下发** | 文章 App 契约不含 `source_url`（仅管理端可见）；`regenerate_count`/`order_index` 为派生字段 | `article_reader.ts` |
+| 11 | **TLS 证书三重绑定** | 证书 SAN = 客户端连接的 IP（IP 必须进 IP SAN）；私钥只存服务器 `certs/`（600，gitignore）；App 内嵌同一证书为信任锚——**重签证书 = 必须重发 App**（§2.1） | `config.ts`、`deploy/generate_tls_cert.sh`、`network_security_config.xml` |
+| 12 | **TLS 二选一硬闸** | `TLS_CERT_PATH`/`TLS_KEY_PATH` 只配一项或文件缺失 → 启动失败（不静默回退 HTTP）；两项都空 = HTTP（本地开发） | `config.ts` `refine`/`superRefine` |

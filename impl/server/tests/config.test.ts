@@ -46,6 +46,29 @@ describe("loadServerConfig", () => {
     expect(c.dailyGenerateWindow).toEqual({ start: 720, end: 750 });
     expect(formatWindow(c.dailyGenerateWindow)).toBe("12:00-12:30");
   });
+  test("TLS 未配置 → 两个字段均 undefined（回退 HTTP）", () => {
+    const c = loadServerConfig(base);
+    expect(c.tlsCertPath).toBeUndefined();
+    expect(c.tlsKeyPath).toBeUndefined();
+  });
+  test("TLS 只配一项抛错", () => {
+    expect(() => loadServerConfig({ ...base, TLS_CERT_PATH: "/tmp/c.pem" })).toThrow(/同时配置/);
+    expect(() => loadServerConfig({ ...base, TLS_KEY_PATH: "/tmp/k.pem" })).toThrow(/同时配置/);
+  });
+  test("TLS 路径文件不存在抛错（启动即失败，不留到 Bun.serve）", () => {
+    expect(() =>
+      loadServerConfig({ ...base, TLS_CERT_PATH: "/nonexistent/c.pem", TLS_KEY_PATH: "/nonexistent/k.pem" }),
+    ).toThrow(/文件不存在/);
+  });
+  test("TLS 成对且文件存在 → 路径透传", () => {
+    const c = loadServerConfig({
+      ...base,
+      TLS_CERT_PATH: __filename, // 任意存在的文件即可（此层只校验存在性）
+      TLS_KEY_PATH: __filename,
+    });
+    expect(c.tlsCertPath).toBe(__filename);
+    expect(c.tlsKeyPath).toBe(__filename);
+  });
   test("DAILY_GENERATE_WINDOW 非法格式/边界抛错", () => {
     // 缺 "-" / 越界时刻 / start >= end 均拒绝
     expect(() => loadServerConfig({ ...base, DAILY_GENERATE_WINDOW: "0800-0815" })).toThrow(/格式/);

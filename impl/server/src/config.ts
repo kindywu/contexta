@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { z } from "zod";
 import { isValidTimezone } from "./engine/config";
 
@@ -96,6 +97,21 @@ const serverEnvSchema = z.object({
     .string()
     .min(1)
     .refine(isValidTimezone, "无效的时区名称，应使用 IANA 名（如 Asia/Shanghai、UTC）"),
+  // TLS（自签名 HTTPS）：两项都配置才启用；只配一项 → 报错（不静默降级回 HTTP）。
+  // 路径为进程视角（容器内绝对路径 /app/certs/...）。文件存在性在 schema 层校验——
+  // 缺文件要启动即失败并给出明确原因，而非让 Bun.serve 抛底层 PEM 解析错误。
+  TLS_CERT_PATH: z.string().optional().default(""),
+  TLS_KEY_PATH: z.string().optional().default(""),
+}).refine(
+  (e) => (e.TLS_CERT_PATH === "") === (e.TLS_KEY_PATH === ""),
+  "TLS_CERT_PATH 与 TLS_KEY_PATH 必须同时配置（只配一项无法启用 HTTPS）",
+).superRefine((e, ctx) => {
+  for (const key of ["TLS_CERT_PATH", "TLS_KEY_PATH"] as const) {
+    const p = e[key];
+    if (p !== "" && !existsSync(p)) {
+      ctx.addIssue({ code: "custom", message: `${key} 指向的文件不存在: ${p}`, path: [key] });
+    }
+  }
 });
 
 export interface ServerConfig {
@@ -119,6 +135,10 @@ export interface ServerConfig {
   /** 飞书自定义机器人 webhook；未配置 → 每日通知静默跳过。 */
   feishuWebhookUrl?: string;
   feishuWebhookSecret?: string;
+  /** TLS 证书 PEM 路径；与 tlsKeyPath 成对配置才启用 HTTPS（见 main.ts Bun.serve tls）。 */
+  tlsCertPath?: string;
+  /** TLS 私钥 PEM 路径。 */
+  tlsKeyPath?: string;
 }
 
 export function loadServerConfig(
@@ -148,5 +168,7 @@ export function loadServerConfig(
     proxyUrl: v.PROXY_URL,
     feishuWebhookUrl: v.FEISHU_WEBHOOK_URL,
     feishuWebhookSecret: v.FEISHU_WEBHOOK_SECRET,
+    tlsCertPath: v.TLS_CERT_PATH || undefined,
+    tlsKeyPath: v.TLS_KEY_PATH || undefined,
   };
 }
