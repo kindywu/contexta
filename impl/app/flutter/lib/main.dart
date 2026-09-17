@@ -9,10 +9,11 @@ import 'di/providers.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 全局竖屏锁定（2026-09-11）：手机端不允许切横屏。原生侧
-  // （AndroidManifest screenOrientation / iOS Info.plist）已固定竖屏，
-  // 此处覆盖引擎启动后的运行期旋转，详见 docs/app-orientation.md。
-  await lockAppToPortrait();
+  // 方向策略（2026-09-17）：手机锁竖屏；平板解限以便横屏铺满（书页模式）。
+  // 原生侧（AndroidManifest screenOrientation / iOS Info.plist）仍固定竖屏，
+  // 覆盖引擎启动前的启动窗口；此处覆盖引擎启动后的运行期旋转，
+  // 详见 docs/app-orientation.md。
+  await applyOrientationPolicy();
   // 自签名 HTTPS 信任锚：预载内嵌证书（Dart TLS 栈不读 Android NSC，必须显式注入，
   // 见 di/providers.dart；失败仅告警，本地开发/无证书场景继续默认信任库）
   await loadServerTrustCert();

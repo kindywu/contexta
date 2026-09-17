@@ -10,15 +10,23 @@
         android:label="Contexta"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-        <!-- 全局竖屏锁定：手机端不允许切横屏。此处覆盖 Flutter 引擎启动前的
-             启动窗口（闪屏）；引擎启动后的运行期旋转由 Dart 侧
-             SystemChrome 兜底（lib/core/platform/app_orientation.dart）。
-             见 docs/app-orientation.md -->
+        <!-- 方向策略（2026-09-17）：手机锁竖屏、平板自适应横竖屏。
+             见 docs/app-orientation.md 与 docs/adaptive-layout.md。
+
+             **此处刻意不声明 screenOrientation**：2026-09-17 真机实测，小米
+             HyperOS（Android 16 / targetSdk 36）**未启用**「大屏忽略方向声明」
+             的官方行为——只要 manifest 声明了 portrait（哪怕同时声明
+             resizeableActivity="true"），窗口就被 letterbox 成 666×813dp，
+             永远进不了书页模式。
+
+             手机侧竖屏改由 Dart 侧保证（lib/core/platform/app_orientation.dart：
+             最短边 < 600dp → portraitUp）。代价：手机冷启动瞬间若横持，启动窗口
+             可能短暂横屏（Dart 锁在引擎启动后立即生效）。 -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait"
+            android:resizeableActivity="true"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"

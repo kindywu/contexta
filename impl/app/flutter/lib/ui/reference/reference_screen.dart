@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/components/app_button.dart';
 import '../../core/components/app_modal.dart';
-import '../../core/layout/window_size.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
@@ -12,8 +11,8 @@ import 'reference_data.dart';
 
 /// Reference 页（对照 Kotlin ReferenceScreen.kt）：
 /// - 三个 inline underline tabs：字母表 / 音标 / 语法
-/// - 字母表：26 字母 4 列网格（字母 + 音标），点击弹详情；大屏 8 列
-/// - 音标：分组 SectionHeader（Primary 竖条 + 标题）+ 3 列网格；大屏 6 列
+/// - 字母表：26 字母 4 列网格（字母 + 音标），点击弹详情
+/// - 音标：分组 SectionHeader（Primary 竖条 + 标题）+ 3 列网格
 /// - 语法：可折叠分组（▸/▾）+ 语法卡片（名称/规则/中文/例句引文）
 /// - 格子弹窗：大字（56sp）点击发音 + 音标/例词 + 「发音」按钮
 class ReferenceScreen extends ConsumerStatefulWidget {
@@ -118,8 +117,7 @@ class _ReferenceTabs extends StatelessWidget {
   }
 }
 
-/// 字母表内容：26 字母 4 列网格（对照 Kotlin AlphabetContent）；
-/// 大屏（expanded）一行 8 个。
+/// 字母表内容：26 字母 4 列网格（对照 Kotlin AlphabetContent）。
 class _AlphabetContent extends StatelessWidget {
   const _AlphabetContent({required this.onCellClick});
 
@@ -127,12 +125,9 @@ class _AlphabetContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 末行一律用空 Expanded 补足列数：格子保持与整行同宽（手机既有渲染
-    // 就是这样，26 = 6×4 + 2 的末行不被拉伸），大屏同理。
-    final columns = context.isExpandedLayout ? 8 : 4;
     return Column(
       children: [
-        for (final row in _chunked(alphabetData, columns)) ...[
+        for (final row in _chunked(alphabetData, 4)) ...[
           Row(
             children: [
               for (final item in row)
@@ -164,7 +159,7 @@ class _AlphabetContent extends StatelessWidget {
                     ),
                   ),
                 ),
-              for (var i = row.length; i < columns; i++)
+              for (var i = row.length; i < 4; i++)
                 const Expanded(child: SizedBox()),
             ],
           ),
@@ -175,8 +170,7 @@ class _AlphabetContent extends StatelessWidget {
   }
 }
 
-/// 音标内容：分组 SectionHeader + 3 列网格（对照 Kotlin PhonicsContent）；
-/// 大屏（expanded）一行 6 个。
+/// 音标内容：分组 SectionHeader + 3 列网格（对照 Kotlin PhonicsContent）。
 class _PhonicsContent extends StatelessWidget {
   const _PhonicsContent({required this.onCellClick});
 
@@ -184,12 +178,11 @@ class _PhonicsContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final columns = context.isExpandedLayout ? 6 : 3;
     return Column(
       children: [
         for (final group in phonicsGroups) ...[
           _SectionHeader(title: group.name),
-          for (final row in _chunked(group.items, columns)) ...[
+          for (final row in _chunked(group.items, 3)) ...[
             Row(
               children: [
                 for (final item in row)
@@ -227,7 +220,7 @@ class _PhonicsContent extends StatelessWidget {
                       ),
                     ),
                   ),
-                for (var i = row.length; i < columns; i++)
+                for (var i = row.length; i < 3; i++)
                   const Expanded(child: SizedBox()),
               ],
             ),

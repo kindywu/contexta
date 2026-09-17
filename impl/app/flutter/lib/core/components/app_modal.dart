@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../layout/window_size.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_dimens.dart';
 import '../theme/app_type.dart';
@@ -10,9 +9,7 @@ enum AppModalAlignment { center, bottom }
 /// 原型弹窗：全屏 Scrim 遮罩 + 画布底面板（淡入淡出 200ms）。
 ///
 /// - center（默认）：居中卡片，四角 16dp 圆角，宽 ≤ 360dp（参考页弹窗）
-/// - bottom：底部弹层，仅上两角 16dp 圆角，高 ≤ 85% 屏高（查词弹窗）；
-///   手机（compact）全宽贴底，大屏（≥600dp）限宽 560 居中、四角都圆
-///   ——宽屏下贴边的全宽弹层又难读又难看
+/// - bottom：底部全宽弹层，仅上两角 16dp 圆角，高 ≤ 85% 屏高（查词弹窗）
 ///
 /// 面板内部消费点击（无涟漪），防止点击面板空白区穿透触发关闭。
 /// 对照 Kotlin ui/components/AppModal.kt（AnimatedVisibility 淡入淡出）。
@@ -33,17 +30,13 @@ class AppModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isBottom = alignment == AppModalAlignment.bottom;
-    // 宽屏底部弹层：离底边留白 → 四角都圆（手机保留「贴底方角」观感）
-    final wideBottom = isBottom && context.usesNavRail;
     final radius = BorderRadius.only(
       topLeft: const Radius.circular(AppRadius.lg),
       topRight: const Radius.circular(AppRadius.lg),
-      bottomLeft: isBottom && !wideBottom
-          ? Radius.zero
-          : const Radius.circular(AppRadius.lg),
-      bottomRight: isBottom && !wideBottom
-          ? Radius.zero
-          : const Radius.circular(AppRadius.lg),
+      bottomLeft:
+          isBottom ? Radius.zero : const Radius.circular(AppRadius.lg),
+      bottomRight:
+          isBottom ? Radius.zero : const Radius.circular(AppRadius.lg),
     );
 
     return IgnorePointer(
@@ -66,9 +59,7 @@ class AppModal extends StatelessWidget {
               alignment:
                   isBottom ? Alignment.bottomCenter : Alignment.center,
               child: SizedBox(
-                width: isBottom
-                    ? (wideBottom ? 560 : double.infinity)
-                    : null,
+                width: isBottom ? double.infinity : null,
                 child: ConstrainedBox(
                   constraints: isBottom
                       ? BoxConstraints(
