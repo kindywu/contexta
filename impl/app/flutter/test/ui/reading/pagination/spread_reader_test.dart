@@ -59,8 +59,9 @@ void main() {
   Future<void> pumpReaderWith(
     WidgetTester tester,
     PaginatedArticle paginated,
-    List<ArticleParagraph> paragraphs,
-  ) async {
+    List<ArticleParagraph> paragraphs, {
+    TranslationMode mode = TranslationMode.full,
+  }) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -70,7 +71,7 @@ void main() {
             title: 'A Title',
             paragraphs: paragraphs,
             sentencesByParagraph: const [[], [], [], []],
-            translationMode: TranslationMode.full,
+            translationMode: mode,
             revealedParagraphs: const {},
             vocabularyWords: const {},
             speakingParagraphIndex: null,
@@ -185,82 +186,100 @@ void main() {
     const targetContentHeight = 420.0;
 
     final paginator = buildPaginator();
-    double heightOf(ReadingBlock block) => paginator.heightOf(
-      block,
-      pageWidth: pageWidth,
-      bodyTextScaler: TextScaler.noScaling,
-      labelTextScaler: TextScaler.noScaling,
-      translationMode: TranslationMode.full,
-    );
 
-    final titleHeight = heightOf(const TitleBlock('A Title'));
-    final fillerHeight = heightOf(
-      const ParagraphBlock(index: 0, englishText: fillerText, chineseTranslation: fillerTranslation),
-    );
+    // 译文显示/隐藏是两条测量分支（段尾间距不同），两条都得与渲染同源
+    for (final mode in const [TranslationMode.full, TranslationMode.hidden]) {
+      final reason = '（模式 $mode）';
+      double heightOf(ReadingBlock block) => paginator.heightOf(
+        block,
+        pageWidth: pageWidth,
+        bodyTextScaler: TextScaler.noScaling,
+        labelTextScaler: TextScaler.noScaling,
+        translationMode: mode,
+      );
 
-    // 页内容盒高度取「标题 + N 段」的整数倍：页被填到一丝不剩——任何测量/
-    // 渲染漂移都会立刻变成 RenderFlex 溢出，这正是本测试要抓的失败模式。
-    final fillerCount = ((targetContentHeight - titleHeight) / fillerHeight).ceil();
-    final contentHeight = titleHeight + fillerCount * fillerHeight;
-    expect(fillerCount, greaterThan(1));
-
-    final paragraphs = [
-      for (var i = 0; i < fillerCount; i++)
-        ArticleParagraph(
-          id: i + 1,
-          orderIndex: i,
+      final titleHeight = heightOf(const TitleBlock('A Title'));
+      final fillerHeight = heightOf(
+        const ParagraphBlock(
+          index: 0,
           englishText: fillerText,
           chineseTranslation: fillerTranslation,
         ),
-    ];
-    final paginated = paginator.paginate(
-      blocks: [
-        const TitleBlock('A Title'),
+      );
+
+      // 页内容盒高度取「标题 + N 段」的整数倍：页被填到一丝不剩——任何测量/
+      // 渲染漂移都会立刻变成 RenderFlex 溢出，这正是本测试要抓的失败模式。
+      final fillerCount =
+          ((targetContentHeight - titleHeight) / fillerHeight).ceil();
+      final contentHeight = titleHeight + fillerCount * fillerHeight;
+      expect(fillerCount, greaterThan(1), reason: reason);
+
+      final paragraphs = [
         for (var i = 0; i < fillerCount; i++)
-          ParagraphBlock(index: i, englishText: fillerText, chineseTranslation: fillerTranslation),
-      ],
-      pageWidth: pageWidth,
-      pageHeight: contentHeight,
-      bodyTextScaler: TextScaler.noScaling,
-      labelTextScaler: TextScaler.noScaling,
-      translationMode: TranslationMode.full,
-    );
+          ArticleParagraph(
+            id: i + 1,
+            orderIndex: i,
+            englishText: fillerText,
+            chineseTranslation: fillerTranslation,
+          ),
+      ];
+      final paginated = paginator.paginate(
+        blocks: [
+          const TitleBlock('A Title'),
+          for (var i = 0; i < fillerCount; i++)
+            ParagraphBlock(
+              index: i,
+              englishText: fillerText,
+              chineseTranslation: fillerTranslation,
+            ),
+        ],
+        pageWidth: pageWidth,
+        pageHeight: contentHeight,
+        bodyTextScaler: TextScaler.noScaling,
+        labelTextScaler: TextScaler.noScaling,
+        translationMode: mode,
+      );
 
-    // 渲染高度 = 分页高度：页内容盒正好等于 contentHeight
-    tester.view.physicalSize = Size(
-      1600,
-      contentHeight + indicatorHeight + kPageTopPadding + kPageBottomPadding,
-    );
-    await pumpReaderWith(tester, paginated, paragraphs);
+      // 渲染高度 = 分页高度：页内容盒正好等于 contentHeight
+      tester.view.physicalSize = Size(
+        1600,
+        contentHeight + indicatorHeight + kPageTopPadding + kPageBottomPadding,
+      );
+      await pumpReaderWith(tester, paginated, paragraphs, mode: mode);
 
-    // 分页器把整篇装进了一页且填满（本测试的前提）
-    expect(paginated.pages.length, 1);
-    expect(paginated.pages.single.overflows, isFalse);
-    expect(
-      paginated.pages.single.usedHeight,
-      greaterThan(contentHeight - 1),
-      reason: '页须被填满——空页测不出测量/渲染漂移',
-    );
-
-    // 无 RenderFlex 溢出（页已填满，多布局一个像素就会在这里报错）
-    expect(tester.takeException(), isNull);
-
-    // 每个块的渲染高 == 分页器算出的块高（测量/渲染同源）
-    for (var i = 0; i < fillerCount; i++) {
+      // 分页器把整篇装进了一页且填满（本测试的前提）
+      expect(paginated.pages.length, 1, reason: reason);
+      expect(paginated.pages.single.overflows, isFalse, reason: reason);
       expect(
-        tester.getRect(find.byKey(paragraphKey(i))).height,
-        closeTo(fillerHeight, 1),
-        reason: '第 $i 段渲染高与分页器测量高不一致',
+        paginated.pages.single.usedHeight,
+        greaterThan(contentHeight - 1),
+        reason: '页须被填满——空页测不出测量/渲染漂移$reason',
+      );
+
+      // 无 RenderFlex 溢出（页已填满，多布局一个像素就会在这里报错）
+      expect(tester.takeException(), isNull, reason: reason);
+
+      // 每个块的渲染高 == 分页器算出的块高（测量/渲染同源）
+      for (var i = 0; i < fillerCount; i++) {
+        expect(
+          tester.getRect(find.byKey(paragraphKey(i))).height,
+          closeTo(fillerHeight, 1),
+          reason: '第 $i 段渲染高与分页器测量高不一致$reason',
+        );
+      }
+
+      // 左页最后一个块的底边落在页内容盒底边之内（容 1px 舍入）
+      final lastBlock = paginated.pages.single.blocks.last as ParagraphBlock;
+      final lastBlockBottom = tester
+          .getRect(find.byKey(paragraphKey(lastBlock.index)))
+          .bottom;
+      final pageContentBottom =
+          tester.getTopLeft(find.text('1 / 1')).dy - kPageBottomPadding;
+      expect(
+        lastBlockBottom,
+        lessThanOrEqualTo(pageContentBottom + 1),
+        reason: reason,
       );
     }
-
-    // 左页最后一个块的底边落在页内容盒底边之内（容 1px 舍入）
-    final lastBlock = paginated.pages.single.blocks.last as ParagraphBlock;
-    final lastBlockBottom = tester
-        .getRect(find.byKey(paragraphKey(lastBlock.index)))
-        .bottom;
-    final pageContentBottom =
-        tester.getTopLeft(find.text('1 / 1')).dy - kPageBottomPadding;
-    expect(lastBlockBottom, lessThanOrEqualTo(pageContentBottom + 1));
   });
 }
