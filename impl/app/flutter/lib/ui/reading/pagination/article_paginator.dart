@@ -3,6 +3,7 @@
 // WidgetSpan 已从 painting 迁到 widgets，故不再 import painting）。
 import 'package:flutter/widgets.dart';
 
+import '../../../core/theme/app_dimens.dart';
 import '../translation_visibility.dart';
 import '../word_spans.dart';
 import 'reading_block.dart';
@@ -10,19 +11,22 @@ import 'reading_block.dart';
 /// 段落与译文之间的固定间距（对照 _ReadingParagraph 的 SizedBox(height: 4)）。
 const double kParagraphGap = 4;
 
-/// 标题块内的固定间距（对照手机路径：标题 → 16 → 1px 分隔线 → 24）。
-const double kTitleGapBelow = 16;
+/// 标题块内的固定间距（对照手机路径：标题 → AppSpacing.md → 1px 分隔线 →
+/// AppSpacing.lg）。分页测量与书页渲染共用同一批常量——定义处引用设计
+/// token，避免两处各写一份字面量后漂移。
+const double kTitleGapBelow = AppSpacing.md;
 const double kTitleDividerHeight = 1;
-const double kTitleGapAfterDivider = 24;
+const double kTitleGapAfterDivider = AppSpacing.lg;
 
 /// 段尾内联播放钮的占位尺寸（对照 _InlinePlayButton：Icon(size: 18)
 /// 前置 4dp 空隙）。测量必须给出同样的占位尺寸，否则页高会少算一个图标。
 const double kInlinePlayGap = 4;
 const Size kInlinePlayIconSize = Size(18, 18);
 
-/// 「标记已读」块：24dp 上间距 + AppButton（文字 + 上下各 12dp padding）。
-const double kMarkAsReadTopGap = 24;
-const double kButtonVerticalPadding = 12;
+/// 「标记已读」块：AppSpacing.lg 上间距 + AppButton（文字 + 上下各
+/// AppSpacing.sm padding）。
+const double kMarkAsReadTopGap = AppSpacing.lg;
+const double kButtonVerticalPadding = AppSpacing.sm;
 const String kMarkAsReadLabel = '标记已读';
 
 /// 一页：装下的块 + 已用高度 + 是否有单块超过整页高。
