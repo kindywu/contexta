@@ -195,6 +195,20 @@ class _RecordingTts implements TtsEngine {
   }
 }
 
+/// SentenceUnit 简写（断言用）。
+SentenceUnit _unit({
+  required int paragraphId,
+  required int paragraphIndex,
+  required int sentenceIndex,
+  required String text,
+}) =>
+    SentenceUnit(
+      paragraphId: paragraphId,
+      paragraphIndex: paragraphIndex,
+      sentenceIndex: sentenceIndex,
+      text: text,
+    );
+
 /// 记录型 KittenTtsSession：捕获 speakFullArticle / speakSentences 收到的
 /// 句子单元（验证 controller 的句子级下发契约）。
 class _RecordingSession implements KittenTtsSession {
@@ -1039,10 +1053,12 @@ void main() {
 
       final session = _RecordingSession.last!;
       expect(session.lastTitle, 'Test');
+      // paragraphIndex 必须是文章内序号（0/1），不是段落主键（11/22）——
+      // 2026-09-17 真机踩坑：两者混用导致高亮与播放条进度全失效
       expect(session.lastSentences, [
-        (paragraphId: 11, sentenceIndex: 0, text: 'One two.'),
-        (paragraphId: 11, sentenceIndex: 1, text: 'Three!'),
-        (paragraphId: 22, sentenceIndex: 0, text: 'Four'),
+        _unit(paragraphId: 11, paragraphIndex: 0, sentenceIndex: 0, text: 'One two.'),
+        _unit(paragraphId: 11, paragraphIndex: 0, sentenceIndex: 1, text: 'Three!'),
+        _unit(paragraphId: 22, paragraphIndex: 1, sentenceIndex: 0, text: 'Four'),
       ]);
     });
 
@@ -1073,8 +1089,8 @@ void main() {
 
       final session = _RecordingSession.last!;
       expect(session.lastSentences, [
-        (paragraphId: 11, sentenceIndex: 0, text: 'One two.'),
-        (paragraphId: 11, sentenceIndex: 1, text: 'Three!'),
+        _unit(paragraphId: 11, paragraphIndex: 0, sentenceIndex: 0, text: 'One two.'),
+        _unit(paragraphId: 11, paragraphIndex: 0, sentenceIndex: 1, text: 'Three!'),
       ]);
     });
   });

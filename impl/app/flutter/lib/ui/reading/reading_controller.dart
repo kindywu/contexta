@@ -435,12 +435,16 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       ];
 
   /// 全文朗读的句子序列（按段落顺序展平；标题由 speakFullArticle 单独传入）。
+  ///
+  /// 每个单元同时带段落主键（缓存键）与段落序号（播放位置上报）——两者
+  /// 不可混用，见 [SentenceUnit]。
   List<SentenceUnit> _flattenSentences() => [
         for (var i = 0; i < state.sentencesByParagraph.length; i++)
           for (final s in state.sentencesByParagraph[i])
-            (
+            SentenceUnit(
               paragraphId:
                   i < state.paragraphs.length ? state.paragraphs[i].id : 0,
+              paragraphIndex: i,
               sentenceIndex: s.indexInParagraph,
               text: s.text,
             ),
@@ -540,8 +544,9 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       id = await engine.speakSentences(
         sentences: [
           for (final s in grouped)
-            (
+            SentenceUnit(
               paragraphId: paragraphId,
+              paragraphIndex: index,
               sentenceIndex: s.indexInParagraph,
               text: s.text,
             ),

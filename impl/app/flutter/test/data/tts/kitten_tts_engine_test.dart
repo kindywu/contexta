@@ -110,15 +110,11 @@ void main() {
     expect(session.lastVoice, 'hugo');
 
     await engine.speakSentences(
-        sentences: [(paragraphId: 1, sentenceIndex: 0, text: 'a')],
-        speed: 1.0,
-        voice: TtsVoice.leo);
+        sentences: [_unit], speed: 1.0, voice: TtsVoice.leo);
     expect(session.lastVoice, 'leo');
 
     await engine.speakFullArticle(
-        sentences: [(paragraphId: 1, sentenceIndex: 0, text: 'a')],
-        speed: 1.0,
-        voice: TtsVoice.luna);
+        sentences: [_unit], speed: 1.0, voice: TtsVoice.luna);
     expect(session.lastVoice, 'luna');
   });
 
@@ -131,6 +127,14 @@ void main() {
     expect(session.lastVoice, isNull);
   });
 }
+
+/// 朗读单元夹具（voice 透传断言用）。
+const SentenceUnit _unit = SentenceUnit(
+  paragraphId: 1,
+  paragraphIndex: 0,
+  sentenceIndex: 0,
+  text: 'a',
+);
 
 /// 构造引擎：modelBaseOverride 指向临时目录，预置完整安装态
 /// （.installed marker + 4 个资产文件），installModelAssets 走跳过分支。

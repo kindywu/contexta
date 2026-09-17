@@ -405,11 +405,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
 
         if (cachedPath != null) {
           debugPrint('[KittenTTS] fullArticle: sentence ${i + 1}/$total cache HIT');
-          controller.add(_QueuedAudio.file(
-            cachedPath,
-            paragraphIndex: unit.paragraphId,
-            sentenceIndex: unit.sentenceIndex,
-          ));
+          controller.add(_QueuedAudio.file(cachedPath, unit: unit));
         } else {
           debugPrint('[KittenTTS] fullArticle: sentence ${i + 1}/$total gen');
           final result = await _engine.generate(unit.text, speed: speed, voice: voice);
@@ -429,11 +425,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
               debugPrint('[KittenTTS] fullArticle cache write FAILED: $e');
             }
           }
-          controller.add(_QueuedAudio.wav(
-            wav,
-            paragraphIndex: unit.paragraphId,
-            sentenceIndex: unit.sentenceIndex,
-          ));
+          controller.add(_QueuedAudio.wav(wav, unit: unit));
         }
 
         // 进度：已推入播放队列的句子数 / 总句子数（标题不计入）
@@ -465,8 +457,8 @@ class KittenTtsPluginSession implements KittenTtsSession {
         // 每项发声前上报（标题也上报，段落索引 = -1）：高亮与真实发声同步
         _sentenceStartedListener?.call(
           utteranceId,
-          item.paragraphIndex ?? kTitleParagraphIndex,
-          item.sentenceIndex ?? 0,
+          item.unit?.paragraphIndex ?? kTitleParagraphIndex,
+          item.unit?.sentenceIndex ?? 0,
           totalSentences,
         );
         if (item.bytes != null) {
@@ -485,6 +477,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
   }
 
   /// 逐句发声前上报（[setOnSentenceStarted] 契约；未注册时静默）。
+  /// 位置一律取 [SentenceUnit.paragraphIndex]（文章内序号），不是段落主键。
   void _notifySentenceStarted(
     String utteranceId,
     SentenceUnit unit,
@@ -492,7 +485,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
   ) {
     _sentenceStartedListener?.call(
       utteranceId,
-      unit.paragraphId,
+      unit.paragraphIndex,
       unit.sentenceIndex,
       total,
     );
@@ -847,28 +840,23 @@ class KittenSpeedMapper {
   double actualRate(double displaySpeed) => displaySpeed.clamp(0.5, 2.0);
 }
 
-/// 全文朗读待播队列项：WAV 字节 或 缓存文件路径（二选一）。
-/// [paragraphIndex] / [sentenceIndex] 为朗读单元位置（标题项为 null，
-/// 上报时归一到 [kTitleParagraphIndex]），供播放 worker 上报播放位置。
+/// 全文朗读待播队列项：WAV 字节 或 缓存文件路径（二选一），外加所属朗读单元。
+///
+/// 携带整个 [SentenceUnit] 而非拆开的两个 int——播放位置上报只从 unit 取
+/// `paragraphIndex`，"把段落主键当序号上报"这类字段混用从结构上不可能发生
+/// （2026-09-17 真机踩坑）。标题项 [unit] 为 null，上报时归一到
+/// [kTitleParagraphIndex]。
 class _QueuedAudio {
-  _QueuedAudio.wav(
-    this.bytes, {
-    this.isTitle = false,
-    this.paragraphIndex,
-    this.sentenceIndex,
-  }) : filePath = null;
+  _QueuedAudio.wav(this.bytes, {this.isTitle = false, this.unit})
+      : filePath = null;
 
-  _QueuedAudio.file(
-    String path, {
-    required this.paragraphIndex,
-    required this.sentenceIndex,
-  })  : bytes = null,
+  _QueuedAudio.file(String path, {required this.unit})
+      : bytes = null,
         filePath = path,
         isTitle = false;
 
   final Uint8List? bytes;
   final String? filePath;
   final bool isTitle;
-  final int? paragraphIndex;
-  final int? sentenceIndex;
+  final SentenceUnit? unit;
 }

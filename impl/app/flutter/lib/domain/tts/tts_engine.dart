@@ -2,9 +2,49 @@ import '../model/tts_voice.dart';
 
 /// 朗读单元 = 文章里的一句话（生成 / 缓存 / 播放位置上报的调度粒度）。
 ///
-/// [paragraphId] 为所属段落主键（0 = 未持久化的测试数据，不落缓存）；
-/// [sentenceIndex] 为段内句子序号（0 起）；[text] 为句子原文。
-typedef SentenceUnit = ({int paragraphId, int sentenceIndex, String text});
+/// 两个段落字段各司其职、**不可混用**（2026-09-17 真机踩坑：把 [paragraphId]
+/// 当 [paragraphIndex] 上报，导致高亮与播放条进度全部失效）：
+/// - [paragraphId]：段落主键，只用于缓存键（0 = 未持久化的测试数据，不落缓存）
+/// - [paragraphIndex]：段落在文章中的序号（0 起），只用于播放位置上报
+class SentenceUnit {
+  const SentenceUnit({
+    required this.paragraphId,
+    required this.paragraphIndex,
+    required this.sentenceIndex,
+    required this.text,
+  });
+
+  /// 所属段落主键（缓存键的一部分）。
+  final int paragraphId;
+
+  /// 所属段落的文章内序号（0 起；标题由 [speakFullArticle] 单独传入，
+  /// 上报时归一到 [kTitleParagraphIndex]）。
+  final int paragraphIndex;
+
+  /// 段内句序号（0 起）。
+  final int sentenceIndex;
+
+  /// 句子原文（朗读文本）。
+  final String text;
+
+  /// 值语义（四个字段全等）：便于测试断言路径一致、也避免同一句重复下发时
+  /// 被当成不同单元。
+  @override
+  bool operator ==(Object other) =>
+      other is SentenceUnit &&
+      other.paragraphId == paragraphId &&
+      other.paragraphIndex == paragraphIndex &&
+      other.sentenceIndex == sentenceIndex &&
+      other.text == text;
+
+  @override
+  int get hashCode =>
+      Object.hash(paragraphId, paragraphIndex, sentenceIndex, text);
+
+  @override
+  String toString() => 'SentenceUnit(paraId=$paragraphId, '
+      'paraIndex=$paragraphIndex, sentence=$sentenceIndex, "$text")';
+}
 
 /// 标题单元的段落索引哨兵：全文朗读时标题也作为一个朗读单元上报
 /// （读标题即高亮标题），与正文段落（从 0 起）区分。

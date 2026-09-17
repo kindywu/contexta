@@ -77,7 +77,7 @@ sequenceDiagram
 | 层 | 文件 | 职责 |
 |----|------|------|
 | 切分 | `lib/ui/reading/sentence_extractor.dart` | 纯函数 `findSentenceRanges` / `splitSentences`；不依赖 Flutter，独立可测 |
-| 会话层 | `lib/data/tts/kitten_tts_session.dart` | `SentenceUnit`（段落 id + 段内句序号 + 文本）为调度粒度；`_QueuedAudio.paragraphIndex/sentenceIndex`；`_playQueued` / `_speakSentencesSequential` 发声前上报，标题用 `kTitleParagraphIndex`；句子级缓存读写（`lookupSentence` / `writeSentence`） |
+| 会话层 | `lib/data/tts/kitten_tts_session.dart` | `SentenceUnit`（段落 id + 段落序号 + 段内句序号 + 文本）为调度粒度；`_QueuedAudio` 直接携带 `SentenceUnit`（标题项为 null）；`_playQueued` / `_speakSentencesSequential` 发声前上报，标题用 `kTitleParagraphIndex`；句子级缓存读写（`lookupSentence` / `writeSentence`） |
 | 引擎层 | `lib/data/tts/kitten_tts_engine.dart` | `speakFullArticle(sentences:)` / `speakSentences` / `pregenerateSentences`；`setOnSentenceStarted` 透传（session 契约 id 非空，收缩安全），未注册回调时 debugPrint 日志兜底 |
 | 接口层 | `lib/domain/tts/tts_engine.dart` | `SentenceUnit` typedef、`kTitleParagraphIndex` 哨兵、`setOnSentenceStarted(void Function(String? id, int paragraphIndex, int sentenceIndex, int total)?)`；`SystemTtsEngine` 空实现（拼接朗读无句子边界） |
 | 控制器 | `lib/ui/reading/reading_controller.dart` | 加载文章时按段切句（`sentencesByParagraph`）；`_onTtsReady` 注册回调；id 校验过滤迟到旧事件；更新朗读位置与播放进度（`_globalSentenceNumber` 把 `(段, 句)` 映射为全篇句序号）；播放结束预生成剩余句子缓存 |
@@ -94,6 +94,17 @@ sequenceDiagram
 - **触发时机**：`ref.listen` 监听 `(speakingParagraphIndex, speakingSentenceIndex)` 记录（record 结构相等，句切换即触发），读 `isSpeakingFullArticle` 门控，滚动放 `addPostFrameCallback`（构建期后执行）。
 
 ## 数据模型线
+
+`SentenceUnit`（domain 层，朗读调度单元）——两个段落字段**各司其职、不可混用**：
+
+| 字段 | 用途 |
+|------|------|
+| `paragraphId` | 段落主键，**只用于缓存键**（0 = 未持久化，不落缓存） |
+| `paragraphIndex` | 段落在文章中的序号（0 起），**只用于播放位置上报** |
+| `sentenceIndex` | 段内句序号（0 起） |
+| `text` | 句子原文（朗读文本） |
+
+> ⚠️ 2026-09-17 真机踩坑：会话层把 `paragraphId`（如 1210）当作 `paragraphIndex` 上报，控制器 `speakingParagraphIndex` 因此永远匹配不上段落（0 起），表现为**全文朗读完全没有高亮、播放条一直「正在朗读…」**（单元测试用桩直接喂位置，掩盖了该错误）。修复两层：会话层上报只取 `paragraphIndex`；`_QueuedAudio` 改为直接携带整个 `SentenceUnit`，字段混用从结构上不可能发生。回归断言见 `reading_controller_test.dart`（下发单元必须带 `paragraphIndex: 0/1`，而非 11/22）。
 
 `ArticleSentence`（控制器内定义，切分产物）：
 
