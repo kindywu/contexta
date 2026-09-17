@@ -163,6 +163,62 @@ void main() {
     });
   });
 
+  group('大屏列数', () {
+    testWidgets('pad 横屏字母表一行 8 个格子', (tester) async {
+      tester.view.physicalSize = const Size(2438, 1626); // 逻辑 1219×813
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpScreen(tester);
+
+      // 前 8 个字母同一行：'A a' 与 'H h' 顶边相同，'I i' 换行
+      final a = tester.getTopLeft(find.text('A a'));
+      final h = tester.getTopLeft(find.text('H h'));
+      final i = tester.getTopLeft(find.text('I i'));
+      expect(h.dy, a.dy);
+      expect(i.dy, greaterThan(a.dy));
+    });
+
+    testWidgets('手机字母表仍是 4 列', (tester) async {
+      await pumpScreen(tester); // 默认窗口 800×600 = medium
+      final a = tester.getTopLeft(find.text('A a'));
+      final d = tester.getTopLeft(find.text('D d'));
+      final e = tester.getTopLeft(find.text('E e'));
+      expect(d.dy, a.dy);
+      expect(e.dy, greaterThan(a.dy));
+    });
+
+    testWidgets('手机末行格子不被拉伸（与整行同宽）', (tester) async {
+      // 26 字母 = 6×4 + 2：既有实现给末行补空 Expanded，格子仍是 1/4 宽。
+      // 这条锁住手机渲染不变（列数改造不许把末行拉成半宽）。
+      await pumpScreen(tester); // 默认窗口 800×600 = medium
+      final a = tester.getCenter(find.text('A a'));
+      final b = tester.getCenter(find.text('B b'));
+      final y = tester.getCenter(find.text('Y y'));
+      final z = tester.getCenter(find.text('Z z'));
+      expect(y.dy, greaterThan(a.dy), reason: 'Y 在末行');
+      expect(z.dx - y.dx, b.dx - a.dx, reason: '末行格子间距与整行一致');
+    });
+
+    testWidgets('pad 横屏音标一行 6 个格子', (tester) async {
+      tester.view.physicalSize = const Size(2438, 1626);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await pumpScreen(tester);
+
+      await tester.tap(find.text('音标'));
+      await tester.pumpAndSettle();
+
+      // 单元音组第一行 6 格：/iː/ /ɪ/ /e/ /æ/ /ɑː/ /ɒ/，第 7 格换行
+      final first = tester.getTopLeft(find.text('/iː/'));
+      final sixth = tester.getTopLeft(find.text('/ɒ/'));
+      final seventh = tester.getTopLeft(find.text('/ɔː/'));
+      expect(sixth.dy, first.dy);
+      expect(seventh.dy, greaterThan(first.dy));
+    });
+  });
+
   group('语法折叠', () {
     testWidgets('默认展开第一组，点击分组头折叠/展开', (tester) async {
       await pumpScreen(tester);
