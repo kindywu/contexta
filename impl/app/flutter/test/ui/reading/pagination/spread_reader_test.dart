@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:contexta/core/theme/app_type.dart';
 import 'package:contexta/domain/model/article.dart';
 import 'package:contexta/ui/reading/pagination/article_paginator.dart';
@@ -43,13 +45,13 @@ void main() {
 
   late PageController controller;
   var spreadIndex = 0;
-  var userDrags = 0;
+  var userTurns = 0;
   var tappedWords = <String>[];
 
   setUp(() {
     controller = PageController();
     spreadIndex = 0;
-    userDrags = 0;
+    userTurns = 0;
     tappedWords = [];
     keys.clear();
     textKeys.clear();
@@ -84,7 +86,7 @@ void main() {
             onPlayParagraph: (_) {},
             onMarkAsRead: () {},
             onSpreadChanged: (i) => spreadIndex = i,
-            onUserDrag: () => userDrags++,
+            onUserTurn: () => userTurns++,
           ),
         ),
       ),
@@ -108,7 +110,7 @@ void main() {
     expect(find.text('2 / 4'), findsOneWidget);
   });
 
-  testWidgets('点击右侧页边空白翻到下一跨页', (tester) async {
+  testWidgets('点击右侧页边空白翻到下一跨页（且登记为用户手动翻页）', (tester) async {
     // 视口 1600×813 逻辑像素（DPR=1）：跨页内容 1100 居中 → 左右页边各
     // (1600 − 1100) / 2 = 250，远大于 kEdgeTapMinWidth(24)，页边点击才启用。
     tester.view.physicalSize = const Size(1600, 813);
@@ -122,7 +124,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(spreadIndex, 1);
-    expect(userDrags, 0); // 页边点击是点按，不是拖动
+    // 页边点击是点按不是拖动，但对读者而言同样是手动翻页——必须登记，
+    // 否则下一次 TTS 切句会立刻把人拽回朗读位置
+    expect(userTurns, 1, reason: '页边点击须登记为用户手动翻页');
   });
 
   testWidgets('页边点击区不吞横滑：从页边起手的拖动仍翻页', (tester) async {
@@ -137,7 +141,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(spreadIndex, 1);
-    expect(userDrags, greaterThan(0)); // 手指拖动（程序化翻页不计）
+    expect(userTurns, greaterThan(0)); // 手指拖动（程序化翻页不计）
   });
 
   testWidgets('拖动中页码实时更新，且不重建书页（重建范围只有页码行）', (tester) async {
@@ -201,6 +205,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Third paragraph.', findRichText: true), findsOneWidget);
     expect(find.text('3 / 3'), findsOneWidget);
+    // 程序化翻页（TTS 自动翻页同路径）不得登记为用户翻页——否则朗读自己
+    // 翻的页会把下一次自动翻页也吃掉。TTS 走的就是 animateToPage。
+    expect(userTurns, 0, reason: '程序化跳页不算用户手动翻页');
+    // 不 await：动画要靠 pump 推进，直接 await 会死等到测试超时
+    unawaited(
+      controller.animateToPage(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeInOut,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(userTurns, 0, reason: '程序化动画翻页同样不算用户手动翻页');
   });
 
   testWidgets('真实分页结果渲染在页内不溢出：页被填满时末块底边不越页底', (tester) async {

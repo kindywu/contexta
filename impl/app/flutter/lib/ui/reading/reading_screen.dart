@@ -578,7 +578,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
               .read(readingControllerProvider(widget.articleId).notifier)
               .markAsRead(),
           onSpreadChanged: (index) => setState(() => _spreadIndex = index),
-          onUserDrag: () => _userScrolling = true,
+          onUserTurn: () => _userScrolling = true,
         );
       },
     );

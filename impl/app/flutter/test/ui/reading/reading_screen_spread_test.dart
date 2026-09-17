@@ -389,6 +389,32 @@ void main() {
       expect(currentSpread(tester), 0, reason: '下一次句子切换应恢复跟随');
     });
 
+    testWidgets('页边点击翻页同样跳过一次自动翻页', (tester) async {
+      stub.article = makePagedArticle();
+      setPadLandscape(tester);
+      await pumpScreen(tester);
+      await tester.tap(find.byIcon(Icons.play_arrow));
+      await tester.pumpAndSettle();
+
+      // 点右侧页边翻页：pad 横屏 1219 宽 → 页边条 (1219 − 1100) / 2 = 59.5
+      // ≥ kEdgeTapMinWidth(24)，页边点击可用；点右侧条内靠窗边处
+      final pageView = tester.getRect(find.byType(PageView));
+      await tester.tapAt(Offset(pageView.right - 10, pageView.center.dy));
+      await tester.pumpAndSettle();
+      final afterTap = currentSpread(tester);
+      expect(afterTap, greaterThan(0), reason: '点页边应真的翻过去，否则用例无意义');
+
+      // 目标句在第 1 页（第 0 跨页）——若不被跳过就会翻回去
+      tts.simulateSentenceStarted(0, 0, total: 2);
+      await tester.pumpAndSettle();
+      expect(currentSpread(tester), afterTap, reason: '页边刚翻过，本次不自动翻');
+
+      // 跳过一次即恢复跟随（与拖拽同款语义）
+      tts.simulateSentenceStarted(0, 1, total: 2);
+      await tester.pumpAndSettle();
+      expect(currentSpread(tester), 0, reason: '下一次句子切换应恢复跟随');
+    });
+
     testWidgets('单段播放不触发自动翻页', (tester) async {
       stub.article = makePagedArticle();
       setPadLandscape(tester);

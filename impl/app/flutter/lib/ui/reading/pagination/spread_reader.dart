@@ -64,7 +64,7 @@ class SpreadReader extends StatefulWidget {
     required this.onPlayParagraph,
     required this.onMarkAsRead,
     required this.onSpreadChanged,
-    required this.onUserDrag,
+    required this.onUserTurn,
   });
 
   final PaginatedArticle paginated;
@@ -87,8 +87,8 @@ class SpreadReader extends StatefulWidget {
   final VoidCallback onMarkAsRead;
   final ValueChanged<int> onSpreadChanged;
 
-  /// 用户手指拖动翻页时回调（供 TTS 自动翻页「跳过一次」用）。
-  final VoidCallback onUserDrag;
+  /// 用户手动翻页（拖拽或页边点击）时回调（供 TTS 自动翻页「跳过一次」用）。
+  final VoidCallback onUserTurn;
 
   @override
   State<SpreadReader> createState() => _SpreadReaderState();
@@ -112,8 +112,8 @@ class _SpreadReaderState extends State<SpreadReader> {
               return NotificationListener<ScrollStartNotification>(
                 onNotification: (notification) {
                   // dragDetails != null → 手指拖动（animateToPage 的
-                  // 程序化翻页 dragDetails 为 null，不算用户拖动）
-                  if (notification.dragDetails != null) widget.onUserDrag();
+                  // 程序化翻页 dragDetails 为 null，不算用户翻页）
+                  if (notification.dragDetails != null) widget.onUserTurn();
                   return false;
                 },
                 child: PageView.builder(
@@ -152,7 +152,12 @@ class _SpreadReaderState extends State<SpreadReader> {
     );
   }
 
+  /// 页边点击翻页（唯一调用方是 [_EdgeTapRow] 左右两个点击区）。先登记
+  /// 「用户手动翻页」再动画——与拖拽同义，TTS 自动翻页据此跳过一次。
+  /// TTS 自动翻页走阅读页自己的 `pageController.animateToPage`，不经此处，
+  /// 故不会自我抑制。
   void _go(int spreadIndex) {
+    widget.onUserTurn();
     widget.pageController.animateToPage(
       spreadIndex,
       duration: AppMotion.slow,
