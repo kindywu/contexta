@@ -140,7 +140,8 @@ impl/server/
 flowchart TD
     S([START]) --> pickCategory
     pickCategory -->|route: pathA| fetchLinks
-    pickCategory -->|route: pathB| generateB
+    pickCategory -->|route: pathB| pickTopic
+    pickTopic --> generateB
     fetchLinks --> chooseArticle
     chooseArticle --> extractFacts
     extractFacts -->|空卡且未满 maxSourcePicks=3| chooseArticle
@@ -163,12 +164,32 @@ flowchart TD
 - **pickCategory**（无 LLM）：按难度从类别池均匀随机（`rng` 注入）：LOW=daily_conversation/scene_description/simple_story；MEDIUM=news/expository/argumentative/personal_essay；HIGH=academic_abstract/debate_speech/legal_document/art_criticism。
 - **path 判定**（`resolvePath`）：类别在 `sites.config.ts` 配置了 ≥1 个权威站点 → A（有来源支撑），否则 B（模型知识）。当前配置：chinadaily + tencent 覆盖 `news`/`expository`，其余 9 类走 B。
 - **A 链**：`fetchLinks`（随机洗牌本站点抓列表：Bun.WebView 打开首页 → 等待 JS 懒加载列表 → 锚点快照 → 站点规则抽取 `ArticleLink[]`——**视图受 `BROWSER_CONCURRENCY` 信号量限流、每次调用带硬超时**，见 config-and-deploy.md §6；新鲜度过滤 = 近 5 天已用 URL + 本轮共享 `usedUrls` 去重；标题含受限人名直接出局）→ `chooseArticle`（随机选篇 → 抓正文 HTML → 清洗 → turndown 转 Markdown（截断 12000 字符）→ 正文含受限人名则跳过换篇；命中即从候选列表移出）→ `extractFacts`（LLM 结构化抽取 FactSheet：who/what/when/where/why/how/keyNumbers/keyNames；全空 = 源不适配 → 回 chooseArticle 换篇，封顶 3 次 → rejected）→ `generateA`。
-- **B 链**：直接 `generateB`（模型知识生成，prompt 含"基于可靠常识、虚构需标明、禁用受限人名"）。
-- **generate（A/B 共用实现）**：结构化输出 `GenerateResult` 判别联合——`{"type":"article", titleEn, titleZh, paragraphs:[{en,zh}]}` 或 `{"type":"cannot_write"}`（模型判主题违规/缺依据 → 业务拒答，A 回边换源、B 短路）。其余失败（空白/结构畸形/技术错误）→ error 终态，不做自动重试（手动重试见 replay）。prompt 注入：素材（pathA 的来源标题/URL/正文/事实卡）+ 上轮违规反馈（lastViolations）+ 近 5 天成功文章标题（避免雷同选题）。
+- **B 链**：`pickTopic` → `generateB`（模型知识生成，prompt 含"基于可靠常识、虚构需标明、禁用受限人名"）。
+- **pickTopic（仅 pathB，LLM）**：先定"写什么"再写作，防同批选题雷同——见下方 §4.1.1。
+- **generate（A/B 共用实现）**：结构化输出 `GenerateResult` 判别联合——`{"type":"article", titleEn, titleZh, paragraphs:[{en,zh}]}` 或 `{"type":"cannot_write"}`（模型判主题违规/缺依据 → 业务拒答，A 回边换源、B 短路）。其余失败（空白/结构畸形/技术错误）→ error 终态，不做自动重试（手动重试见 replay）。prompt 注入：素材（pathA 的来源标题/URL/正文/事实卡）+ 本槽选题（`topic`，pathB 且有选题时）+ 上轮违规反馈（lastViolations）+ 近 5 天成功文章标题。
 - **leadersCheck**（无 LLM，A/B 共用）：文章标题/段落中英全文子串匹配 `const/coreLeaders.ts` 受限人名名单，命中即整篇 rejected（设计：名单为硬限制，不回边重试）。
 - **validate（A/B 共用实现）**：pathA = 红线判官（带来源全文 + 事实卡 + 当前日期做归因）+ 事实一致性判官（文章事实不得超出来源范围，含"未使用来源"检测）；pathB = 从严红线判官（无来源可核对，凭据类内容从严）。违规 → 记录 violations 并回 generate 带反馈重写，封顶 3 轮（含首试）→ rejected。
 - **瞬时故障**：节点级 retryPolicy maxAttempts=3 兜底（网络抖动/5xx）；持续失败由 `generateArticle` 统一收为 outcome=error，不抛出。
 - **断点续跑**：`generateArticle` 接受 `threadId`——同 threadId 重复调用 = 从 langgraph.sqlite 恢复续跑（已完成的节点不重跑，fetch/LLM 调用不浪费）；缺省自动生成 `manual-<date>-<ts>`。
+
+#### 4.1.1 选题规划（pickTopic / TopicRegistry，防同批雷同）
+
+**问题（2026-09-17 事故）**：生成 prompt 只给类别与难度、不给选题，选题完全由模型自由发挥；同批并发槽位的 prompt 因此**逐字相同**（唯一差别的 `threadId` 不进 prompt）。LOW 类别的选题分布在模型侧极度集中（雨天/公交站/雨伞、拿错东西、寄错地址），实测同一条 prompt 并发 8 次即出现完全重复标题与 09-12 已发布过的标题。当日 3 个 simple_story 槽位全部产出"伞文"（The Yellow/Blue/Wrong Umbrella），daily_conversation 槽位也撞在伞上。既有的"近 5 天标题"软约束救不了：它是负向提示，且 `recentTitles` 在批次开跑前算一次，并发的兄弟槽位互相看不见。
+
+**机制**：`pickTopic` 节点（仅 pathB，pathA 的选题由来源决定）在 `generateB` 之前规划本槽选题：
+
+1. 经进程内共享的 `TopicRegistry`（与 `usedUrls` 同层：每 run 一个实例，daily/retry/reRunSlot 各自创建后传给全部槽位）`reserve` 取号；
+2. `planTopic`（`graph/topics.ts`）一次结构化调用产出 `{"topic": "..."}`（prompt 见 `graph/prompts.ts` 的 `buildTopicPlannerSystem/User`），携带槽位规格（难度 + CEFR + 类别 + 文体指引）与已用清单（近 5 天标题 + 本批已占选题）；
+3. 确定性校验：空/超长（>200 字符）/与已用题材雷同 → 带拒绝原因重问一次；
+4. 通过 → 写入 state.topic，生成 prompt 注入 `TOPIC — write about exactly this subject`，同时把"近期标题"块的措辞从"你自己挑一个不一样的"改为"题材已定，别借用这些的写法"（两条指令否则互相打架）。
+
+**并发语义**：`TopicRegistry.reserve` 把「看已占快照 → 调 LLM 规划 → 登记」整段串行化——只锁登记不锁规划的话，两个并发槽位会各自看到同一份空快照、各自规划出雷同选题，正是事故成因。规划是秒级 LLM 调用，串行等待由槽位并发度吸收（一槽规划时其余槽照常生成/抓取）。
+
+**雷同判定**（`isSimilarTopic`）：内容词（小写、去停用词）Jaccard 系数 ≥ 1/3（十字相乘比较）。取 1/3 是为了拦住"只换修饰语"这一最低劣形态——"The Yellow Umbrella" 与 "The Blue Umbrella" 的 Jaccard 恰为 1/3（共用 umbrella）；再低会把共用个别普通词的不同题材误判为重复。
+
+**兜底（重要）**：选题规划是增强，不是新的故障点——`planTopic` **永不抛错**，任何失败（LLM 异常、输出不合规、两轮都规划不出不重复的选题）都返回 undefined，槽位退回改造前的自由选题行为。断点恢复时 `state.topic` 已在 checkpoint 里，不重复规划。
+
+**诊断**：运行日志有 `pickTopic: [<category>/<difficulty>] 选题 = ...`（成功）、`pickTopic: 第 N/2 轮选题被拒（原因）: "..."`（校验未过）、`pickTopic: 未取到可用选题（同批已占 N 条）→ 本槽沿用自由选题`（兜底）三类行。
 
 **三态结果**（`ArticleResult`）：`success`（含 GeneratedArticle：runDate/difficulty/category/path/sourceUrl?/factSheet?/titleEn/titleZh/paragraphs）/ `rejected`（reason，业务性拒绝：名单命中/源不适配/校验封顶/模型拒答）/ `error`（message，技术失败：网络、欠费、站点全挂、结构不合规）。**引擎承诺三态返回不抛**（checkpoint 路径不可用的构造异常除外，调用方兜底）。
 
@@ -199,7 +220,7 @@ stateDiagram-v2
 - **ensureReviewRows(db)**：`INSERT OR IGNORE INTO article_review (article_id, slot_id) SELECT s.article_id, s.id FROM batch_slots s WHERE s.status='success' AND s.article_id IS NOT NULL AND NOT EXISTS (...)`——为所有 success 槽位且无 review 行的文章补 pending_review（article_id UNIQUE 幂等，重跑不新增）。每日任务收尾与 `POST /api/admin/articles/generate` 后调用；引擎生成不建。
 - **approveArticle(db, articleId, admin)**：守卫 = 有 review 行 **并且** 该文章是 review.slot_id 所指向槽位的**当前**文章（重生成后旧文不再是当前文章，不可再审核）→ 条件 UPDATE `pending_review → approved`（reviewed_by/reviewed_at=datetime('now')）；守卫不满足或 affected=0（重复审核）→ 404 NOT_FOUND。
 - **rejectArticle(ctx, articleId, reason, admin)**：同守卫；先数同槽累计 rejected 行数 n（不含本次），`n >= REGENERATE_LIMIT`（默认 3）→ 写 `rejected_final`（不重生成）；否则写 `rejected` 并 **await `reRunSlot(ctx, slot, n+1)`** 原地补生成（同步等待——管理端在响应里看到补生成结果）。并发双 reject：条件 UPDATE affected=0 → 404，只建一条拒绝、只补一次。补生成本身失败不上抛（拒绝语义已在事务内完成），新行保持失败槽位由每日任务 retry 自愈。
-- **reRunSlot(ctx, slotRow, genSeq)**：槽位级进程锁（`slotLocks`，同槽 reRun 串行；键 = batch_slots.id）；threadId = `daily-<runDate>-<slotIndex>-r<genSeq>`；去重上下文与引擎 daily 一致（`listRecentArticles(db, runDate, 5, 60)` → recentTitles + recentUsedUrls）；调 `generateArticle` → success：写 md → `insertArticleWithParagraphs` → `writeSlotResult(success)` → `ensureReviewRows`（新文补 pending_review）；rejected/error：只写槽位终态；finally `finalizeBatch`。checkpoint 不可用的构造异常兜底按 error 落槽位终态（拒绝语义已完成，抛给管理端会被误读为"拒绝失败"）。
+- **reRunSlot(ctx, slotRow, genSeq)**：槽位级进程锁（`slotLocks`，同槽 reRun 串行；键 = batch_slots.id）；threadId = `daily-<runDate>-<slotIndex>-r<genSeq>`；去重上下文与引擎 daily 一致（`listRecentArticles(db, runDate, 5, 60)` → recentTitles + recentUsedUrls + 新建 `TopicRegistry` 走选题规划，避开近 5 天已发题材）；调 `generateArticle` → success：写 md → `insertArticleWithParagraphs` → `writeSlotResult(success)` → `ensureReviewRows`（新文补 pending_review）；rejected/error：只写槽位终态；finally `finalizeBatch`。checkpoint 不可用的构造异常兜底按 error 落槽位终态（拒绝语义已完成，抛给管理端会被误读为"拒绝失败"）。
 - **retrySlot(ctx, slotRow)**：error/rejected 槽位（无文章）的重跑入口——`reRunSlot(ctx, slotRow, Date.now())`（genSeq=唯一时间戳：引擎同 threadId 已有终态 checkpoint 时按断点契约返回旧结果，恒定 genSeq=1 会令"重复点重试"静默 no-op）。
 - **文章列表**（管理端 `GET /api/admin/articles`）：文章视角分页列表——每行 = `articles` 一行（含被补生成替换的旧文）。参数：`start_date`/`end_date`（按 `run_date`，缺省当天，`start > end` → 400）、`status`（`pending_review`/`approved`/`rejected`——rejected **聚合** `rejected_final`；缺省全部）、`page`（1 起）/`page_size`（15/30/45，缺省 15）、`sort_by`/`sort_dir`（白名单：`run_date`/`slot_index`/`created_at`/`difficulty`/`category`/`status`/`paragraph_count`/`id`，非法值 → 400；默认 `run_date DESC, slot_index ASC, id DESC`）。行：`{id, run_date, difficulty, category, title_en, title_zh, source_url, paragraph_count, created_at(生成时间 UTC), slot_id, slot_index, is_current(是否任一槽位现指向——旧文 false，审核守卫同规), review{id, status, reject_reason, reviewed_by, reviewed_at} | null}`。响应：`{items, total, stats{total, pending_review, approved, rejected}}`——`stats` 口径 = 时间段内全量（**不含** status 筛选，管理端统计条据此展示并可点击筛选）。旧槽位视图（每槽行）已废弃：无 review 行的异常文章经 LEFT JOIN 兜 null（slot 信息缺失）。
 - **文章详情**（`GET /api/admin/articles/:id`）：articles 全行 + 段落（order_index 1 起）+ review 行 + 所属槽位 + **history**（同槽全部 review 行倒序——槽位时间线数据源，旧列表行不再携带 history）。槽位以 review.slot_id 为准（旧文被补生成换指后仍归属其槽位）；无 review 行回退 batch_slots.article_id。
@@ -328,7 +349,7 @@ flowchart TD
   3. **error 槽位每槽一次补跑**：`retrySlot`（thread = `daily-<date>-<slot>-r<Date.now()>`，唯一 genSeq 避免命中"同 threadId 终态 checkpoint 复用"契约；与审核重生成共用槽位级进程锁）；补跑仍失败留 error，err 不抛；
   4. `ensureReviewRows` —— 补齐 success 槽位的待审行。
 
-- **并发安全**：槽位级进程锁（`review_service` `slotLocks`）保证同槽 error 补跑与审核重生成串行；引擎侧 `usedUrls` 集合在单轮 run 内共享，拦截并行槽位重复抓取同一来源。
+- **并发安全**：槽位级进程锁（`review_service` `slotLocks`）保证同槽 error 补跑与审核重生成串行；引擎侧 `usedUrls` / `TopicRegistry` 在单轮 run 内共享，前者拦截并行槽位重复抓取同一来源（URL 去重），后者串行取号保证并行槽位选题不重复（见 §4.1.1）。
 - **手动补生成**：`POST /api/admin/articles/generate`（严格 ISO 校验）走同一 `generateDailyArticles` + `ensureReviewRows`，并经同一 `withDailyRunReport` 上报（开始卡 / 结束卡）；错过的日期 / 收口批次的 error 槽位均可手动处置。
 - **运行上报（`services/run_report.ts`；一次运行 = 两条消息 + 可选复核）**：`withDailyRunReport(runDate, run)` 包住整日运行——**查余额 → 发开始卡 → 跑 → 查余额 → 发结束卡 →（成本为 0 时）排一次延迟余额复核**；每日窗口 `runFill` 与管理端手动 `generate` 共用这一处实现（缺省 `defaultRunReport` 由两份 cfg 构造）。卡片渲染与发送在 `services/feishu_notify.ts`。
   - **开始卡**（`notifyDailyStart`，蓝）：执行日期、开始时刻、**运行前余额**；
