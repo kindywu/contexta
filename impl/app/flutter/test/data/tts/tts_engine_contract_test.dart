@@ -76,12 +76,13 @@ void main() {
       expect(second, [id]);
     });
 
-    test('setOnParagraphStarted 收到段落索引（0 起，不含标题）', () async {
+    test('setOnSentenceStarted 收到句子位置（段索引 0 起，段内句序号 0 起）', () async {
       final engine = _FakeEngine();
-      engine.setOnParagraphStarted((id, index, total) {});
+      engine.setOnSentenceStarted((id, paragraphIndex, sentenceIndex, total) {});
       final id = engine.speak('hello');
-      engine.simulateParagraphStarted(0);
+      engine.simulateSentenceStarted(0, 1);
       expect(engine.lastParagraphIndex, 0);
+      expect(engine.lastSentenceIndex, 1);
       expect(id, isNotNull);
     });
   });
@@ -102,9 +103,10 @@ class _FakeEngine implements TtsEngine {
   bool failNextSpeak = false;
   String? failureMessage;
   void Function(String? utteranceId)? _callback;
-  void Function(String? utteranceId, int paragraphIndex, int total)?
-      _paragraphStarted;
+  void Function(String? utteranceId, int paragraphIndex, int sentenceIndex,
+      int total)? _sentenceStarted;
   int? lastParagraphIndex;
+  int? lastSentenceIndex;
 
   @override
   bool isAvailable() => failureMessage == null;
@@ -132,15 +134,17 @@ class _FakeEngine implements TtsEngine {
   }
 
   @override
-  void setOnParagraphStarted(
-      void Function(String? utteranceId, int paragraphIndex, int total)?
+  void setOnSentenceStarted(
+      void Function(String? utteranceId, int paragraphIndex, int sentenceIndex,
+              int total)?
           callback) {
-    _paragraphStarted = callback;
+    _sentenceStarted = callback;
   }
 
-  void simulateParagraphStarted(int index) {
-    _paragraphStarted?.call(currentId, index, 3);
-    lastParagraphIndex = index;
+  void simulateSentenceStarted(int paragraphIndex, int sentenceIndex) {
+    _sentenceStarted?.call(currentId, paragraphIndex, sentenceIndex, 3);
+    lastParagraphIndex = paragraphIndex;
+    lastSentenceIndex = sentenceIndex;
   }
 
   void finish(String id) {

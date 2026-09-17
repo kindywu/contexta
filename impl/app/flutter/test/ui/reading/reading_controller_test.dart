@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:contexta/data/remote/llm_api.dart';
 import 'package:contexta/data/remote/server_api_client.dart';
+import 'package:contexta/data/tts/kitten_tts_engine.dart';
+import 'package:contexta/data/tts/kitten_tts_session.dart';
 import 'package:contexta/domain/model/article.dart';
 import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
@@ -124,15 +127,16 @@ class _RecordingTts implements TtsEngine {
   /// 最近一次 speak 收到的音色（null = 未传/默认）。
   TtsVoice? lastVoice;
   void Function(String? utteranceId)? onFinished;
-  void Function(String? utteranceId, int paragraphIndex, int total)?
-      onParagraphStarted;
+  void Function(String? utteranceId, int paragraphIndex, int sentenceIndex,
+      int total)? onSentenceStarted;
   int _counter = 0;
 
-  /// 最近一次段落回调收到的参数（controller 未注册 setOnParagraphStarted 时
+  /// 最近一次句子回调收到的参数（controller 未注册 setOnSentenceStarted 时
   /// 保持 null——捕获断言使「删除注册行」的弱断言回归可被检出）。
-  String? lastParagraphId;
-  int? lastParagraphIndex;
-  int? lastParagraphTotal;
+  String? lastSentenceId;
+  int? lastSentenceParagraphIndex;
+  int? lastSentenceIndex;
+  int? lastSentenceTotal;
 
   @override
   bool isAvailable() => available;
@@ -169,23 +173,100 @@ class _RecordingTts implements TtsEngine {
   }
 
   @override
-  void setOnParagraphStarted(
-      void Function(String? utteranceId, int paragraphIndex, int total)?
+  void setOnSentenceStarted(
+      void Function(String? utteranceId, int paragraphIndex, int sentenceIndex,
+              int total)?
           callback) {
     // 包装记录最近一次回调参数：注册行被删时捕获字段保持 null，测试变红
-    onParagraphStarted = callback == null
+    onSentenceStarted = callback == null
         ? null
-        : (utteranceId, paragraphIndex, total) {
-            lastParagraphId = utteranceId;
-            lastParagraphIndex = paragraphIndex;
-            lastParagraphTotal = total;
-            callback(utteranceId, paragraphIndex, total);
+        : (utteranceId, paragraphIndex, sentenceIndex, total) {
+            lastSentenceId = utteranceId;
+            lastSentenceParagraphIndex = paragraphIndex;
+            lastSentenceIndex = sentenceIndex;
+            lastSentenceTotal = total;
+            callback(utteranceId, paragraphIndex, sentenceIndex, total);
           };
   }
 
-  void simulateParagraphStarted(int index) {
-    onParagraphStarted?.call(_lastId, index, 2);
+  void simulateSentenceStarted(int paragraphIndex, int sentenceIndex,
+      {int total = 2}) {
+    onSentenceStarted?.call(_lastId, paragraphIndex, sentenceIndex, total);
   }
+}
+
+/// 记录型 KittenTtsSession：捕获 speakFullArticle / speakSentences 收到的
+/// 句子单元（验证 controller 的句子级下发契约）。
+class _RecordingSession implements KittenTtsSession {
+  _RecordingSession() {
+    last = this;
+  }
+
+  static _RecordingSession? last;
+
+  List<SentenceUnit>? lastSentences;
+  String? lastTitle;
+
+  @override
+  Future<void> speakFullArticle({
+    String? title,
+    required List<SentenceUnit> sentences,
+    required double speed,
+    required String utteranceId,
+    String? voice,
+  }) async {
+    lastTitle = title;
+    lastSentences = sentences;
+  }
+
+  @override
+  Future<void> speakSentences(
+    List<SentenceUnit> sentences, {
+    required double speed,
+    required String utteranceId,
+    String? voice,
+  }) async {
+    lastTitle = null;
+    lastSentences = sentences;
+  }
+
+  @override
+  Future<void> speak(
+    String text, {
+    required double speed,
+    required String utteranceId,
+    String? voice,
+  }) async {}
+
+  @override
+  Future<bool> playFile(String filePath, {required String utteranceId}) async =>
+      true;
+
+  @override
+  Future<void> stop() async {}
+
+  @override
+  void setFinishListener(void Function(String utteranceId)? listener) {}
+
+  @override
+  void setProgressListener(
+      void Function(String utteranceId, int done, int total)? listener) {}
+
+  @override
+  void setOnSentenceStarted(
+      void Function(String utteranceId, int paragraphIndex, int sentenceIndex,
+              int total)?
+          listener) {}
+
+  @override
+  Future<void> pregenerateSentences({
+    required List<SentenceUnit> sentences,
+    required double speed,
+    String? voice,
+  }) async {}
+
+  @override
+  Future<void> dispose() async {}
 }
 
 /// 可配置查词结果的词库仓储桩（Task 24）。
@@ -797,40 +878,204 @@ void main() {
     });
   });
 
+  group('句子切分', () {
+    test('加载文章时按句切分（区间 + 文本，按段落分组）', () async {
+      articleRepo = _FakeArticleRepo(
+        onGetArticle: (_) async => makeArticle(paragraphs: const [
+          ArticleParagraph(
+            orderIndex: 0,
+            englishText: 'One two. Three four!',
+            chineseTranslation: '一二。三四！',
+          ),
+          ArticleParagraph(
+            orderIndex: 1,
+            englishText: 'Five',
+            chineseTranslation: '五',
+          ),
+        ]),
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+
+      final grouped = controller.state.sentencesByParagraph;
+      expect(grouped, hasLength(2));
+      expect(
+        grouped[0].map((s) => (s.indexInParagraph, s.start, s.end, s.text)),
+        [
+          (0, 0, 8, 'One two.'),
+          (1, 9, 20, 'Three four!'),
+        ],
+      );
+      expect(grouped[1].map((s) => s.text), ['Five']);
+      expect(grouped[1].single.paragraphIndex, 1);
+    });
+  });
+
   group('全文朗读', () {
-    test('全文朗读：段落回调逐段更新 speakingParagraphIndex', () async {
+    test('全文朗读：句子回调逐句更新高亮与播放进度', () async {
       await controller.loadArticle(1);
       await controller.startFullArticlePlayback();
       expect(controller.state.speakingParagraphIndex, isNull); // 尚未上报
 
-      // 标题段上报 -1：标题高亮，播放条不显示段号
-      tts.simulateParagraphStarted(-1);
+      // 标题上报 -1：标题高亮，播放条不显示句号
+      tts.simulateSentenceStarted(-1, 0);
       expect(controller.state.speakingParagraphIndex, -1);
+      expect(controller.state.speakingSentenceIndex, 0);
       expect(controller.state.speechProgress, isNull);
-      expect(controller.state.speechTotalParagraphs, isNull);
+      expect(controller.state.speechTotalSentences, isNull);
 
-      // 正文第 1 段发声：高亮段 0，播放条「第 1/2 段」（播放进度）
-      tts.simulateParagraphStarted(0);
+      // 正文段 0 第 1 句发声：高亮段 0 句 0，播放条「第 1/2 句」（播放进度）
+      tts.simulateSentenceStarted(0, 0);
       expect(controller.state.speakingParagraphIndex, 0);
+      expect(controller.state.speakingSentenceIndex, 0);
       expect(controller.state.speechProgress, 1);
-      expect(controller.state.speechTotalParagraphs, 2);
+      expect(controller.state.speechTotalSentences, 2);
       expect(controller.state.isSpeakingFullArticle, isTrue);
 
-      tts.simulateParagraphStarted(1);
+      tts.simulateSentenceStarted(1, 0);
       expect(controller.state.speakingParagraphIndex, 1);
+      expect(controller.state.speakingSentenceIndex, 0);
       expect(controller.state.speechProgress, 2);
     });
 
-    test('全文朗读：迟到旧 utterance 段落回调被过滤', () async {
+    test('播放进度按全篇句序号累计（跨段落）', () async {
+      articleRepo = _FakeArticleRepo(
+        onGetArticle: (_) async => makeArticle(paragraphs: const [
+          ArticleParagraph(
+            orderIndex: 0,
+            englishText: 'One. Two. Three.',
+            chineseTranslation: '一二三。',
+          ),
+          ArticleParagraph(
+            orderIndex: 1,
+            englishText: 'Four. Five.',
+            chineseTranslation: '四五。',
+          ),
+        ]),
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+      await controller.startFullArticlePlayback();
+
+      tts.simulateSentenceStarted(1, 0, total: 5); // 第二段首句 = 全篇第 4 句
+      expect(controller.state.speechProgress, 4);
+      expect(controller.state.speechTotalSentences, 5);
+
+      tts.simulateSentenceStarted(1, 1, total: 5); // 第二段次句 = 全篇第 5 句
+      expect(controller.state.speechProgress, 5);
+    });
+
+    test('全文朗读：迟到旧 utterance 句子回调被过滤', () async {
       await controller.loadArticle(1);
       controller.playParagraph(0); // ctx-0
       await controller.startFullArticlePlayback(); // ctx-1
 
-      tts.simulateParagraphStarted(0); // 用 _lastId = ctx-1 触发
-      // 捕获断言（三元组）：controller 未注册 setOnParagraphStarted 时保持 null
-      expect(tts.lastParagraphId, 'ctx-1');
-      expect(tts.lastParagraphIndex, 0);
+      tts.simulateSentenceStarted(0, 0); // 用 _lastId = ctx-1 触发
+      // 捕获断言（四元组）：controller 未注册 setOnSentenceStarted 时保持 null
+      expect(tts.lastSentenceId, 'ctx-1');
+      expect(tts.lastSentenceParagraphIndex, 0);
+      expect(tts.lastSentenceIndex, 0);
+      expect(tts.lastSentenceTotal, 2);
       expect(controller.state.speakingParagraphIndex, 0);
+    });
+  });
+
+  group('KittenTTS 句子单元下发', () {
+    /// 构造带记录型 fake session 的真 KittenTtsEngine（controller 的
+    /// `engine is KittenTtsEngine` 分支只有真类型才能走到）。
+    Future<KittenTtsEngine> kittenEngine() async {
+      final root = Directory.systemTemp.createTempSync('reading_kitten_test');
+      final models = Directory('${root.path}/models')..createSync();
+      File('${models.path}/.installed').writeAsStringSync('1');
+      for (final name in [
+        'kitten_tts_micro_v0_8.onnx',
+        'voices.npz',
+        'en_rules',
+        'en_list',
+      ]) {
+        File('${models.path}/$name').writeAsBytesSync([1]);
+      }
+      addTearDown(() => root.deleteSync(recursive: true));
+      final session = _RecordingSession();
+      final engine = KittenTtsEngine(
+        assetBasePath: '/fake/assets',
+        factory: ({required String onnxPath, required String voicesPath}) async =>
+            session,
+        modelBaseOverride: root,
+      );
+      await engine.init();
+      return engine;
+    }
+
+    test('全文朗读按句子单元下发（段落 id + 段内句序号 + 句子文本）', () async {
+      final engine = await kittenEngine();
+      articleRepo = _FakeArticleRepo(
+        onGetArticle: (_) async => makeArticle(paragraphs: const [
+          ArticleParagraph(
+            id: 11,
+            orderIndex: 0,
+            englishText: 'One two. Three!',
+            chineseTranslation: '一二三。',
+          ),
+          ArticleParagraph(
+            id: 22,
+            orderIndex: 1,
+            englishText: 'Four',
+            chineseTranslation: '四。',
+          ),
+        ]),
+      );
+      controller = ReadingController(
+        articleRepository: articleRepo,
+        settingsRepository: settingsRepo,
+        statsRepository: statsRepo,
+        wordRepository: wordRepo,
+        llmApi: llmApi,
+        vocabularyRepository: vocabRepo,
+        ttsEngineFuture: Future.value(engine),
+      );
+      await controller.loadArticle(1);
+      await controller.startFullArticlePlayback();
+
+      final session = _RecordingSession.last!;
+      expect(session.lastTitle, 'Test');
+      expect(session.lastSentences, [
+        (paragraphId: 11, sentenceIndex: 0, text: 'One two.'),
+        (paragraphId: 11, sentenceIndex: 1, text: 'Three!'),
+        (paragraphId: 22, sentenceIndex: 0, text: 'Four'),
+      ]);
+    });
+
+    test('段落播放按句子单元下发（段内逐句）', () async {
+      final engine = await kittenEngine();
+      articleRepo = _FakeArticleRepo(
+        onGetArticle: (_) async => makeArticle(paragraphs: const [
+          ArticleParagraph(
+            id: 11,
+            orderIndex: 0,
+            englishText: 'One two. Three!',
+            chineseTranslation: '一二三。',
+          ),
+        ]),
+      );
+      controller = ReadingController(
+        articleRepository: articleRepo,
+        settingsRepository: settingsRepo,
+        statsRepository: statsRepo,
+        wordRepository: wordRepo,
+        llmApi: llmApi,
+        vocabularyRepository: vocabRepo,
+        ttsEngineFuture: Future.value(engine),
+      );
+      await controller.loadArticle(1);
+      controller.playParagraph(0);
+      await Future<void>.delayed(Duration.zero);
+
+      final session = _RecordingSession.last!;
+      expect(session.lastSentences, [
+        (paragraphId: 11, sentenceIndex: 0, text: 'One two.'),
+        (paragraphId: 11, sentenceIndex: 1, text: 'Three!'),
+      ]);
     });
   });
 

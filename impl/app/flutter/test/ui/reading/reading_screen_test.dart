@@ -16,7 +16,9 @@ import 'package:contexta/domain/repository/word_repository.dart';
 import 'package:contexta/domain/tts/tts_engine.dart';
 import 'package:contexta/ui/reading/reading_controller.dart';
 import 'package:contexta/ui/reading/reading_screen.dart';
+import 'package:contexta/ui/reading/sentence_extractor.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wakelock_plus_platform_interface/wakelock_plus_platform_interface.dart';
@@ -82,8 +84,8 @@ class _TtsStub implements TtsEngine {
   bool available = true;
   int stopCount = 0;
   final List<String> spoken = [];
-  void Function(String? utteranceId, int paragraphIndex, int total)?
-  onParagraphStarted;
+  void Function(String? utteranceId, int paragraphIndex, int sentenceIndex,
+      int total)? onSentenceStarted;
   String? _lastId;
   void Function(String? utteranceId)? onFinished;
 
@@ -115,14 +117,18 @@ class _TtsStub implements TtsEngine {
   }
 
   @override
-  void setOnParagraphStarted(
-    void Function(String? utteranceId, int paragraphIndex, int total)? callback,
+  void setOnSentenceStarted(
+    void Function(String? utteranceId, int paragraphIndex, int sentenceIndex,
+            int total)?
+        callback,
   ) {
-    onParagraphStarted = callback;
+    onSentenceStarted = callback;
   }
 
-  void simulateParagraphStarted(int index) {
-    onParagraphStarted?.call('ctx-1', index, 2);
+  /// 模拟第 [paragraphIndex] 段第 [sentenceIndex] 句开始发声（总句数默认 2）。
+  void simulateSentenceStarted(int paragraphIndex, int sentenceIndex,
+      {int total = 2}) {
+    onSentenceStarted?.call('ctx-1', paragraphIndex, sentenceIndex, total);
   }
 }
 
@@ -166,6 +172,38 @@ Article makeLongArticle() => Article(
   ],
 );
 
+/// 长文（12 段，第 5 段首句跨行）：其余段各一句占位，保证列表可滚动且
+/// 第 5 段在首屏内——用于验证按句滚动的句内偏移（句 1 首行不在段落顶部）。
+Article makeSentenceScrollArticle() => Article(
+  id: 3,
+  batchId: 1,
+  orderIndex: 0,
+  contentCategory: 'NEWS',
+  title: 'Scroll',
+  status: ArticleStatus.success,
+  accumulatedReadSeconds: 0,
+  readCompletedAt: null,
+  paragraphs: [
+    for (var i = 0; i < 12; i++)
+      if (i == 5)
+        const ArticleParagraph(
+          orderIndex: 5,
+          englishText:
+              'Alpha bravo charlie delta echo foxtrot golf hotel india juliet '
+              'kilo lima mike november oscar papa quebec romeo. '
+              'Second sentence starts on a later line and keeps going so the '
+              'paragraph wraps across several lines in the test viewport.',
+          chineseTranslation: '第五段。',
+        )
+      else
+        ArticleParagraph(
+          orderIndex: i,
+          englishText: 'Paragraph $i.',
+          chineseTranslation: '第 $i 段。',
+        ),
+  ],
+);
+
 /// 段落 widget 定位：按 GlobalObjectKey 的 value（内容相等）匹配。
 /// GlobalObjectKey 按 identical 判等，跨实例无法用 find.byKey 命中，
 /// 故按 key value 过滤。
@@ -200,6 +238,60 @@ Color? _firstRichTextBg(WidgetTester tester) {
     }
   }
   return null;
+}
+
+/// 段落英文正文 RichText（按 ReadingScreen 的 textKey 定位）。
+Finder paragraphTextFinder(int index) => find.byWidgetPredicate(
+  (w) =>
+      w is RichText &&
+      w.key is GlobalObjectKey &&
+      (w.key! as GlobalObjectKey).value == 'reading-para-text-$index',
+);
+
+/// 段落英文正文里带底色的文字段（相邻同底色 span 合并；用于断言「只高亮
+/// 当前句」）。
+List<String> highlightedTexts(WidgetTester tester, int index) {
+  final rich = tester.widget<RichText>(paragraphTextFinder(index));
+  final spans = (rich.text as TextSpan).children ?? const <InlineSpan>[];
+  final out = <String>[];
+  final buffer = StringBuffer();
+  void flush() {
+    if (buffer.isNotEmpty) {
+      out.add(buffer.toString());
+      buffer.clear();
+    }
+  }
+
+  for (final span in spans) {
+    if (span is TextSpan && span.style?.backgroundColor != null) {
+      buffer.write(span.text ?? '');
+    } else {
+      flush();
+    }
+  }
+  flush();
+  return out;
+}
+
+/// 段落英文正文里第 [sentenceIndex] 句首行相对该段首行的 y 偏移（按句滚动
+/// 的句内偏移量；测试内独立求值，不复用实现）。
+double sentenceBoxTopIn(
+  WidgetTester tester,
+  int paragraphIndex,
+  int sentenceIndex,
+) {
+  final render = tester.renderObject<RenderParagraph>(
+    paragraphTextFinder(paragraphIndex),
+  );
+  final ranges = findSentenceRanges(render.text.toPlainText());
+  final (start, end) = ranges[sentenceIndex];
+  final boxes = render.getBoxesForSelection(
+    TextSelection(baseOffset: start, extentOffset: end),
+  );
+  final firstBoxes = render.getBoxesForSelection(
+    const TextSelection(baseOffset: 0, extentOffset: 1),
+  );
+  return boxes.first.top - firstBoxes.first.top;
 }
 
 void main() {
@@ -516,7 +608,7 @@ void main() {
     });
   });
 
-  group('段落朗读高亮', () {
+  group('句子朗读高亮', () {
     testWidgets('点击段落播放 → 英文正文加底色；再次点击停止 → 底色消失', (tester) async {
       await pumpScreen(tester);
       expect(_firstRichTextBg(tester), isNull);
@@ -530,15 +622,36 @@ void main() {
       expect(_firstRichTextBg(tester), isNull);
     });
 
-    testWidgets('全文朗读读标题：标题高亮且不滚动；正文第 1 段发声后高亮交接', (tester) async {
+    testWidgets('句子回调只高亮当前句（不是整段）', (tester) async {
+      stub.article = makeLongArticle();
+      await pumpScreen(tester);
+
+      // 全文朗读（走 speak 拼接路径；播放条文字不可点，点播放图标）
+      await tester.tap(find.byIcon(Icons.play_arrow));
+      await tester.pumpAndSettle();
+
+      // 段 0 第 1 句（"Paragraph 0."）发声：只有该句带底色
+      tts.simulateSentenceStarted(0, 0, total: 16);
+      await tester.pumpAndSettle();
+      expect(highlightedTexts(tester, 0), ['Paragraph 0.']);
+
+      // 段 0 第 2 句发声：底色移到第 2 句
+      tts.simulateSentenceStarted(0, 1, total: 16);
+      await tester.pumpAndSettle();
+      final second = highlightedTexts(tester, 0);
+      expect(second, hasLength(1));
+      expect(second.single, startsWith('This is a fairly long English sentence'));
+    });
+
+    testWidgets('全文朗读读标题：标题高亮且不滚动；正文第 1 句发声后高亮交接', (tester) async {
       stub.article = makeLongArticle();
       await pumpScreen(tester);
 
       await tester.tap(find.byIcon(Icons.play_arrow));
       await tester.pumpAndSettle();
 
-      // 标题段上报 -1：标题文字加底色，段落 0 位置不变（不滚动）
-      tts.simulateParagraphStarted(-1);
+      // 标题上报 -1：标题文字加底色，段落 0 位置不变（不滚动）
+      tts.simulateSentenceStarted(-1, 0);
       await tester.pumpAndSettle();
       expect(
         tester
@@ -552,12 +665,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(paragraphTop(tester, 0), para0Before);
 
-      // 标题段无段号 → 播放条显示「正在朗读…」
+      // 标题无句号 → 播放条显示「正在朗读…」
       expect(find.text('正在朗读…'), findsOneWidget);
 
-      // 正文第 1 段发声：标题高亮消失 → 段 0 高亮，播放条「第 1/2 段」
-      // （播放进度，total 由桩固定为 2）
-      tts.simulateParagraphStarted(0);
+      // 正文第 1 句发声：标题高亮消失 → 段 0 首句高亮，播放条「第 1/16 句」
+      tts.simulateSentenceStarted(0, 0, total: 16);
       await tester.pumpAndSettle();
       expect(
         tester
@@ -568,7 +680,7 @@ void main() {
         isNull,
       );
       expect(_firstRichTextBg(tester), const Color(0x2ECC785C));
-      expect(find.text('第 1/2 段'), findsOneWidget);
+      expect(find.text('第 1/16 句'), findsOneWidget);
     });
   });
 
@@ -590,12 +702,12 @@ void main() {
       // 段落 0 顶部在 1/3 线上方（首屏内），目标 offset 为负被 clamp，
       // 不做任何滚动
       final para0Before = paragraphTop(tester, 0);
-      tts.simulateParagraphStarted(0);
+      tts.simulateSentenceStarted(0, 0);
       await tester.pumpAndSettle();
       expect(paragraphTop(tester, 0), para0Before);
 
       // 切到段落 2 → 段落 2 顶部对齐 (视口-段高)/3 处
-      tts.simulateParagraphStarted(2);
+      tts.simulateSentenceStarted(2, 0);
       await tester.pumpAndSettle();
       expect(
         paragraphTop(tester, 2),
@@ -611,7 +723,7 @@ void main() {
       // 无法区分门控是否生效；段 2 目标为正——若门控失效会自动滚动 → 红
       await tester.tap(find.byIcon(Icons.play_arrow));
       await tester.pumpAndSettle();
-      tts.simulateParagraphStarted(1);
+      tts.simulateSentenceStarted(1, 0);
       await tester.pumpAndSettle();
       final before = paragraphTop(tester, 2);
 
@@ -627,6 +739,29 @@ void main() {
       expect(paragraphTop(tester, 2), before);
     });
 
+    testWidgets('按句滚动：当前句首行对齐视口 1/3（句内偏移叠加）', (tester) async {
+      stub.article = makeSentenceScrollArticle();
+      await pumpScreen(tester);
+
+      final listViewTop = tester.getTopLeft(find.byType(ListView)).dy;
+      final listViewHeight = tester.getSize(find.byType(ListView)).height;
+      final paraHeight = tester.getSize(paragraphFinder(5)).height;
+
+      await tester.tap(find.byIcon(Icons.play_arrow));
+      await tester.pumpAndSettle();
+
+      // 段 5 句 1 发声：句 1 首行（非段落顶部）对齐 1/3 线
+      final boxTop = sentenceBoxTopIn(tester, 5, 1);
+      expect(boxTop, greaterThan(0), reason: '句 1 应从第二行起，否则本用例无意义');
+      tts.simulateSentenceStarted(5, 1);
+      await tester.pumpAndSettle();
+
+      expect(
+        paragraphTop(tester, 5),
+        closeTo(listViewTop + (listViewHeight - paraHeight) / 3 - boxTop, 1),
+      );
+    });
+
     testWidgets('用户手动滚动暂停跟随，下一次段落切换恢复', (tester) async {
       stub.article = makeLongArticle();
       await pumpScreen(tester);
@@ -637,7 +772,7 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.play_arrow));
       await tester.pumpAndSettle();
-      tts.simulateParagraphStarted(0);
+      tts.simulateSentenceStarted(0, 0);
       await tester.pumpAndSettle();
 
       // 用户上滑离开当前段（-200：保证段落 1 仍在构建范围内）
@@ -646,13 +781,13 @@ void main() {
       final afterDrag = paragraphTop(tester, 1);
 
       // 段落 1 切换：被手滚跳过（位置不变）
-      tts.simulateParagraphStarted(1);
+      tts.simulateSentenceStarted(1, 0);
       await tester.pumpAndSettle();
       final duringUserScroll = paragraphTop(tester, 1);
       expect(duringUserScroll, closeTo(afterDrag, 1));
 
       // 段落 2 切换：恢复跟随
-      tts.simulateParagraphStarted(2);
+      tts.simulateSentenceStarted(2, 0);
       await tester.pumpAndSettle();
       expect(
         paragraphTop(tester, 2),
@@ -684,7 +819,7 @@ void main() {
 
       // 大幅跳转到段 6：超出首屏 viewport + cacheExtent 构建范围，
       // currentContext 为 null → 估算兜底（maxScrollExtent * 6/8），不抛错
-      tts.simulateParagraphStarted(6);
+      tts.simulateSentenceStarted(6, 0);
       await tester.pumpAndSettle();
 
       expect(position.pixels, greaterThan(0));

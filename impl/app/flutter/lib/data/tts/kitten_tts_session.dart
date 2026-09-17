@@ -6,11 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:kittentts/kittentts_flutter.dart' as kit;
 
 import '../../domain/model/tts_voice.dart';
+import '../../domain/tts/tts_engine.dart';
 import 'tts_cache_manager.dart';
-
-/// 标题段的段落索引哨兵：全文朗读时标题也参与段落播放上报（读标题即高亮
-/// 标题），与正文（从 0 起）区分。UI / 控制器据此渲染标题高亮。
-const int kTitleParagraphIndex = -1;
 
 /// 把 SDK 音色 id（小写，如 "luna"，即 [TtsVoice.sdkVoiceId]）映射为
 /// [TtsVoice]（缓存键用 [TtsVoice.dbValue] 大写枚举名）。
@@ -35,31 +32,32 @@ abstract interface class KittenTtsSession {
   Future<void> speak(String text,
       {required double speed, required String utteranceId, String? voice});
 
-  /// 按段落生成 + 播放（全文朗读首次路径）。
+  /// 按句子生成 + 播放（单段朗读：把该段的所有句子依次读完）。
   ///
-  /// 逐段 [kit.KittenTTS.generate] → 写缓存 → 播放；每段完成上报进度
-  /// (done=已完成段落数, total=总段落数)。全部播完调用 finishListener。
+  /// 逐句 [kit.KittenTTS.generate] → 写缓存 → 播放；每句发声前上报句子
+  /// 位置（见 [setOnSentenceStarted]），每句完成上报生成进度
+  /// (done=已完成句子数, total=总句子数)。全部播完调用 finishListener。
   ///
   /// [voice] 目标音色（SDK voice id，null 用引擎默认音色）。
-  Future<void> speakParagraphs(
-    List<String> texts, {
-    required List<int> paragraphIds,
+  Future<void> speakSentences(
+    List<SentenceUnit> sentences, {
     required double speed,
     required String utteranceId,
     String? voice,
   });
 
-  /// 全文朗读：标题 + 正文段落，单个 utterance 内无缝衔接播放。
+  /// 全文朗读：标题 + 正文句子，单个 utterance 内无缝衔接播放。
   ///
-  /// 双 worker 流水线：生成 worker 把每段 WAV 推入待播队列（缓存命中直接
+  /// 双 worker 流水线：生成 worker 把每句 WAV 推入待播队列（缓存命中直接
   /// 推文件路径，未命中生成 + 写缓存），播放 worker 按序消费播放——播放
-  /// 等待生成，生成无需等待，按段落依次执行。[title] 可为空跳过。
-  /// 进度只计正文段落（done/total）；全部播完调用 finishListener。
+  /// 等待生成，生成无需等待，按句子依次执行。[title] 可为空跳过（标题不
+  /// 参与缓存，作为独立单元排在最前）。
+  /// 进度只计正文句子（done/total）；全部播完调用 finishListener。
   ///
   /// [voice] 目标音色（SDK voice id，null 用引擎默认音色）。
   Future<void> speakFullArticle({
     String? title,
-    required List<({int id, String text})> paragraphs,
+    required List<SentenceUnit> sentences,
     required double speed,
     required String utteranceId,
     String? voice,
@@ -68,10 +66,6 @@ abstract interface class KittenTtsSession {
   /// 播放本地 WAV 文件路径（缓存命中时）。
   /// 返回 true 表示文件存在并开始播放，false 表示文件不存在。
   Future<bool> playFile(String filePath, {required String utteranceId});
-
-  /// 顺序播放多个本地 WAV 文件，完成后调用 finishListener。
-  /// 每个文件播完自动切到下一个。
-  Future<void> playFiles(List<String> filePaths, {required String utteranceId});
 
   /// 停止当前生成/播放（触发 finishListener）。
   Future<void> stop();
@@ -83,20 +77,25 @@ abstract interface class KittenTtsSession {
   void setProgressListener(
       void Function(String utteranceId, int done, int total)? listener);
 
-  /// 注册「段落开始播放」回调（播放 worker 每段实际发声前调用）。
-  /// 带 utterance id、段落索引与正文总段数；标题段上报
-  /// [kTitleParagraphIndex]（-1），正文从 0 起；传 null 注销。与
-  /// [setProgressListener]（生成进度）不同，此回调反映真实播放位置。
-  void setOnParagraphStarted(
-      void Function(String utteranceId, int paragraphIndex, int total)? listener);
+  /// 注册「句子开始播放」回调（逐句播放方在每句实际发声前调用）。
+  /// 带 utterance id、段落索引、段内句子序号与正文总句数；标题上报
+  /// [kTitleParagraphIndex]（-1）+ 句序号 0，正文从 0 起；传 null 注销。
+  /// 与 [setProgressListener]（生成进度）不同，此回调反映真实播放位置。
+  void setOnSentenceStarted(
+      void Function(
+        String utteranceId,
+        int paragraphIndex,
+        int sentenceIndex,
+        int total,
+      )? listener);
 
-  /// 后台预生成段落音频并写入缓存（跳过已缓存段落）。
+  /// 后台预生成句子音频并写入缓存（跳过已缓存句子）。
   ///
   /// 引擎空闲时调用（播放结束后），不抢占播放。被 stop/新播放打断。
   ///
   /// [voice] 目标音色（SDK voice id，null 用引擎默认音色）。
-  Future<void> pregenerateParagraphs({
-    required List<({int paragraphId, String text})> paragraphs,
+  Future<void> pregenerateSentences({
+    required List<SentenceUnit> sentences,
     required double speed,
     String? voice,
   });
@@ -125,8 +124,8 @@ class KittenTtsPluginSession implements KittenTtsSession {
   final TtsCacheManager? cache;
   void Function(String utteranceId)? _finishListener;
   void Function(String utteranceId, int done, int total)? _progressListener;
-  void Function(String utteranceId, int paragraphIndex, int total)?
-      _paragraphStartedListener;
+  void Function(String utteranceId, int paragraphIndex, int sentenceIndex,
+      int total)? _sentenceStartedListener;
   String? _currentUtteranceId;
   Completer<void>? _playbackCompleter;
   StreamSubscription<void>? _completeSub;
@@ -207,18 +206,18 @@ class KittenTtsPluginSession implements KittenTtsSession {
   }
 
   @override
-  Future<void> speakParagraphs(
-    List<String> texts, {
-    required List<int> paragraphIds,
+  Future<void> speakSentences(
+    List<SentenceUnit> sentences, {
     required double speed,
     required String utteranceId,
     String? voice,
   }) async {
-    debugPrint('[KittenTTS] speakParagraphs: ${texts.length} paragraphs id=$utteranceId');
+    debugPrint('[KittenTTS] speakSentences: ${sentences.length} sentences id=$utteranceId');
     await _stopCurrent();
     _currentUtteranceId = utteranceId;
 
-    final task = _speakParagraphsSequential(texts, paragraphIds, speed, utteranceId, voice);
+    final task =
+        _speakSentencesSequential(sentences, speed, utteranceId, voice);
     _generationJobs.add(task);
     try {
       await task;
@@ -227,50 +226,58 @@ class KittenTtsPluginSession implements KittenTtsSession {
     }
   }
 
-  /// 逐段：查缓存 → 命中播文件 / 未命中生成+写缓存+播放；每段完成上报进度。
+  /// 逐句：查缓存 → 命中播文件 / 未命中生成+写缓存+播放；每句发声前上报
+  /// 句子位置，每句完成上报生成进度。
   ///
-  /// 流水线：段落 i 播放期间，后台并发预取段落 i+1..i+3（引擎空闲），
-  /// 播放到后续段落时缓存已就绪，几乎无等待。
-  Future<void> _speakParagraphsSequential(
-    List<String> texts,
-    List<int> paragraphIds,
+  /// 流水线：句子 i 播放期间，后台并发预取句子 i+1 起（引擎空闲），
+  /// 播放到后续句子时缓存已就绪，几乎无等待。
+  Future<void> _speakSentencesSequential(
+    List<SentenceUnit> sentences,
     double speed,
     String utteranceId,
     String? voice,
   ) async {
-    final total = texts.length;
+    final total = sentences.length;
     final progressListener = _progressListener;
     Future<void>? prefetch;
     try {
       for (var i = 0; i < total; i++) {
         if (_currentUtteranceId != utteranceId) return;
+        final unit = sentences[i];
 
         final cm = cache;
         String? cachedPath;
-        if (cm != null && paragraphIds[i] > 0) {
-          cachedPath = await cm.lookupParagraph(paragraphIds[i], speed, _toTtsVoice(voice));
+        if (cm != null && unit.paragraphId > 0) {
+          cachedPath = await cm.lookupSentence(
+            paragraphId: unit.paragraphId,
+            sentenceIndex: unit.sentenceIndex,
+            speed: speed,
+            voice: _toTtsVoice(voice),
+          );
         }
 
         if (cachedPath != null) {
-          // 缓存命中（预取已完成该段）：直接播文件，引擎空闲可并行预取
+          // 缓存命中（预取已完成该句）：直接播文件，引擎空闲可并行预取
           prefetch ??= _prefetchRemaining(
-            texts, paragraphIds, speed, utteranceId, voice,
+            sentences, speed, utteranceId, voice,
             startIndex: i + 2,
           );
-          debugPrint('[KittenTTS] paragraph ${i + 1}/$total: cache HIT, play file');
+          debugPrint('[KittenTTS] sentence ${i + 1}/$total: cache HIT, play file');
+          _notifySentenceStarted(utteranceId, unit, total);
           await _playFileSource(File(cachedPath).openRead(), utteranceId);
         } else {
-          debugPrint('[KittenTTS] paragraph ${i + 1}/$total: gen+play');
-          final result = await _engine.generate(texts[i], speed: speed, voice: voice);
+          debugPrint('[KittenTTS] sentence ${i + 1}/$total: gen+play');
+          final result = await _engine.generate(unit.text, speed: speed, voice: voice);
           if (_currentUtteranceId != utteranceId) return;
 
           final wav = result.wavData();
 
-          // 写缓存（段落级，FIFO 淘汰）
-          if (cm != null && paragraphIds[i] > 0) {
+          // 写缓存（句子级，FIFO 淘汰）
+          if (cm != null && unit.paragraphId > 0) {
             try {
-              await cm.writeParagraph(
-                paragraphId: paragraphIds[i],
+              await cm.writeSentence(
+                paragraphId: unit.paragraphId,
+                sentenceIndex: unit.sentenceIndex,
                 speed: speed,
                 voice: _toTtsVoice(voice),
                 wavData: wav,
@@ -280,13 +287,14 @@ class KittenTtsPluginSession implements KittenTtsSession {
             }
           }
 
-          // 当前段已生成，引擎空闲 → 启动后续段落预取（i+2 起，i+1 由循环处理）
+          // 当前句已生成，引擎空闲 → 启动后续句子预取（i+2 起，i+1 由循环处理）
           prefetch ??= _prefetchRemaining(
-            texts, paragraphIds, speed, utteranceId, voice,
+            sentences, speed, utteranceId, voice,
             startIndex: i + 2,
           );
 
-          // 播放该段（await 播完再处理下一段）
+          // 播放该句（await 播完再处理下一句）；发声前上报播放位置
+          _notifySentenceStarted(utteranceId, unit, total);
           await _playWav(wav, utteranceId);
         }
 
@@ -302,7 +310,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
       }
       // 让预取继续跑完（fire-and-forget；stop/新播放时其内部检查退出）
     } catch (e) {
-      debugPrint('[KittenTTS] speakParagraphs ERROR: $e');
+      debugPrint('[KittenTTS] speakSentences ERROR: $e');
       if (_currentUtteranceId == utteranceId) {
         _currentUtteranceId = null;
         _notifyFinished(utteranceId);
@@ -310,40 +318,40 @@ class KittenTtsPluginSession implements KittenTtsSession {
     }
   }
 
-  /// 全文朗读：标题 + 正文段落，单个 utterance 内无缝衔接播放。
+  /// 全文朗读：标题 + 正文句子，单个 utterance 内无缝衔接播放。
   ///
   /// 双 worker 流水线（对照需求：一个线程生成、一个线程播放，播放等待
-  /// 生成，生成无需等待，按段落依次执行）：
-  /// - 生成 worker：逐段查缓存 → 命中推文件路径 / 未命中生成 + 写缓存后推
+  /// 生成，生成无需等待，按句子依次执行）：
+  /// - 生成 worker：逐句查缓存 → 命中推文件路径 / 未命中生成 + 写缓存后推
   ///   WAV；标题在最前。用 [StreamController] 推送，播放侧顺序消费。
-  /// - 播放 worker：依次播放队列项；标题播完立即衔接段落，无缝隙。
-  /// - 进度只计正文段落 (done/total)；全部播完调用 finishListener。
+  /// - 播放 worker：依次播放队列项；标题播完立即衔接正文，无缝隙。
+  /// - 进度只计正文句子 (done/total)；全部播完调用 finishListener。
   @override
   Future<void> speakFullArticle({
     String? title,
-    required List<({int id, String text})> paragraphs,
+    required List<SentenceUnit> sentences,
     required double speed,
     required String utteranceId,
     String? voice,
   }) async {
-    debugPrint('[KittenTTS] speakFullArticle: title="${title ?? ""}" paras=${paragraphs.length} id=$utteranceId');
+    debugPrint('[KittenTTS] speakFullArticle: title="${title ?? ""}" sentences=${sentences.length} id=$utteranceId');
     await _stopCurrent();
     _currentUtteranceId = utteranceId;
 
     final controller = StreamController<_QueuedAudio>.broadcast();
     final generationDone = Completer<void>();
 
-    // 播放 worker：顺序消费队列，播完自动切换下一项（标题→段落无缝）
+    // 播放 worker：顺序消费队列，播完自动切换下一项（标题→正文无缝）
     final playback = _playQueued(
       controller.stream, utteranceId, generationDone,
-      totalParagraphs: paragraphs.length,
+      totalSentences: sentences.length,
     );
 
-    // 生成 worker：标题 → 逐段（查缓存/生成+写缓存），推入队列
+    // 生成 worker：标题 → 逐句（查缓存/生成+写缓存），推入队列
     final generation = _generateFullArticle(
       controller: controller,
       title: title,
-      paragraphs: paragraphs,
+      sentences: sentences,
       speed: speed,
       utteranceId: utteranceId,
       voice: voice,
@@ -360,11 +368,11 @@ class KittenTtsPluginSession implements KittenTtsSession {
     }
   }
 
-  /// 生成 worker：标题 + 逐段音频推入待播队列。
+  /// 生成 worker：标题 + 逐句音频推入待播队列。
   Future<void> _generateFullArticle({
     required StreamController<_QueuedAudio> controller,
     required String? title,
-    required List<({int id, String text})> paragraphs,
+    required List<SentenceUnit> sentences,
     required double speed,
     required String utteranceId,
     String? voice,
@@ -379,30 +387,40 @@ class KittenTtsPluginSession implements KittenTtsSession {
         controller.add(_QueuedAudio.wav(result.wavData(), isTitle: true));
       }
 
-      final total = paragraphs.length;
+      final total = sentences.length;
       final progressListener = _progressListener;
       for (var i = 0; i < total; i++) {
         if (_currentUtteranceId != utteranceId) return;
-        final para = paragraphs[i];
+        final unit = sentences[i];
 
         String? cachedPath;
-        if (cm != null && para.id > 0) {
-          cachedPath = await cm.lookupParagraph(para.id, speed, _toTtsVoice(voice));
+        if (cm != null && unit.paragraphId > 0) {
+          cachedPath = await cm.lookupSentence(
+            paragraphId: unit.paragraphId,
+            sentenceIndex: unit.sentenceIndex,
+            speed: speed,
+            voice: _toTtsVoice(voice),
+          );
         }
 
         if (cachedPath != null) {
-          debugPrint('[KittenTTS] fullArticle: para ${i + 1}/$total cache HIT');
-          controller.add(_QueuedAudio.file(cachedPath, paragraphIndex: i));
+          debugPrint('[KittenTTS] fullArticle: sentence ${i + 1}/$total cache HIT');
+          controller.add(_QueuedAudio.file(
+            cachedPath,
+            paragraphIndex: unit.paragraphId,
+            sentenceIndex: unit.sentenceIndex,
+          ));
         } else {
-          debugPrint('[KittenTTS] fullArticle: para ${i + 1}/$total gen');
-          final result = await _engine.generate(para.text, speed: speed, voice: voice);
+          debugPrint('[KittenTTS] fullArticle: sentence ${i + 1}/$total gen');
+          final result = await _engine.generate(unit.text, speed: speed, voice: voice);
           if (_currentUtteranceId != utteranceId) return;
 
           final wav = result.wavData();
-          if (cm != null && para.id > 0) {
+          if (cm != null && unit.paragraphId > 0) {
             try {
-              await cm.writeParagraph(
-                paragraphId: para.id,
+              await cm.writeSentence(
+                paragraphId: unit.paragraphId,
+                sentenceIndex: unit.sentenceIndex,
                 speed: speed,
                 voice: _toTtsVoice(voice),
                 wavData: wav,
@@ -411,10 +429,14 @@ class KittenTtsPluginSession implements KittenTtsSession {
               debugPrint('[KittenTTS] fullArticle cache write FAILED: $e');
             }
           }
-          controller.add(_QueuedAudio.wav(wav, paragraphIndex: i));
+          controller.add(_QueuedAudio.wav(
+            wav,
+            paragraphIndex: unit.paragraphId,
+            sentenceIndex: unit.sentenceIndex,
+          ));
         }
 
-        // 进度：已推入播放队列的段落数 / 总段落数（标题不计入）
+        // 进度：已推入播放队列的句子数 / 总句子数（标题不计入）
         if (progressListener != null) {
           debugPrint('[KittenTTS] fullArticle progress: ${i + 1}/$total');
           progressListener(utteranceId, i + 1, total);
@@ -428,23 +450,24 @@ class KittenTtsPluginSession implements KittenTtsSession {
     }
   }
 
-  /// 播放 worker：依次播放 [items]；每段（非标题）实际发声前上报段落索引
+  /// 播放 worker：依次播放 [items]；每句实际发声前上报句子位置
   /// （真实播放进度，不超前）；全部播完（或被打断）完成 [done]。
   Future<void> _playQueued(
     Stream<_QueuedAudio> items,
     String utteranceId,
     Completer<void> done, {
-    required int totalParagraphs,
+    required int totalSentences,
   }) async {
     try {
       await for (final item in items) {
         if (_currentUtteranceId != utteranceId) return;
-        debugPrint('[KittenTTS] fullArticle play: ${item.isTitle ? "title" : "para"}');
-        // 每段发声前上报（标题也上报，index=-1）：高亮与真实发声同步
-        _paragraphStartedListener?.call(
+        debugPrint('[KittenTTS] fullArticle play: ${item.isTitle ? "title" : "sentence"}');
+        // 每项发声前上报（标题也上报，段落索引 = -1）：高亮与真实发声同步
+        _sentenceStartedListener?.call(
           utteranceId,
           item.paragraphIndex ?? kTitleParagraphIndex,
-          totalParagraphs,
+          item.sentenceIndex ?? 0,
+          totalSentences,
         );
         if (item.bytes != null) {
           await _playWav(item.bytes!, utteranceId);
@@ -461,11 +484,24 @@ class KittenTtsPluginSession implements KittenTtsSession {
     }
   }
 
-  /// 后台并发预取段落 [startIndex..end]，跳过已缓存；播放期间引擎空闲，
+  /// 逐句发声前上报（[setOnSentenceStarted] 契约；未注册时静默）。
+  void _notifySentenceStarted(
+    String utteranceId,
+    SentenceUnit unit,
+    int total,
+  ) {
+    _sentenceStartedListener?.call(
+      utteranceId,
+      unit.paragraphId,
+      unit.sentenceIndex,
+      total,
+    );
+  }
+
+  /// 后台并发预取句子 [startIndex..end]，跳过已缓存；播放期间引擎空闲，
   /// 用 native 串行锁排队生成，写完缓存即可。被 stop/新 utterance 打断。
   Future<void> _prefetchRemaining(
-    List<String> texts,
-    List<int> paragraphIds,
+    List<SentenceUnit> sentences,
     double speed,
     String utteranceId,
     String? voice, {
@@ -475,17 +511,23 @@ class KittenTtsPluginSession implements KittenTtsSession {
     final cm = cache;
     if (cm == null) return;
 
-    // 覆盖全部剩余段落（无窗口限制，保证最后一段也预取）
-    final end = texts.length;
+    // 覆盖全部剩余句子（无窗口限制，保证最后一句也预取）
+    final end = sentences.length;
     if (startIndex >= end) return;
 
-    debugPrint('[KittenTTS] prefetch: paragraphs [$startIndex, $end)');
+    debugPrint('[KittenTTS] prefetch: sentences [$startIndex, $end)');
 
     // 过滤掉已缓存的（避免重复生成）
     final toGen = <int>[];
     for (var i = startIndex; i < end; i++) {
-      if (paragraphIds[i] > 0) {
-        final needs = await cm.needsGenerate(paragraphIds[i], speed, _toTtsVoice(voice));
+      final unit = sentences[i];
+      if (unit.paragraphId > 0) {
+        final needs = await cm.needsGenerateSentence(
+          paragraphId: unit.paragraphId,
+          sentenceIndex: unit.sentenceIndex,
+          speed: speed,
+          voice: _toTtsVoice(voice),
+        );
         if (needs) toGen.add(i);
       }
     }
@@ -500,64 +542,22 @@ class KittenTtsPluginSession implements KittenTtsSession {
       );
       await Future.wait(batch.map((i) async {
         if (_currentUtteranceId != utteranceId) return;
+        final unit = sentences[i];
         try {
-          final result = await _engine.generate(texts[i], speed: speed, voice: voice);
+          final result = await _engine.generate(unit.text, speed: speed, voice: voice);
           if (_currentUtteranceId != utteranceId) return;
-          await cm.writeParagraph(
-            paragraphId: paragraphIds[i],
+          await cm.writeSentence(
+            paragraphId: unit.paragraphId,
+            sentenceIndex: unit.sentenceIndex,
             speed: speed,
             voice: _toTtsVoice(voice),
             wavData: result.wavData(),
           );
-          debugPrint('[KittenTTS] prefetch: paragraph ${paragraphIds[i]} OK');
+          debugPrint('[KittenTTS] prefetch: sentence ${unit.paragraphId}/${unit.sentenceIndex} OK');
         } catch (e) {
-          debugPrint('[KittenTTS] prefetch: paragraph ${paragraphIds[i]} FAILED: $e');
+          debugPrint('[KittenTTS] prefetch: sentence ${unit.paragraphId}/${unit.sentenceIndex} FAILED: $e');
         }
       }));
-    }
-  }
-
-  @override
-  Future<void> playFiles(
-    List<String> filePaths, {
-    required String utteranceId,
-  }) async {
-    debugPrint('[KittenTTS] playFiles: ${filePaths.length} files id=$utteranceId');
-    await _stopCurrent();
-    _currentUtteranceId = utteranceId;
-
-    final task = _playFilesSequential(filePaths, utteranceId);
-    _generationJobs.add(task);
-    try {
-      await task;
-    } finally {
-      _generationJobs.remove(task);
-    }
-  }
-
-  /// 顺序播放多个 WAV 文件，每个文件播完检查 utterance 是否有效。
-  Future<void> _playFilesSequential(List<String> filePaths, String utteranceId) async {
-    try {
-      for (int i = 0; i < filePaths.length; i++) {
-        if (_currentUtteranceId != utteranceId) return;
-        final file = File(filePaths[i]);
-        if (!await file.exists()) {
-          debugPrint('[KittenTTS] playFiles: missing ${filePaths[i]}, skip');
-          continue;
-        }
-        debugPrint('[KittenTTS] playFiles: [${i + 1}/${filePaths.length}] ${filePaths[i]}');
-        await _playFileSource(file.openRead(), utteranceId);
-      }
-      if (_currentUtteranceId == utteranceId) {
-        _currentUtteranceId = null;
-        _notifyFinished(utteranceId);
-      }
-    } catch (e) {
-      debugPrint('[KittenTTS] playFiles ERROR: $e');
-      if (_currentUtteranceId == utteranceId) {
-        _currentUtteranceId = null;
-        _notifyFinished(utteranceId);
-      }
     }
   }
 
@@ -736,7 +736,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
   /// 日志记录 utterance id，供真机取证「高亮何时消失、为何提前消失」。
   void _notifyFinished(String utteranceId) {
     debugPrint('[KittenTTS] FINISH: id=$utteranceId');
-    _notifyFinished(utteranceId);
+    _finishListener?.call(utteranceId);
   }
 
   @override
@@ -771,53 +771,61 @@ class KittenTtsPluginSession implements KittenTtsSession {
   }
 
   @override
-  void setOnParagraphStarted(
-      void Function(String utteranceId, int paragraphIndex, int total)?
+  void setOnSentenceStarted(
+      void Function(String utteranceId, int paragraphIndex, int sentenceIndex,
+              int total)?
           listener) {
-    _paragraphStartedListener = listener;
+    _sentenceStartedListener = listener;
   }
 
   @override
-  Future<void> pregenerateParagraphs({
-    required List<({int paragraphId, String text})> paragraphs,
+  Future<void> pregenerateSentences({
+    required List<SentenceUnit> sentences,
     required double speed,
     String? voice,
   }) async {
     final cm = cache;
     if (cm == null) return;
 
-    // 先筛出需要生成的段落（避免无谓并发）
-    final toGenerate = <({int paragraphId, String text})>[];
-    for (final p in paragraphs) {
+    // 先筛出需要生成的句子（避免无谓并发）
+    final toGenerate = <SentenceUnit>[];
+    for (final unit in sentences) {
       if (_currentUtteranceId != null) return; // 新播放打断预生成
-      final needs = await cm.needsGenerate(p.paragraphId, speed, _toTtsVoice(voice));
-      if (needs) toGenerate.add(p);
+      final needs = await cm.needsGenerateSentence(
+        paragraphId: unit.paragraphId,
+        sentenceIndex: unit.sentenceIndex,
+        speed: speed,
+        voice: _toTtsVoice(voice),
+      );
+      if (needs) toGenerate.add(unit);
     }
-    debugPrint('[KittenTTS] pregen: ${toGenerate.length}/${paragraphs.length} need generation');
+    debugPrint('[KittenTTS] pregen: ${toGenerate.length}/${sentences.length} need generation');
 
-    // 并发生成（限流：一次最多 3 段并发，避免内存峰值）
+    // 并发生成（限流：一次最多 3 句并发，避免内存峰值）
     for (var i = 0; i < toGenerate.length; i += 3) {
       if (_currentUtteranceId != null) return;
       final batch = toGenerate.sublist(
         i,
         i + 3 > toGenerate.length ? toGenerate.length : i + 3,
       );
-      await Future.wait(batch.map((p) async {
+      await Future.wait(batch.map((unit) async {
         if (_currentUtteranceId != null) return;
+        final key = '${unit.paragraphId}/${unit.sentenceIndex}';
         try {
-          debugPrint('[KittenTTS] pregen: paragraph ${p.paragraphId} (batch ${i ~/ 3 + 1})');
-          final result = await _engine.generate(p.text, speed: speed, voice: voice);
+          debugPrint('[KittenTTS] pregen: sentence $key (batch ${i ~/ 3 + 1})');
+          final result = await _engine.generate(unit.text, speed: speed, voice: voice);
           if (_currentUtteranceId != null) return;
           final wav = result.wavData();
-          await cm.writeParagraph(
-            paragraphId: p.paragraphId,
+          await cm.writeSentence(
+            paragraphId: unit.paragraphId,
+            sentenceIndex: unit.sentenceIndex,
             speed: speed,
             voice: _toTtsVoice(voice),
             wavData: wav,
           );
-          debugPrint('[KittenTTS] pregen: paragraph ${p.paragraphId} OK (${wav.length}B)');
+          debugPrint('[KittenTTS] pregen: sentence $key OK (${wav.length}B)');
         } catch (e) {
-          debugPrint('[KittenTTS] pregen: paragraph ${p.paragraphId} FAILED: $e');
+          debugPrint('[KittenTTS] pregen: sentence $key FAILED: $e');
         }
       }));
     }
@@ -840,13 +848,21 @@ class KittenSpeedMapper {
 }
 
 /// 全文朗读待播队列项：WAV 字节 或 缓存文件路径（二选一）。
-/// [paragraphIndex] 为正文段落索引（标题为 null），供播放 worker 上报播放位置。
+/// [paragraphIndex] / [sentenceIndex] 为朗读单元位置（标题项为 null，
+/// 上报时归一到 [kTitleParagraphIndex]），供播放 worker 上报播放位置。
 class _QueuedAudio {
-  _QueuedAudio.wav(this.bytes, {this.isTitle = false, this.paragraphIndex})
-      : filePath = null;
+  _QueuedAudio.wav(
+    this.bytes, {
+    this.isTitle = false,
+    this.paragraphIndex,
+    this.sentenceIndex,
+  }) : filePath = null;
 
-  _QueuedAudio.file(String path, {this.paragraphIndex})
-      : bytes = null,
+  _QueuedAudio.file(
+    String path, {
+    required this.paragraphIndex,
+    required this.sentenceIndex,
+  })  : bytes = null,
         filePath = path,
         isTitle = false;
 
@@ -854,4 +870,5 @@ class _QueuedAudio {
   final String? filePath;
   final bool isTitle;
   final int? paragraphIndex;
+  final int? sentenceIndex;
 }

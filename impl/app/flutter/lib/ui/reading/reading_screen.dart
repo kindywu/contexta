@@ -3,7 +3,8 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show RenderAbstractViewport;
+import 'package:flutter/rendering.dart'
+    show RenderAbstractViewport, RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -14,10 +15,10 @@ import '../../core/components/loading_indicator.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
+import '../../domain/tts/tts_engine.dart' show kTitleParagraphIndex;
 import 'reading_controller.dart';
 import 'translation_visibility.dart';
 import 'word_extractor.dart';
-import '../../data/tts/kitten_tts_session.dart' show kTitleParagraphIndex;
 
 /// Reading 页（对照 Kotlin ReadingScreen.kt）：
 /// - 3dp 珊瑚滚动进度条（宽 = scrollFraction）
@@ -65,6 +66,14 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
         () => GlobalObjectKey('reading-para-$index'),
       );
 
+  /// 段落英文正文 RichText 的 key（按句滚动要取文字盒坐标）。
+  final Map<int, GlobalObjectKey<State<StatefulWidget>>> _paragraphTextKeys = {};
+  GlobalObjectKey<State<StatefulWidget>> _paragraphTextKey(int index) =>
+      _paragraphTextKeys.putIfAbsent(
+        index,
+        () => GlobalObjectKey('reading-para-text-$index'),
+      );
+
   Timer? _toastTimer;
 
   @override
@@ -98,11 +107,16 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
     super.dispose();
   }
 
-  /// 滚动使当前朗读段顶部对齐视口 1/3 处（getOffsetToReveal + animateTo
-  /// 300ms easeInOut）。用户手指拖拽中跳过本次，下次段落切换恢复跟随。
-  void _scrollToParagraph(int index, int total) {
+  /// 滚动使当前朗读句顶部对齐视口 1/3 处（getOffsetToReveal + animateTo
+  /// 300ms easeInOut）。用户手指拖拽中跳过本次，下次句子切换恢复跟随。
+  ///
+  /// 句子不是独立 render object（同一段是单个 RichText），故在段落定位偏移
+  /// 之上叠加句首盒子在段落内的 y 偏移（[RenderParagraph.getBoxesForSelection]）。
+  /// 拿不到盒子（未构建 / 空区间）时退化为段落级对齐——句子就在该段内，
+  /// 目视仍可见。
+  void _scrollToSentence(int index, ArticleSentence sentence, int total) {
     if (_userScrolling) {
-      _userScrolling = false; // 手滚跳过本次，下次段落切换恢复
+      _userScrolling = false; // 手滚跳过本次，下次句子切换恢复
       return;
     }
     final renderObj = _paragraphKey(index).currentContext?.findRenderObject();
@@ -122,12 +136,32 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
     if (!_scrollController.hasClients) return;
     final viewport = RenderAbstractViewport.maybeOf(renderObj);
     if (viewport == null) return;
-    final offset = viewport.getOffsetToReveal(renderObj, 1 / 3).offset;
+    var offset = viewport.getOffsetToReveal(renderObj, 1 / 3).offset;
+    offset += _sentenceTopInParagraph(index, sentence) ?? 0;
     _scrollController.animateTo(
       offset,
       duration: const Duration(milliseconds: 300),
       curve: Curves.easeInOut,
     );
+  }
+
+  /// 句首行相对**本段首行**的 y 偏移（0 = 与该段首行同行，即段落顶部对齐
+  /// 无需额外偏移）；取不到返回 null。
+  ///
+  /// 用「减首行盒顶」而非绝对盒顶：文字盒默认按 tight 高度测量，盒顶比行盒
+  /// 顶低数像素（行高带来的 leading），做差可抵消该常量，得到真实的换行偏移。
+  double? _sentenceTopInParagraph(int index, ArticleSentence sentence) {
+    final renderObj =
+        _paragraphTextKey(index).currentContext?.findRenderObject();
+    if (renderObj is! RenderParagraph) return null;
+    final firstBoxes = renderObj.getBoxesForSelection(
+      const TextSelection(baseOffset: 0, extentOffset: 1),
+    );
+    final boxes = renderObj.getBoxesForSelection(
+      TextSelection(baseOffset: sentence.start, extentOffset: sentence.end),
+    );
+    if (boxes.isEmpty || firstBoxes.isEmpty) return null;
+    return boxes.first.top - firstBoxes.first.top;
   }
 
   @override
@@ -168,17 +202,29 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
       },
     );
 
-    // 副作用 3：全文朗读段落切换 → 自动滚动到 1/3 处
-    ref.listen<int?>(
-      readingControllerProvider(
-        widget.articleId,
-      ).select((s) => s.speakingParagraphIndex),
+    // 副作用 3：全文朗读句子切换 → 自动滚动到 1/3 处
+    ref.listen<(int?, int?)>(
+      readingControllerProvider(widget.articleId)
+          .select((s) => (s.speakingParagraphIndex, s.speakingSentenceIndex)),
       (previous, next) {
-        if (next == null || next < 0) return; // 标题段（-1）不滚动
+        final (paragraphIndex, sentenceIndex) = next;
+        if (paragraphIndex == null || paragraphIndex < 0) {
+          return; // 标题段（-1）不滚动
+        }
+        if (sentenceIndex == null) return;
         final state = ref.read(readingControllerProvider(widget.articleId));
         if (!state.isSpeakingFullArticle) return; // 单段播放只高亮不滚动
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToParagraph(next, state.paragraphs.length);
+          if (!mounted) return;
+          final sentences = paragraphIndex < state.sentencesByParagraph.length
+              ? state.sentencesByParagraph[paragraphIndex]
+              : const <ArticleSentence>[];
+          if (sentenceIndex < 0 || sentenceIndex >= sentences.length) return;
+          _scrollToSentence(
+            paragraphIndex,
+            sentences[sentenceIndex],
+            state.paragraphs.length,
+          );
         });
       },
     );
@@ -255,9 +301,18 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
                                 in state.paragraphs.indexed)
                               _ReadingParagraph(
                                 key: _paragraphKey(index),
+                                textKey: _paragraphTextKey(index),
                                 englishText: paragraph.englishText,
                                 chineseTranslation:
                                     paragraph.chineseTranslation,
+                                sentences: index <
+                                        state.sentencesByParagraph.length
+                                    ? state.sentencesByParagraph[index]
+                                    : const [],
+                                speakingSentenceIndex:
+                                    state.speakingParagraphIndex == index
+                                        ? state.speakingSentenceIndex
+                                        : null,
                                 translationMode: state.translationMode,
                                 isRevealed: state.revealedParagraphs.contains(
                                   index,
@@ -316,7 +371,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
                   isSpeaking: state.isSpeakingFullArticle,
                   ttsSpeed: state.ttsSpeed,
                   speechProgress: state.speechProgress,
-                  speechTotalParagraphs: state.speechTotalParagraphs,
+                  speechTotalSentences: state.speechTotalSentences,
                   onTogglePlayback: () => ref
                       .read(
                         readingControllerProvider(widget.articleId).notifier,
@@ -459,7 +514,7 @@ class _ReadingPlayerBar extends StatelessWidget {
     required this.isSpeaking,
     required this.ttsSpeed,
     required this.speechProgress,
-    required this.speechTotalParagraphs,
+    required this.speechTotalSentences,
     required this.onTogglePlayback,
     required this.onToggleTtsSpeed,
   });
@@ -467,7 +522,7 @@ class _ReadingPlayerBar extends StatelessWidget {
   final bool isSpeaking;
   final double ttsSpeed;
   final double? speechProgress;
-  final int? speechTotalParagraphs;
+  final int? speechTotalSentences;
   final VoidCallback onTogglePlayback;
   final VoidCallback onToggleTtsSpeed;
 
@@ -504,9 +559,9 @@ class _ReadingPlayerBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          if (speechProgress != null && speechTotalParagraphs != null)
+          if (speechProgress != null && speechTotalSentences != null)
             Text(
-              '第 ${speechProgress!.toStringAsFixed(0)}/$speechTotalParagraphs 段',
+              '第 ${speechProgress!.toStringAsFixed(0)}/$speechTotalSentences 句',
               style: AppType.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w500,
                 color: AppColors.primary,
@@ -715,20 +770,54 @@ class _WordSheetBody extends StatelessWidget {
   }
 }
 
+/// 朗读句底色（与生词高亮同色：生词 span 覆盖为珊瑚色后自然融合）。
+const TextStyle _speakingStyle = TextStyle(
+  backgroundColor: Color(0x2ECC785C),
+);
+
 /// 按单词区间切分文本生成 spans：单词 → 可点击 span（生词珊瑚底色），
-/// 空白/标点原样保留。正文段落与文章标题共用；[style] 为 gap/非生词
-/// 单词的基础样式（朗读底色即由此携带），生词 span 覆盖为珊瑚底色。
+/// 空白/标点原样保留。正文段落与文章标题共用。
+///
+/// [speakingRange] 为正在朗读的句子区间（half-open，含句末标点；null = 无），
+/// 区间内文字追加 [speakingStyle] 底色——句子边界可能落在 gap（空白/标点）
+/// 内部，故 gap 按区间边界再切段；生词 span 保持珊瑚底色（同色系融合）。
+/// [style] 为区间外文字的基础样式（null = 继承外层）。
 List<InlineSpan> _clickableWordSpans({
   required String text,
   required TextStyle? style,
   required Set<String> vocabularyWords,
   required TapGestureRecognizer Function(String word) recognizerFor,
+  (int, int)? speakingRange,
 }) {
   final spans = <InlineSpan>[];
+
+  bool inSpeaking(int offset) =>
+      speakingRange != null &&
+      offset >= speakingRange.$1 &&
+      offset < speakingRange.$2;
+
+  /// 追加 [from, to) 的纯文本片段，按朗读区间边界切成「底色 / 非底色」段。
+  void addPlain(int from, int to) {
+    var cursor = from;
+    while (cursor < to) {
+      final speaking = inSpeaking(cursor);
+      var end = cursor + 1;
+      while (end < to && inSpeaking(end) == speaking) {
+        end++;
+      }
+      spans.add(
+        TextSpan(
+          text: text.substring(cursor, end),
+          style: speaking ? _speakingStyle : style,
+        ),
+      );
+      cursor = end;
+    }
+  }
+
   var cursor = 0;
   for (final range in findWordRanges(text)) {
-    final gap = text.substring(cursor, range.$1);
-    if (gap.isNotEmpty) spans.add(TextSpan(text: gap, style: style));
+    addPlain(cursor, range.$1);
     final word = text.substring(range.$1, range.$2);
     final normalized = word.toLowerCase();
     spans.add(
@@ -739,14 +828,13 @@ List<InlineSpan> _clickableWordSpans({
                 color: AppColors.ink,
                 backgroundColor: Color(0x2ECC785C),
               )
-            : style,
+            : (inSpeaking(range.$1) ? _speakingStyle : style),
         recognizer: recognizerFor(normalized),
       ),
     );
     cursor = range.$2;
   }
-  final tail = text.substring(cursor);
-  if (tail.isNotEmpty) spans.add(TextSpan(text: tail, style: style));
+  addPlain(cursor, text.length);
   return spans;
 }
 
@@ -791,23 +879,20 @@ class _TitleTextState extends State<_TitleText> {
 
   @override
   Widget build(BuildContext context) {
-    // 朗读中整段追加同色底色（与正文段落一致）；gap/生词 span 继承
-    // 或覆盖，见 _clickableWordSpans。Align 使标题在 ListView 的 tight
-    // 交叉轴约束下 shrink-wrap（与正文段落一致），文字区域才是可点区域。
-    final speakingBg = widget.isSpeaking
-        ? const TextStyle(backgroundColor: Color(0x2ECC785C))
-        : null;
+    // 朗读中标题整段加同色底色（标题是单个朗读单元，区间 = 全文）；gap/
+    // 生词 span 继承或覆盖，见 _clickableWordSpans。Align 使标题在 ListView
+    // 的 tight 交叉轴约束下 shrink-wrap（与正文段落一致），文字区域才是可点区域。
     return Align(
       alignment: Alignment.centerLeft,
       child: RichText(
         text: TextSpan(
           style: AppType.textTheme.displayMedium?.copyWith(
             color: AppColors.ink,
-            backgroundColor: widget.isSpeaking ? const Color(0x2ECC785C) : null,
+            backgroundColor: widget.isSpeaking ? _speakingStyle.backgroundColor : null,
           ),
           children: _clickableWordSpans(
             text: widget.text,
-            style: speakingBg,
+            style: widget.isSpeaking ? _speakingStyle : null,
             vocabularyWords: widget.vocabularyWords,
             recognizerFor: _wordRecognizer,
           ),
@@ -822,8 +907,11 @@ class _TitleTextState extends State<_TitleText> {
 class _ReadingParagraph extends StatefulWidget {
   const _ReadingParagraph({
     super.key,
+    required this.textKey,
     required this.englishText,
     required this.chineseTranslation,
+    required this.sentences,
+    required this.speakingSentenceIndex,
     required this.translationMode,
     required this.isRevealed,
     required this.vocabularyWords,
@@ -833,8 +921,14 @@ class _ReadingParagraph extends StatefulWidget {
     required this.onPlay,
   });
 
+  /// 英文正文 RichText 的 key（ReadingScreen 按句滚动取文字盒坐标用）。
+  final Key textKey;
   final String englishText;
   final String chineseTranslation;
+  final List<ArticleSentence> sentences;
+
+  /// 正在朗读的段内句序号（null = 本段未在朗读）。
+  final int? speakingSentenceIndex;
   final TranslationMode translationMode;
   final bool isRevealed;
   final Set<String> vocabularyWords;
@@ -873,6 +967,7 @@ class _ReadingParagraphState extends State<_ReadingParagraph> {
       children: [
         // 英文正文：按单词区间切分，单词可点击，单词间空白/标点原样保留
         RichText(
+          key: widget.textKey,
           text: TextSpan(
             style: AppType.textTheme.bodyLarge?.copyWith(
               color: AppColors.ink,
@@ -939,17 +1034,30 @@ class _ReadingParagraphState extends State<_ReadingParagraph> {
   }
 
   /// 单词 → 可点击 TextSpan（生词珊瑚底色高亮）；空白/标点原样 TextSpan。
-  /// 朗读中（isSpeaking）整段文字追加同色底色，生词 span 保持原样（同色融合）。
+  /// 正在朗读的那一句（speakingSentenceIndex）文字追加同色底色，生词 span
+  /// 保持原样（同色融合）；同一时刻只有一句带底色。
   List<InlineSpan> _buildAnnotatedSpans() {
-    final speakingBg = widget.isSpeaking
-        ? const TextStyle(backgroundColor: Color(0x2ECC785C))
-        : null;
     return _clickableWordSpans(
       text: widget.englishText,
-      style: speakingBg,
+      style: null,
       vocabularyWords: widget.vocabularyWords,
       recognizerFor: _wordRecognizer,
+      speakingRange: _speakingRange(),
     );
+  }
+
+  /// 当前朗读句的字符区间（null = 本段未在朗读）。
+  ///
+  /// 无句级信息（系统 TTS 拼接朗读 / 首句上报前）时退化为整段高亮——与
+  /// 句子级改造前的段落高亮行为一致。
+  (int, int)? _speakingRange() {
+    if (!widget.isSpeaking) return null;
+    final index = widget.speakingSentenceIndex;
+    if (index == null || index < 0 || index >= widget.sentences.length) {
+      return (0, widget.englishText.length);
+    }
+    final sentence = widget.sentences[index];
+    return (sentence.start, sentence.end);
   }
 }
 

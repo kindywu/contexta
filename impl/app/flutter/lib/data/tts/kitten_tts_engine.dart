@@ -31,8 +31,8 @@ class KittenTtsEngine implements TtsEngine {
   String? _failureReason;
   void Function(String? utteranceId)? _onSpeakingFinished;
   void Function(String? utteranceId, int done, int total)? _onProgress;
-  void Function(String utteranceId, int paragraphIndex, int total)?
-      _onParagraphStarted;
+  void Function(String utteranceId, int paragraphIndex, int sentenceIndex,
+      int total)? _onSentenceStarted;
   int _utteranceCounter = 0;
 
   @override
@@ -55,60 +55,24 @@ class KittenTtsEngine implements TtsEngine {
     return id;
   }
 
-  /// 朗读单段：优先缓存命中直接播文件，未命中生成 + 写缓存。
+  /// 按句子朗读（单段播放：该段所有句子依次生成 → 写缓存 → 播放）。
   ///
-  /// 返回 utteranceId；失败返回 null。
-  Future<String?> speakParagraph({
-    required int paragraphId,
-    required String text,
+  /// 返回 utteranceId；失败返回 null。每句发声前上报句子位置，每句完成
+  /// 上报生成进度 (done/total)。
+  Future<String?> speakSentences({
+    required List<SentenceUnit> sentences,
     required double speed,
     TtsVoice? voice,
   }) async {
     final session = _session;
     if (session == null) {
-      debugPrint('[KittenTTS.engine] speakParagraph: session null');
-      return null;
-    }
-    final cm = cache;
-    String? cachedPath;
-    if (cm != null && paragraphId > 0) {
-      cachedPath = await cm.lookupParagraph(
-          paragraphId, speed, voice ?? TtsVoice.bella);
-    }
-    if (cachedPath != null) {
-      debugPrint('[KittenTTS.engine] speakParagraph: cache HIT $cachedPath');
-      final id = 'ktk-${_utteranceCounter++}';
-      session.playFile(cachedPath, utteranceId: id);
-      return id;
-    }
-    // 未命中：会话内生成 + 写缓存（复用 speakParagraphs 单段语义）
-    return speakParagraphs(
-      texts: [text],
-      paragraphIds: [paragraphId],
-      speed: speed,
-      voice: voice,
-    );
-  }
-
-  /// 按段落全文朗读（首次路径）：逐段生成 → 写缓存 → 播放。
-  ///
-  /// 返回 utteranceId；失败返回 null。每段完成上报进度 (done/total)。
-  Future<String?> speakParagraphs({
-    required List<String> texts,
-    required List<int> paragraphIds,
-    required double speed,
-    TtsVoice? voice,
-  }) async {
-    final session = _session;
-    if (session == null) {
-      debugPrint('[KittenTTS.engine] speakParagraphs: session null');
+      debugPrint('[KittenTTS.engine] speakSentences: session null');
       return null;
     }
     final id = 'ktk-${_utteranceCounter++}';
-    debugPrint('[KittenTTS.engine] speakParagraphs: ${texts.length} paras id=$id');
-    session.speakParagraphs(
-      texts,
-      paragraphIds: paragraphIds,
+    debugPrint('[KittenTTS.engine] speakSentences: ${sentences.length} sentences id=$id');
+    session.speakSentences(
+      sentences,
       speed: speed,
       utteranceId: id,
       voice: voice?.sdkVoiceId,
@@ -116,14 +80,14 @@ class KittenTtsEngine implements TtsEngine {
     return id;
   }
 
-  /// 全文朗读：标题 + 正文段落，单 utterance 内无缝衔接播放。
+  /// 全文朗读：标题 + 正文句子，单 utterance 内无缝衔接播放。
   ///
   /// 双 worker 流水线（生成 worker 推入队列 / 播放 worker 顺序消费，见
-  /// [KittenTtsSession.speakFullArticle]）。进度只计正文段落；全部播完
+  /// [KittenTtsSession.speakFullArticle]）。进度只计正文句子；全部播完
   /// 触发 finish 回调。返回 utteranceId；失败返回 null。
   Future<String?> speakFullArticle({
     String? title,
-    required List<({int id, String text})> paragraphs,
+    required List<SentenceUnit> sentences,
     required double speed,
     TtsVoice? voice,
   }) async {
@@ -133,10 +97,10 @@ class KittenTtsEngine implements TtsEngine {
       return null;
     }
     final id = 'ktk-${_utteranceCounter++}';
-    debugPrint('[KittenTTS.engine] speakFullArticle: title="${title ?? ""}" paras=${paragraphs.length} id=$id');
+    debugPrint('[KittenTTS.engine] speakFullArticle: title="${title ?? ""}" sentences=${sentences.length} id=$id');
     session.speakFullArticle(
       title: title,
-      paragraphs: paragraphs,
+      sentences: sentences,
       speed: speed,
       utteranceId: id,
       voice: voice?.sdkVoiceId,
@@ -152,49 +116,19 @@ class KittenTtsEngine implements TtsEngine {
     return session.playFile(filePath, utteranceId: id);
   }
 
-  /// 从缓存播放段落列表（全文朗读缓存路径）。
-  ///
-  /// 返回 utteranceId 表示全部缓存命中且开始播放，null 表示缓存缺失需 fallback。
-  Future<String?> playCachedParagraphs(List<int> paragraphIds, double speed,
-      TtsVoice? voice) async {
-    debugPrint('[KittenTTS.engine] playCachedParagraphs: ids=$paragraphIds speed=$speed voice=$voice');
-    final session = _session;
-    if (session == null) {
-      debugPrint('[KittenTTS.engine] playCachedParagraphs: session null');
-      return null;
-    }
-    final cm = cache;
-    if (cm == null) {
-      debugPrint('[KittenTTS.engine] playCachedParagraphs: cache null');
-      return null;
-    }
-
-    // 按段落顺序查缓存，返回命中的 filePath 列表
-    final hits =
-        await cm.lookupArticleParagraphs(paragraphIds, speed, voice ?? TtsVoice.bella);
-    debugPrint('[KittenTTS.engine] playCachedParagraphs: hits=${hits.length}/${paragraphIds.length}');
-    if (hits.length != paragraphIds.length) return null; // 有未缓存的段落
-
-    final id = 'ktk-${_utteranceCounter++}';
-    final paths = paragraphIds.map((pid) => hits[pid]!).toList();
-    // 不 await — 顺序播放异步进行，立即返回 id 给 UI 更新状态
-    session.playFiles(paths, utteranceId: id);
-    return id;
-  }
-
-  /// 后台并发预生成所有段落音频并写入缓存。
+  /// 后台并发预生成所有句子音频并写入缓存。
   ///
   /// 委托给 session（持有引擎与缓存）；引擎空闲时调用（播放结束后），
   /// 不抢占播放；被 stop/新播放打断。
-  Future<void> pregenerateParagraphs({
-    required List<({int paragraphId, String text})> paragraphs,
+  Future<void> pregenerateSentences({
+    required List<SentenceUnit> sentences,
     required double speed,
     TtsVoice? voice,
   }) async {
     final session = _session;
     if (session == null) return;
-    await session.pregenerateParagraphs(
-      paragraphs: paragraphs,
+    await session.pregenerateSentences(
+      sentences: sentences,
       speed: speed,
       voice: voice?.sdkVoiceId,
     );
@@ -210,15 +144,17 @@ class KittenTtsEngine implements TtsEngine {
     _onSpeakingFinished = callback;
   }
 
-  /// 注册「段落开始播放」回调（播放 worker 在每段实际发声前调用）。
-  /// 带 utterance id、段落索引（正文从 0 起，不含标题段）与正文总段数；
-  /// 传 null 注销。透传给 session 层回调（session 契约 id 非空，收缩安全）。
+  /// 注册「句子开始播放」回调（逐句播放方在每句实际发声前调用）。
+  /// 带 utterance id、段落索引（正文从 0 起，标题为 [kTitleParagraphIndex]）、
+  /// 段内句序号与正文总句数；传 null 注销。透传给 session 层回调
+  /// （session 契约 id 非空，收缩安全）。
   @override
-  void setOnParagraphStarted(
-      void Function(String? utteranceId, int paragraphIndex, int total)?
+  void setOnSentenceStarted(
+      void Function(String? utteranceId, int paragraphIndex, int sentenceIndex,
+              int total)?
           callback) {
-    _onParagraphStarted = callback;
-    debugPrint('[KittenTTS.engine] setOnParagraphStarted: callback=${callback != null}');
+    _onSentenceStarted = callback;
+    debugPrint('[KittenTTS.engine] setOnSentenceStarted: callback=${callback != null}');
   }
 
   /// 注册生成进度回调（全文朗读流式合成时，句子生成进度）。
@@ -245,10 +181,11 @@ class KittenTtsEngine implements TtsEngine {
       session.setFinishListener((id) => _onSpeakingFinished?.call(id));
       session.setProgressListener((id, done, total) =>
           _onProgress?.call(id, done, total));
-      // 段落播放回调透传：日志兜底，未注册回调时也能从日志定位事件是否触发
-      session.setOnParagraphStarted((id, index, total) {
-        debugPrint('[KittenTTS.engine] paragraphStarted: id=$id index=$index total=$total');
-        _onParagraphStarted?.call(id, index, total);
+      // 句子播放回调透传：日志兜底，未注册回调时也能从日志定位事件是否触发
+      session.setOnSentenceStarted((id, paragraphIndex, sentenceIndex, total) {
+        debugPrint('[KittenTTS.engine] sentenceStarted: id=$id '
+            'para=$paragraphIndex sentence=$sentenceIndex total=$total');
+        _onSentenceStarted?.call(id, paragraphIndex, sentenceIndex, total);
       });
       _session = session;
       debugPrint('[KittenTtsEngine] init SUCCESS');

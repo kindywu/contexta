@@ -1,5 +1,16 @@
 import '../model/tts_voice.dart';
 
+/// 朗读单元 = 文章里的一句话（生成 / 缓存 / 播放位置上报的调度粒度）。
+///
+/// [paragraphId] 为所属段落主键（0 = 未持久化的测试数据，不落缓存）；
+/// [sentenceIndex] 为段内句子序号（0 起）；[text] 为句子原文。
+typedef SentenceUnit = ({int paragraphId, int sentenceIndex, String text});
+
+/// 标题单元的段落索引哨兵：全文朗读时标题也作为一个朗读单元上报
+/// （读标题即高亮标题），与正文段落（从 0 起）区分。
+/// 标题不参与缓存（无段落 ID），句序号恒为 0。
+const int kTitleParagraphIndex = -1;
+
 /// TTS 引擎接口（对照 Kotlin domain/tts/TtsEngine.kt）。
 ///
 /// 由 data 层实现。消费方（Reading/Reference/Vocabulary 页面）只依赖此接口，
@@ -25,11 +36,18 @@ abstract interface class TtsEngine {
   /// 带结束的 utterance id；传 null 注销。
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback);
 
-  /// 注册「段落开始播放」回调（播放 worker 在每段实际发声前调用）。
-  /// 带 utterance id、段落索引（正文从 0 起，不含标题段）与正文总段数；
-  /// 传 null 注销。无段落边界信息的引擎（系统 TTS 拼接朗读）不触发。
-  void setOnParagraphStarted(
-    void Function(String? utteranceId, int paragraphIndex, int total)? callback);
+  /// 注册「句子开始播放」回调（播放方在每个朗读单元实际发声前调用）。
+  /// 带 utterance id、段落索引（正文从 0 起，标题为 [kTitleParagraphIndex]）、
+  /// 段内句子序号与全篇句子总数；传 null 注销。
+  /// 无句子边界信息的引擎（系统 TTS 拼接朗读）不触发。
+  void setOnSentenceStarted(
+    void Function(
+      String? utteranceId,
+      int paragraphIndex,
+      int sentenceIndex,
+      int total,
+    )? callback,
+  );
 }
 
 /// UI 显示语速 → 引擎实际语速的映射（对照 Kotlin ReadingViewModel.actualSpeechRate）。

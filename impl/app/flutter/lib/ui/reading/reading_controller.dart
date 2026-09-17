@@ -17,12 +17,40 @@ import '../../domain/repository/vocabulary_repository.dart';
 import '../../domain/repository/word_repository.dart';
 import '../../domain/tts/tts_engine.dart';
 import '../../data/tts/kitten_tts_engine.dart';
+import 'sentence_extractor.dart';
 import 'translation_visibility.dart';
+
+/// 文章里的一个朗读单元（句子）。
+///
+/// [start] / [end] 为段内字符区间（half-open，含句末标点与收尾引号、不含
+/// 首尾空白），供正文 span 按句高亮；[text] 即该区间的切片，与朗读文本同源
+/// （切分见 [findSentenceRanges]）。
+class ArticleSentence {
+  const ArticleSentence({
+    required this.paragraphIndex,
+    required this.indexInParagraph,
+    required this.start,
+    required this.end,
+    required this.text,
+  });
+
+  /// 全文段落索引（0 起；标题不计入）。
+  final int paragraphIndex;
+
+  /// 段内句序号（0 起）。
+  final int indexInParagraph;
+
+  final int start;
+  final int end;
+  final String text;
+}
+
 /// Reading 页 UI 状态（对照 Kotlin ReadingUiState）。
 class ReadingUiState {
   const ReadingUiState({
     this.title,
     this.paragraphs = const [],
+    this.sentencesByParagraph = const [],
     this.translationMode = TranslationMode.full,
     this.revealedParagraphs = const {},
     this.vocabularyWords = const {},
@@ -37,12 +65,17 @@ class ReadingUiState {
     this.isReadCompleted = false,
     this.isSpeakingFullArticle = false,
     this.speechProgress,
-    this.speechTotalParagraphs,
+    this.speechTotalSentences,
     this.speakingParagraphIndex,
+    this.speakingSentenceIndex,
   });
 
   final String? title;
   final List<ArticleParagraph> paragraphs;
+
+  /// 按段落分组的句子（下标 = 段落索引，标题不计入）——朗读调度与按句
+  /// 高亮共用同一份切分。
+  final List<List<ArticleSentence>> sentencesByParagraph;
   final TranslationMode translationMode;
 
   /// BLURRED 模式下被点击揭示译文的段落索引。
@@ -73,20 +106,25 @@ class ReadingUiState {
   /// 全文朗读中。
   final bool isSpeakingFullArticle;
 
-  /// 全文朗读播放进度（当前发声段落序号 1-based，标题段为 null）。
+  /// 全文朗读播放进度（当前发声的全篇句序号 1-based，标题段为 null）。
   final double? speechProgress;
 
-  /// 全文朗读总段数（正文段数，配合 speechProgress 显示「第 N/M 段」）。
-  final int? speechTotalParagraphs;
+  /// 全文朗读总句数（正文句数，配合 speechProgress 显示「第 N/M 句」）。
+  final int? speechTotalSentences;
 
-  /// 正在朗读的段落索引（null = 无）。
+  /// 正在朗读的段落索引（null = 无；[kTitleParagraphIndex] = 标题段）。
   final int? speakingParagraphIndex;
+
+  /// 正在朗读的段内句序号（null = 无）。与 [speakingParagraphIndex] 组合
+  /// 定位当前朗读句：标题段为哨兵 -1 + 句序号 0。
+  final int? speakingSentenceIndex;
 
   static const Object _unset = Object();
 
   ReadingUiState copyWith({
     String? title,
     List<ArticleParagraph>? paragraphs,
+    List<List<ArticleSentence>>? sentencesByParagraph,
     TranslationMode? translationMode,
     Set<int>? revealedParagraphs,
     Set<String>? vocabularyWords,
@@ -101,12 +139,14 @@ class ReadingUiState {
     bool? isReadCompleted,
     bool? isSpeakingFullArticle,
     Object? speechProgress = _unset,
-    Object? speechTotalParagraphs = _unset,
-    int? speakingParagraphIndex,
+    Object? speechTotalSentences = _unset,
+    Object? speakingParagraphIndex = _unset,
+    Object? speakingSentenceIndex = _unset,
   }) =>
       ReadingUiState(
         title: title ?? this.title,
         paragraphs: paragraphs ?? this.paragraphs,
+        sentencesByParagraph: sentencesByParagraph ?? this.sentencesByParagraph,
         translationMode: translationMode ?? this.translationMode,
         revealedParagraphs: revealedParagraphs ?? this.revealedParagraphs,
         vocabularyWords: vocabularyWords ?? this.vocabularyWords,
@@ -127,10 +167,17 @@ class ReadingUiState {
         speechProgress: identical(speechProgress, _unset)
             ? this.speechProgress
             : speechProgress as double?,
-        speechTotalParagraphs: identical(speechTotalParagraphs, _unset)
-            ? this.speechTotalParagraphs
-            : speechTotalParagraphs as int?,
-        speakingParagraphIndex: speakingParagraphIndex,
+        speechTotalSentences: identical(speechTotalSentences, _unset)
+            ? this.speechTotalSentences
+            : speechTotalSentences as int?,
+        // 朗读位置用 _unset 哨兵：未传参时保持原值，清空须显式传 null
+        // （生词揭示计时器等无关 copyWith 不再误清高亮位置）
+        speakingParagraphIndex: identical(speakingParagraphIndex, _unset)
+            ? this.speakingParagraphIndex
+            : speakingParagraphIndex as int?,
+        speakingSentenceIndex: identical(speakingSentenceIndex, _unset)
+            ? this.speakingSentenceIndex
+            : speakingSentenceIndex as int?,
       );
 }
 
@@ -261,27 +308,32 @@ class ReadingController extends StateNotifier<ReadingUiState> {
           state = state.copyWith(
             isSpeakingFullArticle: false,
             speakingParagraphIndex: null,
+            speakingSentenceIndex: null,
             speechProgress: null,
-            speechTotalParagraphs: null,
+            speechTotalSentences: null,
           );
-          // 播放结束后预生成剩余段落缓存（引擎空闲，不抢占播放）
-          _pregenerateParagraphs(state.paragraphs);
+          // 播放结束后预生成剩余句子缓存（引擎空闲，不抢占播放）
+          _pregenerateSentences();
         }
       }
     });
-    // 全文朗读段落级播放进度：播放 worker 每段发声前上报（KittenTTS 路径；
-    // 系统 TTS 无段落边界不触发）。id 校验过滤迟到旧事件（同 finish 回调
-    // 语义）。同时驱动播放条进度（第 N/M 段）——播放位置而非生成位置，
-    // 标题段（-1）不显示段号。
-    engine.setOnParagraphStarted((utteranceId, paragraphIndex, total) {
-      debugPrint('[ReadingCtrl] paragraphStarted: id=$utteranceId index=$paragraphIndex total=$total current=$_currentUtteranceId');
+    // 句子级播放进度：播放方每句发声前上报（KittenTTS 路径；系统 TTS 无
+    // 句子边界不触发）。id 校验过滤迟到旧事件（同 finish 回调语义）。
+    // 同时驱动按句高亮与播放条进度（第 N/M 句）——播放位置而非生成位置，
+    // 标题段（-1）不显示句号。
+    engine.setOnSentenceStarted(
+        (utteranceId, paragraphIndex, sentenceIndex, total) {
+      debugPrint('[ReadingCtrl] sentenceStarted: id=$utteranceId '
+          'para=$paragraphIndex sentence=$sentenceIndex total=$total '
+          'current=$_currentUtteranceId');
       if (utteranceId == _currentUtteranceId && !_disposed) {
         state = state.copyWith(
           speakingParagraphIndex: paragraphIndex,
+          speakingSentenceIndex: sentenceIndex,
           speechProgress: paragraphIndex >= 0
-              ? (paragraphIndex + 1).toDouble()
+              ? _globalSentenceNumber(paragraphIndex, sentenceIndex)
               : null,
-          speechTotalParagraphs: paragraphIndex >= 0 ? total : null,
+          speechTotalSentences: paragraphIndex >= 0 ? total : null,
         );
       }
     });
@@ -318,6 +370,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     state = state.copyWith(
       title: article.title ?? 'Untitled',
       paragraphs: article.paragraphs,
+      sentencesByParagraph: _splitSentences(article.paragraphs),
       translationMode: TranslationMode.fromStorage(
           settings?.translationDisplayMode),
       // 全局语速/音色：进入文章时从设置读取（设置页可改，切换时回写）
@@ -327,9 +380,10 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       isLoading: false,
       isReadCompleted: alreadyRead,
       vocabularyWords: vocabWords,
-      // 切换文章时重置段落播放状态，防止上一篇文章的状态残留
+      // 切换文章时重置播放位置，防止上一篇文章的状态残留
       isSpeakingFullArticle: false,
       speakingParagraphIndex: null,
+      speakingSentenceIndex: null,
     );
 
     // 自动朗读：设置开启时进入文章自动播全文（TTS 不可用时静默跳过，不打扰用户）
@@ -361,15 +415,56 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     });
   }
 
-  /// 后台预生成段落 TTS 缓存（引擎空闲时调用，不抢占播放）。
-  void _pregenerateParagraphs(List<ArticleParagraph> paragraphs) {
+  /// 把段落正文切成句子（按段落分组；朗读调度与按句高亮共用同一份切分）。
+  static List<List<ArticleSentence>> _splitSentences(
+    List<ArticleParagraph> paragraphs,
+  ) =>
+      [
+        for (var i = 0; i < paragraphs.length; i++)
+          [
+            for (final (index, (start, end))
+                in findSentenceRanges(paragraphs[i].englishText).indexed)
+              ArticleSentence(
+                paragraphIndex: i,
+                indexInParagraph: index,
+                start: start,
+                end: end,
+                text: paragraphs[i].englishText.substring(start, end),
+              ),
+          ],
+      ];
+
+  /// 全文朗读的句子序列（按段落顺序展平；标题由 speakFullArticle 单独传入）。
+  List<SentenceUnit> _flattenSentences() => [
+        for (var i = 0; i < state.sentencesByParagraph.length; i++)
+          for (final s in state.sentencesByParagraph[i])
+            (
+              paragraphId:
+                  i < state.paragraphs.length ? state.paragraphs[i].id : 0,
+              sentenceIndex: s.indexInParagraph,
+              text: s.text,
+            ),
+      ];
+
+  /// (段落索引, 段内句序号) → 全篇句序号（1-based，跨段累计）。
+  double? _globalSentenceNumber(int paragraphIndex, int sentenceIndex) {
+    final grouped = state.sentencesByParagraph;
+    if (paragraphIndex < 0 || paragraphIndex >= grouped.length) return null;
+    var done = 0;
+    for (var i = 0; i < paragraphIndex; i++) {
+      done += grouped[i].length;
+    }
+    return (done + sentenceIndex + 1).toDouble();
+  }
+
+  /// 后台预生成句子 TTS 缓存（引擎空闲时调用，不抢占播放）。
+  void _pregenerateSentences() {
     final engine = _ttsEngine;
     if (engine is! KittenTtsEngine) return;
-    unawaited(engine.pregenerateParagraphs(
-      paragraphs: [
-        for (final p in paragraphs)
-          (paragraphId: p.id, text: p.englishText),
-      ],
+    final sentences = _flattenSentences();
+    if (sentences.isEmpty) return;
+    unawaited(engine.pregenerateSentences(
+      sentences: sentences,
       speed: state.ttsSpeed,
       voice: state.ttsVoice,
     ));
@@ -409,7 +504,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
 
   // ─── 播放（段落 / 全文 / 单词） ────────────────────────────────
 
-  /// 朗读段落；再次点击正在朗读的段落停止。
+  /// 朗读段落（段内逐句朗读，高亮随句推进）；再次点击正在朗读的段落停止。
   ///
   /// 引擎尚未初始化（KittenTTS 模型解压/下载中）时等待就绪后再朗读，
   /// 对齐 Kotlin 注入即就绪的 TTS 引擎语义；就绪后仍不可用才提示。
@@ -419,6 +514,10 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       _ttsEngine?.stop();
       return;
     }
+    final grouped = index < state.sentencesByParagraph.length
+        ? state.sentencesByParagraph[index]
+        : const <ArticleSentence>[];
+    if (grouped.isEmpty) return; // 空段落（无句子）无可朗读内容
     var engine = _ttsEngine;
     if (engine == null) {
       try {
@@ -432,13 +531,21 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       _unavailableTts();
       return;
     }
-    // 优先缓存：命中直接播文件；未命中生成 + 写缓存
+    // 优先缓存：命中直接播文件；未命中生成 + 写缓存（句子级）
     String? id;
     if (engine is KittenTtsEngine) {
-      final p = state.paragraphs[index];
-      id = await engine.speakParagraph(
-        paragraphId: p.id,
-        text: p.englishText,
+      final paragraphId = index < state.paragraphs.length
+          ? state.paragraphs[index].id
+          : 0;
+      id = await engine.speakSentences(
+        sentences: [
+          for (final s in grouped)
+            (
+              paragraphId: paragraphId,
+              sentenceIndex: s.indexInParagraph,
+              text: s.text,
+            ),
+        ],
         speed: state.ttsSpeed,
         voice: state.ttsVoice,
       );
@@ -451,6 +558,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       state = state.copyWith(
         isSpeakingFullArticle: false,
         speakingParagraphIndex: index,
+        speakingSentenceIndex: null, // 待首句上报后高亮具体句
       );
     }
   }
@@ -468,7 +576,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       state = state.copyWith(
         isSpeakingFullArticle: false,
         speechProgress: null,
-        speechTotalParagraphs: null,
+        speechTotalSentences: null,
       );
       return;
     }
@@ -519,7 +627,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
   ///
   /// 标题与正文单 utterance 无缝衔接：
   /// - KittenTTS：经 [KittenTtsEngine.speakFullArticle] 双 worker 流水线，
-  ///   标题在前，逐段生成→播放，进度只计正文段落。
+  ///   标题在前，逐句生成→播放，进度只计正文句子。
   /// - 系统 TTS：拼接「标题 + 正文」一段朗读。
   Future<bool> startFullArticlePlayback() async {
     debugPrint('[ReadingCtrl] startFullArticlePlayback ENTER');
@@ -546,12 +654,14 @@ class ReadingController extends StateNotifier<ReadingUiState> {
 
     // KittenTTS：标题 + 正文单 utterance 无缝衔接（双 worker 流水线）
     if (engine is KittenTtsEngine) {
+      final sentences = _flattenSentences();
+      if (sentences.isEmpty) {
+        debugPrint('[ReadingCtrl] no sentences to speak');
+        return false;
+      }
       final id = await engine.speakFullArticle(
         title: hasTitle ? title : null,
-        paragraphs: [
-          for (final p in state.paragraphs)
-            (id: p.id, text: p.englishText),
-        ],
+        sentences: sentences,
         speed: state.ttsSpeed,
         voice: state.ttsVoice,
       );
@@ -564,6 +674,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       state = state.copyWith(
         isSpeakingFullArticle: true,
         speakingParagraphIndex: null,
+        speakingSentenceIndex: null,
       );
       debugPrint('[ReadingCtrl] KITTEN FULLARTICLE PATH SUCCESS id=$id');
       return true;
@@ -586,6 +697,7 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     state = state.copyWith(
       isSpeakingFullArticle: true,
       speakingParagraphIndex: null,
+      speakingSentenceIndex: null,
     );
     debugPrint('[ReadingCtrl] FALLBACK PATH SUCCESS id=$id');
     return true;

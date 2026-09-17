@@ -31,8 +31,9 @@ class _RecordingTts implements TtsEngine {
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
 
   @override
-  void setOnParagraphStarted(
-      void Function(String? utteranceId, int paragraphIndex, int total)?
+  void setOnSentenceStarted(
+      void Function(String? utteranceId, int paragraphIndex, int sentenceIndex,
+              int total)?
           callback) {}
 }
 

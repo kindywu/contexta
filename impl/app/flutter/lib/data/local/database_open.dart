@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS `db_version` (
         await selfHealVoiceColumns(db);
         await selfHealServerAuthColumns(db);
         await selfHealArticleSyncColumn(db);
+        await selfHealTtsSentenceColumn(db);
       },
     ),
   );

@@ -4,6 +4,7 @@ import 'package:contexta/data/tts/kitten_tts_engine.dart';
 import 'package:contexta/data/tts/kitten_tts_session.dart';
 import 'package:contexta/data/tts/system_tts_engine.dart';
 import 'package:contexta/data/tts/tts_engine_factory.dart';
+import 'package:contexta/domain/tts/tts_engine.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -98,16 +99,15 @@ class _OkSession implements KittenTtsSession {
   @override
   Future<void> speakFullArticle({
     String? title,
-    required List<({int id, String text})> paragraphs,
+    required List<SentenceUnit> sentences,
     required double speed,
     required String utteranceId,
     String? voice,
   }) async {}
 
   @override
-  Future<void> speakParagraphs(
-    List<String> texts, {
-    required List<int> paragraphIds,
+  Future<void> speakSentences(
+    List<SentenceUnit> sentences, {
     required double speed,
     required String utteranceId,
     String? voice,
@@ -115,9 +115,6 @@ class _OkSession implements KittenTtsSession {
 
   @override
   Future<bool> playFile(String filePath, {required String utteranceId}) async => true;
-
-  @override
-  Future<void> playFiles(List<String> filePaths, {required String utteranceId}) async {}
 
   @override
   Future<void> stop() async {}
@@ -130,13 +127,14 @@ class _OkSession implements KittenTtsSession {
       void Function(String utteranceId, int done, int total)? listener) {}
 
   @override
-  void setOnParagraphStarted(
-      void Function(String utteranceId, int paragraphIndex, int total)?
+  void setOnSentenceStarted(
+      void Function(String utteranceId, int paragraphIndex, int sentenceIndex,
+              int total)?
           listener) {}
 
   @override
-  Future<void> pregenerateParagraphs({
-    required List<({int paragraphId, String text})> paragraphs,
+  Future<void> pregenerateSentences({
+    required List<SentenceUnit> sentences,
     required double speed,
     String? voice,
   }) async {}
