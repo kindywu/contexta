@@ -35,8 +35,8 @@ export interface DailyNotifyArgs {
   balanceAfter?: BalanceSnapshot | null;
 }
 
-/** 通知阶段：同日最多三条（start/end/alert），去重键 = `${runDate}:${phase}`。 */
-export type NotifyPhase = "start" | "end" | "alert";
+/** 通知阶段：同日最多四条（start/end/alert/recheck），去重键 = `${runDate}:${phase}`。 */
+export type NotifyPhase = "start" | "end" | "alert" | "recheck";
 
 /** 开始卡入参。 */
 export interface DailyStartArgs {
@@ -53,6 +53,19 @@ export interface DailyAlertArgs {
   checkedAt: Date;
   /** 检查时的批次状态：getBatch 的 status，无批次传 "none" */
   batchStatus: string;
+}
+
+/** 余额复核入参（结束卡成本为 0 时，延迟 10 分钟后的第二次余额快照）。 */
+export interface DailyRecheckArgs {
+  runDate: string;
+  /** 复核时刻（第二次余额查询时刻） */
+  checkedAt: Date;
+  /** 结束卡时的运行前余额（与 balanceAfter 相等 = 成本 0 的判定依据） */
+  balanceBefore: BalanceSnapshot;
+  /** 结束卡时的运行后余额 */
+  balanceAfter: BalanceSnapshot;
+  /** 复核余额快照（null = 查询失败） */
+  balanceSettled: BalanceSnapshot | null;
 }
 
 /** 本次运行成本（余额差；currency 取运行后快照）。 */
@@ -333,11 +346,57 @@ export function buildAlertCard(args: DailyAlertArgs, timeZone: string): Record<s
   };
 }
 
+/**
+ * 余额复核卡（延迟结算兜底）：结束卡本次成本为 0（余额未变，多为 DeepSeek 计费约 5 分钟
+ * 延迟）→ 10 分钟后重查余额的结果。复核余额相对"运行前余额"折算真实成本。
+ */
+export function buildRecheckCard(args: DailyRecheckArgs, timeZone: string): Record<string, unknown> {
+  const lines = [
+    `**执行日期**：${args.runDate}（${timeZone}）`,
+    `**结束卡**：${formatCostLine({
+      currency: args.balanceAfter.currency,
+      before: args.balanceBefore.total,
+      after: args.balanceAfter.total,
+    })}`,
+    `**复核时刻**：${formatTime(args.checkedAt, timeZone)}`,
+    `**复核结果**：${formatRecheckLine(args.balanceBefore, args.balanceSettled)}`,
+  ];
+  const elements: Record<string, unknown>[] = [
+    { tag: "div", text: { tag: "lark_md", content: lines.join("\n") } },
+  ];
+  const warn = lowBalanceWarning(args.balanceSettled);
+  if (warn) elements.push({ tag: "div", text: { tag: "lark_md", content: warn } });
+  return {
+    config: { wide_screen_mode: true },
+    header: { template: "blue", title: { tag: "plain_text", content: `💴 余额复核 · ${args.runDate}` } },
+    elements,
+  };
+}
+
+/** 复核结果行：以运行前余额为基准折算真实成本（复核失败/仍未变/增加分别如实标注）。 */
+export function formatRecheckLine(before: BalanceSnapshot, settled: BalanceSnapshot | null): string {
+  if (settled === null) return "余额查询失败——本次成本仍未结算，可稍后手动核对";
+  const p = currencyPrefix(before.currency);
+  const b = before.total.toFixed(2);
+  const s = settled.total.toFixed(2);
+  if (settled.total < before.total) return `本次成本 ≈ ${p}${(before.total - settled.total).toFixed(2)}（运行前 ${b} → 复核 ${s}）`;
+  if (settled.total === before.total) return `余额仍未变化（${b}）——本次确实未产生消耗，或结算延迟更久`;
+  return `余额增加（${b} → ${s}，多为充值）——本次成本仍未结算`;
+}
+
 /** 开始卡发送（非抛）。 */
 export async function notifyDailyStart(ctx: FeishuNotifyCtx, args: DailyStartArgs): Promise<void> {
   await notifyOnce(ctx, "start", args.runDate, "开始通知", () => ({
     card: buildStartCard(args, ctx.engineCfg.timezone),
     detail: "",
+  }));
+}
+
+/** 余额复核发送（非抛）；由 cost_recheck 在结束卡 10 分钟后调用。 */
+export async function notifyDailyCostRecheck(ctx: FeishuNotifyCtx, args: DailyRecheckArgs): Promise<void> {
+  await notifyOnce(ctx, "recheck", args.runDate, "余额复核通知", () => ({
+    card: buildRecheckCard(args, ctx.engineCfg.timezone),
+    detail: `复核余额 ${formatBalance(args.balanceSettled)}`,
   }));
 }
 

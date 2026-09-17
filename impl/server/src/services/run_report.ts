@@ -1,11 +1,15 @@
 // src/services/run_report.ts
 // 一次"整日运行"的上报包装（唯一实现，供每日定时与管理端手动补生成共用）：
 //   查余额（运行前）→ 发开始卡 → 跑 → 查余额（运行后）→ 发结束卡（含本次成本）
+//   →（成本为 0 时）排一次延迟余额复核
 // - 结束卡在运行抛错时也发（stepErrors 记录抛错）再向上重抛——保证"有开始必有结束"这条
 //   判定链完整：只有真卡死才会出现"有开始没结束"
-// - 纪律：通知环节任何异常都只记日志，绝不中断运行——通知故障不得变成生成故障
+// - 结束卡成本为 0（余额未变）时排延迟复核：DeepSeek 计费约 5 分钟延迟，结束卡时可能尚未
+//   结算——10 分钟后重查余额再发一条复核消息（见 cost_recheck），不阻塞运行
+// - 纪律：通知/余额查询/复核调度任何异常都只记日志，绝不中断运行——通知故障不得变成生成故障
 //   （余额查询同理，见 llm_balance 的 null 兜底）
 import { log } from "../engine/graph/log";
+import { isZeroCost, recheckCost, type CostRecheckArgs } from "./cost_recheck";
 import {
   notifyDailyResult,
   notifyDailyStart,
@@ -24,6 +28,8 @@ export interface RunReportCtx extends FeishuNotifyCtx {
   notifyStart?: (ctx: FeishuNotifyCtx, args: DailyStartArgs) => Promise<void>;
   /** 结束卡 seam（缺省 notifyDailyResult） */
   notifyEnd?: (ctx: FeishuNotifyCtx, args: DailyNotifyArgs) => Promise<void>;
+  /** 成本复核调度 seam（缺省 = 以同一批 seam 排一次 cost_recheck.recheckCost） */
+  recheck?: (args: CostRecheckArgs) => void;
 }
 
 /** 包装结果：起止时刻 + 运行步骤错误（供调用方组装自己的返回口径）。 */
@@ -64,6 +70,25 @@ export async function withDailyRunReport(
   const probe = ctx.probe ?? fetchBalance;
   const notifyStart = ctx.notifyStart ?? notifyDailyStart;
   const notifyEnd = ctx.notifyEnd ?? notifyDailyResult;
+  // 复核调度（fire-and-forget）：同一批 seam（probe/now/fetch/notified）传给复核链——
+  // 测试注入的假余额/假时钟对复核同样生效
+  const recheck =
+    ctx.recheck ??
+    ((args: CostRecheckArgs) => {
+      void recheckCost(
+        {
+          db: ctx.db,
+          serverCfg: ctx.serverCfg,
+          engineCfg: ctx.engineCfg,
+          balance: ctx.balance,
+          fetch: ctx.fetch,
+          now: ctx.now,
+          notified: ctx.notified,
+          probe,
+        },
+        args,
+      );
+    });
 
   const startedAt = now();
   const balanceBefore = await probe(ctx.balance);
@@ -87,6 +112,7 @@ export async function withDailyRunReport(
         stepErrors: [`引擎生成抛错: ${err instanceof Error ? err.message : String(err)}`],
       }),
     );
+    maybeScheduleRecheck(recheck, runDate, balanceBefore, balanceAfter);
     throw err;
   }
 
@@ -94,7 +120,24 @@ export async function withDailyRunReport(
   await safeNotify(`结束卡 ${runDate}`, () =>
     notifyEnd(ctx, { runDate, startedAt, endedAt, balanceBefore, balanceAfter, stepErrors }),
   );
+  maybeScheduleRecheck(recheck, runDate, balanceBefore, balanceAfter);
   return { startedAt, endedAt, stepErrors };
+}
+
+/** 成本为 0（两侧余额都查到且相等）→ 排一次延迟复核；调度异常只记日志（不影响运行）。 */
+function maybeScheduleRecheck(
+  recheck: (args: CostRecheckArgs) => void,
+  runDate: string,
+  balanceBefore: BalanceSnapshot | null,
+  balanceAfter: BalanceSnapshot | null,
+): void {
+  if (balanceBefore === null || balanceAfter === null) return;
+  if (!isZeroCost(balanceBefore, balanceAfter)) return;
+  try {
+    recheck({ runDate, balanceBefore, balanceAfter });
+  } catch (err) {
+    log(`[run-report] ${runDate} 成本复核调度异常（不影响运行）: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /** 通知调用兜底：seam 自身已是非抛的，这里再加一层——通知永不影响运行。 */

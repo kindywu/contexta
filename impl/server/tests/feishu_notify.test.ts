@@ -13,11 +13,13 @@ import {
   buildAlertCard,
   buildDailyCard,
   buildDailyReport,
+  buildRecheckCard,
   buildStartCard,
   formatCostLine,
   formatDuration,
   formatTime,
   lowBalanceWarning,
+  notifyDailyCostRecheck,
   notifyDailyResult,
   notifyDailyStart,
   notifyDailyUnclosed,
@@ -437,6 +439,64 @@ describe("notifyDailyStart / notifyDailyUnclosed（编排：记账与去重按�
     await expect(
       notifyDailyUnclosed(ctx, { runDate: RUN_DATE, checkedAt: FIXED_TIME, batchStatus: "running" }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("buildRecheckCard / notifyDailyCostRecheck（余额复核卡）", () => {
+  const CHECKED = new Date("2026-09-17T00:20:00Z"); // 08:20:00 Asia/Shanghai
+  const recheckArgs = (settled: BalanceSnapshot | null) => ({
+    runDate: RUN_DATE,
+    checkedAt: CHECKED,
+    balanceBefore: snap(3.65),
+    balanceAfter: snap(3.65),
+    balanceSettled: settled,
+  });
+
+  test("结算到账：复核结果按运行前余额折算真实成本，含结束卡 0 成本与复核时刻", () => {
+    const card = buildRecheckCard(recheckArgs(snap(3.23)), TZ) as Record<string, any>;
+    expect(card.header.title.content).toContain(RUN_DATE);
+    const text = JSON.stringify(card.elements);
+    expect(text).toContain("¥0.00"); // 结束卡当时的成本
+    expect(text).toContain("08:20:00"); // 复核时刻（配置时区）
+    expect(text).toContain("0.42"); // 3.65 → 3.23
+  });
+  test("复核时仍未变化 → 如实标注未消耗/结算更久，不编造成本", () => {
+    const card = buildRecheckCard(recheckArgs(snap(3.65)), TZ) as Record<string, any>;
+    const text = JSON.stringify(card.elements);
+    expect(text).toContain("仍未变化");
+  });
+  test("复核时余额增加 → 标注多为充值", () => {
+    const card = buildRecheckCard(recheckArgs(snap(13.65)), TZ) as Record<string, any>;
+    expect(JSON.stringify(card.elements)).toContain("充值");
+  });
+  test("复核查询失败 → 标未知可手动核对；复核余额低 → 带充值提醒", () => {
+    const failed = buildRecheckCard(recheckArgs(null), TZ) as Record<string, any>;
+    expect(JSON.stringify(failed.elements)).toContain("查询失败");
+
+    const low = buildRecheckCard(recheckArgs(snap(0.5)), TZ) as Record<string, any>;
+    expect(JSON.stringify(low.elements)).toContain("充值");
+  });
+  test("发送：进入 recheck 阶段记账（与 end 互不干扰），同日重复触发去重", async () => {
+    const { fn, calls } = fakeFetch([], { ok: true, code: 0, msg: "success" });
+    const notified = new Set<string>();
+    const ctx = notifyCtx({ fetch: fn, notified });
+    await notifyDailyCostRecheck(ctx, recheckArgs(snap(3.23)));
+    await notifyDailyCostRecheck(ctx, recheckArgs(snap(3.23)));
+    expect(calls).toHaveLength(1);
+    expect(notified.has(`${RUN_DATE}:recheck`)).toBe(true);
+  });
+  test("发送失败 → 不抛；未配置 webhook → 静默跳过", async () => {
+    const fail = (async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+    await expect(notifyDailyCostRecheck(notifyCtx({ fetch: fail }), recheckArgs(null))).resolves.toBeUndefined();
+
+    const { fn, calls } = fakeFetch([], { ok: true, code: 0, msg: "success" });
+    await notifyDailyCostRecheck(
+      notifyCtx({ serverCfg: serverCfg({ FEISHU_WEBHOOK_URL: "", FEISHU_WEBHOOK_SECRET: "" }), fetch: fn }),
+      recheckArgs(null),
+    );
+    expect(calls).toHaveLength(0);
   });
 });
 
