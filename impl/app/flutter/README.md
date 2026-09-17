@@ -21,11 +21,14 @@ Contexta 英语学习 App（Flutter）。服务端 API（投放同步 / 远程�
 ### 自签名 HTTPS（生产 = 固定 IP + 自签名证书）
 
 生产 `https://47.112.20.32` 用自签名证书（无域名，CA 不签发 IP 证书）。App 侧的信任来自
-**内嵌证书**：`android/app/src/main/res/raw/contexta_server.crt` +
-`res/xml/network_security_config.xml`（只对 `47.112.20.32` 追加该证书为信任锚，
-其余地址仍走系统信任库；明文 HTTP 保留供本地调试）。
+**内嵌证书**：`assets/certs/server.crt` 启动时经 `rootBundle` 预载（`lib/main.dart`），
+注入 Dart `SecurityContext`（`lib/di/providers.dart`，只信任该证书）。
 
-> ⚠️ **纪律**：`res/raw/contexta_server.crt` 必须与服务器 `/opt/contexta/server/certs/server.crt`
+> ⚠️ **为什么不用 Android network security config**：Dart 的 TLS 栈（BoringSSL）不读 NSC，
+> 只会报 `CERTIFICATE_VERIFY_FAILED: self signed certificate`（2026-09-17 真机实测）。
+> 证书必须经 Dart 侧注入；debug 模式下 asset 不在文件系统里，必须走 `rootBundle`。
+
+> ⚠️ **纪律**：`assets/certs/server.crt` 必须与服务器 `/opt/contexta/server/certs/server.crt`
 > 是同一份证书。**换 IP 或重签证书后必须同步替换该文件并重新打包**，否则已装 App 握手即断。
 > 全链路（生成 → 推服务器 → 更新 App）见 `impl/server/docs/config-and-deploy.md` §2.1。
 

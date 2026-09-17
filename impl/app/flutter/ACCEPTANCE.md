@@ -16,9 +16,9 @@
   Gradle 以 `--dart-define` 语义注入 `AppConfig.serverBaseUrl`
   （见 `android/app/build.gradle.kts`；命令行
   `--dart-define=SERVER_BASE_URL=...` 同名 key 优先）
-- [ ] 自签名 HTTPS：`res/raw/contexta_server.crt` 与服务器 `certs/server.crt` 为同一份证书，
-  `network_security_config.xml` 已挂到 Manifest（换 IP / 重签证书须同步替换并重新打包，
-  见 `impl/server/docs/config-and-deploy.md` §2.1）
+- [ ] 自签名 HTTPS：`assets/certs/server.crt` 与服务器 `certs/server.crt` 为同一份证书，
+  启动时经 `rootBundle` 注入 Dart `SecurityContext`（Dart TLS 栈不读 Android NSC，
+  换 IP / 重签证书须同步替换并重新打包，见 `impl/server/docs/config-and-deploy.md` §2.1）
 
 ## 1. 覆盖安装（数据库兼容）
 

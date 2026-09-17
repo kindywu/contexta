@@ -53,3 +53,6 @@ flutter:
     - assets/contexta.db
     - assets/seed_articles.json
     - assets/kittentts_models/
+    # 自签名服务端证书（信任锚）：Dart 的 TLS 栈不读 Android network security config，
+    # 必须显式注入 SecurityContext（见 lib/di/providers.dart、config-and-deploy.md §2.1）
+    - assets/certs/server.crt
