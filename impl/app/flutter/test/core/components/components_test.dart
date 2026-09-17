@@ -5,9 +5,18 @@ import 'package:contexta/core/components/app_modal.dart';
 import 'package:contexta/core/components/bottom_nav_bar.dart';
 import 'package:contexta/core/components/loading_indicator.dart';
 import 'package:contexta/core/theme/app_colors.dart';
+import 'package:contexta/core/theme/app_dimens.dart';
 import 'package:contexta/core/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+void _noop() {}
+
+/// 弹层面板本体：AppModal 内唯一的 Material（遮罩是 ColoredBox）。
+Finder _modalPanel() => find.descendant(
+      of: find.byType(AppModal),
+      matching: find.byType(Material),
+    );
 
 /// 组件库测试：视觉规格（颜色/圆角/字号/文案）与交互（onClick/禁用）。
 void main() {
@@ -174,6 +183,61 @@ void main() {
       expect(find.text('弹窗内容'), findsOneWidget);
       await tester.tapAt(const Offset(10, 10));
       expect(dismissed, isFalse);
+    });
+
+    testWidgets('pad 横屏下底部弹层限宽 560 且居中贴底', (tester) async {
+      tester.view.physicalSize = const Size(2438, 1626); // 逻辑 1219×813
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(wrap(const Scaffold(
+        body: AppModal(
+          visible: true,
+          onDismiss: _noop,
+          alignment: AppModalAlignment.bottom,
+          child: Text('内容'),
+        ),
+      )));
+      await tester.pumpAndSettle();
+
+      final panel = _modalPanel();
+      expect(tester.getSize(panel).width, 560);
+      final left = tester.getTopLeft(panel).dx;
+      final right = 1219 - tester.getTopRight(panel).dx;
+      expect((left - right).abs(), lessThan(2), reason: '水平居中');
+      expect(tester.getBottomRight(panel).dy, 813, reason: '仍贴底');
+      // 四角都圆（宽屏不再与屏幕底边齐平）
+      expect(
+        tester.widget<Material>(panel).borderRadius,
+        BorderRadius.circular(AppRadius.lg),
+      );
+    });
+
+    testWidgets('手机（<600dp）下底部弹层仍全宽 + 下两角方角', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2340); // 逻辑 360×780
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(wrap(const Scaffold(
+        body: AppModal(
+          visible: true,
+          onDismiss: _noop,
+          alignment: AppModalAlignment.bottom,
+          child: Text('内容'),
+        ),
+      )));
+      await tester.pumpAndSettle();
+
+      final panel = _modalPanel();
+      expect(tester.getSize(panel).width, 360);
+      expect(
+        tester.widget<Material>(panel).borderRadius,
+        const BorderRadius.only(
+          topLeft: Radius.circular(AppRadius.lg),
+          topRight: Radius.circular(AppRadius.lg),
+        ),
+        reason: '手机下两角仍与屏幕底边齐平',
+      );
     });
   });
 
