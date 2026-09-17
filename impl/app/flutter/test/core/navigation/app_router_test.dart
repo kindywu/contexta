@@ -144,6 +144,17 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// 把窗口固定到手机视口（逻辑 360×780 = compact 档）。
+  ///
+  /// 底栏相关用例必须显式钉住：测试默认窗口 800×600 宽 800 ≥ 600dp，
+  /// 属 medium 档 → 导航骨架已换成 NavigationRail（见「大屏导航骨架」组）。
+  void usePhoneViewport(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
   List<String> stackLocations() => router.routerDelegate.currentConfiguration
       .matches
       .map((m) => m.matchedLocation)
@@ -186,6 +197,7 @@ void main() {
 
   group('底栏显隐（对照 Kotlin showBottomBar）', () {
     testWidgets('home 显示底栏', (tester) async {
+      usePhoneViewport(tester);
       await pumpApp(tester);
       await go(tester, Routes.location(Routes.home));
 
@@ -196,6 +208,7 @@ void main() {
     });
 
     testWidgets('vocabulary 不显示底栏（Kotlin 对齐）', (tester) async {
+      usePhoneViewport(tester);
       await pumpApp(tester);
       await go(tester, Routes.location(Routes.vocabulary));
 
@@ -206,6 +219,7 @@ void main() {
     });
 
     testWidgets('reference / settings 显示底栏', (tester) async {
+      usePhoneViewport(tester);
       await pumpApp(tester);
       await go(tester, Routes.location(Routes.reference));
 
@@ -222,6 +236,7 @@ void main() {
     });
 
     testWidgets('reading/:articleId 无底栏且解析参数', (tester) async {
+      usePhoneViewport(tester);
       await pumpApp(tester);
       await go(tester, Routes.readingRoute(42));
 
@@ -230,6 +245,7 @@ void main() {
     });
 
     testWidgets('add_word 无底栏', (tester) async {
+      usePhoneViewport(tester);
       await pumpApp(tester);
       await go(tester, Routes.location(Routes.addWord));
 
@@ -241,8 +257,53 @@ void main() {
     });
   });
 
+  group('大屏导航骨架', () {
+    testWidgets('宽屏（≥600dp）首页用左侧 NavigationRail，无底部栏', (tester) async {
+      tester.view.physicalSize = const Size(2438, 1626); // 逻辑 1219×813
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      router = buildRouter(isOnboarded: () async => true);
+      await pumpWith(tester, router);
+      await go(tester, Routes.home);
+
+      expect(find.byType(NavigationRail), findsOneWidget);
+      expect(find.byType(BottomNavBar), findsNothing);
+    });
+
+    testWidgets('手机（<600dp）首页保留底部导航栏', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2340); // 逻辑 360×780
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      router = buildRouter(isOnboarded: () async => true);
+      await pumpWith(tester, router);
+      await go(tester, Routes.home);
+
+      expect(find.byType(BottomNavBar), findsOneWidget);
+      expect(find.byType(NavigationRail), findsNothing);
+    });
+
+    testWidgets('宽屏下不显示导航栏的页面（生词本）仍无导航', (tester) async {
+      tester.view.physicalSize = const Size(2438, 1626);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      router = buildRouter(isOnboarded: () async => true);
+      await pumpWith(tester, router);
+      await go(tester, Routes.vocabulary);
+
+      expect(find.byType(NavigationRail), findsNothing);
+      expect(find.byType(BottomNavBar), findsNothing);
+    });
+  });
+
   group('tab 切换', () {
     testWidgets('底栏点击切换到对应路由并更新选中态', (tester) async {
+      usePhoneViewport(tester);
       await pumpApp(tester);
       await go(tester, Routes.location(Routes.home));
 
