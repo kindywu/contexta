@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/components/app_button.dart';
 import '../../core/components/app_card.dart';
 import '../../core/components/loading_indicator.dart';
+import '../../core/layout/content_width.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
@@ -113,16 +114,20 @@ class _VocabularyScreenState extends ConsumerState<VocabularyScreen> {
       word: word,
       onPlayWord: controller.playWord,
     );
-    final scroll = SingleChildScrollView(
-      controller: _scrollController,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            card,
-            const SizedBox(height: 80),
-          ],
+    // 宽屏下复习卡限宽居中（窄屏不产生任何影响）；滑动切词 / FAB / 滚动
+    // 重置逻辑都挂在 ContentWidth 之外，行为不变。
+    final scroll = ContentWidth(
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              card,
+              const SizedBox(height: 80),
+            ],
+          ),
         ),
       ),
     );
@@ -403,37 +408,39 @@ class _VocabularySummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.celebration_outlined,
-            color: AppColors.success,
-            size: 56,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            '复习完成！',
-            style: AppType.textTheme.headlineLarge
-                ?.copyWith(color: AppColors.ink),
-          ),
-          const SizedBox(height: 24),
-          AppCard(
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              children: [
-                _SummaryStat(value: reviewedCount.toString(), label: '复习单词'),
-                const SizedBox(height: 16),
-                _SummaryStat(
-                    value: newlyKnownCount.toString(), label: '新标记认识'),
-              ],
+    return ContentWidth(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.celebration_outlined,
+              color: AppColors.success,
+              size: 56,
             ),
-          ),
-          const SizedBox(height: 32),
-          AppButton(text: '再来一轮', onClick: onRestart),
-        ],
+            const SizedBox(height: 16),
+            Text(
+              '复习完成！',
+              style: AppType.textTheme.headlineLarge
+                  ?.copyWith(color: AppColors.ink),
+            ),
+            const SizedBox(height: 24),
+            AppCard(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                children: [
+                  _SummaryStat(value: reviewedCount.toString(), label: '复习单词'),
+                  const SizedBox(height: 16),
+                  _SummaryStat(
+                      value: newlyKnownCount.toString(), label: '新标记认识'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            AppButton(text: '再来一轮', onClick: onRestart),
+          ],
+        ),
       ),
     );
   }
