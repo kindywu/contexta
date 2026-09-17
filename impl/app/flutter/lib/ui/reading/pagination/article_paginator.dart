@@ -69,11 +69,19 @@ class ArticlePaginator {
   final TextStyle titleStyle;
   final TextStyle buttonLabelStyle;
 
+  /// [bodyTextScaler] / [labelTextScaler] 两个 scaler 对应两类渲染器——
+  /// `RichText` 默认 `TextScaler.noScaling` 不读 MediaQuery（英文正文、标题），
+  /// `Text` 读（译文、`AppButton` 按钮文字）；测量必须与各自渲染器一致。
+  /// 合成一个 scaler 会在系统字体缩放 ≠ 1 时错算页高（正文/标题高估，
+  /// 或译文/按钮低估——低估即真实内容溢出页底）。
   PaginatedArticle paginate({
     required List<ReadingBlock> blocks,
     required double pageWidth,
     required double pageHeight,
-    required TextScaler textScaler,
+    // 英文正文（ReadingParagraph 的 RichText）与标题（ReadingTitle 的 RichText）
+    required TextScaler bodyTextScaler,
+    // 译文（_TranslationText 的 Text）与按钮文字（AppButton 的 Text）
+    required TextScaler labelTextScaler,
     required TranslationMode translationMode,
   }) {
     final pages = <ReadingPage>[];
@@ -98,7 +106,8 @@ class ArticlePaginator {
       final height = heightOf(
         block,
         pageWidth: pageWidth,
-        textScaler: textScaler,
+        bodyTextScaler: bodyTextScaler,
+        labelTextScaler: labelTextScaler,
         translationMode: translationMode,
       );
       if (current.isNotEmpty && used + height > pageHeight) flush();
@@ -125,10 +134,12 @@ class ArticlePaginator {
   }
 
   /// 单块高度（块内间距已含；块间无额外间距——与手机路径的 Column 一致）。
+  /// 两个 scaler 的含义见 [paginate]。
   double heightOf(
     ReadingBlock block, {
     required double pageWidth,
-    required TextScaler textScaler,
+    required TextScaler bodyTextScaler,
+    required TextScaler labelTextScaler,
     required TranslationMode translationMode,
   }) {
     switch (block) {
@@ -144,7 +155,7 @@ class ArticlePaginator {
             ),
           ),
           pageWidth,
-          textScaler,
+          bodyTextScaler,
         );
         return titleHeight +
             kTitleGapBelow +
@@ -155,7 +166,8 @@ class ArticlePaginator {
         return _paragraphHeight(
           block,
           pageWidth: pageWidth,
-          textScaler: textScaler,
+          bodyTextScaler: bodyTextScaler,
+          labelTextScaler: labelTextScaler,
           translationMode: translationMode,
         );
 
@@ -163,7 +175,7 @@ class ArticlePaginator {
         final labelHeight = _paintHeight(
           TextSpan(text: kMarkAsReadLabel, style: buttonLabelStyle),
           pageWidth,
-          textScaler,
+          labelTextScaler,
         );
         return kMarkAsReadTopGap +
             labelHeight +
@@ -174,7 +186,8 @@ class ArticlePaginator {
   double _paragraphHeight(
     ParagraphBlock block, {
     required double pageWidth,
-    required TextScaler textScaler,
+    required TextScaler bodyTextScaler,
+    required TextScaler labelTextScaler,
     required TranslationMode translationMode,
   }) {
     // 英文正文：与 ReadingParagraph 渲染的 span 树同构（含段尾内联播放钮的
@@ -206,7 +219,8 @@ class ArticlePaginator {
     final painter = TextPainter(
       text: span,
       textDirection: TextDirection.ltr,
-      textScaler: textScaler,
+      // 正文是 RichText，不吃 MediaQuery 字体缩放
+      textScaler: bodyTextScaler,
       maxLines: null,
     )..setPlaceholderDimensions(
         const [
@@ -229,10 +243,11 @@ class ArticlePaginator {
 
     if (translationMode == TranslationMode.hidden) return height;
 
+    // 译文是 Text，吃 MediaQuery 字体缩放
     final translation = TextPainter(
       text: TextSpan(text: block.chineseTranslation, style: translationStyle),
       textDirection: TextDirection.ltr,
-      textScaler: textScaler,
+      textScaler: labelTextScaler,
       maxLines: null,
     )..layout(maxWidth: pageWidth);
     height += translation.height + kParagraphGap;

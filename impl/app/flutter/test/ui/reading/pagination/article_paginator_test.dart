@@ -17,11 +17,14 @@ PaginatedArticle paginate(
   double pageWidth = 530,
   double pageHeight = 600,
   TranslationMode mode = TranslationMode.full,
+  TextScaler bodyTextScaler = TextScaler.noScaling,
+  TextScaler labelTextScaler = TextScaler.noScaling,
 }) => buildPaginator().paginate(
   blocks: blocks,
   pageWidth: pageWidth,
   pageHeight: pageHeight,
-  textScaler: TextScaler.noScaling,
+  bodyTextScaler: bodyTextScaler,
+  labelTextScaler: labelTextScaler,
   translationMode: mode,
 );
 
@@ -99,5 +102,37 @@ void main() {
     final narrow = paginate([shortA], pageWidth: 100, pageHeight: 2000);
     final wide = paginate([shortA], pageWidth: 1000, pageHeight: 2000);
     expect(narrow.pages.single.usedHeight, greaterThan(wide.pages.single.usedHeight));
+  });
+
+  test('正文/标题与译文/按钮各用各的 textScaler', () {
+    // 正文与标题是 RichText（不吃系统字体缩放），译文与按钮是 Text（吃）；
+    // 拆成两个 scaler 就是为了让测量与各自渲染器一致。
+    final base = paginate([shortA], pageHeight: 2000);
+    final scaledLabel = paginate(
+      [shortA],
+      pageHeight: 2000,
+      labelTextScaler: TextScaler.linear(2),
+    );
+    final scaledBody = paginate(
+      [shortA],
+      pageHeight: 2000,
+      bodyTextScaler: TextScaler.linear(2),
+    );
+
+    // 放大 label scaler 只影响译文 → 整段更高（证明它确实传到了译文测量）
+    expect(
+      scaledLabel.pages.single.usedHeight - base.pages.single.usedHeight,
+      greaterThan(0),
+    );
+    // 放大 body scaler 影响的是英文正文 → 同样变高（证明它传到了正文测量）
+    expect(
+      scaledBody.pages.single.usedHeight - base.pages.single.usedHeight,
+      greaterThan(0),
+    );
+    // 两个 scaler 命中的是不同文本 → 两种放大的结果不相等
+    expect(
+      scaledBody.pages.single.usedHeight,
+      isNot(scaledLabel.pages.single.usedHeight),
+    );
   });
 }
