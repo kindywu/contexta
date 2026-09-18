@@ -52,8 +52,12 @@ ResponseBody _json(int statusCode, Object body) => ResponseBody.fromString(
     );
 
 class _FakePhoneReader implements NativePhoneReader {
-  _FakePhoneReader(this.phone);
+  _FakePhoneReader(this.phone, {this.supportsLine1Number = true});
   String? phone;
+
+  /// 默认 true（Android 语义）——iOS 场景（false）由专门用例构造。
+  @override
+  final bool supportsLine1Number;
 
   @override
   Future<String?> readLine1Number() async => phone;
@@ -167,6 +171,26 @@ void main() {
       expect(find.text('服务端未配置，当前为本地模式'), findsOneWidget);
       final button = tester.widget<AppButton>(find.byType(AppButton));
       expect(button.enabled, isFalse);
+    });
+
+    testWidgets('平台不支持读本机号码（iOS）→ 无快速登录按钮，直接手动输入',
+        (tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          serverConfiguredProvider.overrideWithValue(true),
+          nativePhoneReaderProvider.overrideWithValue(
+            _FakePhoneReader(null, supportsLine1Number: false),
+          ),
+          authServiceProvider.overrideWith((ref) => service),
+        ],
+        child: const MaterialApp(home: LoginScreen()),
+      ));
+      await tester.pumpAndSettle();
+
+      // 没有「本机号码快速登录」，手动输入框与登录按钮直接可见
+      expect(find.text('本机号码快速登录'), findsNothing);
+      expect(find.text('手机号'), findsOneWidget);
+      expect(find.text('登录'), findsNWidgets(2)); // AppBar 标题 + 主按钮
     });
   });
 

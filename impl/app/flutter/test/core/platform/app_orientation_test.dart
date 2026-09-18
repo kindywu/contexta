@@ -90,16 +90,42 @@ void main() {
       expect(manifest, isNot(contains('android:screenOrientation')));
     });
 
-    test('Info.plist：iPhone 支持方向只剩竖屏（iPad 不受限）', () {
+    test('Info.plist：iPhone 只剩竖屏、iPad 只剩横屏，且 iPad 全屏固定', () {
       final String plist = File('ios/Runner/Info.plist').readAsStringSync();
-      final int start = plist.indexOf(
-        '<key>UISupportedInterfaceOrientations</key>',
-      );
-      final int end = plist.indexOf('</array>', start);
-      expect(start, greaterThan(-1), reason: '缺 UISupportedInterfaceOrientations');
-      final String iphone = plist.substring(start, end);
+
+      String orientationsFor(String key) {
+        final int start = plist.indexOf('<key>$key</key>');
+        expect(start, greaterThan(-1), reason: '缺 $key');
+        final int end = plist.indexOf('</array>', start);
+        return plist.substring(start, end);
+      }
+
+      final String iphone = orientationsFor('UISupportedInterfaceOrientations');
       expect(iphone, contains('UIInterfaceOrientationPortrait'));
       expect(iphone, isNot(contains('Landscape')));
+
+      // iPad 与手机是两棵界面树，平板树按横屏设计（见 docs/adaptive-layout.md）
+      final String ipad = orientationsFor('UISupportedInterfaceOrientations~ipad');
+      expect(ipad, contains('UIInterfaceOrientationLandscapeLeft'));
+      expect(ipad, isNot(contains('Portrait')));
+
+      // iPadOS 把「支持多方向」的 App 视为可自由缩放，方向声明会被忽略；
+      // 声明全屏固定后系统才维持横屏锁定（见 docs/app-orientation.md）。
+      expect(plist, contains('<key>UIRequiresFullScreen</key>'));
+    });
+
+    test('Info.plist：声明后台同步任务标识（workmanager 在 iOS 的硬性要求）', () {
+      final String plist = File('ios/Runner/Info.plist').readAsStringSync();
+
+      // BGTaskScheduler 要求标识先声明在 BGTaskSchedulerPermittedIdentifiers，
+      // 否则提交任务时直接断言崩溃（_handleSubmissionWithoutRegistration）。
+      // 标识串必须与 sync_callback_dispatcher.dart 的 dailySyncTaskName 一致。
+      expect(
+        plist,
+        contains('<key>BGTaskSchedulerPermittedIdentifiers</key>'),
+      );
+      expect(plist, contains('<string>dailyArticleSync</string>'));
+      expect(plist, contains('<key>UIBackgroundModes</key>'));
     });
   });
 }

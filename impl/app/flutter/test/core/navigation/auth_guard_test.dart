@@ -67,6 +67,9 @@ class _FakePhoneReader implements NativePhoneReader {
   String? phone;
 
   @override
+  bool get supportsLine1Number => true;
+
+  @override
   Future<String?> readLine1Number() async => phone;
 }
 

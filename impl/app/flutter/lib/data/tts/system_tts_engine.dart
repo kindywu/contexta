@@ -1,16 +1,25 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter_tts/flutter_tts.dart';
 
 import '../../domain/model/tts_voice.dart';
 import '../../domain/tts/tts_engine.dart';
 
-/// 系统 TTS 引擎（flutter_tts），对照 Kotlin TtsEngineImpl 的三重引擎回退链：
+/// 系统 TTS 引擎（flutter_tts）。两个平台走不同的初始化：
+///
+/// **Android**：对照 Kotlin TtsEngineImpl 的三重引擎回退链——
 /// 1. com.xiaomi.mibrain.speech（小米内置）
 /// 2. com.google.android.tts（Google TTS）
 /// 3. 系统默认引擎
-///
 /// 初始化成功的第一个引擎被保留。HyperOS 上默认构造器可能发现不了内置引擎，
-/// 显式包名逐个尝试（记忆：hyperos-tts-fix）。语速由 [SystemTtsSpeedMapper]
-/// 决定：显示语速直接透传（1x→1.0、0.75x→0.75）。
+/// 显式包名逐个尝试（记忆：hyperos-tts-fix）。
+///
+/// **iOS**：flutter_tts 直接桥接 AVSpeechSynthesizer，没有「引擎包」概念
+/// （`getEngines` / `setEngine` 在 iOS 侧无实现，探测必然失败），因此跳过
+/// 候选链，只做共享音频会话 + 音频类别设置（否则静音开关会连朗读一起静音）。
+///
+/// 语速由 [SystemTtsSpeedMapper] 决定：Android 直接透传（1x→1.0），
+/// iOS 按 AVSpeechUtterance 基准缩放（1x→0.5，见该类的对照表）。
 class SystemTtsEngine implements TtsEngine {
   SystemTtsEngine({
     FlutterTts? tts,
@@ -19,14 +28,20 @@ class SystemTtsEngine implements TtsEngine {
       'com.google.android.tts',
       null,
     ],
-    this.speedMapper = const SystemTtsSpeedMapper(),
-  }) : _tts = tts ?? FlutterTts() {
+    TtsSpeedMapper? speedMapper,
+    bool? isIos,
+  })  : _tts = tts ?? FlutterTts(),
+        _isIos = isIos ?? Platform.isIOS,
+        speedMapper = speedMapper ?? SystemTtsSpeedMapper(isIos: isIos) {
     _wireCallbacks();
   }
 
   final FlutterTts _tts;
   final List<String?> engineCandidates;
   final TtsSpeedMapper speedMapper;
+
+  /// 是否按 iOS 语义初始化（测试注入；null → 按运行平台判定，见构造器）。
+  final bool _isIos;
 
   bool _ready = false;
   String? _failureMessage;
@@ -35,7 +50,12 @@ class SystemTtsEngine implements TtsEngine {
   int _utteranceCounter = 0;
 
   /// 逐个尝试引擎候选，第一个初始化成功的保留（对照 Kotlin tryEngines）。
+  /// iOS 无候选链，走 [_initIos]。
   Future<void> init() async {
+    if (_isIos) {
+      await _initIos();
+      return;
+    }
     for (var i = 0; i < engineCandidates.length; i++) {
       final pkg = engineCandidates[i];
       try {
@@ -46,6 +66,35 @@ class SystemTtsEngine implements TtsEngine {
       }
     }
     _failureMessage = 'No TTS engine could be initialized';
+  }
+
+  /// iOS 初始化：共享音频会话 + playback 类别（静音开关不静音朗读、
+  /// 压低其他 App 音量而不打断），再确认 en-US 语音可用（系统未下载语音时
+  /// AVAudioSynthesizer 会「成功」但不出声，这里显式判失败以便上层给出提示）。
+  Future<void> _initIos() async {
+    try {
+      await _tts.setSharedInstance(true);
+      await _tts.setIosAudioCategory(
+        IosTextToSpeechAudioCategory.playback,
+        const [
+          IosTextToSpeechAudioCategoryOptions.duckOthers,
+          IosTextToSpeechAudioCategoryOptions.allowBluetoothA2DP,
+        ],
+        IosTextToSpeechAudioMode.voicePrompt,
+      );
+      if (!await _tts.isLanguageAvailable('en-US')) {
+        _failureMessage = 'iOS 系统未安装 en-US 语音';
+        return;
+      }
+      _ready = true;
+      final pending = _pendingText;
+      _pendingText = null;
+      if (pending != null) {
+        _tts.speak(pending);
+      }
+    } catch (e) {
+      _failureMessage = 'iOS 系统 TTS 初始化失败：$e';
+    }
   }
 
   Future<bool> _tryEngine(String? pkg) async {

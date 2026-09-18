@@ -12,8 +12,10 @@ import '../../di/providers.dart';
 
 /// 登录页（手机号免密登录）。
 ///
-/// - 主按钮「本机号码快速登录」：读本机号码（MethodChannel），成功自动登录；
-///   读不到（无权限 / Android 26+ 多数设备限制）→ 展开手动输入框；
+/// - 主按钮「本机号码快速登录」（仅 Android）：读本机号码（MethodChannel），
+///   成功自动登录；读不到（无权限 / Android 26+ 多数设备限制）→ 展开手动输入框；
+/// - iOS 无本机号码 API（`NativePhoneReader.supportsLine1Number` = false）→
+///   不显示快速登录按钮，直接展示手动输入框；
 /// - 手动输入框 + 「登录」（11 位手机号校验）；
 /// - 错误 SnackBar：BANNED / 网络失败 / 服务端错误文案；
 /// - 服务端未配置（本地模式）：提示「服务端未配置」，禁用登录按钮；
@@ -28,7 +30,8 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _phoneController = TextEditingController();
 
-  /// 快速登录读不到号码时展开手动输入。
+  /// 快速登录读不到号码时展开手动输入（平台不支持读本机号码时——iOS——
+  /// 由 build 里的 `!phoneSupported` 直接进手动模式，不依赖这个标志）。
   bool _manualMode = false;
   bool _loading = false;
 
@@ -119,6 +122,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final serverConfigured = ref.watch(serverConfiguredProvider);
+    // 平台能力：仅 Android 能读本机号码（iOS 无系统 API）——不支持时不给
+    // 「本机号码快速登录」按钮，直接展示手动输入框。
+    final phoneSupported =
+        ref.watch(nativePhoneReaderProvider).supportsLine1Number;
+    final manualMode = _manualMode || !phoneSupported;
 
     return Scaffold(
       appBar: AppBar(title: const Text('登录')),
@@ -144,11 +152,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ?.copyWith(color: AppColors.muted),
           ),
           const SizedBox(height: AppSpacing.xl),
-          AppButton(
-            text: _loading ? '登录中…' : '本机号码快速登录',
-            onClick: _quickLogin,
-            enabled: serverConfigured && !_loading,
-          ),
+          if (phoneSupported)
+            AppButton(
+              text: _loading ? '登录中…' : '本机号码快速登录',
+              onClick: _quickLogin,
+              enabled: serverConfigured && !_loading,
+            ),
           if (!serverConfigured) ...[
             const SizedBox(height: AppSpacing.md),
             Text(
@@ -158,7 +167,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ?.copyWith(color: AppColors.muted),
             ),
           ],
-          if (_manualMode) ...[
+          if (manualMode) ...[
             const SizedBox(height: AppSpacing.lg),
             TextField(
               controller: _phoneController,

@@ -88,11 +88,18 @@ void main() {
   });
 
   group('TtsSpeedMapper', () {
-    const mapper = SystemTtsSpeedMapper();
-
-    test('1x → 1.0，0.75x → 0.75（显示语速直接透传）', () {
+    test('Android：显示语速直接透传（setSpeechRate 以 1.0 为正常语速）', () {
+      const mapper = SystemTtsSpeedMapper(isIos: false);
       expect(mapper.actualRate(1.0), 1.0);
-      expect(mapper.actualRate(0.75), 0.75);
+      expect(mapper.actualRate(0.8), 0.8);
+      expect(mapper.actualRate(1.2), 1.2);
+    });
+
+    test('iOS：按 AVSpeechUtterance 基准缩放（rate 0.5 = 正常语速）', () {
+      const mapper = SystemTtsSpeedMapper(isIos: true);
+      expect(mapper.actualRate(1.0), 0.5);
+      expect(mapper.actualRate(0.8), closeTo(0.4, 1e-9));
+      expect(mapper.actualRate(1.2), closeTo(0.6, 1e-9));
     });
   });
 }

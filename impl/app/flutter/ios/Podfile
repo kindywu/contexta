@@ -1,8 +1,12 @@
-# Uncomment this line to define a global platform for your project
-# platform :ios, '13.0'
+# iOS 16.0：kittentts（0.1.0）与 flutter_onnxruntime 的 iOS podspec 都声明
+# `s.platform = :ios, '16.0'`，低于此版本 CocoaPods 直接拒绝解析。
+# Xcode 工程侧同值（Runner.xcodeproj 的 IPHONEOS_DEPLOYMENT_TARGET）。
+platform :ios, '16.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+require 'fileutils'
 
 project 'Runner', {
   'Debug' => :debug,
@@ -27,10 +31,54 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 
 flutter_ios_podfile_setup
 
+# ── kittentts 0.1.0 的 iOS podspec 名兼容补丁 ────────────────────────────
+#
+# 上游发布包（pub 名 `kittentts`）把包名从 `kittentts_flutter` 改成了
+# `kittentts`，但 iOS podspec 仍是旧名 `kittentts_flutter.podspec`，且
+# `s.name = 'kittentts_flutter'`。而 Flutter 的 podhelper 按 pub 包名生成
+# `pod 'kittentts', path: '.symlinks/plugins/kittentts/ios'`，CocoaPods 只查
+# `<pod 名>.podspec` 并校验 `s.name` 一致，于是：
+#   [!] No podspec found for `kittentts` in `.symlinks/plugins/kittentts/ios`
+#
+# 这里把 podhelper 建的插件软链换成「真目录 + 逐项软链回 pub 缓存」，并补一份
+# 只改 `s.name`、其余字段与上游完全一致的 podspec（不动 pub 缓存，不新增仓库
+# 源文件）。上游把 podspec 改名后，本段可直接删除。
+def patch_kittentts_podspec(ios_application_path)
+  link = File.join(ios_application_path, '.symlinks', 'plugins', 'kittentts')
+  return unless File.symlink?(link)
+
+  upstream = File.readlink(link)
+  upstream_ios = File.join(upstream, 'ios')
+  upstream_spec = File.join(upstream_ios, 'kittentts_flutter.podspec')
+  return unless File.exist?(upstream_spec)
+
+  File.unlink(link)
+  Dir.mkdir(link)
+  Dir.children(upstream).each do |entry|
+    next if entry == 'ios'
+    File.symlink(File.join(upstream, entry), File.join(link, entry))
+  end
+
+  patched_ios = File.join(link, 'ios')
+  FileUtils.mkdir_p(patched_ios)
+  # Classes 必须真拷：podspec 的 `Classes/**/*` 不跟随目录软链，软链会让 pod
+  # 退化成没有源码的 aggregate target，链接期报 `Undefined symbol:
+  # _phonemizer_create`（`-Wl,-u,_phonemizer_create` 要求该符号必须存在）。
+  FileUtils.cp_r(File.join(upstream_ios, 'Classes'), patched_ios)
+
+  spec = File.read(upstream_spec)
+  patched = spec.sub(/s\.name\s*=\s*'kittentts_flutter'/, "s.name = 'kittentts'")
+  raise 'kittentts podspec 补丁未命中 s.name（上游可能已改名，请删除本补丁）' \
+    if patched == spec
+  File.write(File.join(patched_ios, 'kittentts.podspec'), patched)
+end
+
 target 'Runner' do
   use_frameworks!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  patch_kittentts_podspec File.dirname(File.realpath(__FILE__))
+
   target 'RunnerTests' do
     inherit! :search_paths
   end

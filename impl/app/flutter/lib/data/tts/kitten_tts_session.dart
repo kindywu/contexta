@@ -134,10 +134,17 @@ class KittenTtsPluginSession implements KittenTtsSession {
 
   /// 工厂实现：用内置 phonemizer 数据创建 KittenTTS。
   ///
-  /// CEPhonemizer 显式传 rulesPath/listPath（与 onnx 同目录、由
-  /// installModelAssets 一并解压）——不传时插件会从 GitHub raw 下载词典
-  /// 且 http 无超时，国内网络下 init 挂起。词典缺失时 allowRuleBasedFallback
-  /// 兜底到纯规则音素器（音质略差但可用）。
+  /// 三处都显式指向 installModelAssets 解压好的目录：
+  /// - `modelFiles`：onnx / voices 直用本地文件（不下载）；
+  /// - `phonemizer.rulesPath/listPath`：词典直用本地文件（不传时插件会从
+  ///   GitHub raw 下载且 http 无超时，国内网络下 init 挂起）；
+  /// - `storageDirectory`：**插件默认的 `<appSupport>/KittenTTS` 在 iOS 上
+  ///   建不出来**（`PathNotFoundException: Creation failed … errno = 2`，
+  ///   模拟器实测），而插件把该错误吞掉后静默降级为规则音素器——听起来
+  ///   就是「发音奇怪」。改用我们自己管理的模型目录，创建必然成功。
+  ///
+  /// `allowRuleBasedFallback: false`：词典加载失败时让 KittenTTS 整体不可用
+  /// （上层回退系统 TTS，听感正常），而不是「能出声但发音是错的」。
   static Future<KittenTtsSession> create({
     required String onnxPath,
     required String voicesPath,
@@ -147,6 +154,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
       config: kit.KittenTTSConfig(
         model: kit.model.micro,
         defaultVoice: kit.voice.bella,
+        storageDirectory: modelsDir,
         modelFiles: kit.KittenTTSModelFiles(
           onnxPath: onnxPath,
           voicesPath: voicesPath,
@@ -154,7 +162,7 @@ class KittenTtsPluginSession implements KittenTtsSession {
         phonemizer: kit.CEPhonemizer(
           rulesPath: '$modelsDir/en_rules',
           listPath: '$modelsDir/en_list',
-          allowRuleBasedFallback: true,
+          allowRuleBasedFallback: false,
         ),
         analytics: false,
       ),
