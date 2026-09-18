@@ -1,6 +1,6 @@
 import 'package:contexta/core/theme/app_type.dart';
-import 'package:contexta/ui/reading/pagination/article_paginator.dart';
-import 'package:contexta/ui/reading/pagination/reading_block.dart';
+import 'package:contexta/pad/reading/article_paginator.dart';
+import 'package:contexta/pad/reading/reading_block.dart';
 import 'package:contexta/ui/reading/translation_visibility.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';

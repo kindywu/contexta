@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:contexta/core/theme/app_type.dart';
 import 'package:contexta/domain/model/article.dart';
-import 'package:contexta/ui/reading/pagination/article_paginator.dart';
-import 'package:contexta/ui/reading/pagination/reading_block.dart';
-import 'package:contexta/ui/reading/pagination/spread_reader.dart';
+import 'package:contexta/pad/reading/article_paginator.dart';
+import 'package:contexta/pad/reading/reading_block.dart';
+import 'package:contexta/pad/pad_layout.dart';
+import 'package:contexta/pad/reading/pad_reading_chrome.dart';
+import 'package:contexta/pad/reading/pad_spread_reader.dart';
 import 'package:contexta/ui/reading/reading_widgets.dart';
 import 'package:contexta/ui/reading/translation_visibility.dart';
 import 'package:flutter/material.dart';
@@ -47,12 +49,14 @@ void main() {
   var spreadIndex = 0;
   var userTurns = 0;
   var tappedWords = <String>[];
+  var chromeToggles = 0;
 
   setUp(() {
     controller = PageController();
     spreadIndex = 0;
     userTurns = 0;
     tappedWords = [];
+    chromeToggles = 0;
     keys.clear();
     textKeys.clear();
   });
@@ -65,28 +69,49 @@ void main() {
     List<ArticleParagraph> paragraphs, {
     TranslationMode mode = TranslationMode.full,
   }) async {
+    // 与 PadReadingScreen 同款组合：书页占满上方，底部让出一条页码胶囊带。
+    // 页码不在 PadSpreadReader 里（沉浸式重设计把它提到了外层覆盖层），
+    // 所以测试也要按生产组合来搭，否则量到的几何与真机不一致。
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: SpreadReader(
-            paginated: paginated,
-            pageController: controller,
-            title: 'A Title',
-            paragraphs: paragraphs,
-            sentencesByParagraph: const [[], [], [], []],
-            translationMode: mode,
-            revealedParagraphs: const {},
-            vocabularyWords: const {},
-            speakingParagraphIndex: null,
-            speakingSentenceIndex: null,
-            paragraphKey: paragraphKey,
-            paragraphTextKey: paragraphTextKey,
-            onWordClick: tappedWords.add,
-            onTranslationClick: (_) {},
-            onPlayParagraph: (_) {},
-            onMarkAsRead: () {},
-            onSpreadChanged: (i) => spreadIndex = i,
-            onUserTurn: () => userTurns++,
+          body: Column(
+            children: [
+              Expanded(
+                child: PadSpreadReader(
+                  paginated: paginated,
+                  pageController: controller,
+                  title: 'A Title',
+                  paragraphs: paragraphs,
+                  sentencesByParagraph: const [[], [], [], []],
+                  translationMode: mode,
+                  revealedParagraphs: const {},
+                  vocabularyWords: const {},
+                  speakingParagraphIndex: null,
+                  speakingSentenceIndex: null,
+                  paragraphKey: paragraphKey,
+                  paragraphTextKey: paragraphTextKey,
+                  onWordClick: tappedWords.add,
+                  onTranslationClick: (_) {},
+                  onPlayParagraph: (_) {},
+                  onMarkAsRead: () {},
+                  onSpreadChanged: (i) => spreadIndex = i,
+                  onUserTurn: () => userTurns++,
+                ),
+              ),
+              SizedBox(
+                height: PadLayout.pagePillRowHeight,
+                child: Center(
+                  child: PadPagePill(
+                    pageController: controller,
+                    totalPages: paginated.pages.length,
+                    isSpeaking: false,
+                    onToggleChrome: () => chromeToggles++,
+                    onTogglePlayback: () {},
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -118,7 +143,11 @@ void main() {
     addTearDown(tester.view.reset);
 
     await pumpReader(tester, fourPages());
-    expect(tester.getSize(find.byType(SpreadReader)), const Size(1600, 813));
+    expect(
+      tester.getSize(find.byType(PadSpreadReader)),
+      const Size(1600, 813 - PadLayout.pagePillRowHeight),
+      reason: '底部让出的胶囊带不计入书页',
+    );
 
     await tester.tapAt(const Offset(1550, 400)); // 右侧页边（x ∈ [1350, 1600)）
     await tester.pumpAndSettle();
@@ -225,13 +254,15 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    // 阶段 1（量尺）：先渲染一次，量出页码行顶边。页内容盒高度 =
-    // 页码行顶边 − 页底留白 − 页顶留白——它是分页器与渲染唯一共享的几何量，
-    // 必须实测（硬编码会随字体度量/内边距漂移而悄悄失效）。
-    await pumpReader(tester, fourPages());
-    final indicatorTop = tester.getTopLeft(find.text('2 / 4')).dy;
-    expect(indicatorTop, greaterThan(kPageTopPadding + kPageBottomPadding));
-    final indicatorHeight = 813 - indicatorTop;
+    // 分页器与渲染唯一共享的几何量是"页码胶囊带高度"——它是显式布局常量
+    // （PadLayout.pagePillRowHeight），书页高度 = 视口 − 它。这里直接引用该
+    // 常量；若哪天书页改成覆盖在胶囊带上，这个等式就会失效，测试会先红。
+    const indicatorHeight = PadLayout.pagePillRowHeight;
+    expect(
+      kPageTopPadding + kPageBottomPadding + indicatorHeight,
+      lessThan(813),
+      reason: '胶囊带加页内留白不能吃掉整屏',
+    );
 
     // 视口 1600 → 跨页 1100 → 单页 (1100 − kSpreadGutter) / 2 = 530
     const pageWidth = 530.0;

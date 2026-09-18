@@ -2,50 +2,46 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../../../core/components/app_button.dart';
-import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_dimens.dart';
-import '../../../core/theme/app_type.dart';
-import '../../../domain/model/article.dart';
-import '../../../domain/tts/tts_engine.dart' show kTitleParagraphIndex;
-import '../reading_controller.dart' show ArticleSentence;
-import '../reading_widgets.dart';
-import '../translation_visibility.dart';
+import '../../core/components/app_button.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_dimens.dart';
+import '../../domain/model/article.dart';
+import '../../domain/tts/tts_engine.dart' show kTitleParagraphIndex;
+import '../../ui/reading/reading_controller.dart' show ArticleSentence;
+import '../../ui/reading/reading_widgets.dart';
+import '../../ui/reading/translation_visibility.dart';
+import '../pad_layout.dart';
 import 'article_paginator.dart';
 import 'reading_block.dart';
 
-/// 中缝宽（含中心 1px 竖线）。
-const double kSpreadGutter = 40;
+/// 书页中缝宽（含中心 1px 竖线）。
+const double kSpreadGutter = 56;
 
-/// 书页内容区最大宽（超宽屏居中留白，保证单页正文约 530dp ≈ 59 字符/行）。
-const double kSpreadMaxWidth = 1100;
-
-/// 页内上下留白（对照手机 ListView 的首尾 SizedBox）。
-const double kPageTopPadding = AppSpacing.sm;
+/// 页内上下留白（对照手机 ListView 的首尾）。
+const double kPageTopPadding = AppSpacing.md;
 const double kPageBottomPadding = AppSpacing.xs;
 
-/// 底部页码行的高度（定值，见 [_PageIndicator]）。
-///
-/// 页码行在 PageView **下方**，页内容盒高度 = 可用高 − 本值 − 页内上下留白；
-/// 分页器必须按同一个式子算页高，否则会往页里塞过多内容（溢出页底）。
-const double kPageIndicatorHeight = 28;
-
 /// 页边点击区最小宽度：窄于此则不启用页边点击（退化为仅横滑）。
-const double kEdgeTapMinWidth = 24;
+const double kEdgeTapMinWidth = 44;
 
-/// 书页模式阅读器：一次显示相邻两页，整屏翻页。
+/// 书页模式阅读器（**沉浸式**）：一次显示相邻两页，整屏翻页。
 ///
-/// - 翻页：PageView 原生横滑；页边空白区点击（正文内的点按留给查词）
+/// 与手机阅读页（单列无限滚动）是两棵独立的界面树，互不影响。
+///
+/// 沉浸的做法：**本组件不画任何栏**——顶栏 / 底栏 / 页码胶囊全部由外层
+/// [PadReadingScreen] 以覆盖层叠在书页之上，书页本身占满整屏。竖向空间因此
+/// 全部留给正文（改造前常驻的顶栏 + 底部播放条吃掉约 110dp）。
+///
+/// - 翻页：PageView 原生横滑；页边留白区点击（正文内的点按留给查词）
 /// - 帧内不测量：分页由 [ArticlePaginator] 预先算好，本组件只负责渲染
-/// - 滚动不重建本组件：页码由 [_PageIndicator] 自己监听 [pageController]。
-///   书页里的 `ReadingParagraph` 每次重建都会给每个单词新建一个
-///   `TapGestureRecognizer`（只在 dispose 释放），整屏重建会在一次滑动里
-///   堆积成千上万个 recognizer，故重建范围必须收窄到那一行 Text。
+/// - 滚动不重建书页：书页里的 `ReadingParagraph` 每次重建都会给每个单词新建
+///   一个 `TapGestureRecognizer`（只在 dispose 释放），整屏重建会在一次滑动
+///   里堆积成千上万个 recognizer，故重建范围必须收窄。
 ///
 /// 「是否已读」由块列表本身表达（已读的文章不产生 [MarkAsReadBlock]），
 /// 本组件不需要额外的 isReadCompleted 开关。
-class SpreadReader extends StatefulWidget {
-  const SpreadReader({
+class PadSpreadReader extends StatefulWidget {
+  const PadSpreadReader({
     super.key,
     required this.paginated,
     required this.pageController,
@@ -91,64 +87,53 @@ class SpreadReader extends StatefulWidget {
   final VoidCallback onUserTurn;
 
   @override
-  State<SpreadReader> createState() => _SpreadReaderState();
+  State<PadSpreadReader> createState() => _PadSpreadReaderState();
 }
 
-class _SpreadReaderState extends State<SpreadReader> {
+class _PadSpreadReaderState extends State<PadSpreadReader> {
   @override
   Widget build(BuildContext context) {
-    final pageCount = widget.paginated.pages.length;
     final spreadCount = widget.paginated.spreadCount;
-    return Column(
-      children: [
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final spreadWidth =
-                  (constraints.maxWidth - AppPage.horizontalPadding * 2).clamp(
-                    0.0,
-                    kSpreadMaxWidth,
-                  );
-              return NotificationListener<ScrollStartNotification>(
-                onNotification: (notification) {
-                  // dragDetails != null → 手指拖动（animateToPage 的
-                  // 程序化翻页 dragDetails 为 null，不算用户翻页）
-                  if (notification.dragDetails != null) widget.onUserTurn();
-                  return false;
-                },
-                child: PageView.builder(
-                  controller: widget.pageController,
-                  itemCount: spreadCount,
-                  onPageChanged: widget.onSpreadChanged,
-                  itemBuilder: (context, index) => _EdgeTapRow(
-                    availableWidth: constraints.maxWidth,
-                    spreadWidth: spreadWidth,
-                    onPrevious: index == 0 ? null : () => _go(index - 1),
-                    onNext: index >= spreadCount - 1
-                        ? null
-                        : () => _go(index + 1),
-                    child: SizedBox(
-                      width: spreadWidth,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(child: _buildPage(index * 2)),
-                          const SizedBox(width: kSpreadGutter),
-                          Expanded(child: _buildPage(index * 2 + 1)),
-                        ],
-                      ),
-                    ),
-                  ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 书页内容区 = 可用宽 − 左右留白，上限 [PadLayout.spreadMaxWidth]
+        // （保证单页正文不超过可读行宽）。
+        final spreadWidth =
+            (constraints.maxWidth - PadLayout.pagePadding * 2).clamp(
+              0.0,
+              PadLayout.spreadMaxWidth,
+            );
+        return NotificationListener<ScrollStartNotification>(
+          onNotification: (notification) {
+            // dragDetails != null → 手指拖动（animateToPage 的程序化翻页
+            // dragDetails 为 null，不算用户翻页）
+            if (notification.dragDetails != null) widget.onUserTurn();
+            return false;
+          },
+          child: PageView.builder(
+            controller: widget.pageController,
+            itemCount: spreadCount,
+            onPageChanged: widget.onSpreadChanged,
+            itemBuilder: (context, index) => _EdgeTapRow(
+              availableWidth: constraints.maxWidth,
+              spreadWidth: spreadWidth,
+              onPrevious: index == 0 ? null : () => _go(index - 1),
+              onNext: index >= spreadCount - 1 ? null : () => _go(index + 1),
+              child: SizedBox(
+                width: spreadWidth,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: _buildPage(index * 2)),
+                    const SizedBox(width: kSpreadGutter),
+                    Expanded(child: _buildPage(index * 2 + 1)),
+                  ],
                 ),
-              );
-            },
+              ),
+            ),
           ),
-        ),
-        _PageIndicator(
-          pageController: widget.pageController,
-          totalPages: pageCount,
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -172,9 +157,7 @@ class _SpreadReaderState extends State<SpreadReader> {
     final page = widget.paginated.pages[pageIndex];
     final column = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (final block in page.blocks) _buildBlock(block),
-      ],
+      children: [for (final block in page.blocks) _buildBlock(block)],
     );
     return Padding(
       padding: const EdgeInsets.only(
@@ -248,6 +231,8 @@ class _SpreadReaderState extends State<SpreadReader> {
 ///
 /// 点击区是正文列的**兄弟**（不是覆盖层）：既不会挡住正文里的查词点按，
 /// 只挂 onTap 也不会吞掉横滑——横拖在手势竞技场里由 PageView 的拖动胜出。
+///
+/// 箭头用最浅的 hairline 色：既是"这里可以点"的提示，又几乎不干扰阅读。
 class _EdgeTapRow extends StatelessWidget {
   const _EdgeTapRow({
     required this.availableWidth,
@@ -306,41 +291,13 @@ class _EdgeTapZone extends StatelessWidget {
   }
 }
 
-/// 底部页码：右页页号 / 总页数（左页为奇数页）。
+/// 跨页序号（可含小数，翻页动画中）→ 右页页号（左页恒为奇数页）。
 ///
-/// 自己监听 [pageController]（横滑中每帧、jumpToPage 都通知）：重建范围只有
-/// 这一行 Text，书页内容不受影响（见 [SpreadReader] 的说明）。
-class _PageIndicator extends StatelessWidget {
-  const _PageIndicator({required this.pageController, required this.totalPages});
-
-  final PageController pageController;
-  final int totalPages;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: pageController,
-      // 定高：分页按 kPageIndicatorHeight 扣页高，行高不随字体缩放漂移
-      builder: (context, _) => SizedBox(
-        height: kPageIndicatorHeight,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-          child: Text(
-            '${_rightPageNumber()} / $totalPages',
-            style: AppType.textTheme.labelMedium?.copyWith(
-              color: AppColors.mutedSoft,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 右页页号（左页为奇数页）。首帧控制器尚无 client，回落到首页。
-  int _rightPageNumber() {
-    final spread = pageController.hasClients
-        ? (pageController.page?.round() ?? 0)
-        : 0;
-    return math.min((spread + 1) * 2, totalPages);
-  }
-}
+/// **四舍五入而非向下取整**：翻页动画中小数代表"正落在哪两跨之间"，读者关心
+/// 的是"松手会停在哪里"，所以过半即显示目标页——页码因此能在拖动过程中实时
+/// 跟随手指，而不是等翻页落定才跳。
+///
+/// 提成纯函数是因为它同时被页码胶囊与其测试消费；`pageController` 在首帧
+/// 尚无 client，换算必须能在"没有控制器"时也给出确定值（传 0）。
+int rightPageNumberOf(double spread, int totalPages) =>
+    math.min((spread.round() + 1) * 2, totalPages);

@@ -3,9 +3,9 @@
 // WidgetSpan 已从 painting 迁到 widgets，故不再 import painting）。
 import 'package:flutter/widgets.dart';
 
-import '../../../core/theme/app_dimens.dart';
-import '../translation_visibility.dart';
-import '../word_spans.dart';
+import '../../core/theme/app_dimens.dart';
+import '../../ui/reading/translation_visibility.dart';
+import '../../ui/reading/word_spans.dart';
 import 'reading_block.dart';
 
 /// 段落与译文之间的固定间距（对照 _ReadingParagraph 的 SizedBox(height: 4)）。
