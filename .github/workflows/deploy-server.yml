@@ -4,8 +4,18 @@ on:
   push:
     branches: [main]
     paths:
+      # 只有「后台运行内容」变更才重建镜像并重新部署：src/ 与 admin-ui/ 进镜像，
+      # docker-compose.yml 由本流水线 scp 上服务器，workflow 自身影响构建行为。
       - "impl/server/**"
       - ".github/workflows/deploy-server.yml"
+      # 下列路径不参与镜像构建、也不由流水线下发，改了不部署（注意顺序：负向模式须在正向之后）：
+      # - 2026-09-18 实况：App 的 TLS 合并（ce6e268）只顺带改了 docs/config-and-deploy.md，
+      #   却触发整镜像重建 + 容器重启（打断每日生成循环），无任何运行变化。
+      - "!impl/server/docs/**"
+      - "!impl/server/tests/**"
+      - "!impl/server/tool/**"
+      - "!impl/server/README.md"
+      - "!impl/server/.env.example"
   workflow_dispatch:
 
 concurrency:

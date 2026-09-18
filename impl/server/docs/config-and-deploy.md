@@ -107,12 +107,17 @@ cp .local/tls/server.crt impl/app/flutter/assets/certs/server.crt
 
 ### 3.1 标准流程：GitHub Actions + Docker Compose
 
-**触发**：`push` 到 `main`（仅 `impl/server/**` 或 workflow 文件变更）→ 自动部署；`workflow_dispatch` 手动触发任一分支（预发布验证用）。
+**触发**：`push` 到 `main` 且改动命中「后台运行内容」→ 自动部署；`workflow_dispatch` 手动触发任一分支（预发布验证用）。
+
+- 命中范围（`paths`）：`impl/server/**` 或 workflow 文件本身。
+- **排除**（负向模式，改了不部署）：`impl/server/docs/**`、`impl/server/tests/**`、`impl/server/tool/**`、`README.md`、`.env.example`——这些既不进镜像（Dockerfile 只 COPY `src/` + `admin-ui/dist` + package 文件）也不由流水线下发。
+- 判定按「本次 push 的变更文件集」逐文件匹配：只要有**任一**命中正向且未被排除的文件（例如同一次合并里 `src/` 有改动），就照常部署。
+- 动机（2026-09-18）：App 的 TLS 合并（ce6e268）只顺带改了 `docs/config-and-deploy.md`，却触发整镜像重建 + 容器重启（打断每日生成循环），运行内容零变化。
 
 **流水线**（`.github/workflows/deploy-server.yml`）：
 
 ```
-push main（impl/server/** 变更）/ 手动 dispatch
+push main（命中后台运行内容）/ 手动 dispatch
   → [build] buildx 构建 impl/server/Dockerfile（linux/amd64）→ 推 ACR（阿里云个人版）
       crpi-ui1m3okieeg995dg.cn-shenzhen.personal.cr.aliyuncs.com/contexta/contexta:latest-amd64（部署用）+ :1.0-amd64（版本号，见 README 打包约定）
   → [deploy] scp docker-compose.yml → /opt/contexta/server/
