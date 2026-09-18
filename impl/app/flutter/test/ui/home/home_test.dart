@@ -41,12 +41,34 @@ class _FakeArticleRepo implements ArticleRepository {
   /// 每次分页请求的 (beforeDate, limit)——断言「首屏只请求一页」用。
   final pageCalls = <(String?, int)>[];
 
+  /// 卡住下一次分页请求，直到 [releasePage]（复现并发时序用）。
+  bool _holdNext = false;
+  Completer<void>? _activeHold;
+
+  /// 让**下一次**分页请求挂起不返回。
+  void holdNextPage() {
+    _holdNext = true;
+    _activeHold = Completer<void>();
+  }
+
+  /// 放行被 [holdNextPage] 卡住的那次请求（没有挂起的请求时是 no-op）。
+  void releasePage() {
+    _holdNext = false;
+    _activeHold?.complete();
+    _activeHold = null;
+  }
+
   @override
   Future<List<DailyLearningInfo>> getDailyLearningInfosPage({
     String? beforeDate,
     required int limit,
   }) async {
     pageCalls.add((beforeDate, limit));
+    if (_holdNext) {
+      _holdNext = false;
+      // 只消费"卡住一次"的标记，_activeHold 仍留给 releasePage 放行
+      await _activeHold!.future;
+    }
     final sorted = [...infos]
       ..sort((a, b) => b.learningDate.compareTo(a.learningDate));
     var start = 0;
@@ -512,6 +534,37 @@ void main() {
       final calls = articleRepo.pageCalls.length;
       await controller.loadMore();
       expect(articleRepo.pageCalls.length, calls, reason: '到底后不再请求');
+    });
+
+    test('启动竞态：重载插进首屏追加的读与写之间时，日期不重复（回归）', () async {
+      // 复现 2026-09-18 平板上观察到的重复日期：`load()` 的首屏 `_appendPage`
+      // 还在等数据库时，另一路 `reloadWindow()`（真机上是 settings 订阅 /
+      // 回前台触发）把窗口整体替换掉；等 append 恢复执行时，它按"空窗口"算出的
+      // 游标早已过期，写回变成 `新窗口 + 同一批日期`，日期索引出现成对重复。
+      _seedDays(articleRepo, 5);
+      final container = makeContainer();
+      final controller = container.read(homeControllerProvider.notifier);
+
+      articleRepo.holdNextPage();
+      final loading = controller.load();
+      // 等 load 走到首屏 append 并卡在数据库上
+      await pumpEventQueue();
+      // 并发的第二路：没有闸门时它会插进 append 的读与写之间
+      final reloading = controller.reloadWindow();
+      await pumpEventQueue();
+      articleRepo.releasePage();
+      await Future.wait([loading, reloading]);
+
+      final labels = container
+          .read(homeControllerProvider)
+          .articleGroups
+          .map((g) => g.dateLabel)
+          .toList();
+      expect(
+        labels.toSet().length,
+        labels.length,
+        reason: '同一天不能被加载进窗口两次：$labels',
+      );
     });
 
     test('回前台重载：保留已加载窗口（不截断回第 1 页）', () async {
