@@ -92,6 +92,9 @@ test("extractFacts 连续 3 次空卡 → rejected（不再进入生成）", asy
   });
   expect(out.outcome).toBe("rejected");
   expect(out.reason).toContain("缺少可靠依据");
+  // 拒绝明细：来源 URL（外部网站参考）+ 原文开头片段——管理端「异常槽位」据此核对源为何不适配
+  expect(out.rejectDetail).toContain("https://fakesite.dev/a/");
+  expect(out.rejectDetail).toContain("原文开头");
   expect(fetched).toHaveLength(3);
   expect(fake.generatePrompts).toHaveLength(0);
 });

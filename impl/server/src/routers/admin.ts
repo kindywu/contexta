@@ -187,7 +187,8 @@ export function adminRouter(
   // ---------- 槽位重跑 / 手动补生成 ----------
 
   // 异常槽位列表（manage 摘要"异常槽位"区块数据源）：时间段内非 success 槽位（error/rejected），
-  // 含无文章行的 error 槽（articles 视角不可见）——管理端据此展示失败槽并给重跑入口。
+  // 含无文章行的 error 槽（articles 视角不可见）——管理端据此展示失败槽、具体原因（error_message）
+  // 并给重跑入口。
   app.get("/api/admin/slots", (c) => {
     const today = localDate(cfg.timeZone);
     const startDate = c.req.query("start_date") ?? today;
@@ -198,7 +199,7 @@ export function adminRouter(
     if (startDate > endDate) throw badRequest("start_date must be <= end_date");
     const items = db
       .query(
-        `SELECT id, slot_index, difficulty, status, article_id, thread_id, updated_at
+        `SELECT id, slot_index, difficulty, status, article_id, thread_id, error_message, updated_at
          FROM batch_slots
          WHERE run_date BETWEEN ? AND ? AND status != 'success'
          ORDER BY run_date, slot_index`,

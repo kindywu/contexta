@@ -108,6 +108,36 @@ test("generateDailyArticles: 批次 running 但槽位全终态(收口前崩溃) 
   db.close();
 });
 
+test("generateDailyArticles: rejected 槽位把具体原因写进 error_message（管理端展示列）", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ap-daily-reason-"));
+  const cfg = { ...loadConfig(), dbPath: join(dir, "p.sqlite"), checkpointPath: join(dir, "cp.sqlite"), outputDir: join(dir, "output") };
+  // LOW = pathB（无站点）：选题规划 → 生成 → 校验；3 轮均违规 → 终态 rejected
+  const fake = new FakeLLM([
+    [{ ruleId: "unverified", message: "M1-STATISTIC_UNVERIFIABLE" }],
+    [{ ruleId: "unverified", message: "M1-STATISTIC_UNVERIFIABLE" }],
+    [{ ruleId: "unverified", message: "M1-STATISTIC_UNVERIFIABLE" }],
+  ]);
+  const day = await generateDailyArticles({ runDate: "2026-08-31", plan: { LOW: 1 }, config: cfg, llm: fake });
+  expect(day.summary.rejected).toBe(1);
+
+  const db = new Database(cfg.dbPath);
+  ensureSchema(db);
+  const slot = listSlots(db, "2026-08-31")[0]!;
+  expect(slot.status).toBe("rejected");
+  // 基础话术 + 具体违规明细（判官 ruleId/message）+ 选题引用（pathB 无来源 URL）
+  expect(slot.errorMessage).toContain("合规风险");
+  expect(slot.errorMessage).toContain("校验违规 1 条（第 3/3 轮仍违规，重写已封顶）");
+  expect(slot.errorMessage).toContain("[unverified] M1-STATISTIC_UNVERIFIABLE");
+  expect(slot.errorMessage).toContain("选题「alpha」");
+  db.close();
+
+  // 批次已收口 → 重跑走库重建口径，具体原因同样带出（不再退回「未持久化」占位）
+  const again = await generateDailyArticles({ runDate: "2026-08-31", plan: { LOW: 1 }, config: cfg, llm: fake });
+  const rebuilt = again.results[0]!.result;
+  expect(rebuilt.outcome).toBe("rejected");
+  expect(rebuilt.outcome === "rejected" ? rebuilt.reason : "").toContain("[unverified]");
+}, 120_000);
+
 test("slotThreadId: 首试与场景一递增格式", () => {
   expect(slotThreadId("2026-08-29", 3, 1)).toBe("daily-2026-08-29-3");
   expect(slotThreadId("2026-08-29", 3, 2)).toBe("daily-2026-08-29-3-2");

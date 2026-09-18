@@ -86,6 +86,12 @@ export const ArticleGenState = Annotation.Root({
   // --- 终态 ---
   outcome: Annotation<ArticleOutcome>,
   reason: Annotation<string>,
+  /**
+   * 拒绝原因明细（具体命中/违规内容、原文片段、来源 URL 等；管理端展示用）。
+   * 与 reason 分离：reason 是图路由判据（graph.ts 按常量原文短路比较），
+   * detail 只作展示，由 toResult 拼进对外的 rejection reason（落 batch_slots.error_message）。
+   */
+  rejectDetail: Annotation<string>,
   /** generate 侧业务拒答标记（模型输出 cannot_write / 拒答话术）：本来源/主题不可写，
    *  图据此路由换源（generateA → chooseArticle 回边；B 无源 → 终态）。 */
   genFailure: Annotation<"refused">,

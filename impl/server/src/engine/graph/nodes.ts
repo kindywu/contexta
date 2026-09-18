@@ -48,6 +48,31 @@ type Update = Partial<State>;
 
 const td = new TurndownService({ headingStyle: "atx" });
 
+/** 明细片段：空白折叠 + 截断（写进管理端展示的拒绝原因，避免超长）。 */
+function clip(text: string, max = 120): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+
+/** 拒绝明细组装：过滤空段、以「；」连接、整体截断（落 batch_slots.error_message）。 */
+function rejectDetailOf(parts: (string | undefined)[]): string {
+  return clip(parts.filter((p): p is string => Boolean(p && p.length > 0)).join("；"), 300);
+}
+
+/** 生成侧拒答明细（cannot_write / 拒答话术）：模型判定不可写 + 来源/选题引用。 */
+function refusalDetail(state: State, kind: string): string {
+  return rejectDetailOf([`模型判定不可写（${kind}）`, sourceRef(state)]);
+}
+
+/** 来源引用（pathA 附标题 + 外部 URL；pathB 用选题兜底）——管理端据此点开原文核对。 */
+function sourceRef(state: State): string | undefined {
+  const parts: string[] = [];
+  if (state.sourceTitle) parts.push(`来源《${clip(state.sourceTitle, 60)}》`);
+  if (state.sourceUrl) parts.push(state.sourceUrl);
+  if (parts.length === 0 && state.topic) parts.push(`选题「${clip(state.topic, 40)}」`);
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
 function rngPick<T>(items: readonly T[], rng: () => number): T {
   return items[Math.floor(rng() * items.length)]!;
 }
@@ -132,6 +157,8 @@ export async function fetchLinksNode(state: State, deps: NodeDeps): Promise<Upda
     () => deps.rng() - 0.5,
   );
   const errors: string[] = [];
+  /** 名单过滤出局的候选例（标题 + URL）——拒绝明细用，供管理端点开原文核对 */
+  const filteredExamples: string[] = [];
   for (const entry of shuffled) {
     try {
       const links = await entry.adapter.fetchLinks(entry.url);
@@ -144,6 +171,7 @@ export async function fetchLinksNode(state: State, deps: NodeDeps): Promise<Upda
       const clean = fresh.filter((l) => !mentionsCoreLeader(l.title));
       if (clean.length === 0) {
         errors.push(`${entry.name}: ${fresh.length} 条候选标题全部含受限人名`);
+        filteredExamples.push(`「${clip(fresh[0]!.title, 40)}」${fresh[0]!.url}`);
         continue;
       }
       log(
@@ -159,7 +187,15 @@ export async function fetchLinksNode(state: State, deps: NodeDeps): Promise<Upda
   // 全部站点列表失败：纯名单过滤 → 业务性 rejected（选题不适配）；否则技术性 error
   if (errors.length > 0 && errors.every((e) => e.includes("受限人名"))) {
     log("fetchLinks: 所有候选标题均含受限人名 -> rejected");
-    return { outcome: "rejected", reason: LEADERS_SOURCE_REJECTION_MESSAGE };
+    return {
+      outcome: "rejected",
+      reason: LEADERS_SOURCE_REJECTION_MESSAGE,
+      rejectDetail: rejectDetailOf([
+        `站点：${shuffled.map((e) => `${e.name}（${e.url}）`).join("、")}`,
+        errors.join("；"),
+        filteredExamples.length > 0 ? `例：${filteredExamples.slice(0, 2).join("、")}` : undefined,
+      ]),
+    };
   }
   throw new Error(`所有权威站点列表抓取失败: ${errors.join(" | ")}`);
 }
@@ -186,6 +222,8 @@ export async function chooseArticleNode(state: State, deps: NodeDeps): Promise<U
   }
   const errors: string[] = [];
   let leaderSkipped = 0;
+  /** 名单过滤出局的候选例（标题 + URL）——拒绝明细用，供管理端点开原文核对 */
+  const skippedRefs: string[] = [];
   const candidates = [...(state.sourceLinks ?? [])];
   while (candidates.length > 0) {
     const picked = rngPick(candidates, deps.rng);
@@ -194,6 +232,7 @@ export async function chooseArticleNode(state: State, deps: NodeDeps): Promise<U
     // 源侧名单过滤(第二段):标题现名 → 直接跳过不抓正文
     if (mentionsCoreLeader(picked.title)) {
       leaderSkipped++;
+      skippedRefs.push(`「${clip(picked.title, 40)}」${picked.url}`);
       log(`chooseArticle: 候选标题含受限人名,跳过 ${picked.url}`);
       candidates.length = 0;
       candidates.push(...rest);
@@ -211,6 +250,7 @@ export async function chooseArticleNode(state: State, deps: NodeDeps): Promise<U
       // 源侧名单过滤(第二段):正文命中 → 换下一篇(标题不带人名但正文现名很常见)
       if (mentionsCoreLeader(`${article.title}\n${markdown}`)) {
         leaderSkipped++;
+        skippedRefs.push(`「${clip(article.title, 40)}」${article.url}（正文命中）`);
         log(`chooseArticle: 候选正文含受限人名,跳过 "${article.title}"`);
         candidates.length = 0;
         candidates.push(...rest);
@@ -236,7 +276,15 @@ export async function chooseArticleNode(state: State, deps: NodeDeps): Promise<U
   // 候选耗尽：纯名单过滤(无其他失败) → 业务性 rejected；否则技术性 error
   if (leaderSkipped > 0 && errors.length === 0) {
     log(`chooseArticle: 候选全部含受限人名(${leaderSkipped} 篇) -> rejected`);
-    return { outcome: "rejected", reason: LEADERS_SOURCE_REJECTION_MESSAGE };
+    return {
+      outcome: "rejected",
+      reason: LEADERS_SOURCE_REJECTION_MESSAGE,
+      rejectDetail: rejectDetailOf([
+        `${leaderSkipped} 篇候选（标题或正文）命中受限人名`,
+        skippedRefs.length > 0 ? `例：${skippedRefs.slice(0, 2).join("、")}` : undefined,
+        `站点：${state.sourceSiteName}`,
+      ]),
+    };
   }
   throw new Error(`候选抓取失败(列表耗尽): ${errors.join(" | ")}`);
 }
@@ -271,7 +319,15 @@ export async function extractFactsNode(
       `extractFacts: 事实卡为空（源内容不适配, 第 ${attempt}/${maxPicks} 次）` +
         ` -> ${attempt < maxPicks ? "换篇重试" : "rejected"}`,
     );
-    return { outcome: "rejected", reason: REJECTION_MESSAGE };
+    return {
+      outcome: "rejected",
+      reason: REJECTION_MESSAGE,
+      rejectDetail: rejectDetailOf([
+        "未能抽取到事实卡（源内容不适配）",
+        sourceRef(state),
+        state.sourceMarkdown ? `原文开头：「${clip(state.sourceMarkdown, 100)}」` : undefined,
+      ]),
+    };
   }
   log(
     `extractFacts: who="${fs.who}" what="${fs.what}" when="${fs.when}" where="${fs.where}" numbers=[${fs.keyNumbers.join(", ")}] names=[${fs.keyNames.join(", ")}]`,
@@ -341,7 +397,12 @@ export async function generateNode(
     );
     if (result.type === "cannot_write") {
       log(`generate${params.path}: 模型拒答（cannot_write）-> rejected`);
-      return { outcome: "rejected", reason: REJECTION_MESSAGE, genFailure: "refused" };
+      return {
+        outcome: "rejected",
+        reason: REJECTION_MESSAGE,
+        rejectDetail: refusalDetail(state, "cannot_write"),
+        genFailure: "refused",
+      };
     }
     const draft: BilingualArticle = result; // article 变体与 BilingualArticle 同构（多一个 type 字面量）
     const round = (state.genAttempts ?? 0) + 1;
@@ -354,7 +415,12 @@ export async function generateNode(
     if (classifyGenerateFailure(e) === "refused") {
       // 旧形态兼容：模型未按新 schema 拒答，而是整句输出拒答话术（jsonMode 下解析失败）
       log(`generate${params.path}: 模型拒答（散文话术）-> rejected`);
-      return { outcome: "rejected", reason: REJECTION_MESSAGE, genFailure: "refused" };
+      return {
+        outcome: "rejected",
+        reason: REJECTION_MESSAGE,
+        rejectDetail: refusalDetail(state, "拒答话术"),
+        genFailure: "refused",
+      };
     }
     // 输出不符合 schema（空白弃答/结构不合规/技术错误）→ 终态 error，需手动重试
     log(`generate${params.path}: 结构校验失败 -> error`);
@@ -440,7 +506,20 @@ export async function validateNode(
         .map((v) => `[${v.ruleId}] ${v.message.slice(0, 80)}`)
         .join(" | ")}`,
   );
-  return { outcome: "rejected", reason: REJECTION_MESSAGE, lastViolations: violations };
+  return {
+    outcome: "rejected",
+    reason: REJECTION_MESSAGE,
+    lastViolations: violations,
+    rejectDetail: rejectDetailOf([
+      // 违规定义为「末轮稿」的判官条目：封顶时注明轮次，避免被读成累计违规数
+      retrying
+        ? `校验违规 ${violations.length} 条（第 ${round}/${maxRounds} 轮，带反馈重写）`
+        : `校验违规 ${violations.length} 条（第 ${round}/${maxRounds} 轮仍违规，重写已封顶）`,
+      ...violations.slice(0, 3).map((v) => `[${v.ruleId}] ${clip(v.message, 80)}`),
+      violations.length > 3 ? `等共 ${violations.length} 条` : undefined,
+      sourceRef(state),
+    ]),
+  };
 }
 
 /** 受限人物名单拒绝话术（区别于通用拒绝话术，便于日志/槽位归因）。 */
@@ -452,6 +531,16 @@ export const LEADERS_SOURCE_REJECTION_MESSAGE = "候选来源均涉及受限人�
 /** 文本命中受限人名名单（含标题/正文的子串匹配，确定性、无 LLM）。 */
 export function mentionsCoreLeader(text: string): boolean {
   return memberList.some((name) => text.includes(name));
+}
+
+/** 命中受限人名的可读片段（拒绝明细用）：优先正文段落并注明段号，其次标题。 */
+function leaderHitSnippet(draft: BilingualArticle, name: string): string | undefined {
+  for (const [i, p] of draft.paragraphs.entries()) {
+    const hit = [p.zh, p.en].find((t) => t.includes(name));
+    if (hit) return `第 ${i + 1} 段「${clip(hit, 100)}」`;
+  }
+  const title = [draft.titleZh, draft.titleEn].find((t) => t.includes(name));
+  return title ? `标题「${clip(title, 60)}」` : undefined;
 }
 
 /** 汇总文章全部文本（英文/中文标题 + 每段中英），供受限人名子串匹配。 */
@@ -470,14 +559,26 @@ export function collectArticleText(draft: BilingualArticle): string {
  * 已明确禁止），宁可整篇拒绝。无 draft（前序已 error）时原样通过，交给 validate 收尾。
  */
 export async function coreLeadersNode(state: State, _deps: NodeDeps): Promise<Update> {
-  if (!state.draft) return {}; // 前序（如 generate 结构失败）已写终态，无需再判
-  const text = collectArticleText(state.draft);
+  const draft = state.draft;
+  if (!draft) return {}; // 前序（如 generate 结构失败）已写终态，无需再判
+  const text = collectArticleText(draft);
   const hits = memberList.filter((name) => text.includes(name));
   if (hits.length > 0) {
     log(
       `coreLeadersCheck: 命中 ${hits.length} 个受限人名（${hits.join("、").slice(0, 80)}）-> rejected`,
     );
-    return { outcome: "rejected", reason: LEADERS_REJECTION_MESSAGE };
+    const snippet = hits
+      .map((name) => leaderHitSnippet(draft, name))
+      .find((s): s is string => Boolean(s));
+    return {
+      outcome: "rejected",
+      reason: LEADERS_REJECTION_MESSAGE,
+      rejectDetail: rejectDetailOf([
+        `命中受限人名：${hits.slice(0, 3).join("、")}${hits.length > 3 ? ` 等 ${hits.length} 个` : ""}`,
+        snippet,
+        sourceRef(state),
+      ]),
+    };
   }
   log("coreLeadersCheck: 通过");
   return {};

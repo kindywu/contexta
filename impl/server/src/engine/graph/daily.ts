@@ -255,7 +255,7 @@ async function runDay(
 /**
  * 从库中重建全天结果（已收口 / 补跑后的统一返回口径）：逐槽按 DB 终态生成，
  * 成功槽位从 articles + paragraphs 重建（factSheet 未持久化，重建时省略），
- * 终态的原因/消息未持久化，以占位文本标明（明细以运行日志为准）。
+ * 终态的原因/消息从 batch_slots.error_message 回读（含拒绝明细；旧数据无该值时才用占位文本）。
  */
 function dayResultFromDb(db: Database, runDate: string, batch: BatchRow): DayResult {
   const results: DaySlotResult[] = listSlots(db, runDate).map((s) => {
@@ -264,10 +264,10 @@ function dayResultFromDb(db: Database, runDate: string, batch: BatchRow): DayRes
       return { ...base, result: { outcome: "success", genAttempts: s.attempts, article: articleFromDb(db, s.articleId) } };
     }
     if (s.status === "rejected") {
-      return { ...base, result: { outcome: "rejected", genAttempts: s.attempts, reason: "此前运行已判定拒绝（原因未持久化，详见运行日志）" } };
+      return { ...base, result: { outcome: "rejected", genAttempts: s.attempts, reason: s.errorMessage ?? "此前运行已判定拒绝（原因未持久化，详见运行日志）" } };
     }
     if (s.status === "error") {
-      return { ...base, result: { outcome: "error", genAttempts: s.attempts, message: "此前运行已判定失败（错误信息未持久化，详见运行日志）" } };
+      return { ...base, result: { outcome: "error", genAttempts: s.attempts, message: s.errorMessage ?? "此前运行已判定失败（错误信息未持久化，详见运行日志）" } };
     }
     // pending 兜底：正常流程不会出现（收口前 = running 批次，未收口槽位已在前方补跑）
     return { ...base, result: { outcome: "error", genAttempts: s.attempts, message: `槽位未完成(status=${s.status})` } };

@@ -41,6 +41,8 @@ interface SeedSlot {
   slotIndex: number;
   difficulty: Difficulty;
   status: "success" | "error" | "rejected" | "pending";
+  /** 失败/拒绝原因（可选：落 batch_slots.error_message，模拟引擎写入） */
+  errorMessage?: string;
 }
 
 /** 建批次 + 槽位（createBatchAndSlots）+ 成功槽位插文回填（insertArticleWithParagraphs + writeSlotResult）。 */
@@ -74,7 +76,13 @@ function seedDay(db: Database, slots: SeedSlot[], date = RUN_DATE): void {
       );
       writeSlotResult(db, { slotId: row.id, threadId: row.threadId, status: "success", articleId: id, attempts: 1 });
     } else {
-      writeSlotResult(db, { slotId: row.id, threadId: row.threadId, status: s.status, attempts: 1 });
+      writeSlotResult(db, {
+        slotId: row.id,
+        threadId: row.threadId,
+        status: s.status,
+        attempts: 1,
+        errorMessage: s.errorMessage,
+      });
     }
   }
 }
@@ -1009,13 +1017,13 @@ describe("admin articles generate", () => {
 });
 
 describe("异常槽位（GET /api/admin/slots + 列表 stats.error_slots）", () => {
-  test("error 槽无文章也可列出；rejected 一并列出；error 计数不进文章数", async () => {
+  test("error 槽无文章也可列出；rejected 一并列出并带具体原因；error 计数不进文章数", async () => {
     const { db, app } = await buildApp();
     const tok = await adminToken(app);
     seedDay(db, [
       { slotIndex: 0, difficulty: "LOW", status: "success" },
-      { slotIndex: 1, difficulty: "MEDIUM", status: "error" },
-      { slotIndex: 2, difficulty: "HIGH", status: "rejected" },
+      { slotIndex: 1, difficulty: "MEDIUM", status: "error", errorMessage: "所有权威站点列表抓取失败: chinadaily: 正文过短(3)" },
+      { slotIndex: 2, difficulty: "HIGH", status: "rejected", errorMessage: "该主题存在合规风险或缺少可靠依据，无法生成文章。 校验违规 1 条；[unverified] X；来源《T》https://example.com/a" },
     ]);
 
     const res = await app.request(
@@ -1023,10 +1031,20 @@ describe("异常槽位（GET /api/admin/slots + 列表 stats.error_slots）", ()
       { headers: authHeader(tok) },
     );
     expect(res.status).toBe(200);
-    const items = (await res.json()).data.items as Array<{ slot_index: number; status: string; article_id: number | null }>;
+    const items = (await res.json()).data.items as Array<{
+      slot_index: number;
+      status: string;
+      article_id: number | null;
+      error_message: string | null;
+    }>;
     expect(items.map((i) => i.slot_index)).toEqual([1, 2]);
     const errRow = items.find((i) => i.status === "error")!;
     expect(errRow.article_id).toBeNull();
+    // 具体原因随行返回（管理端「异常槽位」展示列；URL 由前端渲染为可点链接）
+    expect(errRow.error_message).toContain("所有权威站点列表抓取失败");
+    const rejRow = items.find((i) => i.status === "rejected")!;
+    expect(rejRow.error_message).toContain("[unverified] X");
+    expect(rejRow.error_message).toContain("https://example.com/a");
 
     // 文章列表 stats：error 槽位单独计数，不进 total（无文章行）
     const listRes = await app.request(
