@@ -97,7 +97,7 @@ class _FakeSettingsRepo implements SettingsRepository {
   }
 
   @override
-  Future<void> updateTtsVoice(TtsVoice voice) async {
+  Future<void> updateTtsVoice(TtsVoiceSetting voice) async {
     updates.add('voice:${voice.dbValue}');
     _settings = UserSettings(
       isOnboarded: _settings.isOnboarded,
@@ -404,9 +404,10 @@ void main() {
     test('updateTtsVoice 持久化并更新状态', () async {
       controller = await createController();
 
-      await controller.updateTtsVoice(TtsVoice.hugo);
+      await controller.updateTtsVoice(TtsVoiceSetting.fixed(TtsVoice.hugo));
 
-      expect(controller.state.ttsVoice, TtsVoice.hugo);
+      expect(controller.state.ttsVoice,
+          TtsVoiceSetting.fixed(TtsVoice.hugo));
       expect(settingsRepo.updates, contains('voice:HUGO'));
     });
 
@@ -416,14 +417,15 @@ void main() {
         onTtsVoiceChanged: () => changed++,
       );
 
-      // 与当前音色（默认 bella）相同 → 早退，不持久化不回调
-      await controller.updateTtsVoice(TtsVoice.bella);
+      // 与当前设置（默认「随机」）相同 → 早退，不持久化不回调
+      await controller.updateTtsVoice(const TtsVoiceSetting.random());
       expect(changed, 0);
       expect(settingsRepo.updates, isEmpty);
 
-      await controller.updateTtsVoice(TtsVoice.luna);
+      await controller.updateTtsVoice(TtsVoiceSetting.fixed(TtsVoice.luna));
       expect(changed, 1);
-      expect(controller.state.ttsVoice, TtsVoice.luna);
+      expect(controller.state.ttsVoice,
+          TtsVoiceSetting.fixed(TtsVoice.luna));
       expect(settingsRepo.updates, contains('voice:LUNA'));
     });
   });

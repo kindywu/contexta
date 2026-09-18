@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
@@ -250,11 +251,19 @@ final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
   return SettingsRepositoryImpl(UserSettingsDao(db));
 });
 
-/// 当前朗读音色（所有 TTS 消费方共用；无设置行时默认 Bella）。
+/// 当前朗读音色（**非文章**入口共用：参考页例句 / 词汇页单词）。
+///
+/// 设置选固定音色 → 返回该音色；选「随机」→ 随机挑一个（FutureProvider 结果
+/// 会缓存，故同一次会话内稳定，不会每次朗读换嗓子）。文章朗读不走这里——
+/// 它按篇文章随机分配并持久化，见 ReadingController._resolveVoice。
 final currentTtsVoiceProvider = FutureProvider<TtsVoice>((ref) async {
   final settings = await ref.watch(settingsRepositoryProvider).getSettings();
-  return settings?.ttsVoice ?? TtsVoice.bella;
+  final setting = settings?.ttsVoice ?? const TtsVoiceSetting.random();
+  return setting.voice ?? TtsVoice.pickRandom(ref.watch(ttsVoiceRandomProvider));
 });
+
+/// 音色随机源（测试可 override 固定种子断言具体音色）。
+final ttsVoiceRandomProvider = Provider<Random>((ref) => Random());
 
 final statsRepositoryProvider = Provider<StatsRepository>((ref) {
   final db = ref.watch(databaseProvider).requireValue;

@@ -36,8 +36,9 @@ class SettingsRepositoryImpl implements SettingsRepository {
       dailyArticleCount: 3,
       translationDisplayMode: 'FULL',
       ttsSpeed: 1.0,
-      // Task 2 加列：默认音色 BELLA（TtsVoice.dbValue 字面量，Task 3 接入枚举）
-      ttsVoiceId: 'BELLA',
+      // 默认「随机」（TtsVoiceSetting.randomDbValue 字面量）：
+      // 阅读页按文章随机分配音色，用户可在设置页改成固定音色
+      ttsVoiceId: 'RANDOM',
       masteryThresholdN: 1,
       autoPlayAudio: false,
     )).toCompanion(true).copyWith(
@@ -83,11 +84,12 @@ class SettingsRepositoryImpl implements SettingsRepository {
   }
 
   @override
-  Future<void> updateTtsVoice(TtsVoice voice) async {
+  Future<void> updateTtsVoice(TtsVoiceSetting setting) async {
     final existing = await _settingsDao.get();
     if (existing == null) return;
-    await _settingsDao.upsert(
-        existing.toCompanion(true).copyWith(ttsVoiceId: Value(voice.dbValue)));
+    await _settingsDao.upsert(existing
+        .toCompanion(true)
+        .copyWith(ttsVoiceId: Value(setting.dbValue)));
   }
 
   @override
@@ -121,7 +123,7 @@ class SettingsRepositoryImpl implements SettingsRepository {
       dailyArticleCount: 3,
       translationDisplayMode: 'FULL',
       ttsSpeed: 1.0,
-      ttsVoiceId: 'BELLA',
+      ttsVoiceId: 'RANDOM',
       masteryThresholdN: 1,
       autoPlayAudio: false,
     )).toCompanion(true).copyWith(
@@ -151,7 +153,7 @@ extension on UserSettingsRow {
         dailyArticleCount: dailyArticleCount,
         translationDisplayMode: translationDisplayMode,
         ttsSpeed: ttsSpeed,
-        ttsVoice: TtsVoice.fromDbValue(ttsVoiceId),
+        ttsVoice: TtsVoiceSetting.fromDbValue(ttsVoiceId),
         masteryThresholdN: masteryThresholdN,
         autoPlayAudio: autoPlayAudio,
         serverPhone: serverPhone,

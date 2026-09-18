@@ -8,7 +8,7 @@
 
 用户点击朗读后，阅读页控制器（ReadingController）通过 `ttsEngineProvider`（`lib/di/providers.dart`，FutureProvider 懒加载）取得引擎，调用 `speak` / `speakFullArticle` / `speakSentences` 发声（朗读单元 = 句子，见 [reading-sentence-highlight.md](reading-sentence-highlight.md)）。用户无感知的是语音由哪条引擎链发声——KittenTTS 可用则用 KittenTTS（本地合成、音质好、不依赖系统引擎），否则静默回退系统 TTS。
 
-**音色选择**：KittenTTS 内置 8 个英语音色（Bella/Jasper/Luna/Bruno/Rosie/Hugo/Kiki/Leo）。设置页提供音色选择器（含逐音色试听），选择持久化到 `user_settings.tts_voice_id`，此后所有朗读入口（阅读页全文/段落/单词、参考页例句、词汇页单词）按当前音色发声。系统 TTS 回退时音色不生效（系统引擎没有音色概念），但功能不受影响。
+**音色选择**：KittenTTS 内置 8 个英语音色（Bella/Jasper/Luna/Bruno/Rosie/Hugo/Kiki/Leo）。设置页音色选择器的**默认项是「随机」**：文章朗读时，每篇文章在进入时随机分配一个音色（8 个等概率，男女不限）并写入 `article.tts_voice_id`，此后这篇一直用它——同一篇文章反复朗读听感一致，不同文章各有各的声音。用户也可在设置页显式选一个具体音色，此时**全站固定**用该音色、不再随机（阅读页忽略文章已分配的音色）。选择持久化到 `user_settings.tts_voice_id`（`'RANDOM'` 或具体音色名）。非文章入口（参考页例句、词汇页单词）在「随机」模式下也随机取一个（按会话稳定，见下）。系统 TTS 回退时音色不生效（系统引擎没有音色概念），但功能不受影响。
 
 朗读质量的三个坑（均已在代码层处理）：
 
@@ -46,15 +46,42 @@ flowchart TD
 
 语速映射在 `SystemTtsSpeedMapper`（`lib/domain/tts/tts_engine.dart`，`isIos` 可注入以便离线单测）；KittenTTS 的语速语义与显示语速一致（0.5–2.0 倍速），不经过该映射。
 
-### 音色选择（TtsVoice → 引擎 → SDK）
+### 音色选择（TtsVoiceSetting → TtsVoice → 引擎 → SDK）
 
-**枚举（`lib/domain/tts/tts_voice.dart`）**：`TtsVoice` 硬编码 8 个值，与 KittenTTS SDK 内置音色一一对应：
+**两层概念**（随机是设置层的语义，落到发声处必须已解析为具体音色）：
+
+| 层 | 类型 | 取值 | 落库位置 |
+|---|---|---|---|
+| 设置（用户意图） | `TtsVoiceSetting` | `random`（默认） / `fixed(TtsVoice)` | `user_settings.tts_voice_id`（`'RANDOM'` 哨兵 或 音色 dbValue） |
+| 朗读（实际发声） | `TtsVoice` | 8 个具体音色之一 | `article.tts_voice_id`（随机分配结果） |
+
+把「随机」挡在 `TtsVoice` 枚举之外（而非加一个 `TtsVoice.random` 枚举值）是刻意的：`TtsEngine.speak(voice:)` 只接受**具体**音色，随机值漏进 SDK 会被当成未知 voice id——分成两个类型让「发声前必须完成解析」由编译器保证。
+
+**枚举（`lib/domain/model/tts_voice.dart`）**：`TtsVoice` 硬编码 8 个值，与 KittenTTS SDK 内置音色一一对应：
 
 | 枚举值 | dbValue（落库） | label（UI） | 性别 |
 |---|---|---|---|
 | `bella` / `jasper` / `luna` / `bruno` / `rosie` / `hugo` / `kiki` / `leo` | 大写枚举名（`'BELLA'`…） | 中文·英文（如 `'贝拉 · Bella'`） | `isFemale` 逐值标注 |
 
-`fromDbValue` 对未知值抛 `ArgumentError`（新 APK 遇旧值属 bug，快速暴露）；`sdkVoiceId => name`（小写枚举名 = SDK voice id）。
+`fromDbValue` 对未知值抛 `ArgumentError`（新 APK 遇旧值属 bug，快速暴露）；`tryFromDbValue` 宽松（null / 未知 → null，读 `article.tts_voice_id` 用：未知值按「未分配」重新随机，不让阅读页加载失败）；`pickRandom(random)` 等概率取一个；`sdkVoiceId => name`（小写枚举名 = SDK voice id）。`TtsVoiceSetting.dbValue` 为 `'RANDOM'` 或音色 dbValue，`fromDbValue('RANDOM')` → 随机，未知值抛 `ArgumentError`。
+
+**按文章随机分配（阅读页）**：
+
+```mermaid
+flowchart TD
+    A[进入文章 loadArticle] --> B{设置 = fixed 具体音色?}
+    B -->|是| C[用设置音色<br/>不读也不写文章列]
+    B -->|否（随机）| D{article.tts_voice_id 有值?}
+    D -->|有| E[沿用该音色<br/>首次定下后不再变]
+    D -->|无| F[8 音色等概率随机<br/>回写 article.tts_voice_id]
+    F --> G[state.ttsVoice = 该音色]
+    C --> G
+    E --> G
+```
+
+- 分配时机是**进入文章**而非首次发声：二者对用户等价（音色只有发声才可闻），进入时分好则全文/段落/查词发音三处天然共用同一音色，播放路径上也不多一次异步等待。
+- 随机源 `Random` 由 `ReadingController` 构造注入（测试传固定种子断言分配到具体音色）。
+- 文章已分配的音色只被「随机」模式沿用；设置改成固定音色后，阅读页以设置为准（老的分配值留在库里，改回随机时又被沿用）。
 
 **透传链（每调用覆盖）**：`speak`/`speakFullArticle`/`speakSentences`/`pregenerateSentences` 的 `voice` 参数（`TtsVoice?`，null = 引擎默认 bella）沿引擎 → 会话 → SDK 逐层透传，KittenTTS SDK 的 `generate(text, voice: …)` **每次调用显式传 voice**，不依赖 config.defaultVoice——同一会话内切换音色立即生效。
 
@@ -72,8 +99,8 @@ sequenceDiagram
 
 - **SystemTtsEngine 忽略 voice**：系统引擎无音色概念，参数仅接受不消费（契约测试断言兼容）。
 - **缓存键 = 段落 + 句子 + 语速 + 音色**：`tts_cache` 由 `voice_id`（Task 2）与 `sentence_index`（句子级朗读）两列参与缓存键——键 `(article_paragraph_id, sentence_index, speed, voice_id)`、文件名 `p_<段id>_s<句序号>_<speed>_<VOICE>.wav`；同段不同句、同句不同音色各自缓存，互不串音不串句。方法签名统一 `voice: TtsVoice voice = TtsVoice.bella`（非空默认），引擎/会话层的 `null` 语义在缓存调用点归一为 `TtsVoice.bella`。
-- **当前音色 Provider（`lib/di/providers.dart`）**：`currentTtsVoiceProvider = FutureProvider<TtsVoice>`，读 `user_settings.tts_voice_id`（缺省 bella）。设置页 `updateTtsVoice` 成功后 `ref.invalidate(currentTtsVoiceProvider)` 使缓存失效——FutureProvider 结果缓存后不自动重算，不 invalidate 则参考页/词汇页继续读旧音色。参考/词汇页在 speak 时 `ref.read(currentTtsVoiceProvider).valueOrNull ?? TtsVoice.bella`（**read 而非 watch**：闭包内 watch 会注册依赖，voice 变化触发 StateNotifierProvider 重建 → dispose 后 use-after-dispose，实测崩溃）。阅读页不走 provider，按文章加载 settings 时读入 `ReadingUiState.ttsVoice`。
-- **设置页**：`_VoicePickerDialog` 8 行单选（喇叭图标逐音色试听，固定例句 `'Hi, this is <EnglishName> speaking.'`，播放中再点即停；关闭弹窗即停掉试听），选择即持久化 + invalidate provider。
+- **当前音色 Provider（`lib/di/providers.dart`）**：`currentTtsVoiceProvider = FutureProvider<TtsVoice>`——**非文章入口专用**（参考页例句 / 词汇页单词；阅读页不走它，见上「按文章随机分配」）。固定音色 → 返回该音色；「随机」→ `TtsVoice.pickRandom(ref.watch(ttsVoiceRandomProvider))`。随机在 FutureProvider 里只算一次且结果被缓存（非 autoDispose），故同一次会话内稳定，不会每次朗读换嗓子；随机源是独立 provider，测试可 override 固定种子。设置页 `updateTtsVoice` 成功后 `ref.invalidate(currentTtsVoiceProvider)` 使缓存失效——FutureProvider 结果缓存后不自动重算，不 invalidate 则参考页/词汇页继续读旧音色。参考/词汇页在 speak 时 `ref.read(currentTtsVoiceProvider).valueOrNull ?? TtsVoice.bella`（**read 而非 watch**：闭包内 watch 会注册依赖，voice 变化触发 StateNotifierProvider 重建 → dispose 后 use-after-dispose，实测崩溃）。
+- **设置页**：`_VoicePickerDialog` **9 行单选**——首行「随机」（默认，无试听喇叭，等宽占位对齐）+ 8 个音色（喇叭图标逐个试听，固定例句 `'Hi, this is <EnglishName> speaking.'`，播放中再点即停；关闭弹窗即停掉试听），选择即持久化 + invalidate provider。设置行描述随模式切换（随机 = 「每篇文章随机分配音色，首次朗读后固定」，固定 = 「KittenTTS 朗读时生效」）。
 
 ### 资产安装（installModelAssets）
 
@@ -108,7 +135,8 @@ flowchart TD
 
 - 资产文件为二进制（onnx 模型、npz 音色、词典文本），无数据库实体。
 - 朗读音频缓存见 TtsCacheManager（**句子级** WAV，FIFO 50MB，表 `tts_cache`，缓存键含 `sentence_index` 与 `voice_id` 维度——见上文「缓存键 = 段落 + 句子 + 语速 + 音色」）。
-- 音色选择持久化在 `user_settings.tts_voice_id`（`TEXT NOT NULL`，dbValue 大写枚举名，缺省由应用代码填 `'BELLA'`；开发期补列路径用 `DEFAULT 'BELLA'`，见 [database-schema.md](database-schema.md) 打开自愈一节）。
+- 音色设置持久化在 `user_settings.tts_voice_id`（`TEXT NOT NULL`）：`'RANDOM'`（默认，随机）或音色 dbValue（大写枚举名）。开发期补列路径的 DEFAULT 也是 `'RANDOM'`（见 [database-schema.md](database-schema.md) 打开自愈一节）；已有库里的旧值（如 `'BELLA'`）**不迁移**——它是有效的固定音色，用户可在设置页切回「随机」。
+- 每篇文章的音色持久化在 `article.tts_voice_id`（`TEXT NULL`，音色 dbValue；NULL = 尚未分配）。只由本地的随机分配写入（`ArticleDao.setTtsVoice`），服务端内容同步（`updateSyncedArticle` 只改 title/orderIndex/contentCategory）不触碰该列，重新同步不会重置音色。
 
 ## 错误处理与边界
 
@@ -119,6 +147,8 @@ flowchart TD
 | 词典文件缺失（旧 marker / 手动删除） | 重新拷贝补齐（marker+文件双重校验）；`allowRuleBasedFallback: false` 使词典加载失败时 KittenTTS 整体不可用 → 回退系统 TTS（**不再**用规则音素器兜底发音） |
 | iOS 上插件默认存储目录创建失败 | 不会发生——`storageDirectory` 显式指向应用自己解压的模型目录（坑 3） |
 | 音色参数为 null / 未知值 | 引擎/会话层归一到默认 bella（`TtsVoice.bella`），朗读不中断 |
+| `article.tts_voice_id` 存了未知值 | `TtsVoice.tryFromDbValue` 返回 null → 按「未分配」重新随机并回写（不让阅读页加载失败） |
+| 无 user_settings 行 / 无 `tts_voice_id` 值 | 按「随机」处理（`UserSettings.ttsVoice` 缺省即 `TtsVoiceSetting.random()`） |
 | `tts_voice_id` 读到未知 dbValue | `fromDbValue` 抛 `ArgumentError`（上游 provider 层兜底 bella，见 currentTtsVoiceProvider） |
 | 系统 TTS 回退 | voice 被忽略（系统引擎无音色概念），其余功能不受影响 |
 | 首读耗时 | 首次 init 需解压 41MB 模型 + 词典，慢 1-2 秒属正常；marker 校验通过后为零拷贝 |
@@ -129,8 +159,10 @@ flowchart TD
 - `test/data/tts/kitten_tts_engine_test.dart`：init/speak/回调透传/失败路径（fake session）
 - `test/data/tts/tts_engine_factory_test.dart`：Kitten 可用 / 失败回退 / 双失败不可用
 - `test/data/tts/system_tts_engine_test.dart`、`tts_engine_contract_test.dart`：系统引擎与契约（含忽略 voice；iOS 分支：跳过候选链 + 共享音频会话；两平台语速映射 1.0x→1.0 / 1.0x→0.5）
-- `test/domain/tts/tts_voice_test.dart`：枚举 dbValue/label/性别/`fromDbValue` 异常（SDK 交叉验证 8/8）
-- `test/di/current_tts_voice_provider_test.dart`：settings 音色读取 + 缺省 bella
+- `test/domain/model/tts_voice_test.dart`：枚举 dbValue/label/性别/`fromDbValue` 异常（SDK 交叉验证 8/8）+ `pickRandom`（只产出内置音色、男女都抽得到）+ `tryFromDbValue` 宽松解析 + `TtsVoiceSetting` 的 dbValue/label/相等性
+- `test/di/current_tts_voice_provider_test.dart`：固定音色直读、缺省（随机）按注入种子随机
+- `test/ui/reading/reading_controller_test.dart`「朗读音色（按文章随机 / 固定）」：随机分配并落库、已有音色沿用不重写、再次进入不变（换随机源也一样）、固定音色不写库且以设置为准、分配结果随朗读下发给引擎
+- `test/data/local/daos/article_daos_test.dart`：`setTtsVoice` 写库 / 只影响目标文章 / 服务端同步不覆盖
 - `test/ui/settings/settings_controller_test.dart` / `settings_screen_test.dart`：音色选择持久化 + 试听/停播 + provider invalidate
 - 阅读页/参考页/词汇页测试：voice 透传到 engine（fake 断言 lastVoice）
 - 真机验证：2026-08-10 修复后 init 0.7s、词典拷入后音质恢复；2026-08-09 init 挂起修复时验证 7 段全文朗读正常

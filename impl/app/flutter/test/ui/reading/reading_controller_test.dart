@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:contexta/data/remote/llm_api.dart';
 import 'package:contexta/data/remote/server_api_client.dart';
@@ -41,6 +42,14 @@ class _FakeArticleRepo implements ArticleRepository {
   final Future<void> Function(int articleId)? onTryMarkReadCompleted;
   final Future<void> Function(int articleId)? onForceMarkReadCompleted;
 
+  /// 音色回写记录（随机分配测试断言「分配了什么、写没写库」）。
+  final List<(int, TtsVoice)> voiceWrites = [];
+
+  @override
+  Future<void> setArticleTtsVoice(int articleId, TtsVoice voice) async {
+    voiceWrites.add((articleId, voice));
+  }
+
   @override
   Future<Article?> getArticle(int articleId) =>
       onGetArticle?.call(articleId) ?? Future.value(null);
@@ -69,7 +78,7 @@ class _FakeSettingsRepo implements SettingsRepository {
     this.settings = const UserSettings(
       isOnboarded: true,
       translationDisplayMode: 'BLURRED',
-      ttsVoice: TtsVoice.hugo,
+      ttsVoice: TtsVoiceSetting.fixed(TtsVoice.hugo),
     ),
     this.onUpdateTranslationMode,
     this.onUpdateTtsSpeed,
@@ -88,7 +97,7 @@ class _FakeSettingsRepo implements SettingsRepository {
   }
 
   @override
-  Future<void> updateTtsVoice(TtsVoice voice) async {}
+  Future<void> updateTtsVoice(TtsVoiceSetting voice) async {}
 
   @override
   Future<void> updateTranslationMode(String mode) async {
@@ -373,6 +382,7 @@ Article makeArticle({
   String title = 'Test',
   String? readCompletedAt,
   List<ArticleParagraph> paragraphs = const [],
+  TtsVoice? ttsVoice,
 }) =>
     Article(
       id: id,
@@ -384,6 +394,7 @@ Article makeArticle({
       accumulatedReadSeconds: 0,
       readCompletedAt: readCompletedAt,
       paragraphs: paragraphs,
+      ttsVoice: ttsVoice,
     );
 
 /// 段落夹具带**非 0 的 id**：生产库里 `article_paragraph.id` 是全局自增
@@ -414,7 +425,7 @@ void main() {
   late _RecordingTts tts;
   late ReadingController controller;
 
-  ReadingController makeController() => ReadingController(
+  ReadingController makeController({Random? random}) => ReadingController(
         articleRepository: articleRepo,
         settingsRepository: settingsRepo,
         statsRepository: statsRepo,
@@ -422,6 +433,7 @@ void main() {
         llmApi: llmApi,
         vocabularyRepository: vocabRepo,
         ttsEngineFuture: Future.value(tts),
+        random: random,
       );
 
   setUp(() {
@@ -439,6 +451,100 @@ void main() {
 
   tearDown(() {
     controller.dispose();
+  });
+
+  group('朗读音色（按文章随机 / 固定）', () {
+    /// 设置选「随机」（UserSettings 默认值）。
+    _FakeSettingsRepo randomSettings() =>
+        _FakeSettingsRepo(settings: const UserSettings(isOnboarded: true));
+
+    test('随机：首次进入文章随机分配一个音色并落库', () async {
+      settingsRepo = randomSettings();
+      controller = makeController(random: Random(3));
+
+      await controller.loadArticle(1);
+
+      final expected = TtsVoice.pickRandom(Random(3));
+      expect(controller.state.ttsVoice, expected);
+      expect(articleRepo.voiceWrites, [(1, expected)]);
+    });
+
+    test('随机：文章已有音色 → 沿用，不重新随机也不重写', () async {
+      articleRepo = _FakeArticleRepo(
+        onGetArticle: (_) async =>
+            makeArticle(paragraphs: _paragraphs, ttsVoice: TtsVoice.kiki),
+      );
+      settingsRepo = randomSettings();
+      controller = makeController(random: Random(3));
+
+      await controller.loadArticle(1);
+
+      expect(controller.state.ttsVoice, TtsVoice.kiki);
+      expect(articleRepo.voiceWrites, isEmpty);
+    });
+
+    test('随机：再次进入同一篇文章音色不变（换随机源也一样）', () async {
+      settingsRepo = randomSettings();
+      controller = makeController(random: Random(11));
+      await controller.loadArticle(1);
+      final assigned = controller.state.ttsVoice;
+      expect(articleRepo.voiceWrites, [(1, assigned)]);
+
+      // 第二次进入：文章已带上分配结果（落库效果），随机源换成别的
+      articleRepo = _FakeArticleRepo(
+        onGetArticle: (_) async =>
+            makeArticle(paragraphs: _paragraphs, ttsVoice: assigned),
+      );
+      controller = makeController(random: Random(99));
+      await controller.loadArticle(1);
+
+      expect(controller.state.ttsVoice, assigned);
+      expect(articleRepo.voiceWrites, isEmpty);
+    });
+
+    test('固定：用设置音色，不写文章列', () async {
+      settingsRepo = _FakeSettingsRepo(
+        settings: const UserSettings(
+          isOnboarded: true,
+          ttsVoice: TtsVoiceSetting.fixed(TtsVoice.hugo),
+        ),
+      );
+      controller = makeController(random: Random(3));
+
+      await controller.loadArticle(1);
+
+      expect(controller.state.ttsVoice, TtsVoice.hugo);
+      expect(articleRepo.voiceWrites, isEmpty);
+    });
+
+    test('固定：文章已分配过音色也以设置为准（此时不随机）', () async {
+      articleRepo = _FakeArticleRepo(
+        onGetArticle: (_) async =>
+            makeArticle(paragraphs: _paragraphs, ttsVoice: TtsVoice.kiki),
+      );
+      settingsRepo = _FakeSettingsRepo(
+        settings: const UserSettings(
+          isOnboarded: true,
+          ttsVoice: TtsVoiceSetting.fixed(TtsVoice.hugo),
+        ),
+      );
+      controller = makeController(random: Random(3));
+
+      await controller.loadArticle(1);
+
+      expect(controller.state.ttsVoice, TtsVoice.hugo);
+    });
+
+    test('分配的音色随朗读下发给引擎（缓存键含音色，串音即错）', () async {
+      settingsRepo = randomSettings();
+      controller = makeController(random: Random(5));
+      await controller.loadArticle(1);
+      final assigned = controller.state.ttsVoice;
+
+      await controller.startFullArticlePlayback();
+
+      expect(tts.lastVoice, assigned);
+    });
   });
 
   group('loadArticle', () {

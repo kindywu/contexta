@@ -12,7 +12,9 @@ class UserSettings {
   final int dailyArticleCount;
   final String translationDisplayMode; // FULL | BLURRED | HIDDEN
   final double ttsSpeed; // 0.8 | 1.0 | 1.2（UI 显示语速）
-  final TtsVoice ttsVoice; // 朗读音色（默认 Bella）
+
+  /// 朗读音色设置：随机（默认，按文章分配）| 固定音色。
+  final TtsVoiceSetting ttsVoice;
   final int masteryThresholdN;
   final bool autoPlayAudio;
 
@@ -32,7 +34,7 @@ class UserSettings {
     this.dailyArticleCount = 3,
     this.translationDisplayMode = 'FULL',
     this.ttsSpeed = 1.0,
-    this.ttsVoice = TtsVoice.bella,
+    this.ttsVoice = const TtsVoiceSetting.random(),
     this.masteryThresholdN = 1,
     this.autoPlayAudio = false,
     this.serverPhone,

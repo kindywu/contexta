@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:contexta/di/providers.dart';
@@ -26,7 +28,7 @@ class _FakeSettingsRepo implements SettingsRepository {
   @override
   Future<void> updateTtsSpeed(double speed) async {}
   @override
-  Future<void> updateTtsVoice(TtsVoice voice) async {}
+  Future<void> updateTtsVoice(TtsVoiceSetting voice) async {}
   @override
   Future<void> updateMasteryThreshold(int n) async {}
   @override
@@ -45,17 +47,30 @@ void main() {
   test('从 settings 读当前音色', () async {
     final container = ProviderContainer(overrides: [
       settingsRepositoryProvider.overrideWithValue(
-          _FakeSettingsRepo(const UserSettings(ttsVoice: TtsVoice.hugo))),
+          _FakeSettingsRepo(
+              const UserSettings(ttsVoice: TtsVoiceSetting.fixed(TtsVoice.hugo)))),
     ]);
     addTearDown(container.dispose);
     expect(await container.read(currentTtsVoiceProvider.future), TtsVoice.hugo);
   });
 
-  test('无 settings 行时默认 bella', () async {
+  test('无 settings 行（默认随机）时随机挑一个音色', () async {
     final container = ProviderContainer(overrides: [
       settingsRepositoryProvider.overrideWithValue(_FakeSettingsRepo(null)),
+      ttsVoiceRandomProvider.overrideWithValue(Random(7)),
     ]);
     addTearDown(container.dispose);
-    expect(await container.read(currentTtsVoiceProvider.future), TtsVoice.bella);
+    expect(await container.read(currentTtsVoiceProvider.future),
+        TtsVoice.pickRandom(Random(7)));
+  });
+
+  test('设置选固定音色时不随机', () async {
+    final container = ProviderContainer(overrides: [
+      settingsRepositoryProvider.overrideWithValue(_FakeSettingsRepo(
+          const UserSettings(ttsVoice: TtsVoiceSetting.fixed(TtsVoice.leo)))),
+      ttsVoiceRandomProvider.overrideWithValue(Random(7)),
+    ]);
+    addTearDown(container.dispose);
+    expect(await container.read(currentTtsVoiceProvider.future), TtsVoice.leo);
   });
 }

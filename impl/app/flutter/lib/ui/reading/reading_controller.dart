@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -99,7 +100,8 @@ class ReadingUiState {
   /// 显示语速（1x / 0.75x；引擎内部映射实际速率）。
   final double ttsSpeed;
 
-  /// 朗读音色（设置页可选，进入文章时从设置读取）。
+  /// 本篇实际使用的朗读音色（**已解析**：设置选「随机」时为本文随机分配并
+  /// 落库的那一个；选固定音色时即该音色）。所有朗读入口与 TTS 缓存键都用它。
   final TtsVoice ttsVoice;
   final bool isReadCompleted;
 
@@ -264,7 +266,9 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     required this._wordRepository,
     required this._llmApi,
     required Future<TtsEngine> ttsEngineFuture,
-  })  : _ttsEngineFuture = ttsEngineFuture,
+    Random? random,
+  })  : _random = random ?? Random(),
+        _ttsEngineFuture = ttsEngineFuture,
         super(const ReadingUiState()) {
     // TTS 引擎由 FutureProvider 异步初始化（KittenTTS 模型加载）；就绪后
     // 替换引擎并注册完成回调，期间朗读静默跳过（同 Kotlin 自动朗读语义）
@@ -280,6 +284,9 @@ class ReadingController extends StateNotifier<ReadingUiState> {
   final WordRepository _wordRepository;
   final LlmApi _llmApi;
   final Future<TtsEngine> _ttsEngineFuture;
+
+  /// 随机音色的随机源（测试注入固定种子，断言分配到具体音色）。
+  final Random _random;
 
   TtsEngine? _ttsEngine;
 
@@ -367,6 +374,8 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       return;
     }
 
+    final voice = await _resolveVoice(article, settings?.ttsVoice);
+
     final alreadyRead = article.readCompletedAt != null;
     final vocabWords = (await _vocabularyRepository.getActiveWords())
         .map((w) => WordRepository.normalize(w.spellingDisplay))
@@ -378,9 +387,9 @@ class ReadingController extends StateNotifier<ReadingUiState> {
       sentencesByParagraph: _splitSentences(article.paragraphs),
       translationMode: TranslationMode.fromStorage(
           settings?.translationDisplayMode),
-      // 全局语速/音色：进入文章时从设置读取（设置页可改，切换时回写）
+      // 全局语速：进入文章时从设置读取（设置页可改，切换时回写）
       ttsSpeed: settings?.ttsSpeed ?? 1.0,
-      ttsVoice: settings?.ttsVoice ?? TtsVoice.bella,
+      ttsVoice: voice,
       revealedParagraphs: const {},
       isLoading: false,
       isReadCompleted: alreadyRead,
@@ -401,6 +410,26 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     if (!alreadyRead) {
       _startReadTimer();
     }
+  }
+
+  /// 解析本篇实际朗读音色（进入文章时调用一次，之后所有朗读入口都用它）。
+  ///
+  /// - 设置选**固定音色**：直接用该音色（不随机、不落库）；
+  /// - 设置选**随机**：文章已分配过就沿用（**首次定下后不再变**——同一篇文章
+  ///   反复朗读听感一致），未分配则随机挑一个（8 个音色等概率，男女不限）
+  ///   并回写 `article.tts_voice_id`。
+  ///
+  /// 分配时机是**进入文章**而非首次发声：二者对用户等价（音色只有发声才可闻），
+  /// 进入时分好可让全文/段落/查词发音共用同一音色，也省去播放路径上的异步等待。
+  Future<TtsVoice> _resolveVoice(Article article, TtsVoiceSetting? setting) async {
+    final fixed = (setting ?? const TtsVoiceSetting.random()).voice;
+    if (fixed != null) return fixed;
+    final assigned = article.ttsVoice;
+    if (assigned != null) return assigned;
+    final picked = TtsVoice.pickRandom(_random);
+    await _articleRepository.setArticleTtsVoice(article.id, picked);
+    debugPrint('[ReadingCtrl] resolveVoice: article=${article.id} 随机分配 ${picked.dbValue}');
+    return picked;
   }
 
   /// 15 秒一个 tick：累加阅读秒数 + 尝试标记已读；达 120s 后自动已读并停止。

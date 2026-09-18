@@ -66,6 +66,7 @@ class AppDatabase extends _$AppDatabase {
           await selfHealVoiceColumns(this);
           await selfHealServerAuthColumns(this);
           await selfHealArticleSyncColumn(this);
+          await selfHealArticleVoiceColumn(this);
           await selfHealTtsSentenceColumn(this);
         },
       );
@@ -82,7 +83,7 @@ class AppDatabase extends _$AppDatabase {
 Future<void> selfHealVoiceColumns(AppDatabase db) async {
   await _ensureColumn(
     db, 'user_settings', 'tts_voice_id',
-    "tts_voice_id TEXT NOT NULL DEFAULT 'BELLA'",
+    "tts_voice_id TEXT NOT NULL DEFAULT 'RANDOM'",
   );
   await _ensureColumn(
     db, 'tts_cache', 'voice_id',
@@ -117,6 +118,14 @@ Future<void> selfHealArticleSyncColumn(AppDatabase db) async {
     'CREATE UNIQUE INDEX IF NOT EXISTS `index_article_server_article_id` '
     'ON `article` (`server_article_id`)',
   );
+}
+
+/// 开发期 v1 结构变更自愈：article.tts_voice_id（本篇朗读音色）。
+/// nullable 无默认值——NULL 的语义是「尚未分配」，首次朗读时才随机分配并
+/// 回写；已分配的文章即使全局设置改音色也保持不变。列已存在时完全不动
+/// （幂等，重复打开安全）。
+Future<void> selfHealArticleVoiceColumn(AppDatabase db) async {
+  await _ensureColumn(db, 'article', 'tts_voice_id', 'tts_voice_id TEXT');
 }
 
 /// 开发期 v1 结构变更自愈：tts_cache 加 `sentence_index`（句子级缓存键，

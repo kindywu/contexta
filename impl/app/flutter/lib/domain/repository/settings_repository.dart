@@ -22,8 +22,8 @@ abstract interface class SettingsRepository {
   /// 更新朗读语速（UI 显示语速：0.8 / 1.0 / 1.2）。
   Future<void> updateTtsSpeed(double speed);
 
-  /// 更新朗读音色（下次朗读生效，不打断当前播放）。
-  Future<void> updateTtsVoice(TtsVoice voice);
+  /// 更新朗读音色设置（随机 / 固定；下次朗读生效，不打断当前播放）。
+  Future<void> updateTtsVoice(TtsVoiceSetting setting);
 
   /// 夹取 1..5 后更新。
   Future<void> updateMasteryThreshold(int n);

@@ -25,6 +25,11 @@
 -- （缓存键 = article_paragraph_id + sentence_index + speed + voice_id）。
 -- 旧行是整段音频、无句序语义，库内由自愈补列时清空（database.dart
 -- selfHealTtsSentenceColumn），本脚本描述补列后的 v1 标准结构。
+--
+-- 2026-09-18：朗读音色随机化——article 加 tts_voice_id 列（本篇音色；
+-- NULL = 未分配，首次朗读随机分配后固定）。user_settings.tts_voice_id
+-- 存 'RANDOM'（默认，按文章随机）或具体音色名。库内由自愈补列
+-- （database.dart selfHealArticleVoiceColumn）。
 
 BEGIN IMMEDIATE;
 
@@ -107,6 +112,7 @@ CREATE TABLE IF NOT EXISTS `article` (
   `accumulated_read_seconds` INTEGER NOT NULL,
   `read_completed_at` TEXT,
   `server_article_id` INTEGER,
+  `tts_voice_id` TEXT,
   FOREIGN KEY(`batch_id`) REFERENCES `article_batch`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
 );
 
