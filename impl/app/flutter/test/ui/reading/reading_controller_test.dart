@@ -1188,7 +1188,7 @@ void main() {
       return engine;
     }
 
-    test('全文朗读按句子单元下发（段落 id + 段内句序号 + 句子文本）', () async {
+    test('全文朗读按句子单元下发（段落 id + 段内句序号 + 文本转小写）', () async {
       final engine = await kittenEngine();
       articleRepo = _FakeArticleRepo(
         onGetArticle: (_) async => makeArticle(paragraphs: const [
@@ -1219,15 +1219,17 @@ void main() {
       await controller.startFullArticlePlayback();
 
       final session = _RecordingSession.last!;
-      expect(session.lastTitle, 'Test');
+      // 文本统一转小写后下发（音素器对首字母大写的词会逐字母拼读，见
+      // KittenTtsEngine.normalizeTtsText）；段落 id / 句序原样保留
+      expect(session.lastTitle, 'test');
       expect(session.lastSentences, [
-        (paragraphId: 11, sentenceIndex: 0, text: 'One two.'),
-        (paragraphId: 11, sentenceIndex: 1, text: 'Three!'),
-        (paragraphId: 22, sentenceIndex: 0, text: 'Four'),
+        (paragraphId: 11, sentenceIndex: 0, text: 'one two.'),
+        (paragraphId: 11, sentenceIndex: 1, text: 'three!'),
+        (paragraphId: 22, sentenceIndex: 0, text: 'four'),
       ]);
     });
 
-    test('段落播放按句子单元下发（段内逐句）', () async {
+    test('段落播放按句子单元下发（段内逐句，文本转小写）', () async {
       final engine = await kittenEngine();
       articleRepo = _FakeArticleRepo(
         onGetArticle: (_) async => makeArticle(paragraphs: const [
@@ -1254,8 +1256,8 @@ void main() {
 
       final session = _RecordingSession.last!;
       expect(session.lastSentences, [
-        (paragraphId: 11, sentenceIndex: 0, text: 'One two.'),
-        (paragraphId: 11, sentenceIndex: 1, text: 'Three!'),
+        (paragraphId: 11, sentenceIndex: 0, text: 'one two.'),
+        (paragraphId: 11, sentenceIndex: 1, text: 'three!'),
       ]);
     });
   });

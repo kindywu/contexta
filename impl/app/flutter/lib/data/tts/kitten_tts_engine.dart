@@ -9,6 +9,30 @@ import '../../domain/tts/tts_engine.dart';
 import 'kitten_tts_session.dart';
 import 'tts_cache_manager.dart';
 
+/// 送 KittenTTS 合成前的文本规范化：**统一转小写**。
+///
+/// 插件音素器对**首字母大写**的词会走单独的 capital 词典分支（插件源码
+/// `src/cephonemizer/phonemizer.cpp` 的 `$capital` / `capital_dict_`），
+/// 未命中时退化为逐字母拼读——2026-09-18 iOS 模拟器实测：标题
+/// "Why the Sky Is Blue" 被读成 "S K Y"（正文里小写的 sky 正常）。
+/// Kokoro/KittenTTS 模型本身以小写文本训练、音素查表前也会 normalise
+/// 大小写，故统一转小写规避。
+///
+/// 只作用于**送合成**的文本：界面显示、句子高亮、缓存键（段落 + 句序 +
+/// 语速 + 音色，不含文本）都不受影响。系统 TTS 走自己的实现，不做此转换
+/// （平台 TTS 对大小写处理正确，且转换会改变 NASA 一类缩写的读法）。
+String normalizeTtsText(String text) => text.toLowerCase();
+
+/// 句子单元批量规范化（标题另经 [normalizeTtsText]）。
+List<SentenceUnit> _normalizeUnits(List<SentenceUnit> units) => [
+      for (final u in units)
+        (
+          paragraphId: u.paragraphId,
+          sentenceIndex: u.sentenceIndex,
+          text: normalizeTtsText(u.text),
+        ),
+    ];
+
 /// Flutter 侧 KittenTTS 插件包装（对照 Kotlin 侧 KittenTtsEngine 设计：
 /// 本地神经网络合成，作为默认 TTS）。
 ///
@@ -51,7 +75,8 @@ class KittenTtsEngine implements TtsEngine {
     }
     final id = 'ktk-${_utteranceCounter++}';
     debugPrint('[KittenTTS.engine] speak: dispatching id=$id to session');
-    session.speak(text, speed: speed, utteranceId: id, voice: voice?.sdkVoiceId);
+    session.speak(normalizeTtsText(text),
+        speed: speed, utteranceId: id, voice: voice?.sdkVoiceId);
     return id;
   }
 
@@ -72,7 +97,7 @@ class KittenTtsEngine implements TtsEngine {
     final id = 'ktk-${_utteranceCounter++}';
     debugPrint('[KittenTTS.engine] speakSentences: ${sentences.length} sentences id=$id');
     session.speakSentences(
-      sentences,
+      _normalizeUnits(sentences),
       speed: speed,
       utteranceId: id,
       voice: voice?.sdkVoiceId,
@@ -99,8 +124,8 @@ class KittenTtsEngine implements TtsEngine {
     final id = 'ktk-${_utteranceCounter++}';
     debugPrint('[KittenTTS.engine] speakFullArticle: title="${title ?? ""}" sentences=${sentences.length} id=$id');
     session.speakFullArticle(
-      title: title,
-      sentences: sentences,
+      title: title == null ? null : normalizeTtsText(title),
+      sentences: _normalizeUnits(sentences),
       speed: speed,
       utteranceId: id,
       voice: voice?.sdkVoiceId,
@@ -128,7 +153,7 @@ class KittenTtsEngine implements TtsEngine {
     final session = _session;
     if (session == null) return;
     await session.pregenerateSentences(
-      sentences: sentences,
+      sentences: _normalizeUnits(sentences),
       speed: speed,
       voice: voice?.sdkVoiceId,
     );

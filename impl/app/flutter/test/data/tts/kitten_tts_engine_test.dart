@@ -122,6 +122,53 @@ void main() {
     expect(session.lastVoice, 'luna');
   });
 
+  test('送合成前统一转小写（标题首字母大写词不被逐字母拼读）', () async {
+    final session = _FakeSession();
+    final engine = _engine(factory: _withSession(session));
+    await engine.init();
+
+    engine.speak('Why the Sky Is Blue');
+    expect(session.spokenTexts, ['why the sky is blue']);
+
+    await engine.speakSentences(
+        sentences: [
+          (paragraphId: 1, sentenceIndex: 0, text: 'The Sky Is Blue.'),
+          (paragraphId: 1, sentenceIndex: 1, text: 'Lisa asks Tom.'),
+        ],
+        speed: 1.0);
+    expect(session.lastSentenceTexts, ['the sky is blue.', 'lisa asks tom.']);
+
+    await engine.speakFullArticle(
+        title: 'Why the Sky Is Blue',
+        sentences: [(paragraphId: 2, sentenceIndex: 0, text: 'Earth\'s sky Is Blue.')],
+        speed: 1.0);
+    expect(session.lastTitle, 'why the sky is blue');
+    expect(session.lastSentenceTexts, ["earth's sky is blue."]);
+
+    await engine.pregenerateSentences(
+        sentences: [(paragraphId: 3, sentenceIndex: 0, text: 'NASA And Sky')],
+        speed: 1.0);
+    expect(session.lastSentenceTexts, ['nasa and sky']);
+  });
+
+  test('转小写只动送合成的文本，句子位置（段落 id / 句序）原样保留', () async {
+    final session = _FakeSession();
+    final engine = _engine(factory: _withSession(session));
+    await engine.init();
+
+    await engine.speakSentences(
+        sentences: [(paragraphId: 727, sentenceIndex: 3, text: 'Hello World')],
+        speed: 1.0);
+
+    expect(session.lastUnits, [(727, 3, 'hello world')]);
+  });
+
+  test('normalizeTtsText：纯函数语义（小写化，含撇号与数字不变）', () {
+    expect(normalizeTtsText('Why the Sky Is Blue'), 'why the sky is blue');
+    expect(normalizeTtsText("Earth's Sky"), "earth's sky");
+    expect(normalizeTtsText('already lower 123'), 'already lower 123');
+  });
+
   test('voice 为空时透传 null（引擎默认音色）', () async {
     final session = _FakeSession();
     final engine = _engine(factory: _withSession(session));
@@ -177,6 +224,13 @@ class _FakeSession implements KittenTtsSession {
     lastVoice = voice;
   }
 
+  /// 最近一次收到的正文句子文本 / 标题（转小写断言依赖）。
+  List<String> lastSentenceTexts = [];
+  String? lastTitle;
+
+  /// 最近一次收到的句子单元（位置 + 文本，断言「只改文本不改位置」）。
+  List<(int, int, String)> lastUnits = [];
+
   @override
   Future<void> speakFullArticle({
     String? title,
@@ -186,6 +240,9 @@ class _FakeSession implements KittenTtsSession {
     String? voice,
   }) async {
     lastVoice = voice;
+    lastTitle = title;
+    lastSentenceTexts = [for (final s in sentences) s.text];
+    lastUnits = [for (final s in sentences) (s.paragraphId, s.sentenceIndex, s.text)];
   }
 
   @override
@@ -196,6 +253,8 @@ class _FakeSession implements KittenTtsSession {
     String? voice,
   }) async {
     lastVoice = voice;
+    lastSentenceTexts = [for (final s in sentences) s.text];
+    lastUnits = [for (final s in sentences) (s.paragraphId, s.sentenceIndex, s.text)];
   }
 
   @override
@@ -243,6 +302,8 @@ class _FakeSession implements KittenTtsSession {
     String? voice,
   }) async {
     lastVoice = voice;
+    lastSentenceTexts = [for (final s in sentences) s.text];
+    lastUnits = [for (final s in sentences) (s.paragraphId, s.sentenceIndex, s.text)];
   }
 
   @override
