@@ -85,6 +85,7 @@ class ArticleItemUi {
     required this.difficultyLabel,
     required this.categoryLabel,
     this.isReadCompleted = false,
+    this.accumulatedReadSeconds = 0,
   });
 
   final int id;
@@ -93,6 +94,12 @@ class ArticleItemUi {
   final String difficultyLabel;
   final String categoryLabel;
   final bool isReadCompleted;
+
+  /// 累计阅读秒数（`article.accumulated_read_seconds`）。
+  ///
+  /// 手机首页不消费这个字段（保持零改动）；平板首页用它显示「约 N 分钟」——
+  /// 横屏有空间放"值不值得现在读"的判断依据，手机窄屏放不下。
+  final int accumulatedReadSeconds;
 }
 
 /// Home 页控制器（对照 Kotlin HomeViewModel）：
@@ -140,6 +147,35 @@ class HomeController extends StateNotifier<HomeUiState> {
 
   String _userDifficulty = 'MEDIUM';
 
+  /// 窗口操作的串行闸门（见 [_serializeWindow]）。
+  Future<void> _windowGate = Future<void>.value();
+
+  /// 把会改写 [_historyReads] 的操作排队执行。
+  ///
+  /// **为什么必须串行**：这些操作共享 `_historyReads`，而每个都在中途 `await`
+  /// 数据库。并发时"读游标"与"写回"之间会被另一次改写插入——2026-09-18 实测
+  /// 的启动竞态就是这样：settings 订阅触发的 `_readWindow`（把窗口替换成
+  /// `[11,10,09]`）插在 `load()` 首屏 `_appendPage`（游标按空窗口算出、取回同一批
+  /// 日期）的读与写之间，写回变成 `[11,10,09] + [11,10,09]`，首页日期索引出现
+  /// 成对重复的日期。
+  ///
+  /// 只包最外层入口（`_loadFirstPage` / `_readWindow` / `loadMore`），
+  /// `_appendPage` 保持不带闸门——否则 `_loadFirstPage` 内部的调用会自我等待
+  /// 造成死锁。
+  Future<T> _serializeWindow<T>(Future<T> Function() action) {
+    final previous = _windowGate;
+    final completer = Completer<void>();
+    _windowGate = completer.future;
+    return () async {
+      await previous;
+      try {
+        return await action();
+      } finally {
+        completer.complete();
+      }
+    }();
+  }
+
   /// 主加载入口（Kotlin loadHome）：日期头 + streak + 启动编排 + 第 1 页。
   Future<void> load() async {
     state = state.copyWith(dateLabel: _dateLabel(DateTime.now()));
@@ -171,13 +207,14 @@ class HomeController extends StateNotifier<HomeUiState> {
   /// 回前台重载（AppLifecycleListener.onResume）：后台 worker 用独立连接写库，
   /// UI 的 drift watch 收不到变更通知，必须重读；但**保持已加载的窗口**——
   /// 否则用户滚到第 N 页切个后台回来会被截断回第 1 页。
-  Future<void> reloadWindow() => _readWindow(resubscribeAll: true);
+  Future<void> reloadWindow() =>
+      _serializeWindow(() => _readWindow(resubscribeAll: true));
 
   /// 滚动到底：按游标追加下一页。到底 / 正在加载时是 no-op。
   Future<void> loadMore() async {
     if (!_hasMore || state.isLoadingMore) return;
     state = state.copyWith(isLoadingMore: true);
-    await _appendPage();
+    await _serializeWindow(_appendPage);
     state = state.copyWith(isLoadingMore: false);
   }
 
@@ -191,12 +228,15 @@ class HomeController extends StateNotifier<HomeUiState> {
   void observeSettingsForRefresh() {
     _settingsSub?.cancel();
     _settingsSub = _settingsRepository.observeSettings().listen((_) {
-      _readWindow(resubscribeAll: true);
+      _serializeWindow(() => _readWindow(resubscribeAll: true));
     });
   }
 
   /// 首次加载 / 下拉刷新：窗口回到第 1 页。
-  Future<void> _loadFirstPage() async {
+  Future<void> _loadFirstPage() =>
+      _serializeWindow(_loadFirstPageInner);
+
+  Future<void> _loadFirstPageInner() async {
     _historyReads = const [];
     await _syncUserDifficulty();
     await _appendPage();
@@ -300,6 +340,7 @@ class HomeController extends StateNotifier<HomeUiState> {
                 difficultyLabel: _difficultyLabel(article.contentCategory),
                 categoryLabel: article.contentCategory.replaceAll('_', ' '),
                 isReadCompleted: article.readCompletedAt != null,
+                accumulatedReadSeconds: article.accumulatedReadSeconds,
               ),
           ],
         ),

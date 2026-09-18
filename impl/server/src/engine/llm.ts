@@ -38,7 +38,7 @@ export async function callLLM(
 
 /**
  * 按配置构造 ChatOpenAI（baseURL 指向 DeepSeek 或任意 OpenAI 兼容网关）。
- * maxTokens 必须显式给足：deepseek-v4-flash 为思考模型，reasoning_content 消耗输出预算；
+ * maxTokens 必须显式给足：deepseek-flash 为思考模型，reasoning_content 消耗输出预算；
  * 缺省上限过小时（实测同批 article 生成任务思考 2.8 万字符）思考把预算吃光，
  * content 只剩空白 → jsonMode 解析失败（"Text: ' '" + Unexpected EOF）。32000 为实测可完成值。
  */
@@ -102,7 +102,7 @@ function logPrompt(label: string, system: string, user: string): void {
 /**
  * LLM 响应留痕（生成结束即触发——即使后续 jsonMode 解析失败，原始响应也已落盘）。
  * info 记摘要（finish_reason/用量/长度），debug 记原文与思考内容。
- * 背景：deepseek-v4-flash 为思考模型，失败现场全在响应里（如 content 只剩空白、
+ * 背景：deepseek-flash 为思考模型，失败现场全在响应里（如 content 只剩空白、
  * reasoning_content 占满预算），此前不记录导致无法复盘，只能靠报错里的 Text 反推。
  */
 function responseLogCallback(label: string) {

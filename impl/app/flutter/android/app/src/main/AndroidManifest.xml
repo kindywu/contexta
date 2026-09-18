@@ -18,7 +18,6 @@
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
-            android:screenOrientation="portrait"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -32,6 +31,18 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- 大屏方向限制的豁免（2026-09-18 真机实测必需）：
+                 Android 16 起，targetSdk ≥ 36 的 App 在 sw ≥ 600dp 的大屏上
+                 方向声明与 setRequestedOrientation 一律被系统忽略
+                 （实测 ignoreOrientationRequest=true），平板因此既锁不住横屏
+                 （跟随设备翻转）又被塞进竖屏窗口（两侧黑边）。
+                 声明本属性后系统恢复「兼容模式」，重新尊重方向限制：
+                 手机锁竖屏、平板锁横屏都能生效。
+                 ⚠️ 官方标注这是**临时豁免**，targetSdk 37 起失效——
+                 届时需重新评估平板方向方案。 -->
+            <property
+                android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+                android:value="true" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>

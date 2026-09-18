@@ -146,7 +146,7 @@ sequenceDiagram
 
 `test/core/navigation/app_router_test.dart`：
 
-- **启动落点**：`buildRouter(isOnboarded: () async => true)` → `OnboardingScreen` findsNothing、`HomeScreen` findsOneWidget、栈为 `['/home']`；`false` → 落在引导页。这两条正是「已引导用户闪向导页」的防回归测试。
+- **启动落点**：`buildRouter(formFactor: DeviceFormFactor.phone, isOnboarded: () async => true)` → `OnboardingScreen` findsNothing、`HomeScreen` findsOneWidget、栈为 `['/home']`；`false` → 落在引导页。这两条正是「已引导用户闪向导页」的防回归测试。
 - **底栏显隐 / tab 切换 / 返回栈清理**：与改造前一致。
 - 该套件用 `AppDatabase.forTesting(NativeDatabase.memory())` 顶掉 `databaseProvider`（首页启动编排链会 `requireValue` 取库），并用 `_TtsStub` 顶掉 `ttsEngineProvider`（真实 TTS 工厂在测试环境会残留 Timer）。
 

@@ -125,6 +125,30 @@ stateDiagram-v2
     FirstPage --> FirstPage: refresh() / 设置变更（回第 1 页 / 保持）
 ```
 
+### 窗口操作必须串行（2026-09-18 修复的重复日期 bug）
+
+上述动作都会改写 `_historyReads`，而**每个都在中途 `await` 数据库**。「读游标 → 取数 → 写回」之间若被另一次改写插入，写回就会基于过期快照。
+
+实测到的交错（平板首页日期索引出现**成对重复的日期**）：
+
+```mermaid
+sequenceDiagram
+    participant L as load()（首屏）
+    participant AP as _appendPage
+    participant RW as _readWindow（settings 订阅触发）
+    L->>AP: START，cursor=null（窗口为空）
+    Note over AP: await 数据库…
+    RW->>RW: 完成，_historyReads = [11,10,09]
+    AP->>AP: 写回 [..._historyReads, ...page] = [11,10,09] + [11,10,09]
+    Note over AP: 同一批日期进了窗口两次
+```
+
+触发条件很日常：`HomeScreen.initState` 同时发起 `load()` 与 `observeSettingsForRefresh()`，后者订阅的 `user_settings` 流**立即吐一次当前值**，于是 `_readWindow` 与首屏 `_appendPage` 并发。
+
+**修复**：给会改写窗口的操作加一道串行闸门 `_serializeWindow`，让它们排队执行（它们本来就该是原子的）。只包最外层入口——`_loadFirstPage` / `_readWindow` / `loadMore`；`_appendPage` 保持不带闸门，否则 `_loadFirstPage` 内部的调用会自我等待造成死锁。
+
+> 回归测试：`test/ui/home/home_test.dart` 的「启动竞态：重载插进首屏追加的读与写之间时，日期不重复」。它用 `holdNextPage()` 把首屏分页请求卡在数据库上，再并发发起 `reloadWindow()`，然后断言日期不重复——**去掉闸门测试立刻变红**（实测得到 `[今天, 昨天, 9月16日, 今天, 昨天, 9月16日]`）。
+
 ### 订阅策略
 
 只订阅窗口内批次的文章流。`_subscribeWindow({required bool resubscribeAll})`：

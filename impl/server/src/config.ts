@@ -87,7 +87,7 @@ const serverEnvSchema = z.object({
     .transform((s) => (s === "" ? undefined : s)),
   LLM_API_KEY: z.string().min(1),
   LLM_BASE_URL: z.url().default("https://api.deepseek.com"),
-  LLM_MODEL: z.string().default("deepseek-v4-flash"),
+  LLM_MODEL: z.string().default("deepseek-flash"),
   PROXY_URL: z
     .string()
     .optional()

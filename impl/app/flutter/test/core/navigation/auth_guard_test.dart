@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:contexta/core/navigation/app_router.dart';
+import 'package:contexta/core/platform/device_form_factor.dart';
 import 'package:contexta/core/navigation/routes.dart';
 import 'package:contexta/data/auth/auth_service.dart';
 import 'package:contexta/data/auth/native_phone_reader.dart';
@@ -178,11 +179,24 @@ void main() {
       deviceId: () async => 'dev-1',
       readPhone: () async => line1,
     );
-    router = buildRouter(authService: service);
+    router = buildRouter(
+      formFactor: DeviceFormFactor.phone,
+      authService: service,
+    );
     line1 = null;
   });
 
+  /// 手机视口（逻辑 360×780）：本组用例断言手机界面树（首页未登录横幅等）。
+  /// 界面树按窗口最短边二选一，默认测试窗口 800×600 会被判成 pad。
+  void usePhoneViewport(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
   Future<void> pumpApp(WidgetTester tester) async {
+    usePhoneViewport(tester);
     // Onboarding 页会读 databaseProvider：用内存库避免真实数据库打开
     final db = AppDatabase.forTesting(NativeDatabase.memory());
     await tester.pumpWidget(ProviderScope(
