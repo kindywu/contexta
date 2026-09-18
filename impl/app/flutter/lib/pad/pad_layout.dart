@@ -64,6 +64,13 @@ abstract final class PadLayout {
   /// 中缝宽度（含中心 1px 竖线）。
   static const double spreadGutter = 56;
 
+  /// 整篇只占一页时，改用**单栏居中**，这是那一栏的最大宽度。
+  ///
+  /// 书页范式在"整篇一页放得下"时会退化成「左页有字 + 右半屏空白」——在
+  /// 1280dp 横屏上那是半屏死区。此时改排单栏：两侧留白对称，看起来是
+  /// "短文章"而不是"渲染坏了"。760dp 下正文约 42 字符/行，仍在可读区间。
+  static const double singleColumnMaxWidth = 760;
+
   /// 页边翻页热区最小宽度。窄于此不启用（退化为仅横滑翻页），避免误触。
   static const double edgeTapMinWidth = 44;
 

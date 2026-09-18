@@ -14,6 +14,10 @@ import '../pad_layout.dart';
 import 'article_paginator.dart';
 import 'reading_block.dart';
 
+/// 单栏模式那一列的 key（测试用来量居中与宽度——段落 widget 会收缩到
+/// 文本宽度，量不出列宽）。
+const Key padSingleColumnKey = ValueKey('pad-single-column');
+
 /// 书页中缝宽（含中心 1px 竖线）。
 const double kSpreadGutter = 56;
 
@@ -61,9 +65,15 @@ class PadSpreadReader extends StatefulWidget {
     required this.onMarkAsRead,
     required this.onSpreadChanged,
     required this.onUserTurn,
+    this.singleColumnWidth,
   });
 
   final PaginatedArticle paginated;
+
+  /// 非 null = **单栏模式**（整篇只占一页时的退化形态）：不再左右分屏，
+  /// 只渲染这一页并把它居中到该宽度，两侧留白对称。见
+  /// [PadLayout.singleColumnMaxWidth]。
+  final double? singleColumnWidth;
 
   /// 跨页控制器由外部持有（朗读自动翻页要按段落 → 页查表跳页）。
   final PageController pageController;
@@ -103,6 +113,24 @@ class _PadSpreadReaderState extends State<PadSpreadReader> {
               0.0,
               PadLayout.spreadMaxWidth,
             );
+        // 单栏模式：整篇一页放得下，不用左右分屏（否则右半屏是死区）。
+        // 仍走 PageView（itemCount=1）——页码胶囊与 onSpreadChanged 的接线
+        // 与书页模式完全一致，不必在阅读页里分叉两套。
+        final columnWidth = widget.singleColumnWidth;
+        if (columnWidth != null) {
+          return PageView.builder(
+            controller: widget.pageController,
+            itemCount: 1,
+            onPageChanged: widget.onSpreadChanged,
+            itemBuilder: (context, _) => Center(
+              child: SizedBox(
+                key: padSingleColumnKey,
+                width: columnWidth,
+                child: _buildPage(0),
+              ),
+            ),
+          );
+        }
         return NotificationListener<ScrollStartNotification>(
           onNotification: (notification) {
             // dragDetails != null → 手指拖动（animateToPage 的程序化翻页

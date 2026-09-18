@@ -249,6 +249,98 @@ void main() {
     expect(userTurns, 0, reason: '程序化动画翻页同样不算用户手动翻页');
   });
 
+  group('单栏模式（整篇一页放得下时的退化形态）', () {
+    testWidgets('不给 singleColumnWidth → 走书页两栏（左页 + 右页）', (tester) async {
+      await pumpReader(tester, fourPages());
+
+      // 第一跨页同时渲染第 1、2 页
+      expect(
+        find.textContaining('First paragraph.', findRichText: true),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Second paragraph.', findRichText: true),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('给 singleColumnWidth → 只渲染一栏，且**居中**（两侧留白对称）', (tester) async {
+      tester.view.physicalSize = const Size(1600, 813);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      const columnWidth = 760.0;
+      final single = PaginatedArticle(
+        pages: [
+          ReadingPage(
+            blocks: const [
+              ParagraphBlock(
+                index: 0,
+                englishText: 'First paragraph.',
+                chineseTranslation: '第一段。',
+              ),
+            ],
+            usedHeight: 10,
+            overflows: false,
+          ),
+        ],
+        pageOfParagraph: const {0: 0},
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 1600,
+              height: 813,
+              child: PadSpreadReader(
+                paginated: single,
+                pageController: controller,
+                title: 'A Title',
+                paragraphs: _paragraphs,
+                sentencesByParagraph: const [[]],
+                translationMode: TranslationMode.full,
+                revealedParagraphs: const {},
+                vocabularyWords: const {},
+                speakingParagraphIndex: null,
+                speakingSentenceIndex: null,
+                paragraphKey: paragraphKey,
+                paragraphTextKey: paragraphTextKey,
+                onWordClick: tappedWords.add,
+                onTranslationClick: (_) {},
+                onPlayParagraph: (_) {},
+                onMarkAsRead: () {},
+                onSpreadChanged: (i) => spreadIndex = i,
+                onUserTurn: () {},
+                singleColumnWidth: columnWidth,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 只渲染第一页；第 2 页不存在于树里
+      expect(
+        find.textContaining('First paragraph.', findRichText: true),
+        findsOneWidget,
+      );
+
+      // 居中：内容列左右留白相等（这是"单栏"与"书页左页"的唯一可见差别）。
+      // 量的是列本身——ReadingParagraph 是 Column(crossAxisAlignment: start)，
+      // 会横向收缩到文本宽度，量段落 rect 得不到列宽。
+      final rect = tester.getRect(find.byKey(padSingleColumnKey));
+      expect(rect.width, moreOrLessEquals(columnWidth, epsilon: 1));
+      final leftGap = rect.left;
+      final rightGap = 1600 - rect.right;
+      expect(
+        (leftGap - rightGap).abs(),
+        lessThan(2),
+        reason: '两侧留白须对称（左 $leftGap / 右 $rightGap）——否则看起来像书页模式坏了',
+      );
+    });
+  });
+
   testWidgets('真实分页结果渲染在页内不溢出：页被填满时末块底边不越页底', (tester) async {
     tester.view.physicalSize = const Size(1600, 813);
     tester.view.devicePixelRatio = 1.0;

@@ -64,6 +64,10 @@ class _PadReadingScreenState extends ConsumerState<PadReadingScreen> {
   Object? _paginationKey;
   PaginatedArticle? _paginatedCache;
 
+  /// 非 null = 整篇只占一页，改排**单栏居中**（宽度即此值）。
+  /// 见 [PadLayout.singleColumnMaxWidth]——避免短文在宽屏上右半屏留白。
+  double? _singlePageWidth;
+
   /// 读者刚手动翻页 → 跳过一次朗读自动翻页。
   bool _userTurned = false;
 
@@ -372,16 +376,39 @@ class _PadReadingScreenState extends ConsumerState<PadReadingScreen> {
         if (key != _paginationKey || _paginatedCache == null) {
           final wasUnpaginated = _paginatedCache == null;
           _paginationKey = key;
-          _paginatedCache = buildPadPaginator(
+          final paginator = buildPadPaginator(
             DefaultTextStyle.of(context).style,
-          ).paginate(
-            blocks: _buildBlocks(state),
+          );
+          final blocks = _buildBlocks(state);
+          _paginatedCache = paginator.paginate(
+            blocks: blocks,
             pageWidth: pageWidth,
             pageHeight: pageHeight,
             bodyTextScaler: bodyTextScaler,
             labelTextScaler: labelTextScaler,
             translationMode: state.translationMode,
           );
+          // 整篇一页放得下 → 书页范式退化成"左页有字 + 右半屏死区"，
+          // 改按单栏宽**重新分页**（不是直接拉宽渲染：那样测量与渲染不同源，
+          // 正是本文件踩过的坑）。更宽只会放得更下，故结果必然仍是 1 页。
+          _singlePageWidth = null;
+          if (_paginatedCache!.pages.length == 1) {
+            final single = spreadWidth.clamp(0.0, PadLayout.singleColumnMaxWidth);
+            if (single > pageWidth) {
+              final repaginated = paginator.paginate(
+                blocks: blocks,
+                pageWidth: single,
+                pageHeight: pageHeight,
+                bodyTextScaler: bodyTextScaler,
+                labelTextScaler: labelTextScaler,
+                translationMode: state.translationMode,
+              );
+              if (repaginated.pages.length == 1) {
+                _paginatedCache = repaginated;
+                _singlePageWidth = single;
+              }
+            }
+          }
           // 首次分页发生在 **layout 阶段**（本方法由 LayoutBuilder 调用），而
           // 页码胶囊是 Stack 里的兄弟节点，它的 build 早就跑完了——那一次它
           // 读到的是 `_paginatedCache == null`，渲染成占位空盒。不补这一帧，
@@ -416,6 +443,7 @@ class _PadReadingScreenState extends ConsumerState<PadReadingScreen> {
           onMarkAsRead: notifier.markAsRead,
           onSpreadChanged: (index) => setState(() => _spreadIndex = index),
           onUserTurn: () => _userTurned = true,
+          singleColumnWidth: _singlePageWidth,
         );
       },
     );
