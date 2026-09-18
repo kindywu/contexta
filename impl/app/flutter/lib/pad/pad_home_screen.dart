@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../core/navigation/routes.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/app_dimens.dart';
 import '../core/theme/app_type.dart';
+import '../data/auth/auth_service.dart';
+import '../di/providers.dart';
 import '../ui/home/home_controller.dart';
 import 'pad_article_grid.dart';
 import 'pad_continue_card.dart';
 import 'pad_date_index.dart';
 import 'pad_layout.dart';
+import 'pad_login_banner.dart';
 
 /// 平板首页：**目录 + 内容两栏**（平板专属页面，与手机 `HomeScreen` 各自
 /// 独立渲染，互不影响）。
@@ -92,6 +97,20 @@ class _PadHomeScreenState extends ConsumerState<PadHomeScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _PadHomeHeader(dateLabel: state.dateLabel, streak: state.streak),
+        // 服务端已配置但未登录 → 登录入口（本地模式不显示）。
+        // 平板上这是唯一的登录入口，见 [PadLoginBanner]。
+        if (ref.watch(serverConfiguredProvider) &&
+            ref.watch(authServiceProvider).status != AuthStatus.loggedIn)
+          Padding(
+            padding: const EdgeInsets.only(
+              left: PadLayout.pagePadding,
+              right: PadLayout.pagePadding,
+              bottom: AppSpacing.sm,
+            ),
+            child: PadLoginBanner(
+              onLogin: () => context.push(Routes.login),
+            ),
+          ),
         Expanded(
           child: switch (state) {
             HomeUiState(isGenerating: true) => const Center(

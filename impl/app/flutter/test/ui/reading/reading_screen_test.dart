@@ -118,17 +118,21 @@ class _TtsStub implements TtsEngine {
 
   @override
   void setOnSentenceStarted(
-    void Function(String? utteranceId, int paragraphIndex, int sentenceIndex,
+    void Function(String? utteranceId, int paragraphId, int sentenceIndex,
             int total)?
         callback,
   ) {
     onSentenceStarted = callback;
   }
 
-  /// 模拟第 [paragraphIndex] 段第 [sentenceIndex] 句开始发声（总句数默认 2）。
-  void simulateSentenceStarted(int paragraphIndex, int sentenceIndex,
+  /// 模拟 [paragraphId] 段第 [sentenceIndex] 句开始发声（总句数默认 2）。
+  ///
+  /// 传的是**段落 id**——引擎的真实契约（原样回传朗读单元的
+  /// `SentenceUnit.paragraphId`），不是段落序号；夹具里的段落 id 见
+  /// [makeLongArticle] / [makeSentenceScrollArticle]。
+  void simulateSentenceStarted(int paragraphId, int sentenceIndex,
       {int total = 2}) {
-    onSentenceStarted?.call('ctx-1', paragraphIndex, sentenceIndex, total);
+    onSentenceStarted?.call('ctx-1', paragraphId, sentenceIndex, total);
   }
 }
 
@@ -160,8 +164,12 @@ Article makeLongArticle() => Article(
   accumulatedReadSeconds: 0,
   readCompletedAt: null,
   paragraphs: [
+    // id 非 0 且不等于序号：生产库里 article_paragraph.id 是全局自增
+    // （实测 727 起），引擎按 id 上报播放位置——夹具若用默认的 0，
+    // 「id 恰好等于序号」会让忘了换算的 bug 在测试里隐形。
     for (var i = 0; i < 8; i++)
       ArticleParagraph(
+        id: 100 + i,
         orderIndex: i,
         englishText:
             'Paragraph $i. This is a fairly long English sentence '
@@ -187,6 +195,7 @@ Article makeSentenceScrollArticle() => Article(
     for (var i = 0; i < 12; i++)
       if (i == 5)
         const ArticleParagraph(
+          id: 205,
           orderIndex: 5,
           englishText:
               'Alpha bravo charlie delta echo foxtrot golf hotel india juliet '
@@ -197,6 +206,7 @@ Article makeSentenceScrollArticle() => Article(
         )
       else
         ArticleParagraph(
+          id: 200 + i,
           orderIndex: i,
           englishText: 'Paragraph $i.',
           chineseTranslation: '第 $i 段。',
@@ -631,12 +641,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // 段 0 第 1 句（"Paragraph 0."）发声：只有该句带底色
-      tts.simulateSentenceStarted(0, 0, total: 16);
+      tts.simulateSentenceStarted(100, 0, total: 16);
       await tester.pumpAndSettle();
       expect(highlightedTexts(tester, 0), ['Paragraph 0.']);
 
       // 段 0 第 2 句发声：底色移到第 2 句
-      tts.simulateSentenceStarted(0, 1, total: 16);
+      tts.simulateSentenceStarted(100, 1, total: 16);
       await tester.pumpAndSettle();
       final second = highlightedTexts(tester, 0);
       expect(second, hasLength(1));
@@ -669,7 +679,7 @@ void main() {
       expect(find.text('正在朗读…'), findsOneWidget);
 
       // 正文第 1 句发声：标题高亮消失 → 段 0 首句高亮，播放条「第 1/16 句」
-      tts.simulateSentenceStarted(0, 0, total: 16);
+      tts.simulateSentenceStarted(100, 0, total: 16);
       await tester.pumpAndSettle();
       expect(
         tester
@@ -702,12 +712,12 @@ void main() {
       // 段落 0 顶部在 1/3 线上方（首屏内），目标 offset 为负被 clamp，
       // 不做任何滚动
       final para0Before = paragraphTop(tester, 0);
-      tts.simulateSentenceStarted(0, 0);
+      tts.simulateSentenceStarted(100, 0);
       await tester.pumpAndSettle();
       expect(paragraphTop(tester, 0), para0Before);
 
       // 切到段落 2 → 段落 2 顶部对齐 (视口-段高)/3 处
-      tts.simulateSentenceStarted(2, 0);
+      tts.simulateSentenceStarted(102, 0);
       await tester.pumpAndSettle();
       expect(
         paragraphTop(tester, 2),
@@ -723,7 +733,7 @@ void main() {
       // 无法区分门控是否生效；段 2 目标为正——若门控失效会自动滚动 → 红
       await tester.tap(find.byIcon(Icons.play_arrow));
       await tester.pumpAndSettle();
-      tts.simulateSentenceStarted(1, 0);
+      tts.simulateSentenceStarted(101, 0);
       await tester.pumpAndSettle();
       final before = paragraphTop(tester, 2);
 
@@ -753,7 +763,7 @@ void main() {
       // 段 5 句 1 发声：句 1 首行（非段落顶部）对齐 1/3 线
       final boxTop = sentenceBoxTopIn(tester, 5, 1);
       expect(boxTop, greaterThan(0), reason: '句 1 应从第二行起，否则本用例无意义');
-      tts.simulateSentenceStarted(5, 1);
+      tts.simulateSentenceStarted(205, 1);
       await tester.pumpAndSettle();
 
       expect(
@@ -772,7 +782,7 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.play_arrow));
       await tester.pumpAndSettle();
-      tts.simulateSentenceStarted(0, 0);
+      tts.simulateSentenceStarted(100, 0);
       await tester.pumpAndSettle();
 
       // 用户上滑离开当前段（-200：保证段落 1 仍在构建范围内）
@@ -781,13 +791,13 @@ void main() {
       final afterDrag = paragraphTop(tester, 1);
 
       // 段落 1 切换：被手滚跳过（位置不变）
-      tts.simulateSentenceStarted(1, 0);
+      tts.simulateSentenceStarted(101, 0);
       await tester.pumpAndSettle();
       final duringUserScroll = paragraphTop(tester, 1);
       expect(duringUserScroll, closeTo(afterDrag, 1));
 
       // 段落 2 切换：恢复跟随
-      tts.simulateSentenceStarted(2, 0);
+      tts.simulateSentenceStarted(102, 0);
       await tester.pumpAndSettle();
       expect(
         paragraphTop(tester, 2),
@@ -819,7 +829,7 @@ void main() {
 
       // 大幅跳转到段 6：超出首屏 viewport + cacheExtent 构建范围，
       // currentContext 为 null → 估算兜底（maxScrollExtent * 6/8），不抛错
-      tts.simulateSentenceStarted(6, 0);
+      tts.simulateSentenceStarted(106, 0);
       await tester.pumpAndSettle();
 
       expect(position.pixels, greaterThan(0));

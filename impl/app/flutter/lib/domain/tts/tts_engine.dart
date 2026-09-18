@@ -37,13 +37,17 @@ abstract interface class TtsEngine {
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback);
 
   /// 注册「句子开始播放」回调（播放方在每个朗读单元实际发声前调用）。
-  /// 带 utterance id、段落索引（正文从 0 起，标题为 [kTitleParagraphIndex]）、
-  /// 段内句子序号与全篇句子总数；传 null 注销。
+  /// 带 utterance id、**段落 id**（[SentenceUnit.paragraphId]——不是段落序号；
+  /// 标题为 [kTitleParagraphIndex]）、段内句子序号与全篇句子总数；传 null 注销。
   /// 无句子边界信息的引擎（系统 TTS 拼接朗读）不触发。
+  ///
+  /// 引擎按收到的朗读单元原样回传位置，**不做 id ↔ 序号换算**（它只有 id）。
+  /// 消费方若要把它当序号用（高亮 / 自动翻页），必须自己换算——见
+  /// `ReadingController._paragraphIndexOfId`。
   void setOnSentenceStarted(
     void Function(
       String? utteranceId,
-      int paragraphIndex,
+      int paragraphId,
       int sentenceIndex,
       int total,
     )? callback,

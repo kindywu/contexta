@@ -4,7 +4,7 @@
 
 本文描述阅读页的**句子级朗读**：全文朗读 / 单段朗读都以句子为最小单元——切分、TTS 生成、音频缓存、播放位置上报、正文高亮、自动滚动全部按句对齐。覆盖句子切分规则、从播放层到阅读页 UI 的完整调用链、状态语义与边界行为。
 
-朗读单元 = `(paragraphIndex, sentenceIndex)`；标题是单个独立单元（段落索引哨兵 `kTitleParagraphIndex = -1`，句序号恒 0），不参与缓存。
+调度单元是 `SentenceUnit = (paragraphId, sentenceIndex, text)`——**段落身份用 id**（缓存键要的是稳定身份）；界面位置用**段落序号**（0 起）。两种坐标在 `ReadingController` 边界换算（见「句子级播放上报链路」）。标题是单个独立单元（哨兵 `kTitleParagraphIndex = -1`，句序号恒 0），不参与缓存。
 
 ## 业务功能线
 
@@ -56,7 +56,9 @@
 
 ### 句子级播放上报链路
 
-全文朗读采用双 worker 流水线：生成 worker（`_generateFullArticle`）按句推入播放队列，播放 worker（`_playQueued`）顺序消费。播放 worker 在每句 `_playWav`/`_playFileSource` 播放**前**上报「句子开始播放」，与真实发声同步；**标题同样上报，段落索引用 `kTitleParagraphIndex`（-1）哨兵**，正文段落从 0 起、句序号段内从 0 起，`total` = 正文总句数（标题不计入）。
+全文朗读采用双 worker 流水线：生成 worker（`_generateFullArticle`）按句推入播放队列，播放 worker（`_playQueued`）顺序消费。播放 worker 在每句 `_playWav`/`_playFileSource` 播放**前**上报「句子开始播放」，与真实发声同步；**标题上报 `kTitleParagraphIndex`（-1）哨兵**，正文段上报**段落 id**（`SentenceUnit.paragraphId` = `article_paragraph.id`，全局自增——**不是段落序号**），句序号段内从 0 起，`total` = 正文总句数（标题不计入）。
+
+> **id → 序号换算是链路的一环，不是可选优化**（2026-09-18 修的 bug）：引擎只有 id（它按收到的朗读单元原样回传），而界面一律拿 `speakingParagraphIndex` 与 0 起的段落序号比对。少了 `ReadingController._paragraphIndexOfId` 这一步，逐句高亮、自动翻页、播放条「第 N/M 句」会**一起失效**——真机表现为"朗读时句子不亮"，且测试夹具里段落 id 默认 0（恰好等于序号）会让这个 bug 隐形。
 
 ```mermaid
 sequenceDiagram
@@ -66,9 +68,10 @@ sequenceDiagram
     participant UI as ReadingScreen
 
     Note over PW: 消费到音频项（标题 / 第 N 段第 K 句）
-    PW->>SE: setOnSentenceStarted(utteranceId, paragraphIndex, sentenceIndex, total)
+    PW->>SE: setOnSentenceStarted(utteranceId, paragraphId, sentenceIndex, total)
     SE->>RC: onSentenceStarted 回调（id 可空收缩非空）
     RC->>RC: utteranceId == _currentUtteranceId && !_disposed 校验
+    RC->>RC: paragraphId → 段落序号（_paragraphIndexOfId）<br/>查无此 id → 丢弃本次（宁可不亮，不亮错段）
     RC->>RC: speakingParagraphIndex / speakingSentenceIndex<br/>speechProgress = 全篇句序号（跨段累计）
     RC-->>UI: provider 通知
     alt 标题（-1）
@@ -92,8 +95,8 @@ sequenceDiagram
 | 切分 | `lib/ui/reading/sentence_extractor.dart` | 纯函数 `findSentenceRanges` / `splitSentences`；不依赖 Flutter，独立可测 |
 | 会话层 | `lib/data/tts/kitten_tts_session.dart` | `SentenceUnit`（段落 id + 段内句序号 + 文本）为调度粒度；`_QueuedAudio.paragraphIndex/sentenceIndex`；`_playQueued` / `_speakSentencesSequential` 发声前上报，标题用 `kTitleParagraphIndex`；句子级缓存读写（`lookupSentence` / `writeSentence`） |
 | 引擎层 | `lib/data/tts/kitten_tts_engine.dart` | `speakFullArticle(sentences:)` / `speakSentences` / `pregenerateSentences`；`setOnSentenceStarted` 透传（session 契约 id 非空，收缩安全），未注册回调时 debugPrint 日志兜底 |
-| 接口层 | `lib/domain/tts/tts_engine.dart` | `SentenceUnit` typedef、`kTitleParagraphIndex` 哨兵、`setOnSentenceStarted(void Function(String? id, int paragraphIndex, int sentenceIndex, int total)?)`；`SystemTtsEngine` 空实现（拼接朗读无句子边界） |
-| 控制器 | `lib/ui/reading/reading_controller.dart` | 加载文章时按段切句（`sentencesByParagraph`）；`_onTtsReady` 注册回调；id 校验过滤迟到旧事件；更新朗读位置与播放进度（`_globalSentenceNumber` 把 `(段, 句)` 映射为全篇句序号）；播放结束预生成剩余句子缓存 |
+| 接口层 | `lib/domain/tts/tts_engine.dart` | `SentenceUnit` typedef、`kTitleParagraphIndex` 哨兵、`setOnSentenceStarted(void Function(String? id, int paragraphId, int sentenceIndex, int total)?)`；`SystemTtsEngine` 空实现（拼接朗读无句子边界） |
+| 控制器 | `lib/ui/reading/reading_controller.dart` | 加载文章时按段切句（`sentencesByParagraph`）；`_onTtsReady` 注册回调；id 校验过滤迟到旧事件；**`_paragraphIndexOfId` 把上报的段落 id 换算成序号**；更新朗读位置与播放进度（`_globalSentenceNumber` 把 `(段, 句)` 映射为全篇句序号）；播放结束预生成剩余句子缓存 |
 | 视图层（手机） | `lib/ui/reading/reading_screen.dart` | `ref.listen` 驱动跟随（-1 早退）；播放条「第 N/M 句」文案；单列滚动 + 按句滚动定位 |
 | 视图层（平板） | `lib/pad/pad_reading_screen.dart` | 同一套 `ref.listen` 跟随逻辑，动作换成 `animateToPage`（书页翻页）；工具栏按需唤出（见 [reading-spread.md](reading-spread.md)） |
 | 渲染单元 | `lib/ui/reading/reading_widgets.dart` | 标题（`ReadingTitle`）与段落（`ReadingParagraph`）——手机单列与平板书页**共用同一份**渲染单元 |
@@ -150,8 +153,8 @@ sequenceDiagram
 | 层 | 测试文件 | 覆盖点 |
 |----|----------|--------|
 | 切分 | `test/ui/reading/sentence_extraction_test.dart` | 终止符 / 收尾引号 / 对话标签 / 缩写 / 首字母 / 小数 / 连续终止符 / 无标点 / 空白与换行 / 区间重建 |
-| 引擎透传 | `test/data/tts/kitten_tts_engine_test.dart` | 回调四元组 (id, paragraphIndex, sentenceIndex, total) 透传；句子单元与 voice 透传 |
-| 控制器 | `test/ui/reading/reading_controller_test.dart` | 加载即切句（区间 + 文本）；句子回调逐句更新高亮与进度；跨段全篇句序号累计；迟到旧回调过滤；KittenTTS 路径按句下发（段 id + 句序号 + 文本，全文 / 单段两条） |
+| 引擎透传 | `test/data/tts/kitten_tts_engine_test.dart` | 回调四元组 (id, paragraphId, sentenceIndex, total) 透传；句子单元与 voice 透传 |
+| 控制器 | `test/ui/reading/reading_controller_test.dart` | 加载即切句（区间 + 文本）；句子回调逐句更新高亮与进度；**上报段落 id 时换算成序号**（夹具 id 500/501/727/731，非 0 起）；**未知 id 不写入状态**；跨段全篇句序号累计；迟到旧回调过滤；KittenTTS 路径按句下发（段 id + 句序号 + 文本，全文 / 单段两条） |
 | 缓存 | `test/data/tts/tts_cache_manager_test.dart` | 同句不同音色互不串音；同段不同句各自缓存；同键去重；文件丢失视为需生成 |
 | 数据库 | `test/data/local/schema_base_tables_test.dart`、`database_patch_columns_test.dart` | `tts_cache` 10 列（含 `sentence_index`）；旧库补列同时清空旧段落级缓存行 |
 | UI 高亮 | `test/ui/reading/reading_screen_test.dart` | 段落播放加底色 / 停止消失；**只高亮当前句**（句切换底色迁移）；标题朗读高亮（-1 上报）+ 不滚动 |

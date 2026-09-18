@@ -7,14 +7,14 @@ import '../../ui/reading/translation_visibility.dart';
 import '../pad_layout.dart';
 import 'pad_spread_reader.dart' show rightPageNumberOf;
 
-/// 沉浸式阅读器底部**唯一常驻**的控件：页码胶囊 `12 / 345`。
+/// 沉浸式阅读器底部**唯一常驻**的控件带：页码胶囊 `12 / 345` + 朗读入口。
 ///
-/// 它同时解决三件事，所以值得常驻：
+/// 它同时解决四件事，所以值得常驻：
 /// 1. **你在哪**——总页数与当前位置，不用唤出控件就能看到；
 /// 2. **可以点**——是"上下栏能唤出"的发现性入口（否则用户永远不知道有顶栏）；
-/// 3. **不打扰**——一行小字加一个浅底胶囊，比常驻工具栏安静得多。
-///
-/// 朗读进行中时左侧长出一个极小的暂停键：沉浸态下也必须能停下来。
+/// 3. **不打扰**——一行小字加浅底胶囊，比常驻工具栏安静得多；
+/// 4. **读得出声**——「朗读全文」就摆在页码旁边，不必先猜到工具栏里藏着它；
+///    朗读进行中它原地变成暂停键（沉浸态下也必须停得下来）。
 class PadPagePill extends StatelessWidget {
   const PadPagePill({
     super.key,
@@ -45,14 +45,6 @@ class PadPagePill extends StatelessWidget {
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (isSpeaking) ...[
-              _PillIconButton(
-                icon: Icons.pause,
-                tooltip: '暂停朗读',
-                onTap: onTogglePlayback,
-              ),
-              const SizedBox(width: AppSpacing.xs),
-            ],
             Material(
               color: AppColors.surfaceSoft,
               borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -83,6 +75,12 @@ class PadPagePill extends StatelessWidget {
                 ),
               ),
             ),
+            const SizedBox(width: AppSpacing.sm),
+            _PillTextButton(
+              icon: isSpeaking ? Icons.pause : Icons.play_arrow,
+              label: isSpeaking ? '暂停' : '朗读全文',
+              onTap: onTogglePlayback,
+            ),
           ],
         );
       },
@@ -90,16 +88,64 @@ class PadPagePill extends StatelessWidget {
   }
 }
 
-class _PillIconButton extends StatelessWidget {
-  const _PillIconButton({
+/// 浅底胶囊文字按钮（与页码胶囊同一视觉语言）：朗读入口用。
+///
+/// 带文字而非纯图标：图标按钮的发现性正是这次要修的问题——一个孤零零的
+/// `▶` 混在书页里，读者不知道它读的是全文还是当前段。
+class _PillTextButton extends StatelessWidget {
+  const _PillTextButton({
     required this.icon,
-    required this.tooltip,
+    required this.label,
     required this.onTap,
   });
 
   final IconData icon;
-  final String tooltip;
+  final String label;
   final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surfaceSoft,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: 6,
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 16, color: AppColors.bodyText),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                label,
+                style: AppType.textTheme.labelMedium?.copyWith(
+                  color: AppColors.bodyText,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 沉浸态常驻的退出入口：书页左上角的浅底圆形返回键。
+///
+/// 唤出工具栏时它淡出，把位置让给顶栏里的返回键——两处是同一个动作，同时
+/// 出现就是两个箭头抢一次点击。屏幕上因此**永远恰好有一个**返回入口：
+/// 收起态是这个圆键，唤出态是顶栏左端那个。
+///
+/// 尺寸取 [AppPage.minTouchTarget] 并**贴到屏幕最左**：书页在 1280dp 横屏上
+/// 距屏幕左边只有 50dp（居中留白），按钮再往右就会切进正文标题的第一个字母。
+class PadReadingFloatingBack extends StatelessWidget {
+  const PadReadingFloatingBack({super.key, required this.onBack});
+
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -107,13 +153,18 @@ class _PillIconButton extends StatelessWidget {
       color: AppColors.surfaceSoft,
       shape: const CircleBorder(),
       child: InkWell(
-        onTap: onTap,
+        onTap: onBack,
         customBorder: const CircleBorder(),
         child: Tooltip(
-          message: tooltip,
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: Icon(icon, size: 16, color: AppColors.bodyText),
+          message: '退出阅读',
+          child: SizedBox(
+            width: AppPage.minTouchTarget,
+            height: AppPage.minTouchTarget,
+            child: const Icon(
+              Icons.arrow_back,
+              size: 20,
+              color: AppColors.bodyText,
+            ),
           ),
         ),
       ),
@@ -124,6 +175,8 @@ class _PillIconButton extends StatelessWidget {
 /// 沉浸态唤出后的顶栏：返回 + 文章标题 + 已读标记 + 译文模式。
 ///
 /// 平板横向空间充裕，标题直接放顶栏（手机上标题在正文流里）。
+/// 左端的返回键与收起态常驻的 [PadReadingFloatingBack] 是同一个动作的两副
+/// 面孔：唤出时后者淡出，本栏滑入接替，读者眼里始终有一个返回入口。
 class PadReadingTopBar extends StatelessWidget {
   const PadReadingTopBar({
     super.key,

@@ -39,9 +39,12 @@ class PadContinueCard extends ConsumerWidget {
         );
     final resumed = article.accumulatedReadSeconds > 0;
 
+    // 左边不缩进：Hero 的左右边距若与下方网格不一致，两张卡片的左边缘就会
+    // 差出 32dp（实测反馈的"今日推荐跟下面的文章没有左对齐"）。网格与分组
+    // 标题都是贴右栏左沿、只留右边距，Hero 跟随同一套。
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        PadLayout.pagePadding,
+        0,
         AppSpacing.lg,
         PadLayout.pagePadding,
         AppSpacing.xl,
