@@ -51,7 +51,12 @@ abstract final class PadLayout {
   static const double cardMinWidth = 240;
 
   /// 封面块高度（卡片上半的"书封"）。
-  static const double cardCoverHeight = 110;
+  ///
+  /// 110dp 的原始值在 1280×800dp 实测里显得空：分类名贴底，上面空出约 90dp
+  /// 的死区，卡片整体也被推到 220dp 高。收到 72dp——正好是**两行分类名
+  /// （2×22dp 行高）＋ 底边距 12dp ＋ 一点上留白**，再矮两行的分类名就会顶到
+  /// 封面上沿，再高又是白送的空块。
+  static const double cardCoverHeight = 72;
 
   /// 网格列数上限（超宽屏下不无限铺开）。
   static const int gridMaxColumns = 4;

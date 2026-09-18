@@ -322,11 +322,16 @@ class ReadingController extends StateNotifier<ReadingUiState> {
     // 同时驱动按句高亮与播放条进度（第 N/M 句）——播放位置而非生成位置，
     // 标题段（-1）不显示句号。
     engine.setOnSentenceStarted(
-        (utteranceId, paragraphIndex, sentenceIndex, total) {
+        (utteranceId, paragraphId, sentenceIndex, total) {
+      // 上报的是**段落 id**，状态里要的是**段落序号**——见 _paragraphIndexOfId
+      final paragraphIndex = _paragraphIndexOfId(paragraphId);
       debugPrint('[ReadingCtrl] sentenceStarted: id=$utteranceId '
-          'para=$paragraphIndex sentence=$sentenceIndex total=$total '
+          'paraId=$paragraphId → index=$paragraphIndex '
+          'sentence=$sentenceIndex total=$total '
           'current=$_currentUtteranceId');
-      if (utteranceId == _currentUtteranceId && !_disposed) {
+      if (utteranceId == _currentUtteranceId &&
+          !_disposed &&
+          paragraphIndex != null) {
         state = state.copyWith(
           speakingParagraphIndex: paragraphIndex,
           speakingSentenceIndex: sentenceIndex,
@@ -445,6 +450,23 @@ class ReadingController extends StateNotifier<ReadingUiState> {
               text: s.text,
             ),
       ];
+
+  /// 引擎上报的段落 **id** → 界面用的段落**序号**（0 起）。
+  ///
+  /// 引擎带回的是朗读单元的 `paragraphId`（`article_paragraph.id`，生产库里
+  /// **全局自增**——实测 727 起），而阅读页 / 书页一律拿状态与段落序号比对。
+  /// 二者只在测试夹具（id 默认 0）里偶然相等；少了这次换算，逐句高亮、
+  /// 自动翻页、播放条句进度会一起失效（2026-09-18 实测"阅读时句子没有高亮"）。
+  ///
+  /// 标题哨兵 [kTitleParagraphIndex] 原样透传；查无此 id 返回 null——
+  /// **宁可不亮，也不亮错段**（换文章后迟到的旧回调会落到这里）。
+  int? _paragraphIndexOfId(int id) {
+    if (id == kTitleParagraphIndex) return kTitleParagraphIndex;
+    for (var i = 0; i < state.paragraphs.length; i++) {
+      if (state.paragraphs[i].id == id) return i;
+    }
+    return null;
+  }
 
   /// (段落索引, 段内句序号) → 全篇句序号（1-based，跨段累计）。
   double? _globalSentenceNumber(int paragraphIndex, int sentenceIndex) {

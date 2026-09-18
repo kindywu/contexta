@@ -4,10 +4,11 @@ import 'package:contexta/ui/reading/translation_visibility.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 沉浸式阅读器工具栏测试（2026-09-18 重设计）。
+/// 沉浸式阅读器工具栏测试（2026-09-18 重设计，同日实测后补常驻件）。
 ///
-/// 守的是"沉浸"这条设计承诺：默认只留一个页码胶囊，其余控件都不出现；
-/// 胶囊是唯一的唤出入口，且朗读中必须能一键停。
+/// 守的是"沉浸"这条设计承诺：默认只有一条胶囊带 + 左上角一个返回圆键，
+/// 其余控件都不出现。但**出口与朗读不能藏**——真机实测里读者找不到回家的路
+/// 也没找到朗读，所以这两样必须常驻，哪怕牺牲一点沉浸感。
 void main() {
   late PageController controller;
 
@@ -88,12 +89,29 @@ void main() {
       expect(toggles, 1, reason: '胶囊是唯一的唤出入口，必须可点');
     });
 
-    testWidgets('不朗读时**没有**暂停键（沉浸态不摆无关控件）', (tester) async {
-      await pumpPill(tester, isSpeaking: false);
+    testWidgets('不朗读时常驻「朗读全文」入口（不再藏进底栏）', (tester) async {
+      var playbackToggles = 0;
+      await pumpPill(
+        tester,
+        isSpeaking: false,
+        onTogglePlayback: () => playbackToggles++,
+      );
+
+      expect(find.text('朗读全文'), findsOneWidget);
+      expect(find.byIcon(Icons.play_arrow), findsOneWidget);
       expect(find.byIcon(Icons.pause), findsNothing);
+      expect(
+        find.byType(Tooltip),
+        findsNothing,
+        reason: '入口靠文字自解释，不靠长按提示——长按在沉浸阅读里没人会做',
+      );
+
+      await tester.tap(find.text('朗读全文'));
+      await tester.pumpAndSettle();
+      expect(playbackToggles, 1);
     });
 
-    testWidgets('朗读中长出暂停键——沉浸态下必须能停下来', (tester) async {
+    testWidgets('朗读中同一个位置变暂停键——沉浸态下必须能停下来', (tester) async {
       var playbackToggles = 0;
       await pumpPill(
         tester,
@@ -101,8 +119,11 @@ void main() {
         onTogglePlayback: () => playbackToggles++,
       );
 
+      expect(find.text('暂停'), findsOneWidget);
       expect(find.byIcon(Icons.pause), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.pause));
+      expect(find.text('朗读全文'), findsNothing);
+
+      await tester.tap(find.text('暂停'));
       await tester.pumpAndSettle();
       expect(playbackToggles, 1);
     });
@@ -124,6 +145,32 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('3 / 3'), findsOneWidget);
+    });
+  });
+
+  group('沉浸态常驻返回键', () {
+    testWidgets('是一个能点的返回箭头（收起态唯一可见的出口）', (tester) async {
+      var backs = 0;
+      await pump(
+        tester,
+        PadReadingFloatingBack(onBack: () => backs++),
+      );
+
+      expect(find.byIcon(Icons.arrow_back), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.arrow_back));
+      await tester.pumpAndSettle();
+      expect(backs, 1);
+    });
+
+    testWidgets('触摸目标不小于 44dp', (tester) async {
+      await pump(
+        tester,
+        PadReadingFloatingBack(onBack: () {}),
+      );
+
+      final size = tester.getSize(find.byType(InkWell));
+      expect(size.width, greaterThanOrEqualTo(44));
+      expect(size.height, greaterThanOrEqualTo(44));
     });
   });
 

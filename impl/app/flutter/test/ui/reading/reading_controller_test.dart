@@ -386,9 +386,22 @@ Article makeArticle({
       paragraphs: paragraphs,
     );
 
+/// 段落夹具带**非 0 的 id**：生产库里 `article_paragraph.id` 是全局自增
+/// （实测 727 起），引擎按 id 上报播放位置——夹具若用默认的 0，
+/// `id == 序号` 的假象会让「忘了换算」的 bug 在测试里隐形。
 const _paragraphs = [
-  ArticleParagraph(orderIndex: 0, englishText: 'Hello world.', chineseTranslation: '你好世界。'),
-  ArticleParagraph(orderIndex: 1, englishText: 'Second paragraph.', chineseTranslation: '第二段。'),
+  ArticleParagraph(
+    id: 500,
+    orderIndex: 0,
+    englishText: 'Hello world.',
+    chineseTranslation: '你好世界。',
+  ),
+  ArticleParagraph(
+    id: 501,
+    orderIndex: 1,
+    englishText: 'Second paragraph.',
+    chineseTranslation: '第二段。',
+  ),
 ];
 
 void main() {
@@ -925,28 +938,90 @@ void main() {
       expect(controller.state.speechTotalSentences, isNull);
 
       // 正文段 0 第 1 句发声：高亮段 0 句 0，播放条「第 1/2 句」（播放进度）
-      tts.simulateSentenceStarted(0, 0);
+      // 引擎按段落 **id** 上报（见 _paragraphs 夹具说明）
+      tts.simulateSentenceStarted(500, 0);
       expect(controller.state.speakingParagraphIndex, 0);
       expect(controller.state.speakingSentenceIndex, 0);
       expect(controller.state.speechProgress, 1);
       expect(controller.state.speechTotalSentences, 2);
       expect(controller.state.isSpeakingFullArticle, isTrue);
 
-      tts.simulateSentenceStarted(1, 0);
+      tts.simulateSentenceStarted(501, 0);
       expect(controller.state.speakingParagraphIndex, 1);
       expect(controller.state.speakingSentenceIndex, 0);
       expect(controller.state.speechProgress, 2);
+    });
+
+    test('回调带的是段落 **id**（非 0 起）时，状态必须换算成段落序号', () async {
+      // 引擎（KittenTTS）按 SentenceUnit.paragraphId 上报，而生产库的
+      // article_paragraph.id 是全局自增（实测 727），不段落序号；
+      // 界面一律拿 state 与 `index` 比对——中间少一次换算，逐句高亮、
+      // 自动翻页、播放条进度就全都匹配不上（2026-09-18 实测）。
+      articleRepo = _FakeArticleRepo(
+        onGetArticle: (_) async => makeArticle(paragraphs: const [
+          ArticleParagraph(
+            id: 727,
+            orderIndex: 0,
+            englishText: 'One. Two.',
+            chineseTranslation: '一二。',
+          ),
+          ArticleParagraph(
+            id: 731,
+            orderIndex: 1,
+            englishText: 'Three.',
+            chineseTranslation: '三。',
+          ),
+        ]),
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+      await controller.startFullArticlePlayback();
+
+      tts.simulateSentenceStarted(727, 0);
+      expect(
+        controller.state.speakingParagraphIndex,
+        0,
+        reason: '界面按段落序号高亮，状态里不能存 id',
+      );
+      expect(controller.state.speakingSentenceIndex, 0);
+      expect(controller.state.speechProgress, 1, reason: '播放进度同样依赖序号');
+
+      tts.simulateSentenceStarted(731, 0);
+      expect(controller.state.speakingParagraphIndex, 1);
+      // 段 0 有 2 句，段 1 首句 = 全篇第 3 句
+      expect(controller.state.speechProgress, 3);
+    });
+
+    test('未知段落 id 不写入状态（宁可不亮，不亮错段）', () async {
+      articleRepo = _FakeArticleRepo(
+        onGetArticle: (_) async => makeArticle(paragraphs: const [
+          ArticleParagraph(
+            id: 727,
+            orderIndex: 0,
+            englishText: 'One.',
+            chineseTranslation: '一。',
+          ),
+        ]),
+      );
+      controller = makeController();
+      await controller.loadArticle(1);
+      await controller.startFullArticlePlayback();
+
+      tts.simulateSentenceStarted(99999, 0);
+      expect(controller.state.speakingParagraphIndex, isNull);
     });
 
     test('播放进度按全篇句序号累计（跨段落）', () async {
       articleRepo = _FakeArticleRepo(
         onGetArticle: (_) async => makeArticle(paragraphs: const [
           ArticleParagraph(
+            id: 800,
             orderIndex: 0,
             englishText: 'One. Two. Three.',
             chineseTranslation: '一二三。',
           ),
           ArticleParagraph(
+            id: 801,
             orderIndex: 1,
             englishText: 'Four. Five.',
             chineseTranslation: '四五。',
@@ -957,11 +1032,11 @@ void main() {
       await controller.loadArticle(1);
       await controller.startFullArticlePlayback();
 
-      tts.simulateSentenceStarted(1, 0, total: 5); // 第二段首句 = 全篇第 4 句
+      tts.simulateSentenceStarted(801, 0, total: 5); // 第二段首句 = 全篇第 4 句
       expect(controller.state.speechProgress, 4);
       expect(controller.state.speechTotalSentences, 5);
 
-      tts.simulateSentenceStarted(1, 1, total: 5); // 第二段次句 = 全篇第 5 句
+      tts.simulateSentenceStarted(801, 1, total: 5); // 第二段次句 = 全篇第 5 句
       expect(controller.state.speechProgress, 5);
     });
 
@@ -970,13 +1045,13 @@ void main() {
       controller.playParagraph(0); // ctx-0
       await controller.startFullArticlePlayback(); // ctx-1
 
-      tts.simulateSentenceStarted(0, 0); // 用 _lastId = ctx-1 触发
+      tts.simulateSentenceStarted(500, 0); // 用 _lastId = ctx-1 触发
       // 捕获断言（四元组）：controller 未注册 setOnSentenceStarted 时保持 null
       expect(tts.lastSentenceId, 'ctx-1');
-      expect(tts.lastSentenceParagraphIndex, 0);
+      expect(tts.lastSentenceParagraphIndex, 500, reason: '引擎原样回传段落 id');
       expect(tts.lastSentenceIndex, 0);
       expect(tts.lastSentenceTotal, 2);
-      expect(controller.state.speakingParagraphIndex, 0);
+      expect(controller.state.speakingParagraphIndex, 0, reason: '状态存的是序号');
     });
   });
 

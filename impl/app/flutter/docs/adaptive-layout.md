@@ -181,9 +181,14 @@ flowchart TD
 | `lib/pad/pad_article_grid.dart` | 封面式网格：按宽度推导列数，逐行等高 |
 | `lib/pad/pad_article_card.dart` | 封面式卡片：`PadCover`（难度色调整块）+ 标题 + 元信息 |
 | `lib/pad/pad_providers.dart` | `padArticleDetailProvider`：Hero 卡取单篇详情（含段落） |
+| `lib/pad/pad_login_banner.dart` | 未登录状态带 + 登录入口（**平板上唯一的登录入口**，见下） |
 | `lib/pad/pad_layout.dart` | 平板布局常量（宽度、留白、列数上限、栏高） |
 
+**未登录状态带是平板唯一的登录入口**：手机首页有同款横幅，但**平板上没有第二处**——设置页的账号区只在已登录时才渲染，登录页也没有别的入口。这条带子丢了，平板就永远停在本地模式：`homeController.load()` 走 `StartupNeedsLogin` 分支跳过每日同步，首页永远只有安装时那批文章（2026-09-18 模拟器实测："首页没有读取今日文章"，实测库中 `server_token` 为 NULL、全部文章 `server_article_id` 为 NULL、最新批次停在 `2026-08-11`）。显示条件与手机一致：`serverConfiguredProvider` 为真且登录态不是 `loggedIn`。
+
 **Hero 卡的开头段从哪来**：首页列表查询（`watchByBatch`）只查 `article` 表、不带段落，而 Hero 卡要显示真实正文。`padArticleDetailProvider` 为"当前推荐的那一篇"单独取一次详情——一篇的额外查询，不把它并进首页批量查询（那会加重**手机侧**的数据路径，而手机界面根本不用这段文字）。
+
+**Hero 与网格左对齐**：Hero 卡只留右边距，左边贴右栏左沿——与分组标题、网格用同一套边距。多包一层 32dp 左边距会让两张卡片的左边缘差出 32dp（2026-09-18 模拟器实测反馈的"今日推荐跟下面的文章没有左对齐"）。右栏与日期目录之间已有 32dp 间距，不需要再加一层缩进。
 
 **网格为什么不用 `Wrap`**：`Wrap` 的子项各按自身内容取高，同一行里标题两行的卡片会比标题一行的高出一截，**封面色块高度参差不齐**——而封面块正是这个网格的扫视锚点，错位会毁掉"按色块定位"的效果。改用显式分行 + `IntrinsicHeight` 把整行拉到最高卡片的高度。
 
@@ -199,7 +204,7 @@ flowchart TD
 | `pagePadding` | 32 | 内容区左右留白（32 是"不贴边"与"保住 3 列"的平衡点） |
 | `dateIndexWidth` | 180 | 日期目录列宽（再宽就掉列） |
 | `cardMinWidth` | 240 | 卡片最小可用宽 |
-| `cardCoverHeight` | 110 | 封面块高度 |
+| `cardCoverHeight` | 72 | 封面块高度（两行分类名 + 底边距的最小值；原 110 实测太空） |
 | `gridMaxColumns` | 4 | 列数上限 |
 | `spreadMaxWidth` / `spreadGutter` | 1180 / 56 | 阅读页书页宽与中缝 |
 | `pagePillRowHeight` / `chromeTopBarHeight` / `chromeBottomBarHeight` | 56 / 56 / 56 | 阅读页工具栏几何 |

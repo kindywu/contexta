@@ -24,13 +24,18 @@ import 'reading/reading_block.dart';
 /// 与手机阅读页（单列无限滚动）是两棵独立的界面树，互不影响——本页只在
 /// pad 界面树里被路由使用（见 `core/navigation/pad_router` 一路的分叉点）。
 ///
-/// **默认什么都不画**：书页占满整屏，底部只留一个页码胶囊。点胶囊唤出顶栏
-/// （返回 / 标题 / 译文）与底栏（进度 / 朗读 / 语速）；上下栏以覆盖层滑入，
-/// **不推挤书页**——否则每次唤出控件文字都要重排一次，翻页时会看到内容跳。
+/// **默认几乎什么都不画**：书页占满整屏，底部只留一条胶囊带、左上角一个圆形
+/// 返回键。点胶囊唤出顶栏（返回 / 标题 / 译文）与底栏（进度 / 朗读 / 语速）；
+/// 上下栏以覆盖层滑入，**不推挤书页**——否则每次唤出控件文字都要重排一次，
+/// 翻页时会看到内容跳。
 ///
 /// 竖直方向的空间账：改造前常驻顶栏 + 常驻播放条吃掉约 110dp，正文每页因此
 /// 少放 3~4 行；现在全部还给正文，只保留 [PadLayout.pagePillRowHeight] 一条
-/// 胶囊带（朗读进行中胶囊旁长出暂停键，保证沉浸态下也能停）。
+/// 胶囊带。
+///
+/// 两条常驻件是 2026-09-18 实测补的——此前的"绝对沉浸"把**出口**和**朗读**
+/// 都藏进了唤出态，读者找不到：返回键只在顶栏里，朗读只在底栏里。现在
+/// 左上角常驻返回键（唤出时让位给顶栏那个，不重复），胶囊旁常驻「朗读全文」。
 ///
 /// 数据与朗读复用同一套 `readingControllerProvider`：沉浸只改变"控件什么时候
 /// 出现"，不改变"文章怎么加载、怎么朗读、怎么查词"。
@@ -267,6 +272,20 @@ class _PadReadingScreenState extends ConsumerState<PadReadingScreen> {
                                   notifier.toggleFullArticlePlayback,
                             ),
                     ),
+                  ),
+                ),
+              ),
+
+              // 左上角常驻返回键（唤出态淡出，位置让给顶栏里的那个）
+              Positioned(
+                left: AppSpacing.xxs,
+                top: AppSpacing.xxs,
+                child: IgnorePointer(
+                  ignoring: _chromeVisible,
+                  child: AnimatedOpacity(
+                    opacity: _chromeVisible ? 0 : 1,
+                    duration: AppMotion.base,
+                    child: PadReadingFloatingBack(onBack: widget.onBack),
                   ),
                 ),
               ),
