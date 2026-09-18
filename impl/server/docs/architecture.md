@@ -103,7 +103,7 @@ impl/server/
 | `article_batches` | id PK、run_date **UNIQUE**、total_slots、completed_slots、failed_slots、status CHECK(`running`/`completed`/`completed_with_failures`/`failed`)、started_at、finished_at | 一天一批；收口后 status 不再为 running |
 | `articles` | id PK、batch_id FK、run_date、difficulty（LOW/MEDIUM/HIGH）、category（11 类）、path CHECK(`A`/`B`)、source_url 可空、title_en、title_zh、paragraph_count、markdown_path、thread_id、created_at | 索引 `(source_url)`、`(created_at)`、`(batch_id)`；**无 embedding 列** |
 | `article_paragraphs` | id PK、article_id FK、paragraph_index（0 基）、text_en、text_zh | UNIQUE(article_id, paragraph_index) |
-| `batch_slots` | id PK、batch_id FK、run_date、slot_index、difficulty、thread_id、status CHECK(`pending`/`success`/`rejected`/`error`)、attempts（图内实际生成轮数）、article_id FK 可空、error_message（失败/拒绝原因，可空——新数据落库，旧库启动幂等补列）、updated_at | UNIQUE(batch_id, slot_index)；索引 `(run_date)`；**槽位 = 文章占位**：每天 3 难度 × 5 篇 = 15 槽 |
+| `batch_slots` | id PK、batch_id FK、run_date、slot_index、difficulty、thread_id、status CHECK(`pending`/`success`/`rejected`/`error`)、attempts（图内实际生成轮数）、article_id FK 可空、error_message（失败/拒绝原因：基础话术 + 具体明细——违规条目/命中内容/来源 URL，可空——新数据落库，旧库启动幂等补列）、updated_at | UNIQUE(batch_id, slot_index)；索引 `(run_date)`；**槽位 = 文章占位**：每天 3 难度 × 5 篇 = 15 槽 |
 
 ### 3.2 服务端 6 表 + article_review
 
@@ -193,6 +193,19 @@ flowchart TD
 
 **三态结果**（`ArticleResult`）：`success`（含 GeneratedArticle：runDate/difficulty/category/path/sourceUrl?/factSheet?/titleEn/titleZh/paragraphs）/ `rejected`（reason，业务性拒绝：名单命中/源不适配/校验封顶/模型拒答）/ `error`（message，技术失败：网络、欠费、站点全挂、结构不合规）。**引擎承诺三态返回不抛**（checkpoint 路径不可用的构造异常除外，调用方兜底）。
 
+**拒绝原因明细**（`state.rejectDetail` → 对外 reason → `batch_slots.error_message`）：`state.reason` 是路由判据（图条件边按 `LEADERS_*_REJECTION_MESSAGE` 常量原文比较，任何改动都会断短路），**不得**塞展示信息；各 rejecting 节点另写 `rejectDetail`，由 `toResult` 拼成 `<基础话术> <明细>` 对外返回。明细内容：
+
+| 拒绝场景 | 明细内容 |
+|---------|---------|
+| `fetchLinks` 候选标题全含受限人名 | 站点名 + 站点 URL + 每站过滤条数 + 被滤候选例（标题 + 文章 URL） |
+| `chooseArticle` 候选耗尽（标题/正文命中） | 命中篇数 + 候选例（标题 + 文章 URL + 是否正文命中）+ 站点名 |
+| `extractFacts` 空卡（源不适配） | 来源标题 + 来源 URL + 原文开头片段（100 字符） |
+| `generateA/B` 模型拒答 | 拒答形态（cannot_write / 拒答话术）+ 来源《标题》+ URL（pathB 用选题兜底） |
+| `leadersCheck` 名单命中 | 命中人名 + 命中段落片段（段号 + 原文）或标题 + 来源/选题 |
+| `validate` 违规封顶 | 末轮违规条数 + 轮次（第 N/M 轮仍违规）+ 判官条目（ruleId + message，前 3 条）+ 来源/选题 |
+
+明细整体截断 300 字符（`rejectDetailOf`；片段各自 80–120 字符）；`dayResultFromDb` 重建既存批次时从 `batch_slots.error_message` 回读（旧数据无值才退回"未持久化"占位）。管理端「异常槽位」弹窗直接展示该列（`error_message`，URL 由前端渲染为可点链接）。
+
 ### 4.2 审核：ensureReviewRows / approve / reject / reRunSlot
 
 审核行（`article_review`）与引擎槽位（`batch_slots`）职责分离：槽位记"生成成败"（pending/success/rejected/error），审核行记"管理处置"（pending_review/approved/rejected/rejected_final）。重生成 = 槽位换指向新文章（新 article_id），旧文章审核行保留为历史（history）。
@@ -222,7 +235,7 @@ stateDiagram-v2
 - **rejectArticle(ctx, articleId, reason, admin)**：同守卫；先数同槽累计 rejected 行数 n（不含本次），`n >= REGENERATE_LIMIT`（默认 3）→ 写 `rejected_final`（不重生成）；否则写 `rejected` 并 **await `reRunSlot(ctx, slot, n+1)`** 原地补生成（同步等待——管理端在响应里看到补生成结果）。并发双 reject：条件 UPDATE affected=0 → 404，只建一条拒绝、只补一次。补生成本身失败不上抛（拒绝语义已在事务内完成），新行保持失败槽位由每日任务 retry 自愈。
 - **reRunSlot(ctx, slotRow, genSeq)**：槽位级进程锁（`slotLocks`，同槽 reRun 串行；键 = batch_slots.id）；threadId = `daily-<runDate>-<slotIndex>-r<genSeq>`；去重上下文与引擎 daily 一致（`listRecentArticles(db, runDate, 5, 60)` → recentTitles + recentUsedUrls + 新建 `TopicRegistry` 走选题规划，避开近 5 天已发题材）；调 `generateArticle` → success：写 md → `insertArticleWithParagraphs` → `writeSlotResult(success)` → `ensureReviewRows`（新文补 pending_review）；rejected/error：只写槽位终态；finally `finalizeBatch`。checkpoint 不可用的构造异常兜底按 error 落槽位终态（拒绝语义已完成，抛给管理端会被误读为"拒绝失败"）。
 - **retrySlot(ctx, slotRow)**：error/rejected 槽位（无文章）的重跑入口——`reRunSlot(ctx, slotRow, Date.now())`（genSeq=唯一时间戳：引擎同 threadId 已有终态 checkpoint 时按断点契约返回旧结果，恒定 genSeq=1 会令"重复点重试"静默 no-op）。
-- **文章列表**（管理端 `GET /api/admin/articles`）：文章视角分页列表——每行 = `articles` 一行（含被补生成替换的旧文）。参数：`start_date`/`end_date`（按 `run_date`，缺省当天，`start > end` → 400）、`status`（`pending_review`/`approved`/`rejected`——rejected **聚合** `rejected_final`；缺省全部）、`page`（1 起）/`page_size`（15/30/45，缺省 15）、`sort_by`/`sort_dir`（白名单：`run_date`/`slot_index`/`created_at`/`difficulty`/`category`/`status`/`paragraph_count`/`id`，非法值 → 400；默认 `run_date DESC, slot_index ASC, id DESC`）。行：`{id, run_date, difficulty, category, title_en, title_zh, source_url, paragraph_count, created_at(生成时间 UTC), slot_id, slot_index, is_current(是否任一槽位现指向——旧文 false，审核守卫同规), review{id, status, reject_reason, reviewed_by, reviewed_at} | null}`。响应：`{items, total, stats{total, pending_review, approved, rejected}}`——`stats` 口径 = 时间段内全量（**不含** status 筛选，管理端统计条据此展示并可点击筛选）。旧槽位视图（每槽行）已废弃：无 review 行的异常文章经 LEFT JOIN 兜 null（slot 信息缺失）。
+- **文章列表**（管理端 `GET /api/admin/articles`）：文章视角分页列表——每行 = `articles` 一行（含被补生成替换的旧文）。参数：`start_date`/`end_date`（按 `run_date`，缺省当天，`start > end` → 400）、`status`（`pending_review`/`approved`/`rejected`——rejected **聚合** `rejected_final`；缺省全部）、`page`（1 起）/`page_size`（15/30/45，缺省 15）、`sort_by`/`sort_dir`（白名单：`run_date`/`slot_index`/`created_at`/`difficulty`/`category`/`status`/`paragraph_count`/`id`，非法值 → 400；默认 `run_date DESC, slot_index ASC, id DESC`）。行：`{id, run_date, difficulty, category, title_en, title_zh, source_url, paragraph_count, created_at(生成时间 UTC), slot_id, slot_index, is_current(是否任一槽位现指向——旧文 false，审核守卫同规), review{id, status, reject_reason, reviewed_by, reviewed_at} | null}`。响应：`{items, total, stats{total, pending_review, approved, rejected, error_slots}}`——`stats` 口径 = 时间段内全量（**不含** status 筛选，管理端统计条据此展示并可点击筛选；`error_slots` = 非 success 槽位数，与 `GET /api/admin/slots` 同口径，入口 tag）。旧槽位视图（每槽行）已废弃：无 review 行的异常文章经 LEFT JOIN 兜 null（slot 信息缺失）。
 - **文章详情**（`GET /api/admin/articles/:id`）：articles 全行 + 段落（order_index 1 起）+ review 行 + 所属槽位 + **history**（同槽全部 review 行倒序——槽位时间线数据源，旧列表行不再携带 history）。槽位以 review.slot_id 为准（旧文被补生成换指后仍归属其槽位）；无 review 行回退 batch_slots.article_id。
 - **审核期内容编辑**（`PUT /api/admin/articles/:id`）：守卫 = 有 review 行 + status=pending_review + 文章是槽位现指向；校验 title 非空、段落 ≥1、每段 en/zh 至少一个非空；单事务 UPDATE title_en（+paragraph_count）→ DELETE 旧段落 → 按请求序重插（paragraph_index 0 基）。title_zh 不动。
 - **手动补生成**（`POST /api/admin/articles/generate {date}`）：严格 ISO 校验（`2026-2-30`、`2026-13-01` 等 → 400 BAD_PARAM，回格式化全等判定）→ 引擎 `generateDailyArticles` → `ensureReviewRows` 收口（引擎不建审核行）。
@@ -400,7 +413,7 @@ flowchart TD
 | PUT | `/api/admin/articles/:id` | 审核期编辑（`{title, paragraphs:[{english_text, chinese_translation}]}`；守卫见 §4.2） |
 | POST | `/api/admin/articles/:id/approve` | 审核通过（守卫 + 条件 UPDATE） |
 | POST | `/api/admin/articles/:id/reject` | 审核拒绝（`{reason?}`；未达上限 → 同步 await 补生成） |
-| GET | `/api/admin/slots` | 异常槽位列表（`?start_date=&end_date=`，缺省当日；返回时间段内非 success 槽位——含无文章行的 error 槽，管理端"异常槽位"摘要/重跑入口数据源） |
+| GET | `/api/admin/slots` | 异常槽位列表（`?start_date=&end_date=`，缺省当日；返回时间段内非 success 槽位——含无文章行的 error 槽；行含 `error_message` 具体原因（明细见 §4.1），管理端"异常槽位"摘要/原因展示/重跑入口数据源） |
 | POST | `/api/admin/slots/:id/retry` | 槽位重跑（error/rejected 槽位；`retrySlot`；**SSE 进度流**——progress/done/error 事件 + 8s 心跳，客户端 fetch 流解析；守卫失败仍为 JSON 400/404） |
 | POST | `/api/admin/articles/generate` | 手动补生成 `{date}`（严格 ISO 校验，非法 400） |
 

@@ -61,7 +61,14 @@ export function toResult(
     return { outcome: "success", genAttempts, article };
   }
   if (state.outcome === "rejected") {
-    return { outcome: "rejected", genAttempts, reason: state.reason || REJECTION_MESSAGE };
+    const base = state.reason || REJECTION_MESSAGE;
+    // 明细（命中内容/违规条目/来源 URL 等）拼进对外 reason——落 batch_slots.error_message，
+    // 管理端「异常槽位」直接展示具体原因；图内路由仍按 state.reason 常量比较，不受影响。
+    return {
+      outcome: "rejected",
+      genAttempts,
+      reason: state.rejectDetail ? `${base} ${state.rejectDetail}` : base,
+    };
   }
   return { outcome: "error", genAttempts, message: state.reason || "未知错误" };
 }

@@ -157,6 +157,24 @@ function slotLabel(row: { slot_index: number | null }): string {
   return row.slot_index == null ? '—' : `#${row.slot_index + 1}` // 存储 0 基，展示 1 基
 }
 
+/**
+ * 异常槽位原因里的外链拆成可点片段（不用 v-html——原因含文章标题/段落原文，避免注入）。
+ * 引擎写入的原因以「；」分段，URL 后常跟中文标点，故排除这些字符再收尾。
+ */
+function reasonSegments(text: string | null | undefined): Array<{ text: string; href?: string }> {
+  if (!text) return []
+  const out: Array<{ text: string; href?: string }> = []
+  const re = /https?:\/\/[^\s；，）)《》"']+/g
+  let last = 0
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    if (m.index > last) out.push({ text: text.slice(last, m.index) })
+    out.push({ text: m[0], href: m[0] })
+    last = m.index + m[0].length
+  }
+  if (last < text.length) out.push({ text: text.slice(last) })
+  return out
+}
+
 /** 重跑条件：文章被拒（非终）且仍为槽位当前指向（补生成未成/失败场景）。 */
 function canRetry(row: ArticleListItem): boolean {
   return row.review?.status === 'rejected' && row.is_current
@@ -476,8 +494,8 @@ async function saveEdit() {
       </div>
     </a-card>
 
-    <!-- 异常槽位抽屉：error/rejected 槽一句话简报 + 单槽重跑 -->
-    <a-modal v-model:open="errorState.open" title="异常槽位" :width="760" :footer="null">
+    <!-- 异常槽位抽屉：error/rejected 槽具体原因（命中内容/违规条目/来源链接）+ 单槽重跑 -->
+    <a-modal v-model:open="errorState.open" title="异常槽位" :width="960" :footer="null">
       <a-table
         :data-source="errorState.items"
         :loading="errorState.loading"
@@ -491,9 +509,22 @@ async function saveEdit() {
             <a-tag size="small">{{ record.difficulty }}</a-tag>
           </template>
         </a-table-column>
-        <a-table-column title="状态" data-index="status" width="100" />
-        <a-table-column title="更新时间" data-index="updated_at" width="180" />
-        <a-table-column title="操作" key="action" width="90">
+        <a-table-column title="状态" data-index="status" width="90" />
+        <a-table-column title="原因" key="error_message" width="360">
+          <template #default="{ record }">
+            <span v-if="!record.error_message" class="placeholder-text">—</span>
+            <span v-else class="reason-cell">
+              <template v-for="(seg, i) in reasonSegments(record.error_message)" :key="i">
+                <a v-if="seg.href" :href="seg.href" target="_blank" rel="noreferrer">{{
+                  seg.text
+                }}</a>
+                <template v-else>{{ seg.text }}</template>
+              </template>
+            </span>
+          </template>
+        </a-table-column>
+        <a-table-column title="更新时间" data-index="updated_at" width="160" />
+        <a-table-column title="操作" key="action" width="80">
           <template #default="{ record }">
             <a-button
               type="link"
@@ -804,6 +835,14 @@ async function saveEdit() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 异常槽位「原因」：整段可换行展示（引擎给的具体明细，含 URL），不做省略 */
+.reason-cell {
+  display: inline-block;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.5;
+  font-size: 13px;
 }
 .old-article-tag {
   color: #c00;

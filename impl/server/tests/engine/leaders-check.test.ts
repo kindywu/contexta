@@ -29,6 +29,22 @@ test("coreLeadersNode: 中文正文/标题出现受限人名 → 立即 rejected
   expect(hitTitle.outcome).toBe("rejected");
 });
 
+test("coreLeadersNode: 拒绝明细含命中人名 + 段落片段 + 来源 URL（管理端展示用）", async () => {
+  const _deps = { llm: FakeLLM.prototype as never, sitesByCategory: {}, rng: () => 0 };
+  const out = await coreLeadersNode(
+    {
+      draft: draft("普通标题", ["熊猫是中国的国宝。", "这篇文章提到邓小平的贡献。"]),
+      sourceTitle: "Some Source Title",
+      sourceUrl: "https://fakesite.dev/a/9",
+    } as never,
+    _deps,
+  );
+  expect(out.reason).toContain("受限人物"); // 基础话术不变（图路由判据）
+  expect(out.rejectDetail).toContain("邓小平");
+  expect(out.rejectDetail).toContain("第 2 段");
+  expect(out.rejectDetail).toContain("https://fakesite.dev/a/9");
+});
+
 test("coreLeadersNode: 无命中 → 原样通过（不写 outcome）", async () => {
   const _deps = { llm: FakeLLM.prototype as never, sitesByCategory: {}, rng: () => 0 };
   const out = await coreLeadersNode(

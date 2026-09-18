@@ -106,6 +106,8 @@ export interface ErrorSlotRow {
   status: string
   article_id: number | null
   thread_id: string
+  /** 失败/拒绝具体原因（引擎写入 batch_slots.error_message；含违规条目/命中内容/来源 URL）。 */
+  error_message: string | null
   updated_at: string
 }
 
@@ -131,7 +133,14 @@ export interface ArticleListItem {
 export interface ArticleListResult {
   items: ArticleListItem[]
   total: number
-  stats: { total: number; pending_review: number; approved: number; rejected: number }
+  stats: {
+    total: number
+    pending_review: number
+    approved: number
+    rejected: number
+    /** 异常槽位数（非 success——error/rejected 无文章行，articles 视角不可见）。 */
+    error_slots: number
+  }
 }
 
 /** 当前文章的最新审核行。 */

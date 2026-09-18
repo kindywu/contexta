@@ -68,6 +68,10 @@ test("validateB 连续 3 轮违规 → rejected 终态（生成/校验各 3 次�
   expect(res.genAttempts).toBe(3);
   expect(fake.generatePrompts).toHaveLength(3);
   expect(fake.validateCalls).toBe(3);
+  // 对外 reason 拼接了违规明细（判官条目 + 轮次）——落 batch_slots.error_message 供管理端展示
+  const reason = res.outcome === "rejected" ? res.reason : "";
+  expect(reason).toContain("校验违规 1 条（第 3/3 轮仍违规，重写已封顶）");
+  expect(reason).toContain("[unverified] X");
 });
 
 test("校验一次即通过 → 单轮完成", async () => {
