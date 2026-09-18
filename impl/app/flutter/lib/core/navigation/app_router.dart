@@ -4,6 +4,10 @@ import 'package:go_router/go_router.dart';
 import '../../data/auth/auth_service.dart';
 import '../../ui/addword/add_word_screen.dart';
 import '../../ui/auth/login_screen.dart';
+import '../../pad/pad_home_screen.dart';
+import '../../pad/pad_reading_screen.dart';
+import '../../pad/pad_shell.dart';
+import '../../pad/pad_vocabulary_screen.dart';
 import '../../ui/home/home_screen.dart';
 import '../../ui/onboarding/onboarding_screen.dart';
 import '../../ui/reading/reading_screen.dart';
@@ -11,6 +15,7 @@ import '../../ui/reference/reference_screen.dart';
 import '../../ui/settings/settings_screen.dart';
 import '../../ui/vocabulary/vocabulary_screen.dart';
 import 'app_shell.dart';
+import '../platform/device_form_factor.dart';
 import 'routes.dart';
 
 /// 应用路由表（对照 Kotlin navigation/NavGraph.kt）：
@@ -38,9 +43,14 @@ import 'routes.dart';
 /// 经 [_AuthRefreshListenable] 桥接为 GoRouter.refreshListenable：登录 /
 /// 登出 / 被踢状态变更时立即重估重定向，无需手动导航。
 GoRouter buildRouter({
+  required DeviceFormFactor formFactor,
   AuthService? authService,
   Future<bool> Function()? isOnboarded,
 }) {
+  // 界面树分派：启动时判定一次，**不在 builder 里按窗口宽度反复推断**。
+  // 方向是锁死的（手机竖屏 / 平板横屏），窗口尺寸不会变；判定一次足够，
+  // 也让"这台设备走哪棵树"成为整棵树里唯一一个不可变的常量。
+  final isPad = formFactor == DeviceFormFactor.pad;
   return GoRouter(
     initialLocation: Routes.onboarding,
     refreshListenable: authService == null
@@ -56,22 +66,34 @@ GoRouter buildRouter({
         ),
       ),
       ShellRoute(
-        builder: (context, state, child) => AppShell(child: child),
+        // 两棵界面树的分叉点：pad 走左侧导航骨架，手机走底部导航
+        builder: (context, state, child) =>
+            isPad ? PadShell(child: child) : AppShell(child: child),
         routes: [
           GoRoute(
             path: Routes.home,
-            builder: (context, state) => HomeScreen(
-              onArticleClick: (articleId) =>
-                  context.push(Routes.readingRoute(articleId)),
-            ),
+            builder: (context, state) => isPad
+                ? PadHomeScreen(
+                    onArticleClick: (articleId) =>
+                        context.push(Routes.readingRoute(articleId)),
+                  )
+                : HomeScreen(
+                    onArticleClick: (articleId) =>
+                        context.push(Routes.readingRoute(articleId)),
+                  ),
           ),
           GoRoute(
             path: Routes.vocabulary,
-            builder: (context, state) => VocabularyScreen(
-              // context.go 进入（底栏切换）不留栈，pop 无法返回；回退 = 到首页
-              onBack: () => context.go(Routes.home),
-              onAddWord: () => context.push(Routes.addWord),
-            ),
+            builder: (context, state) => isPad
+                ? PadVocabularyScreen(
+                    onBack: () => context.go(Routes.home),
+                    onAddWord: () => context.push(Routes.addWord),
+                  )
+                : VocabularyScreen(
+                    // context.go 进入（底栏切换）不留栈，pop 无法返回；回退 = 到首页
+                    onBack: () => context.go(Routes.home),
+                    onAddWord: () => context.push(Routes.addWord),
+                  ),
           ),
           GoRoute(
             path: Routes.reference,
@@ -88,6 +110,12 @@ GoRouter buildRouter({
         builder: (context, state) {
           final articleId =
               int.tryParse(state.pathParameters['articleId'] ?? '') ?? -1;
+          if (isPad) {
+            return PadReadingScreen(
+              articleId: articleId,
+              onBack: () => context.pop(),
+            );
+          }
           return ReadingScreen(
             articleId: articleId,
             onBack: () => context.pop(),

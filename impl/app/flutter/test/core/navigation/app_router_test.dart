@@ -14,7 +14,12 @@ import 'package:contexta/domain/repository/settings_repository.dart';
 import 'package:contexta/domain/repository/stats_repository.dart';
 import 'package:contexta/domain/repository/vocabulary_repository.dart';
 import 'package:contexta/domain/repository/word_repository.dart';
+import 'package:contexta/pad/pad_home_screen.dart';
+import 'package:contexta/pad/pad_reading_screen.dart';
+import 'package:contexta/pad/pad_vocabulary_screen.dart';
 import 'package:contexta/ui/addword/add_word_screen.dart';
+import 'package:contexta/core/platform/device_form_factor.dart';
+import 'package:contexta/pad/pad_shell.dart';
 import 'package:contexta/ui/home/home_screen.dart';
 import 'package:contexta/ui/onboarding/onboarding_screen.dart';
 import 'package:contexta/ui/reading/reading_screen.dart';
@@ -108,11 +113,34 @@ void main() {
   late GoRouter router;
 
   setUp(() {
-    router = buildRouter();
+    // 界面树由**启动时判定一次的设备形态**决定（不再看窗口尺寸），
+    // 所以这里直接指定手机；平板用例另建一棵 pad 路由。
+    router = buildRouter(formFactor: DeviceFormFactor.phone);
   });
 
-  /// 用指定 [r] 挂载 App（默认用 setUp 里的 router）。
-  Future<void> pumpWith(WidgetTester tester, GoRouter r) async {
+  /// 手机视口（逻辑 360×780）。界面树已与窗口尺寸解耦，但页面内部仍按
+  /// MediaQuery 排版，故视口仍需声明——它只影响"怎么排"，不影响"走哪棵树"。
+  void usePhoneViewport(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
+  /// 平板视口（逻辑 1219×813）。
+  void usePadViewport(WidgetTester tester) {
+    tester.view.physicalSize = const Size(2438, 1626);
+    tester.view.devicePixelRatio = 2.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
+
+  Future<void> pumpWith(
+    WidgetTester tester,
+    GoRouter r, {
+    void Function(WidgetTester)? viewport,
+  }) async {
+    (viewport ?? usePhoneViewport)(tester);
     // HomeScreen 的启动编排链（startupOrchestrationUseCase → syncArticles
     // UseCase）直接对 databaseProvider 取 requireValue：用内存库避免打开
     // 真实数据库。（空桩 settings 未引导 → 编排走 NeedsOnboarding 分支，
@@ -166,7 +194,10 @@ void main() {
     // 原本在 OnboardingScreen 的 post-frame 回调里做异步查库——必然晚于首帧。
     // 修复后由 router redirect 在首帧前决定落点，向导页一次都不渲染。
     testWidgets('已引导 → 直接落 home，向导页不渲染', (tester) async {
-      router = buildRouter(isOnboarded: () async => true);
+      router = buildRouter(
+        formFactor: DeviceFormFactor.phone,
+        isOnboarded: () async => true,
+      );
       await pumpWith(tester, router);
 
       expect(find.byType(OnboardingScreen), findsNothing);
@@ -175,12 +206,61 @@ void main() {
     });
 
     testWidgets('未引导 → 落在向导页', (tester) async {
-      router = buildRouter(isOnboarded: () async => false);
+      router = buildRouter(
+        formFactor: DeviceFormFactor.phone,
+        isOnboarded: () async => false,
+      );
       await pumpWith(tester, router);
 
       expect(find.byType(OnboardingScreen), findsOneWidget);
       expect(find.byType(HomeScreen), findsNothing);
       expect(stackLocations(), [Routes.onboarding]);
+    });
+  });
+
+  group('界面树分叉（设备 → 两棵树）', () {
+    // 硬约束：平板相关改动不得影响手机界面与手机功能。这一组从路由层把分叉
+    // 钉死——同一路由在两个视口下必须命中**不同**的页面组件，且互不串门。
+    testWidgets('home：平板走 PadHomeScreen + 左导航栏，无底部导航栏', (tester) async {
+      router = buildRouter(formFactor: DeviceFormFactor.pad);
+      await pumpWith(tester, router, viewport: usePadViewport);
+      await go(tester, Routes.location(Routes.home));
+
+      expect(find.byType(PadHomeScreen), findsOneWidget);
+      expect(find.byType(HomeScreen), findsNothing);
+      // 平板是自绘侧边栏（PadSidebar），不是把 NavigationRail 竖过来的观感
+      expect(find.byType(PadSidebar), findsOneWidget);
+      expect(find.byType(NavigationRail), findsNothing);
+      expect(find.byType(BottomNavBar), findsNothing);
+    });
+
+    testWidgets('home：手机视口仍走 HomeScreen + 底部导航栏', (tester) async {
+      await pumpApp(tester);
+      await go(tester, Routes.location(Routes.home));
+
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.byType(PadHomeScreen), findsNothing);
+      expect(find.byType(PadSidebar), findsNothing);
+      expect(find.byType(NavigationRail), findsNothing);
+      expect(find.byType(BottomNavBar), findsOneWidget);
+    });
+
+    testWidgets('vocabulary：平板走 PadVocabularyScreen', (tester) async {
+      router = buildRouter(formFactor: DeviceFormFactor.pad);
+      await pumpWith(tester, router, viewport: usePadViewport);
+      await go(tester, Routes.location(Routes.vocabulary));
+
+      expect(find.byType(PadVocabularyScreen), findsOneWidget);
+      expect(find.byType(VocabularyScreen), findsNothing);
+    });
+
+    testWidgets('reading：平板走 PadReadingScreen', (tester) async {
+      router = buildRouter(formFactor: DeviceFormFactor.pad);
+      await pumpWith(tester, router, viewport: usePadViewport);
+      await go(tester, Routes.readingRoute(42));
+
+      expect(find.byType(PadReadingScreen), findsOneWidget);
+      expect(find.byType(ReadingScreen), findsNothing);
     });
   });
 

@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/config/app_config.dart';
 import '../core/navigation/app_router.dart';
+import '../core/platform/device_form_factor.dart';
 import '../core/time/iso8601.dart';
 import '../data/auth/auth_service.dart';
 import '../data/auth/device_id_provider.dart';
@@ -168,6 +169,8 @@ final routerProvider = Provider<GoRouter>((ref) {
   // data 分支被 watch），此处 requireValue 安全。
   final settingsRepository = ref.read(settingsRepositoryProvider);
   return buildRouter(
+    // 启动时判定一次的设备形态（main() 覆写注入）——界面树分派的唯一依据
+    formFactor: ref.read(formFactorProvider),
     authService: authService,
     isOnboarded: settingsRepository.isOnboarded,
   );

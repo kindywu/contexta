@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart'
     show RenderAbstractViewport, RenderParagraph;
@@ -10,26 +12,13 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../../core/components/app_button.dart';
 import '../../core/components/app_modal.dart';
 import '../../core/components/loading_indicator.dart';
-import '../../core/layout/window_size.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
 import '../../domain/tts/tts_engine.dart' show kTitleParagraphIndex;
-import 'pagination/article_paginator.dart';
-import 'pagination/reading_block.dart';
-import 'pagination/spread_reader.dart';
 import 'reading_controller.dart';
-import 'reading_widgets.dart';
 import 'translation_visibility.dart';
-
-/// 分页引擎（无状态，全页面共用一个实例）。样式来自 `static final` 的
-/// [AppType]，不能用于 `const` 构造，故提升到文件级。
-final _paginator = ArticlePaginator(
-  bodyStyle: AppType.readingBody,
-  translationStyle: AppType.readingTranslation,
-  titleStyle: AppType.readingTitle,
-  buttonLabelStyle: AppType.textTheme.titleSmall!,
-);
+import 'word_extractor.dart';
 
 /// Reading 页（对照 Kotlin ReadingScreen.kt）：
 /// - 3dp 珊瑚滚动进度条（宽 = scrollFraction）
@@ -87,26 +76,6 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
 
   Timer? _toastTimer;
 
-  /// 书页模式：当前跨页序号（页码展示 + 进度条取值）。
-  final PageController _pageController = PageController();
-  int _spreadIndex = 0;
-
-  /// 分页结果按内容与尺寸 memo——句子高亮变化不改变文字度量，
-  /// 命中缓存即不重排（否则朗读时每次句子切换都要重排全篇）。
-  Object? _paginationKey;
-  PaginatedArticle? _paginatedCache;
-
-  /// 最近一次分页结果（朗读自动翻页按段落序号查页时用）。
-  PaginatedArticle? get _lastPaginated => _paginatedCache;
-
-  /// 进度条上一次构建时用的比例。分页发生在**布局阶段**（LayoutBuilder），
-  /// 晚于进度条构建——分页算完后若比例变了要补一帧（见 [_buildSpread]），
-  /// 否则首屏进度条停在 0、重排后停在旧值。
-  double _barProgress = 0;
-
-  /// 书页模式（expanded 档，宽 ≥ 840）：左右两页并排 + 整屏翻页。
-  bool get _isSpreadMode => context.isExpandedLayout;
-
   @override
   void initState() {
     super.initState();
@@ -135,7 +104,6 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
     WakelockPlus.disable();
     _toastTimer?.cancel();
     _scrollController.dispose();
-    _pageController.dispose();
     super.dispose();
   }
 
@@ -234,8 +202,7 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
       },
     );
 
-    // 副作用 3：全文朗读句子切换 → 手机模式滚动到 1/3 处，书页模式翻到
-    // 目标跨页（手滚 / 手翻跳过本次，下次切换恢复）
+    // 副作用 3：全文朗读句子切换 → 自动滚动到 1/3 处
     ref.listen<(int?, int?)>(
       readingControllerProvider(widget.articleId)
           .select((s) => (s.speakingParagraphIndex, s.speakingSentenceIndex)),
@@ -249,14 +216,6 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
         if (!state.isSpeakingFullArticle) return; // 单段播放只高亮不滚动
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          if (_isSpreadMode) {
-            if (_userScrolling) {
-              _userScrolling = false; // 手翻跳过本次，下次切换恢复
-              return;
-            }
-            turnToPageOfParagraph(paragraphIndex);
-            return;
-          }
           final sentences = paragraphIndex < state.sentencesByParagraph.length
               ? state.sentencesByParagraph[paragraphIndex]
               : const <ArticleSentence>[];
@@ -270,11 +229,6 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
       },
     );
 
-    // 进度条取值：书页模式按跨页进度，手机模式按滚动比例（后者同原实现）；
-    // 同时记下本次构建用的值，供 _buildSpread 判断分页后是否需要补一帧。
-    final barProgress = _isSpreadMode ? _spreadProgress : _scrollFraction;
-    _barProgress = barProgress;
-
     return Scaffold(
       backgroundColor: AppColors.background,
       // SafeArea：灵动岛（挖孔）/手势条区域留安全边距（对照 Kotlin
@@ -284,11 +238,11 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
           children: [
             Column(
               children: [
-                // 3dp 珊瑚进度条：书页模式取跨页进度，手机模式取滚动比例
+                // 3dp 珊瑚滚动进度条（宽 = 滚动比例）
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Container(
-                    width: MediaQuery.of(context).size.width * barProgress,
+                    width: MediaQuery.of(context).size.width * _scrollFraction,
                     height: 3,
                     color: AppColors.primary,
                   ),
@@ -312,7 +266,104 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
                       subMessage: '请返回重新选择',
                     ),
                     (false, null) =>
-                      _isSpreadMode ? _buildSpread(state) : _buildList(state),
+                      NotificationListener<ScrollStartNotification>(
+                        onNotification: (notification) {
+                          if (notification.dragDetails != null) {
+                            _userScrolling = true;
+                          }
+                          return false;
+                        },
+                        child: ListView(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppPage.horizontalPadding,
+                          ),
+                          children: [
+                            const SizedBox(height: AppSpacing.sm),
+                            _TitleText(
+                              text: state.title ?? '文章',
+                              isSpeaking:
+                                  state.speakingParagraphIndex ==
+                                  kTitleParagraphIndex,
+                              vocabularyWords: state.vocabularyWords,
+                              onWordClick: (word) => ref
+                                  .read(
+                                    readingControllerProvider(
+                                      widget.articleId,
+                                    ).notifier,
+                                  )
+                                  .showWordSheet(word),
+                            ),
+                            const SizedBox(height: AppSpacing.md),
+                            Container(height: 1, color: AppColors.hairline),
+                            const SizedBox(height: AppSpacing.lg),
+                            for (final (index, paragraph)
+                                in state.paragraphs.indexed)
+                              _ReadingParagraph(
+                                key: _paragraphKey(index),
+                                textKey: _paragraphTextKey(index),
+                                englishText: paragraph.englishText,
+                                chineseTranslation:
+                                    paragraph.chineseTranslation,
+                                sentences: index <
+                                        state.sentencesByParagraph.length
+                                    ? state.sentencesByParagraph[index]
+                                    : const [],
+                                speakingSentenceIndex:
+                                    state.speakingParagraphIndex == index
+                                        ? state.speakingSentenceIndex
+                                        : null,
+                                translationMode: state.translationMode,
+                                isRevealed: state.revealedParagraphs.contains(
+                                  index,
+                                ),
+                                vocabularyWords: state.vocabularyWords,
+                                isSpeaking:
+                                    state.speakingParagraphIndex == index,
+                                onWordClick: (word) => ref
+                                    .read(
+                                      readingControllerProvider(
+                                        widget.articleId,
+                                      ).notifier,
+                                    )
+                                    .showWordSheet(word),
+                                onTranslationClick: () {
+                                  if (state.translationMode ==
+                                      TranslationMode.blurred) {
+                                    ref
+                                        .read(
+                                          readingControllerProvider(
+                                            widget.articleId,
+                                          ).notifier,
+                                        )
+                                        .revealTranslation(index);
+                                  }
+                                },
+                                onPlay: () => ref
+                                    .read(
+                                      readingControllerProvider(
+                                        widget.articleId,
+                                      ).notifier,
+                                    )
+                                    .playParagraph(index),
+                              ),
+                            const SizedBox(height: AppSpacing.lg),
+                            if (!state.isReadCompleted)
+                              AppButton(
+                                text: '标记已读',
+                                onClick: () => ref
+                                    .read(
+                                      readingControllerProvider(
+                                        widget.articleId,
+                                      ).notifier,
+                                    )
+                                    .markAsRead(),
+                                variant: AppButtonVariant.secondary,
+                              ),
+                            const SizedBox(height: AppSpacing.xs),
+                          ],
+                        ),
+                      ),
                   },
                 ),
                 // 底部播放条：常驻（音乐播放器样式）
@@ -370,231 +421,6 @@ class _ReadingScreenState extends ConsumerState<ReadingScreen> {
       ),
     );
   }
-
-  /// 手机 / pad 竖屏路径：单列正文列表（书页模式接入前的原路径，未改动）。
-  Widget _buildList(ReadingUiState state) {
-    return NotificationListener<ScrollStartNotification>(
-      onNotification: (notification) {
-        if (notification.dragDetails != null) {
-          _userScrolling = true;
-        }
-        return false;
-      },
-      child: ListView(
-        controller: _scrollController,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppPage.horizontalPadding,
-        ),
-        children: [
-          const SizedBox(height: AppSpacing.sm),
-          ReadingTitle(
-            text: state.title ?? '文章',
-            isSpeaking:
-                state.speakingParagraphIndex ==
-                kTitleParagraphIndex,
-            vocabularyWords: state.vocabularyWords,
-            onWordClick: (word) => ref
-                .read(
-                  readingControllerProvider(
-                    widget.articleId,
-                  ).notifier,
-                )
-                .showWordSheet(word),
-          ),
-          const SizedBox(height: AppSpacing.md),
-          Container(height: 1, color: AppColors.hairline),
-          const SizedBox(height: AppSpacing.lg),
-          for (final (index, paragraph)
-              in state.paragraphs.indexed)
-            ReadingParagraph(
-              key: _paragraphKey(index),
-              textKey: _paragraphTextKey(index),
-              englishText: paragraph.englishText,
-              chineseTranslation:
-                  paragraph.chineseTranslation,
-              sentences: index <
-                      state.sentencesByParagraph.length
-                  ? state.sentencesByParagraph[index]
-                  : const [],
-              speakingSentenceIndex:
-                  state.speakingParagraphIndex == index
-                      ? state.speakingSentenceIndex
-                      : null,
-              translationMode: state.translationMode,
-              isRevealed: state.revealedParagraphs.contains(
-                index,
-              ),
-              vocabularyWords: state.vocabularyWords,
-              isSpeaking:
-                  state.speakingParagraphIndex == index,
-              onWordClick: (word) => ref
-                  .read(
-                    readingControllerProvider(
-                      widget.articleId,
-                    ).notifier,
-                  )
-                  .showWordSheet(word),
-              onTranslationClick: () {
-                if (state.translationMode ==
-                    TranslationMode.blurred) {
-                  ref
-                      .read(
-                        readingControllerProvider(
-                          widget.articleId,
-                        ).notifier,
-                      )
-                      .revealTranslation(index);
-                }
-              },
-              onPlay: () => ref
-                  .read(
-                    readingControllerProvider(
-                      widget.articleId,
-                    ).notifier,
-                  )
-                  .playParagraph(index),
-            ),
-          const SizedBox(height: AppSpacing.lg),
-          if (!state.isReadCompleted)
-            AppButton(
-              text: '标记已读',
-              onClick: () => ref
-                  .read(
-                    readingControllerProvider(
-                      widget.articleId,
-                    ).notifier,
-                  )
-                  .markAsRead(),
-              variant: AppButtonVariant.secondary,
-            ),
-          const SizedBox(height: AppSpacing.xs),
-        ],
-      ),
-    );
-  }
-
-  /// 书页模式进度：已翻过的页占比（右页页号 / 总页数）。
-  double get _spreadProgress {
-    final total = _lastPaginated?.pages.length ?? 0;
-    if (total == 0) return 0; // 首帧（尚未分页）不显示进度
-    final right = ((_spreadIndex + 1) * 2).clamp(1, total);
-    return right / total;
-  }
-
-  /// 供朗读自动翻页读取：目标段落所在页 → 跨页序号。
-  void turnToPageOfParagraph(int paragraphIndex) {
-    final paginated = _lastPaginated;
-    if (paginated == null || !_pageController.hasClients) return;
-    final page = paginated.pageOf(paragraphIndex);
-    if (page == null) return;
-    _pageController.animateToPage(
-      page ~/ 2,
-      duration: AppMotion.slow,
-      curve: Curves.easeInOut,
-    );
-  }
-
-  /// 书页模式（expanded 档）：按窗口尺寸分页后交给 [SpreadReader] 渲染。
-  ///
-  /// 分页只在「内容或尺寸变化」时重排（memo）：句子高亮、朗读态这类
-  /// 高频状态变化不改变文字度量，必须命中缓存——否则每切一句都重排全篇。
-  Widget _buildSpread(ReadingUiState state) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // 跨页宽与 SpreadReader 同式（含最大宽限幅），页宽再扣中缝对半分
-        final spreadWidth =
-            (constraints.maxWidth - AppPage.horizontalPadding * 2).clamp(
-              0.0,
-              kSpreadMaxWidth,
-            );
-        final pageWidth = (spreadWidth - kSpreadGutter) / 2;
-        // 页内容盒高 = 可用高 − 页码行 − 页内上下留白（与 SpreadReader 一致）
-        final pageHeight =
-            constraints.maxHeight -
-            kPageIndicatorHeight -
-            kPageTopPadding -
-            kPageBottomPadding;
-        // 英文正文/标题走 RichText（不吃 MediaQuery 字体缩放），译文与按钮
-        // 文字走 Text（吃）——两个 scaler 各按自己的渲染器传
-        final bodyTextScaler = TextScaler.noScaling;
-        final labelTextScaler = MediaQuery.textScalerOf(context);
-        final key = Object.hash(
-          identityHashCode(state.paragraphs),
-          state.title,
-          state.translationMode,
-          state.isReadCompleted,
-          pageWidth,
-          pageHeight,
-          bodyTextScaler,
-          labelTextScaler,
-        );
-        if (key != _paginationKey || _paginatedCache == null) {
-          _paginationKey = key;
-          _paginatedCache = _paginator.paginate(
-            blocks: _buildBlocks(state),
-            pageWidth: pageWidth,
-            pageHeight: pageHeight,
-            bodyTextScaler: bodyTextScaler,
-            labelTextScaler: labelTextScaler,
-            translationMode: state.translationMode,
-          );
-          // 进度条在书页之前构建（本帧拿到分页结果时它已构建完）：比例变化
-          // 后补一帧，让首屏进度条立即显示当前跨页占比。分页只在内容/尺寸
-          // 变化时重排，补帧不常发生，且补帧后 memo 命中不会连锁触发。
-          if (_spreadProgress != _barProgress) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() {});
-            });
-          }
-        }
-        final paginated = _paginatedCache!;
-        return SpreadReader(
-          paginated: paginated,
-          pageController: _pageController,
-          title: state.title ?? '文章',
-          paragraphs: state.paragraphs,
-          sentencesByParagraph: state.sentencesByParagraph,
-          translationMode: state.translationMode,
-          revealedParagraphs: state.revealedParagraphs,
-          vocabularyWords: state.vocabularyWords,
-          speakingParagraphIndex: state.speakingParagraphIndex,
-          speakingSentenceIndex: state.speakingSentenceIndex,
-          paragraphKey: _paragraphKey,
-          paragraphTextKey: _paragraphTextKey,
-          onWordClick: (word) => ref
-              .read(readingControllerProvider(widget.articleId).notifier)
-              .showWordSheet(word),
-          onTranslationClick: (index) {
-            if (state.translationMode == TranslationMode.blurred) {
-              ref
-                  .read(readingControllerProvider(widget.articleId).notifier)
-                  .revealTranslation(index);
-            }
-          },
-          onPlayParagraph: (index) => ref
-              .read(readingControllerProvider(widget.articleId).notifier)
-              .playParagraph(index),
-          onMarkAsRead: () => ref
-              .read(readingControllerProvider(widget.articleId).notifier)
-              .markAsRead(),
-          onSpreadChanged: (index) => setState(() => _spreadIndex = index),
-          onUserTurn: () => _userScrolling = true,
-        );
-      },
-    );
-  }
-
-  /// 书页分页的块序列：标题 + 各段 + （未读时）标记已读按钮。
-  List<ReadingBlock> _buildBlocks(ReadingUiState state) => [
-    TitleBlock(state.title ?? '文章'),
-    for (final (index, paragraph) in state.paragraphs.indexed)
-      ParagraphBlock(
-        index: index,
-        englishText: paragraph.englishText,
-        chineseTranslation: paragraph.chineseTranslation,
-      ),
-    if (!state.isReadCompleted) const MarkAsReadBlock(),
-  ];
 }
 
 /// 阅读页顶栏：返回 + ✓已读 + 译文模式 chip（对照 Kotlin ReadingAppBar）。
@@ -940,6 +766,338 @@ class _WordSheetBody extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 朗读句底色（与生词高亮同色：生词 span 覆盖为珊瑚色后自然融合）。
+const TextStyle _speakingStyle = TextStyle(
+  backgroundColor: Color(0x2ECC785C),
+);
+
+/// 按单词区间切分文本生成 spans：单词 → 可点击 span（生词珊瑚底色），
+/// 空白/标点原样保留。正文段落与文章标题共用。
+///
+/// [speakingRange] 为正在朗读的句子区间（half-open，含句末标点；null = 无），
+/// 区间内文字追加 [speakingStyle] 底色——句子边界可能落在 gap（空白/标点）
+/// 内部，故 gap 按区间边界再切段；生词 span 保持珊瑚底色（同色系融合）。
+/// [style] 为区间外文字的基础样式（null = 继承外层）。
+List<InlineSpan> _clickableWordSpans({
+  required String text,
+  required TextStyle? style,
+  required Set<String> vocabularyWords,
+  required TapGestureRecognizer Function(String word) recognizerFor,
+  (int, int)? speakingRange,
+}) {
+  final spans = <InlineSpan>[];
+
+  bool inSpeaking(int offset) =>
+      speakingRange != null &&
+      offset >= speakingRange.$1 &&
+      offset < speakingRange.$2;
+
+  /// 追加 [from, to) 的纯文本片段，按朗读区间边界切成「底色 / 非底色」段。
+  void addPlain(int from, int to) {
+    var cursor = from;
+    while (cursor < to) {
+      final speaking = inSpeaking(cursor);
+      var end = cursor + 1;
+      while (end < to && inSpeaking(end) == speaking) {
+        end++;
+      }
+      spans.add(
+        TextSpan(
+          text: text.substring(cursor, end),
+          style: speaking ? _speakingStyle : style,
+        ),
+      );
+      cursor = end;
+    }
+  }
+
+  var cursor = 0;
+  for (final range in findWordRanges(text)) {
+    addPlain(cursor, range.$1);
+    final word = text.substring(range.$1, range.$2);
+    final normalized = word.toLowerCase();
+    spans.add(
+      TextSpan(
+        text: word,
+        style: vocabularyWords.contains(normalized)
+            ? const TextStyle(
+                color: AppColors.ink,
+                backgroundColor: Color(0x2ECC785C),
+              )
+            : (inSpeaking(range.$1) ? _speakingStyle : style),
+        recognizer: recognizerFor(normalized),
+      ),
+    );
+    cursor = range.$2;
+  }
+  addPlain(cursor, text.length);
+  return spans;
+}
+
+/// 文章标题：分词可点击查词 + 朗读时高亮（-1 哨兵，与正文同色）。
+/// 与 _ReadingParagraph 同样由 StatefulWidget 持有 TapGestureRecognizer，
+/// dispose 时统一释放。
+class _TitleText extends StatefulWidget {
+  const _TitleText({
+    required this.text,
+    required this.isSpeaking,
+    required this.vocabularyWords,
+    required this.onWordClick,
+  });
+
+  final String text;
+  final bool isSpeaking;
+  final Set<String> vocabularyWords;
+  final ValueChanged<String> onWordClick;
+
+  @override
+  State<_TitleText> createState() => _TitleTextState();
+}
+
+class _TitleTextState extends State<_TitleText> {
+  final List<TapGestureRecognizer> _recognizers = [];
+
+  @override
+  void dispose() {
+    for (final recognizer in _recognizers) {
+      recognizer.dispose();
+    }
+    _recognizers.clear();
+    super.dispose();
+  }
+
+  TapGestureRecognizer _wordRecognizer(String word) {
+    final recognizer = TapGestureRecognizer()
+      ..onTap = () => widget.onWordClick(word);
+    _recognizers.add(recognizer);
+    return recognizer;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 朗读中标题整段加同色底色（标题是单个朗读单元，区间 = 全文）；gap/
+    // 生词 span 继承或覆盖，见 _clickableWordSpans。Align 使标题在 ListView
+    // 的 tight 交叉轴约束下 shrink-wrap（与正文段落一致），文字区域才是可点区域。
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: RichText(
+        text: TextSpan(
+          style: AppType.textTheme.displayMedium?.copyWith(
+            color: AppColors.ink,
+            backgroundColor: widget.isSpeaking ? _speakingStyle.backgroundColor : null,
+          ),
+          children: _clickableWordSpans(
+            text: widget.text,
+            style: widget.isSpeaking ? _speakingStyle : null,
+            vocabularyWords: widget.vocabularyWords,
+            recognizerFor: _wordRecognizer,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 单个段落：可点击分词 + 内联播放图标 + 译文（对照 Kotlin ReadingParagraph）。
+/// StatefulWidget 持有分词 TapGestureRecognizer，dispose 时统一释放。
+class _ReadingParagraph extends StatefulWidget {
+  const _ReadingParagraph({
+    super.key,
+    required this.textKey,
+    required this.englishText,
+    required this.chineseTranslation,
+    required this.sentences,
+    required this.speakingSentenceIndex,
+    required this.translationMode,
+    required this.isRevealed,
+    required this.vocabularyWords,
+    required this.isSpeaking,
+    required this.onWordClick,
+    required this.onTranslationClick,
+    required this.onPlay,
+  });
+
+  /// 英文正文 RichText 的 key（ReadingScreen 按句滚动取文字盒坐标用）。
+  final Key textKey;
+  final String englishText;
+  final String chineseTranslation;
+  final List<ArticleSentence> sentences;
+
+  /// 正在朗读的段内句序号（null = 本段未在朗读）。
+  final int? speakingSentenceIndex;
+  final TranslationMode translationMode;
+  final bool isRevealed;
+  final Set<String> vocabularyWords;
+  final bool isSpeaking;
+  final ValueChanged<String> onWordClick;
+  final VoidCallback onTranslationClick;
+  final VoidCallback onPlay;
+
+  @override
+  State<_ReadingParagraph> createState() => _ReadingParagraphState();
+}
+
+class _ReadingParagraphState extends State<_ReadingParagraph> {
+  final List<TapGestureRecognizer> _recognizers = [];
+
+  @override
+  void dispose() {
+    for (final recognizer in _recognizers) {
+      recognizer.dispose();
+    }
+    _recognizers.clear();
+    super.dispose();
+  }
+
+  TapGestureRecognizer _wordRecognizer(String word) {
+    final recognizer = TapGestureRecognizer()
+      ..onTap = () => widget.onWordClick(word);
+    _recognizers.add(recognizer);
+    return recognizer;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 英文正文：按单词区间切分，单词可点击，单词间空白/标点原样保留
+        RichText(
+          key: widget.textKey,
+          text: TextSpan(
+            style: AppType.textTheme.bodyLarge?.copyWith(
+              color: AppColors.ink,
+              fontSize: 18,
+              height: 30 / 18,
+            ),
+            children: [
+              ..._buildAnnotatedSpans(),
+              const WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: SizedBox(width: 4),
+              ),
+              WidgetSpan(
+                alignment: PlaceholderAlignment.middle,
+                child: _InlinePlayButton(
+                  isSpeaking: widget.isSpeaking,
+                  onClick: widget.onPlay,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        // 中文译文：4 模式
+        switch (widget.translationMode) {
+          TranslationMode.full => Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: _TranslationText(
+              text: widget.chineseTranslation,
+              onTap: widget.onTranslationClick,
+            ),
+          ),
+          TranslationMode.dim => Opacity(
+            opacity: 0.55,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: _TranslationText(
+                text: widget.chineseTranslation,
+                onTap: widget.onTranslationClick,
+              ),
+            ),
+          ),
+          TranslationMode.blurred => Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            // 点击揭示：isRevealed 时显示明文，否则模糊（对照 Kotlin
+            // ReadingScreen 的 BLURRED 分支 if (isRevealed) 拆解）
+            child: widget.isRevealed
+                ? _TranslationText(
+                    text: widget.chineseTranslation,
+                    onTap: widget.onTranslationClick,
+                  )
+                : ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                    child: _TranslationText(
+                      text: widget.chineseTranslation,
+                      onTap: widget.onTranslationClick,
+                    ),
+                  ),
+          ),
+          TranslationMode.hidden => const SizedBox.shrink(),
+        },
+      ],
+    );
+  }
+
+  /// 单词 → 可点击 TextSpan（生词珊瑚底色高亮）；空白/标点原样 TextSpan。
+  /// 正在朗读的那一句（speakingSentenceIndex）文字追加同色底色，生词 span
+  /// 保持原样（同色融合）；同一时刻只有一句带底色。
+  List<InlineSpan> _buildAnnotatedSpans() {
+    return _clickableWordSpans(
+      text: widget.englishText,
+      style: null,
+      vocabularyWords: widget.vocabularyWords,
+      recognizerFor: _wordRecognizer,
+      speakingRange: _speakingRange(),
+    );
+  }
+
+  /// 当前朗读句的字符区间（null = 本段未在朗读）。
+  ///
+  /// 无句级信息（系统 TTS 拼接朗读 / 首句上报前）时退化为整段高亮——与
+  /// 句子级改造前的段落高亮行为一致。
+  (int, int)? _speakingRange() {
+    if (!widget.isSpeaking) return null;
+    final index = widget.speakingSentenceIndex;
+    if (index == null || index < 0 || index >= widget.sentences.length) {
+      return (0, widget.englishText.length);
+    }
+    final sentence = widget.sentences[index];
+    return (sentence.start, sentence.end);
+  }
+}
+
+/// 译文文本（BLURRED 点击揭示 + DIM/FULL 可点击触发揭示回调）。
+class _TranslationText extends StatelessWidget {
+  const _TranslationText({required this.text, required this.onTap});
+
+  final String text;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Text(
+        text,
+        style: AppType.textTheme.bodyMedium?.copyWith(
+          color: AppColors.mutedSoft,
+        ),
+      ),
+    );
+  }
+}
+
+/// 段尾内联播放按钮（18dp；朗读中显示 Stop + Primary，否则 VolumeUp + MutedSoft）。
+class _InlinePlayButton extends StatelessWidget {
+  const _InlinePlayButton({required this.isSpeaking, required this.onClick});
+
+  final bool isSpeaking;
+  final VoidCallback onClick;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onClick,
+      child: Icon(
+        isSpeaking ? Icons.stop_outlined : Icons.volume_up_outlined,
+        size: 18,
+        color: isSpeaking ? AppColors.primary : AppColors.mutedSoft,
+      ),
     );
   }
 }

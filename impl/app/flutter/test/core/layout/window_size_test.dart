@@ -37,19 +37,19 @@ void main() {
     expect(size, WindowSize.expanded);
   });
 
-  testWidgets('usesNavRail 在 compact 为 false', (tester) async {
-    late bool rail;
+  testWidgets('isPadLayout 在 compact 为 false', (tester) async {
+    late bool pad;
     await tester.pumpWidget(
       MediaQuery(
         data: const MediaQueryData(size: Size(400, 800)),
         child: Builder(
           builder: (context) {
-            rail = context.usesNavRail;
+            pad = context.isPadLayout;
             return const SizedBox();
           },
         ),
       ),
     );
-    expect(rail, isFalse);
+    expect(pad, isFalse);
   });
 }

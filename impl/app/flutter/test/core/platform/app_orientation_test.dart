@@ -1,14 +1,18 @@
 import 'dart:io';
 
 import 'package:contexta/core/platform/app_orientation.dart';
+import 'package:contexta/core/platform/device_form_factor.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 全局竖屏锁定测试。
+/// 方向锁定测试：手机固定竖屏、平板固定横屏，**两档都不允许翻转**。
 ///
-/// 分两层验证：Dart 侧向平台发出的方向请求（可 mock），以及原生侧
-/// 配置文件里的声明（直接读文件——android/ 与 ios/ 被 analyzer 排除，
-/// 没有别的手段能守住这两处）。
+/// 分两层验证：Dart 侧向平台发出的方向请求（可 mock），以及原生侧配置文件
+/// 里的声明（直接读文件——android/ 与 ios/ 被 analyzer 排除，没有别的手段
+/// 能守住这两处）。
+///
+/// **形态判定本身**（显示屏尺寸 → phone/pad）在 `device_form_factor_test.dart`
+/// 里测；本文件只测「形态 → 方向请求」的映射，判定与执行分开守。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -17,11 +21,10 @@ void main() {
   setUp(() {
     calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(SystemChannels.platform,
-            (MethodCall call) async {
-      calls.add(call);
-      return null;
-    });
+        .setMockMethodCallHandler(SystemChannels.platform, (MethodCall call) async {
+          calls.add(call);
+          return null;
+        });
   });
 
   tearDown(() {
@@ -29,80 +32,69 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform, null);
   });
 
-  test('lockAppToPortrait：只请求 portraitUp，不含任何横屏方向', () async {
+  MethodCall orientationCall() => calls.singleWhere(
+    (MethodCall c) => c.method == 'SystemChrome.setPreferredOrientations',
+  );
+
+  test('lockAppToPortrait：只请求 portraitUp（单元素 = 固定竖屏，不可翻转）', () async {
     await lockAppToPortrait();
 
-    final MethodCall call = calls.singleWhere((MethodCall c) =>
-        c.method == 'SystemChrome.setPreferredOrientations');
-    expect(call.arguments, <String>['DeviceOrientation.portraitUp']);
+    expect(orientationCall().arguments, <String>['DeviceOrientation.portraitUp']);
   });
 
-  group('applyOrientationPolicy：按窗口尺寸分档', () {
-    // 实测背景：小米 HyperOS（Android 16 / targetSdk 36 / sw813dp）**未**启用
-    // 「大屏忽略方向声明」，manifest 声明 portrait 时窗口会被 letterbox 成
-    // 666×813dp——平板侧必须显式请求 unspecified 才能横屏铺满。
-    MethodCall orientationCall() => calls.singleWhere(
-          (MethodCall c) => c.method == 'SystemChrome.setPreferredOrientations',
-        );
+  test('lockAppToLandscape：只请求 landscapeLeft（单元素 = 固定横屏，不可翻转）', () async {
+    await lockAppToLandscape();
 
-    testWidgets('手机（最短边 360dp）→ 锁 portraitUp', (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1080, 2340);
-      tester.view.devicePixelRatio = 3.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+    // 关键：只要一个方向。传 [landscapeLeft, landscapeRight] 会映射为
+    // userLandscape——跟随系统自动旋转，允许 180° 翻转，与设计不符。
+    expect(
+      orientationCall().arguments,
+      <String>['DeviceOrientation.landscapeLeft'],
+    );
+  });
 
-      await applyOrientationPolicy();
+  group('applyOrientationPolicy：形态 → 方向', () {
+    test('手机 → 锁 portraitUp', () async {
+      await applyOrientationPolicy(DeviceFormFactor.phone);
 
       expect(orientationCall().arguments, <String>['DeviceOrientation.portraitUp']);
     });
 
-    testWidgets('平板横屏（1219×813dp）→ 请求四方向（fullUser），窗口才铺得满',
-        (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(2438, 1626);
-      tester.view.devicePixelRatio = 2.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+    test('平板 → 锁单一横屏，永不为竖屏', () async {
+      await applyOrientationPolicy(DeviceFormFactor.pad);
 
-      await applyOrientationPolicy();
-
-      // 必须是显式四方向：空列表映射为 unspecified，会回落到 manifest 的
-      // portrait，窗口继续被 letterbox（真机实测踩过）
-      expect(orientationCall().arguments, <String>[
-        'DeviceOrientation.portraitUp',
-        'DeviceOrientation.portraitDown',
-        'DeviceOrientation.landscapeLeft',
-        'DeviceOrientation.landscapeRight',
-      ]);
-    });
-
-    testWidgets('平板竖屏（813×1219dp）→ 同样四方向（横竖屏都可）',
-        (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1626, 2438);
-      tester.view.devicePixelRatio = 2.0;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
-
-      await applyOrientationPolicy();
-
-      expect(orientationCall().arguments, hasLength(4));
+      expect(
+        orientationCall().arguments,
+        <String>['DeviceOrientation.landscapeLeft'],
+      );
     });
   });
 
   group('原生侧方向声明', () {
-    test('AndroidManifest：刻意不声明固定方向，且显式可调整大小', () {
-      // 2026-09-17 真机实测：小米 HyperOS（Android 16 / targetSdk 36）未启用
-      // 「大屏忽略方向声明」的官方行为——manifest 只要声明 portrait（即使同时
-      // 声明 resizeableActivity=true），pad 窗口就被 letterbox 成 666×813dp，
-      // 永远进不了书页模式。故原生侧不声明方向，手机竖屏改由 Dart 侧保证。
-      final String manifest =
-          File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
-      expect(manifest, isNot(contains('android:screenOrientation=')));
-      expect(manifest, contains('android:resizeableActivity="true"'));
+    test('AndroidManifest：声明弹性窗口豁免，且**不写死** screenOrientation', () {
+      final String manifest = File(
+        'android/app/src/main/AndroidManifest.xml',
+      ).readAsStringSync();
+
+      // Android 16（targetSdk ≥ 36）在 sw ≥ 600dp 大屏上默认忽略方向限制
+      // （实测 ignoreOrientationRequest=true）——没有这条豁免，平板即使请求
+      // 横屏也会被塞进竖屏窗口（两侧黑边）。见 docs/app-orientation.md。
+      expect(
+        manifest,
+        contains('android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY'),
+      );
+
+      // 刻意不声明 screenOrientation：手机竖屏 / 平板横屏是**设备相关**的，
+      // 写死在 manifest 里会让平板在引擎启动前就被锁成竖屏、闪一下竖屏黑边。
+      // 方向统一由 Dart 侧按形态请求（applyOrientationPolicy）。
+      expect(manifest, isNot(contains('android:screenOrientation')));
     });
 
     test('Info.plist：iPhone 支持方向只剩竖屏（iPad 不受限）', () {
       final String plist = File('ios/Runner/Info.plist').readAsStringSync();
-      final int start = plist.indexOf('<key>UISupportedInterfaceOrientations</key>');
+      final int start = plist.indexOf(
+        '<key>UISupportedInterfaceOrientations</key>',
+      );
       final int end = plist.indexOf('</array>', start);
       expect(start, greaterThan(-1), reason: '缺 UISupportedInterfaceOrientations');
       final String iphone = plist.substring(start, end);

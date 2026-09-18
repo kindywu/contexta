@@ -4,16 +4,21 @@ import 'package:workmanager/workmanager.dart';
 
 import 'data/background/sync_callback_dispatcher.dart';
 import 'core/platform/app_orientation.dart';
+import 'core/platform/device_form_factor.dart';
 import 'core/theme/app_theme.dart';
 import 'di/providers.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 方向策略（2026-09-17）：手机锁竖屏；平板解限以便横屏铺满（书页模式）。
-  // 原生侧（AndroidManifest screenOrientation / iOS Info.plist）仍固定竖屏，
-  // 覆盖引擎启动前的启动窗口；此处覆盖引擎启动后的运行期旋转，
-  // 详见 docs/app-orientation.md。
-  await applyOrientationPolicy();
+  // 设备形态（2026-09-18）：启动时**只判定一次**，由此决定全局走哪棵界面树
+  // （手机 `lib/ui/` 竖屏 / 平板 `lib/pad/` 横屏），并据此锁定方向。
+  // 判定源是物理显示屏而非窗口尺寸——窗口在启动瞬间是 0，且平板被
+  // letterbox 时窗口本身就是错的。详见 docs/adaptive-layout.md。
+  final formFactor = await resolveStartupFormFactor();
+  // 方向策略：手机固定竖屏、平板固定横屏，两者都不允许翻转。
+  // 原生侧（AndroidManifest）覆盖引擎启动前的启动窗口（闪屏期）；
+  // 此处覆盖引擎启动后的运行期旋转。详见 docs/app-orientation.md。
+  await applyOrientationPolicy(formFactor);
   // 自签名 HTTPS 信任锚：预载内嵌证书（Dart TLS 栈不读 Android NSC，必须显式注入，
   // 见 di/providers.dart；失败仅告警，本地开发/无证书场景继续默认信任库）
   await loadServerTrustCert();
@@ -29,7 +34,13 @@ Future<void> main() async {
     constraints: Constraints(networkType: NetworkType.connected),
     initialDelay: const Duration(hours: 2),
   );
-  runApp(const ProviderScope(child: MainApp()));
+  runApp(
+    ProviderScope(
+      // 启动时判定一次的设备形态：整棵界面树的唯一分派依据
+      overrides: [formFactorProvider.overrideWithValue(formFactor)],
+      child: const MainApp(),
+    ),
+  );
 }
 
 class MainApp extends ConsumerWidget {

@@ -1,4 +1,5 @@
 import 'package:contexta/data/local/database.dart';
+import 'package:contexta/core/platform/device_form_factor.dart';
 import 'package:contexta/di/providers.dart';
 import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/model/user_settings.dart';
@@ -72,6 +73,9 @@ void main() {
     await tester.pumpWidget(ProviderScope(
       overrides: [
         databaseProvider.overrideWith((ref) => db),
+        // 设备形态由 main() 在启动时注入（真机上来自显示屏尺寸）；测试里
+        // 直接指定手机——不给默认值，忘了注入会立刻抛错。
+        formFactorProvider.overrideWithValue(DeviceFormFactor.phone),
         settingsRepositoryProvider.overrideWithValue(_FakeSettingsRepo()),
         activateSeedBatchUseCaseProvider.overrideWithValue(
             _FakeActivateSeedBatch()),
