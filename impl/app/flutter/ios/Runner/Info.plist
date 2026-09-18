@@ -53,16 +53,36 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<!-- 方向策略（与 Android 侧一致，见 lib/core/platform/app_orientation.dart
+	     与 docs/app-orientation.md）：iPhone 固定竖屏、iPad 固定横屏。
+	     此处的 plist 覆盖 Flutter 引擎启动前的启动窗口（闪屏期）——iOS 只允许
+	     声明过的方向，Dart 侧 SystemChrome 的运行时请求必须落在这个集合内。 -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<!-- iPad 固定方向的前提：不参与 iPadOS 的多任务/自由窗口缩放，
+	     iPadOS 才会尊重上面的方向声明（否则系统按「可缩放 App」处理，
+	     方向随窗口走，横屏锁定失效）。 -->
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<!-- 后台每日同步（workmanager → BGTaskScheduler）：iOS 要求任务标识
+	     预先声明在 BGTaskSchedulerPermittedIdentifiers，否则插件注册时直接
+	     抛异常；UIBackgroundModes 提供 BGAppRefreshTask 所需的 fetch 权限。
+	     标识串与 lib/data/background/sync_callback_dispatcher.dart 的
+	     dailySyncTaskName 必须一致。 -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>dailyArticleSync</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
 	</array>
 </dict>
 </plist>

@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import '../model/tts_voice.dart';
 
 /// 朗读单元 = 文章里的一句话（生成 / 缓存 / 播放位置上报的调度粒度）。
@@ -56,15 +58,29 @@ abstract interface class TtsEngine {
 
 /// UI 显示语速 → 引擎实际语速的映射（对照 Kotlin ReadingViewModel.actualSpeechRate）。
 ///
-/// UI 标签 1x/0.75x 直接透传给引擎（1→1、0.75→0.75），不缩放；
-/// KittenTTS 语速语义与系统不同，不走此映射。
+/// 系统 TTS 两个平台的**语速基准不同**（见 [SystemTtsSpeedMapper]）；
+/// KittenTTS 语速语义（0.5–2.0 倍速，1.0 = 正常）与显示语速一致，不走此映射。
 abstract interface class TtsSpeedMapper {
   double actualRate(double displaySpeed);
 }
 
+/// 系统 TTS 语速映射：两个平台的「正常语速」基准值不一样。
+///
+/// | 平台 | 引擎参数 | 正常语速 | 显示 1.0x 应传 |
+/// |------|---------|---------|---------------|
+/// | Android | `TextToSpeech.setSpeechRate` | 1.0 | 1.0（直接透传） |
+/// | iOS | `AVSpeechUtterance.rate` | 0.5（`AVSpeechUtteranceDefaultSpeechRate`） | 0.5 |
+///
+/// iOS 侧 1.0 是**最大**语速（AVSpeechUtteranceMaximumSpeechRate），直接把
+/// 显示语速透传过去会快一倍以上（模拟器实测「太快了」），因此按 0.5 基准缩放：
+/// 1.0x → 0.5、0.8x → 0.4、1.2x → 0.6。
 class SystemTtsSpeedMapper implements TtsSpeedMapper {
-  const SystemTtsSpeedMapper();
+  const SystemTtsSpeedMapper({this.isIos});
+
+  /// 是否按 iOS 基准映射；null = 按运行平台判定（测试注入 true/false）。
+  final bool? isIos;
 
   @override
-  double actualRate(double displaySpeed) => displaySpeed;
+  double actualRate(double displaySpeed) =>
+      (isIos ?? Platform.isIOS) ? displaySpeed * 0.5 : displaySpeed;
 }

@@ -10,7 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// - 引擎候选依次尝试，第一个初始化成功的保留
 /// - speak 返回 "ctx-N"，失败返回 null
 /// - completion/error/cancel handler → onSpeakingFinished
-/// - 语速：显示语速直接透传（1x→1.0、0.75x→0.75，SystemTtsSpeedMapper）
+/// - 语速：Android 直接透传（1x→1.0）；iOS 按 AVSpeechUtterance 基准缩放
+///   （1x→0.5，SystemTtsSpeedMapper）
+/// - iOS：不走引擎候选链，初始化改为共享音频会话 + playback 类别
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -74,6 +76,43 @@ void main() {
       expect(id2, 'ctx-1');
       expect(tts.speechRates, [1.0, 0.75]);
       expect(tts.spokenTexts, ['hello', 'world']);
+    });
+
+    test('iOS：跳过 Android 引擎候选，改共享音频会话 + playback 类别', () async {
+      final tts = _RecorderFlutterTts(installedEngines: const []);
+      final engine = SystemTtsEngine(tts: tts, isIos: true);
+
+      await engine.init();
+
+      expect(engine.isAvailable(), isTrue);
+      expect(tts.setEngineCalls, isEmpty); // 无候选链
+      expect(tts.sharedInstanceCalls, [true]);
+      expect(tts.iosAudioCategories, hasLength(1));
+      expect(tts.languageProbes, ['en-US']);
+    });
+
+    test('iOS：语速按 AVSpeechUtterance 基准缩放（1x→0.5、1.2x→0.6）', () async {
+      final tts = _RecorderFlutterTts(installedEngines: const []);
+      final engine = SystemTtsEngine(tts: tts, isIos: true);
+      await engine.init();
+
+      engine.speak('hello', speed: 1.0);
+      engine.speak('world', speed: 1.2);
+
+      expect(tts.speechRates, [0.5, closeTo(0.6, 1e-9)]);
+    });
+
+    test('iOS：系统未装 en-US 语音时不可用并记录原因', () async {
+      final tts = _RecorderFlutterTts(
+        installedEngines: const [],
+        languageAvailable: false,
+      );
+      final engine = SystemTtsEngine(tts: tts, isIos: true);
+
+      await engine.init();
+
+      expect(engine.isAvailable(), isFalse);
+      expect(engine.unavailabilityReason(), 'iOS 系统未安装 en-US 语音');
     });
 
     test('完成回调 → onSpeakingFinished 带当前 id', () async {
@@ -166,14 +205,20 @@ void main() {
 }
 
 class _RecorderFlutterTts extends FlutterTts {
-  _RecorderFlutterTts({required this.installedEngines});
+  _RecorderFlutterTts({
+    required this.installedEngines,
+    this.languageAvailable = true,
+  });
 
   final List<String> installedEngines;
+  final bool languageAvailable;
   final List<String> setEngineCalls = [];
   final List<double> speechRates = [];
   final List<String> spokenTexts = [];
   final List<String> languageCalls = [];
   final List<String> languageProbes = [];
+  final List<bool> sharedInstanceCalls = [];
+  final List<String> iosAudioCategories = [];
   VoidCallback? _completion;
   VoidCallback? _error;
   VoidCallback? _cancel;
@@ -184,7 +229,23 @@ class _RecorderFlutterTts extends FlutterTts {
   @override
   Future<dynamic> isLanguageAvailable(String language) async {
     languageProbes.add(language);
-    return true;
+    return languageAvailable;
+  }
+
+  @override
+  Future<dynamic> setSharedInstance(bool sharedSession) async {
+    sharedInstanceCalls.add(sharedSession);
+    return 1;
+  }
+
+  @override
+  Future<dynamic> setIosAudioCategory(
+    IosTextToSpeechAudioCategory category,
+    List<IosTextToSpeechAudioCategoryOptions> options, [
+    IosTextToSpeechAudioMode mode = IosTextToSpeechAudioMode.defaultMode,
+  ]) async {
+    iosAudioCategories.add(category.name);
+    return 1;
   }
 
   @override

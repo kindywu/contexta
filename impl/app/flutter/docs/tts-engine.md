@@ -10,10 +10,11 @@
 
 **音色选择**：KittenTTS 内置 8 个英语音色（Bella/Jasper/Luna/Bruno/Rosie/Hugo/Kiki/Leo）。设置页提供音色选择器（含逐音色试听），选择持久化到 `user_settings.tts_voice_id`，此后所有朗读入口（阅读页全文/段落/单词、参考页例句、词汇页单词）按当前音色发声。系统 TTS 回退时音色不生效（系统引擎没有音色概念），但功能不受影响。
 
-朗读质量的两个坑（均已在代码层处理）：
+朗读质量的三个坑（均已在代码层处理）：
 
 1. **init 挂起**：CEPhonemizer 未传词典路径时，插件会从 `raw.githubusercontent.com` 下载 en_rules/en_list，http 无超时——国内网络下 `KittenTTS.create()` 永久挂起（CPU 0%），朗读链路被阻塞。解决：词典打包进 assets（`assets/kittentts_models/en_rules`、`en_list`，共 ~260KB），create() 显式传 `rulesPath`/`listPath` 直用本地文件，零网络依赖。
 2. **音素器静默降级**：词典文件缺失时 `allowRuleBasedFallback` 兜底到纯规则音素器——发音质量明显变差（提交 9fb6c89 注释：「音质略差但可用」）。这就是 2026-08-10 真机「朗读效果变差」的根因：旧 APK 安装留下的 `.installed` marker 让新代码跳过资产拷贝，词典从未拷入。修复后 marker 不再是跳过拷贝的充分条件（见下）。
+3. **插件默认存储目录在 iOS 上建不出来**（2026-09-18 模拟器实测）：插件把 `storageDirectory` 默认为 `<appSupport>/KittenTTS`，在 iOS 沙箱里 `Directory.create` 抛 `PathNotFoundException: Creation failed … errno = 2`；该异常被 `allowRuleBasedFallback` 吞掉 → **静默降级为规则音素器**，表现为「朗读能出声但发音奇怪」，且日志里 `[KittenTtsEngine] init SUCCESS` 一切正常。解决两处：`KittenTtsPluginSession.create` 显式传 `storageDirectory: <解压出的模型目录>`（我们自己的目录，创建必然成功）；`allowRuleBasedFallback: false`——词典加载失败时让 KittenTTS **整体不可用**（回退系统 TTS，听感正常），而不是「能出声但发音是错的」。诊断手法：把 `allowRuleBasedFallback` 关掉后 init 会直接报错并暴露真实原因；保持关闭则「init SUCCESS」即等价于「CE 音素器已加载」。
 
 ## 技术实现线
 
@@ -33,6 +34,17 @@ flowchart TD
 - `TtsEngineFactory.create()`（`lib/data/tts/tts_engine_factory.dart`）：`kittenInitTimeout = 45s`，超时接住后按失败回退系统 TTS，不阻塞朗读链路。
 - KittenTtsEngine 惰性初始化（首次 speak 前触发 `init()`），失败记录 `_failureReason`，`speak` 返回 null。
 - 会话层 `KittenTtsPluginSession` 包装插件：WAV 生成 → audioplayers 播放 → 完成/句子回调（句子回调与句子级缓存细节见 [reading-sentence-highlight.md](reading-sentence-highlight.md)）。
+- 会话创建时三处显式指向本地资产（`kitten_tts_session.dart`）：`modelFiles`（onnx/voices 不下载）、`phonemizer.rulesPath/listPath`（词典不下载）、`storageDirectory`（不给插件用默认目录，见「朗读质量的三个坑」第 3 条）。
+
+### 系统 TTS（SystemTtsEngine）的平台差异
+
+| 维度 | Android | iOS |
+|------|---------|-----|
+| 初始化 | 引擎候选链：小米内置 → Google TTS → 系统默认（HyperOS 上默认构造器可能发现不了内置引擎） | 无「引擎包」概念（`getEngines` / `setEngine` 在 iOS 侧无实现），跳过候选链；改做 `setSharedInstance(true)` + `setIosAudioCategory(playback, …)`（否则静音开关连朗读一起静音）+ `isLanguageAvailable('en-US')` 探测 |
+| 语速基准 | `TextToSpeech.setSpeechRate`：**1.0 = 正常语速**，显示语速直接透传 | `AVSpeechUtterance.rate`：**0.5 = 正常语速**（`AVSpeechUtteranceDefaultSpeechRate`），1.0 是最大档；显示语速 ×0.5（1.0x→0.5、0.8x→0.4、1.2x→0.6）。不缩放会快约一倍（模拟器实测「太快了」） |
+| 音色 | 忽略（无音色概念） | 忽略（无音色概念） |
+
+语速映射在 `SystemTtsSpeedMapper`（`lib/domain/tts/tts_engine.dart`，`isIos` 可注入以便离线单测）；KittenTTS 的语速语义与显示语速一致（0.5–2.0 倍速），不经过该映射。
 
 ### 音色选择（TtsVoice → 引擎 → SDK）
 
@@ -104,7 +116,8 @@ flowchart TD
 |------|------|
 | KittenTTS init 超时（45s） | 回退系统 TTS，日志记录，不阻塞朗读 |
 | KittenTTS init 抛错 | `_failureReason` 记录具体原因，speak 返回 null / 回退系统 TTS |
-| 词典文件缺失（旧 marker / 手动删除） | 重新拷贝补齐（marker+文件双重校验）；CEPhonemizer 侧仍有规则音素器兜底 |
+| 词典文件缺失（旧 marker / 手动删除） | 重新拷贝补齐（marker+文件双重校验）；`allowRuleBasedFallback: false` 使词典加载失败时 KittenTTS 整体不可用 → 回退系统 TTS（**不再**用规则音素器兜底发音） |
+| iOS 上插件默认存储目录创建失败 | 不会发生——`storageDirectory` 显式指向应用自己解压的模型目录（坑 3） |
 | 音色参数为 null / 未知值 | 引擎/会话层归一到默认 bella（`TtsVoice.bella`），朗读不中断 |
 | `tts_voice_id` 读到未知 dbValue | `fromDbValue` 抛 `ArgumentError`（上游 provider 层兜底 bella，见 currentTtsVoiceProvider） |
 | 系统 TTS 回退 | voice 被忽略（系统引擎无音色概念），其余功能不受影响 |
@@ -115,7 +128,7 @@ flowchart TD
 - `test/data/tts/install_model_assets_test.dart`：marker 三语义用例（本次新增）
 - `test/data/tts/kitten_tts_engine_test.dart`：init/speak/回调透传/失败路径（fake session）
 - `test/data/tts/tts_engine_factory_test.dart`：Kitten 可用 / 失败回退 / 双失败不可用
-- `test/data/tts/system_tts_engine_test.dart`、`tts_engine_contract_test.dart`：系统引擎与契约（含忽略 voice）
+- `test/data/tts/system_tts_engine_test.dart`、`tts_engine_contract_test.dart`：系统引擎与契约（含忽略 voice；iOS 分支：跳过候选链 + 共享音频会话；两平台语速映射 1.0x→1.0 / 1.0x→0.5）
 - `test/domain/tts/tts_voice_test.dart`：枚举 dbValue/label/性别/`fromDbValue` 异常（SDK 交叉验证 8/8）
 - `test/di/current_tts_voice_provider_test.dart`：settings 音色读取 + 缺省 bella
 - `test/ui/settings/settings_controller_test.dart` / `settings_screen_test.dart`：音色选择持久化 + 试听/停播 + provider invalidate

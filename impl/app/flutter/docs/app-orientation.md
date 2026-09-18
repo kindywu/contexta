@@ -57,7 +57,7 @@ Flutter 把方向列表映射为安卓的 `screenOrientation` 组合，**列表�
 
 | 层 | 位置 | 覆盖窗口 |
 |----|------|---------|
-| 原生侧 | `android/app/src/main/AndroidManifest.xml`：**声明弹性窗口豁免**（见下节），但**不声明** `screenOrientation`<br/>`ios/Runner/Info.plist`：`UISupportedInterfaceOrientations` 只留 `UIInterfaceOrientationPortrait` | Flutter 引擎启动前的启动窗口（闪屏期） |
+| 原生侧 | `android/app/src/main/AndroidManifest.xml`：**声明弹性窗口豁免**（见下节），但**不声明** `screenOrientation`<br/>`ios/Runner/Info.plist`：iPhone `UISupportedInterfaceOrientations` 只留 `UIInterfaceOrientationPortrait`；iPad `UISupportedInterfaceOrientations~ipad` 只留 `UIInterfaceOrientationLandscapeLeft`，并声明 `UIRequiresFullScreen`（见下节） | Flutter 引擎启动前的启动窗口（闪屏期） |
 | Dart 侧 | `lib/core/platform/device_form_factor.dart` 的 `resolveStartupFormFactor()` → `lib/core/platform/app_orientation.dart` 的 `applyOrientationPolicy(formFactor)`，由 `lib/main.dart` 在 `runApp` 前 `await` | 引擎启动后的运行期旋转 |
 
 ```mermaid
@@ -139,6 +139,32 @@ mHasSetIgnoreOrientationRequest=true ignoreOrientationRequest=true
 >
 > 另一条实测数据（小米平板 HyperOS / Android 16）：该 ROM **未启用**系统的忽略行为，运行时请求有效。也就是说「忽略」是 ROM 相关的，豁免声明在两种 ROM 上都不吃亏。
 
+### iOS：方向锁的两道关（plist 声明 + iPad 全屏固定）
+
+iOS 与 Android 一样是「静态声明 + 运行时请求」两层，但约束更硬：
+
+| 关 | 位置 | 说明 |
+|----|------|------|
+| 1. 允许集合 | `Info.plist` 的两个方向键 | iOS **只允许**声明过的方向。Dart 侧 `SystemChrome.setPreferredOrientations` 的运行时请求必须落在集合内，否则被系统忽略。iPhone 只列竖屏、iPad 只列横屏，与 Android 的「不写死、按形态请求」不同——plist 无法表达设备相关，但 iOS 的 plist 本身就有 iPhone / iPad 两套键（`~ipad` 后缀），正好对应两棵树。 |
+| 2. 全屏固定 | `UIRequiresFullScreen` | iPadOS 把「支持多方向」的 App 视为可自由缩放（Split View / Stage Manager），此时方向声明不生效。声明全屏固定后系统才按第 1 关的集合锁定朝向。 |
+
+实测（iPad Pro 13" M5 模拟器 / iOS 27）：
+
+```
+# 运行时方向请求生效（Dart 侧锁横屏）
+[com.apple.UIKit:Orientation] <UIWindowScene: …> Scene updated orientation preferences: none -> ( Ll )
+# plist 的 iPad 方向集合 = 仅 LandscapeLeft → pad 树在横屏渲染（form-factor 日志见 adaptive-layout.md）
+[form-factor] display=Size(2064.0, 2752.0) dpr=2.0 logical=Size(1032.0, 1376.0) → DeviceFormFactor.pad
+```
+
+> ⚠️ 与 Android 16 的豁免同类的**临时手段**：iOS 26 SDK 起系统告警
+> `Update the Info.plist: 1) UIRequiresFullScreen will soon be ignored.
+> 2) Support for all orientations will soon be required.`（iPad 运行时日志实测）。
+> 将来该键被忽略后，iPad 上的「固定横屏」需要重做方案（候选：不锁方向，
+> 平板树改为可横竖自适应；或按 scene 申请几何约束）。
+
+> 注：iPhone 侧不受影响——竖屏单方向一直是 App Store 允许的常规做法。
+
 ### 尺寸未就绪（0×0）时的兜底
 
 | 场景 | 行为 |
@@ -191,6 +217,6 @@ classDiagram
 | 形态判定（纯函数） | `test/core/platform/device_form_factor_test.dart` | 手机 360×780dp → phone；平板横屏 1280×800dp → pad；平板竖屏 800×1280dp → **仍 pad**（按最短边）；断点 600dp/599dp 两侧；尺寸 0 → phone；像素比 0 → phone（不除零）；**平板被 letterbox 成竖条也判得对**（判定源是显示屏） |
 | 启动解析 | 同上 | `view.display.size` 就绪 → 立即判定（并证明读的是 display 而非 physicalSize）；显示屏 0 → 等超时后回落 phone（用 `tester.runAsync` 走真实时钟——FakeAsync 里 `Future.delayed` 永不到期） |
 | 方向执行 | `test/core/platform/app_orientation_test.dart` | `applyOrientationPolicy(phone/pad)` 各自只传**一个**方向元素——钉住「不翻转」；`lockAppToPortrait` / `lockAppToLandscape` 的底层调用 |
-| 原生声明 | 同上（直接读文件——`android/`、`ios/` 被 analyzer 排除，读文件是唯一能守住这两处的自动化手段） | manifest 含 `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY`；manifest **不含** `android:screenOrientation`（设备相关，不能写死）；`Info.plist` 的 iPhone 支持方向只剩竖屏 |
+| 原生声明 | 同上（直接读文件——`android/`、`ios/` 被 analyzer 排除，读文件是唯一能守住这两处的自动化手段） | manifest 含 `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY`；manifest **不含** `android:screenOrientation`（设备相关，不能写死）；`Info.plist` 的 iPhone 支持方向只剩竖屏、iPad 只剩横屏且含 `UIRequiresFullScreen`；`BGTaskSchedulerPermittedIdentifiers` 含 `dailyArticleSync` 且 `UIBackgroundModes` 存在 |
 
 > 手机闪屏期的表现由「Info.plist 只剩竖屏 + 形态判定 phone」两条断言共同守住——这就是「手机显示不被影响」的自动化闸门之一。

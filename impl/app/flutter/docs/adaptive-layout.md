@@ -124,12 +124,16 @@ Future<DeviceFormFactor> resolveStartupFormFactor({Duration timeout}) async { ..
 
 判定源必须是**显示屏**（`view.display.size`）而不是窗口（`view.physicalSize`）——理由与踩坑记录见 [app-orientation.md](app-orientation.md#设备判定必须读显示屏不能读窗口)。
 
-两台设备的取值（模拟器实测）：
+各设备取值（模拟器实测）：
 
 | 设备 | 显示屏 | 逻辑尺寸 | 最短边 | `DeviceFormFactor` |
 |------|--------|---------|--------|-------------------|
 | 手机（Pixel，1080×1920 @2.625） | 1080×1920 | 411×731dp | 411dp | phone |
 | 平板（Pixel Tablet，2560×1600 @2） | 2560×1600 | 1280×800dp | 800dp | pad |
+| 手机（iPhone 18 Pro 模拟器，1206×2622 @3） | 1206×2622 | 402×874dp | 402dp | phone |
+| 平板（iPad Pro 13" M5 模拟器，2064×2752 @2） | 2064×2752 | 1032×1376dp | 1032dp | pad |
+
+> iOS 侧同样是「显示屏物理尺寸 / 像素比」判定，与 Android 同源：iPad 即使**设备呈竖持姿态**（显示屏 2064×2752 竖屏），最短边 1032dp 仍判为 pad → 走平板树 + 锁横屏（见 [app-orientation.md](app-orientation.md)）。
 
 ### 形态注入与路由分叉
 

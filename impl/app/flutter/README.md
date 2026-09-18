@@ -34,6 +34,33 @@ Contexta 英语学习 App（Flutter）。服务端 API（投放同步 / 远程�
 
 不注入时 `serverBaseUrl` 为空字符串，所有服务端调用将失败——构建前请务必配置。
 
+## iOS
+
+最低版本 **iOS 16.0**（`kittentts` / `flutter_onnxruntime` 的 podspec 都要求 16.0；
+三处同值：`ios/Podfile` 的 `platform :ios, '16.0'`、`Runner.xcodeproj` 的
+`IPHONEOS_DEPLOYMENT_TARGET`、`flutter_install_all_ios_pods` 生成的 SPM 包）。
+
+服务端地址 iOS 侧没有 `local.properties` 等价物，一律命令行注入：
+
+```sh
+# 模拟器（iPhone / iPad 各自一棵界面树，见 docs/adaptive-layout.md）
+flutter run -d <simulator-udid> --dart-define=SERVER_BASE_URL=https://47.112.20.32
+# 构建产物
+flutter build ios --simulator --debug --dart-define=SERVER_BASE_URL=https://47.112.20.32
+```
+
+方向与形态：iPhone 固定竖屏、iPad 固定横屏，plist 与 Dart 两侧声明，见
+[docs/app-orientation.md](docs/app-orientation.md)。
+
+> **kittentts 的 podspec 名兼容补丁**：上游 0.1.0 的 iOS podspec 文件名是
+> `kittentts_flutter.podspec`，与 pub 包名 `kittentts` 不一致，CocoaPods 会报
+> `No podspec found for 'kittentts'`。`ios/Podfile` 里的 `patch_kittentts_podspec`
+> 在 `pod install` 时补一份改名后的 podspec（不动 pub 缓存、不新增仓库源文件）。
+> 上游修好后整段删除即可（补丁会主动报错提示）。
+
+> **部署纪律（同 Android）**：真机安装一律走 Xcode / `ios-deploy` 的覆盖安装，
+> 不要卸载重装——卸载会清空沙箱内的数据库（见根 `CLAUDE.md` 部署纪律）。
+
 ## 文档
 
 - `ACCEPTANCE.md` — 真机验收清单（迁移期，部分条目已过时）
