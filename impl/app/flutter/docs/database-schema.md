@@ -25,7 +25,7 @@ erDiagram
 
 | 表 | 类型 | 主键 | 关键列 | 外键 |
 |---|---|---|---|---|
-| `user_settings` | 长期实体（1:1） | `id`（无自增） | `is_onboarded`、`difficulty_level`、`daily_article_count`、`translation_display_mode`、`tts_speed`、`tts_voice_id`、`mastery_threshold_n`、`auto_play_audio` | — |
+| `user_settings` | 长期实体（1:1） | `id`（无自增） | `is_onboarded`、`difficulty_level`、`daily_article_count`、`translation_display_mode`、`tts_speed`、`tts_voice_id`（`'RANDOM'` = 文章朗读按篇随机，或固定音色名）、`mastery_threshold_n`、`auto_play_audio` | — |
 | `config_change_log` | 流水账 | `id` 自增 | `field_name`、`old_value`、`new_value`、`created_at` | — |
 | `schema_migration_log` | 流水账 | `id` 自增 | `from_version`、`to_version`、`description`、`created_at` | — |
 | `generation_pipeline_status` | 流水账（单行） | `id`（无自增） | `is_blocked`、`blocked_reason`、`blocked_at`、`blocked_app_version_code` | — |
@@ -33,7 +33,7 @@ erDiagram
 | `learning_stats_summary` | 长期实体（单行） | `id`（无自增） | 累计阅读/生词/掌握/天数/连续天数/最长连续/`last_active_date` | — |
 | `daily_learning` | 流水账 | `learning_date`（TEXT，联合） | `ref_batch_date`、`ref_batch_id`、`daily_count_snapshot` | `ref_batch_id` → `article_batch.id` CASCADE |
 | `article_batch` | 长期实体 | `id` 自增 | `status`、`difficulty_level_snapshot`、`generated_on`（UNIQUE 联合）、`last_updated_at`、`blocked_reason`、`blocked_at`、`ready_notified_at` | — |
-| `article` | 长期实体 | `id` 自增 | `batch_id`、`order_index`、`content_category`、`title`、`status`、`server_article_id`（可空 + UNIQUE 索引，**服务端投放幂等键**）、生成/阅读时间线、`retry_count`、`max_retries`、`next_retry_at` | `batch_id` → `article_batch.id` CASCADE |
+| `article` | 长期实体 | `id` 自增 | `batch_id`、`order_index`、`content_category`、`title`、`status`、`accumulated_read_seconds`、`read_completed_at`、`server_article_id`（可空 + UNIQUE 索引，**服务端投放幂等键**）、`tts_voice_id`（可空，**本篇朗读音色**，NULL = 尚未分配） | `batch_id` → `article_batch.id` CASCADE |
 | `article_paragraph` | 长期实体 | `id` 自增 | `article_id`、`order_index`（UNIQUE 联合）、`english_text`、`chinese_translation` | `article_id` → `article.id` CASCADE |
 | `generation_error_log` | 流水账 | `id` 自增 | `entity_type`、`entity_id`、`error_code`、`error_message`、`error_help`、`retry_count`、`created_at`、`notified_at` | — |
 | `word` | 长期实体 | `id` 自增 | `spelling_normalized`（UNIQUE）、`spelling_display`、`phonetic_ipa` | — |
@@ -47,10 +47,11 @@ erDiagram
 
 ### 关键规则（db:NF / db:PK / db:INDEX）
 
-- **无 DEFAULT 子句**：默认值由应用代码填充（对照 Room 逐列一致）。两个例外：(1) 测试夹具中 `tts_speed` 的临时补丁默认值；(2) 开发期补列补丁 / 打开自愈给 `tts_voice_id`、`voice_id` 补的 `DEFAULT 'BELLA'`、给 `tts_cache.sentence_index` 补的 `DEFAULT 0`——SQLite 的 `ALTER TABLE ADD COLUMN NOT NULL` 必须带 DEFAULT，DEFAULT 仅服务于补列路径，应用代码始终显式写值，语义与 001-init.sql 的无 DEFAULT 写法等价。
+- **无 DEFAULT 子句**：默认值由应用代码填充（对照 Room 逐列一致）。两个例外：(1) 测试夹具中 `tts_speed` 的临时补丁默认值；(2) 开发期补列补丁 / 打开自愈给 `user_settings.tts_voice_id`、`tts_cache.voice_id` 补的 `DEFAULT 'RANDOM'`、给 `tts_cache.sentence_index` 补的 `DEFAULT 0`——SQLite 的 `ALTER TABLE ADD COLUMN NOT NULL` 必须带 DEFAULT，DEFAULT 仅服务于补列路径，应用代码始终显式写值，语义与 001-init.sql 的无 DEFAULT 写法等价。
 - **AUTOINCREMENT 纪律**：自增主键 → `AUTOINCREMENT`；单行/业务主键（`user_settings`、`generation_pipeline_status`、`learning_stats_summary`、`daily_learning`、`db_version`）→ 裸 `INTEGER PRIMARY KEY` 无自增。
 - **索引按需**：外键单列索引、`(difficulty_level_snapshot, generated_on)` UNIQUE、`(article_id, order_index)` UNIQUE、`tts_cache_last_accessed_at_index` 等，全部对照 Room 自动命名规则逐条一致（schema_*_test.dart 逐列断言）。
 - **`article.server_article_id`（可空 + UNIQUE 索引）——服务端投放幂等键**：每日同步按服务端文章 id 幂等 upsert——有则更新 title/orderIndex/contentCategory 与段落（**不重置** accumulatedReadSeconds 等本地阅读状态），无则 INSERT（status 'SUCCESS'）。可空允许无服务端来源的行（旧库 / 本地生成语义文章）与投放行共存；批次键 = (difficulty, generated_on=投放日 delivery_date)，服务端 08:00 生成窗口前同步锁定的是当时最新过审文章（同日不再变）；8 点前无未读 → 空交付且不记账（非冻结）→ 当天生成窗口后再次同步可投当天新文。
+- **`article.tts_voice_id`（可空，仅本地写）——本篇朗读音色**：音色设置选「随机」（默认）时，进入文章随机分配一次并回写（`ArticleDao.setTtsVoice`），此后该篇固定；NULL 的语义是「尚未分配」。服务端内容同步只改 title/orderIndex/contentCategory，不触碰此列，重新同步不会重置音色。
 
 ## 二、版本管理线：db_version 指针 + 仓库文件
 
@@ -79,12 +80,14 @@ INSERT OR IGNORE INTO db_version (id, version, updated_at) VALUES (1, 1, <毫秒
 
 只保证「表 + 单例行存在」，版本推进只由 `migrate_db.sh` / 发布后 `onUpgrade` 管理。drift 2.34.3 中 migration（onCreate/onUpgrade）先于 `beforeOpen` 运行，旧库/新库均安全。
 
-同一 beforeOpen 还有**开发期 v1 结构变更自愈**（`selfHealVoiceColumns` / `selfHealServerAuthColumns` / `selfHealArticleSyncColumn` / `selfHealTtsSentenceColumn`，见 `database.dart`）：对旧库 / asset 旧库幂等补列，保证任何库打开即自洽。
+同一 beforeOpen 还有**开发期 v1 结构变更自愈**（`selfHealVoiceColumns` / `selfHealServerAuthColumns` / `selfHealArticleSyncColumn` / `selfHealArticleVoiceColumn` / `selfHealTtsSentenceColumn`，见 `database.dart`）：对旧库 / asset 旧库幂等补列，保证任何库打开即自洽。
 
 ```sql
 -- 幂等：列已存在则跳过
-ALTER TABLE user_settings ADD COLUMN tts_voice_id TEXT NOT NULL DEFAULT 'BELLA';
-ALTER TABLE tts_cache ADD COLUMN voice_id TEXT NOT NULL DEFAULT 'BELLA';
+ALTER TABLE user_settings ADD COLUMN tts_voice_id TEXT NOT NULL DEFAULT 'RANDOM';
+ALTER TABLE tts_cache ADD COLUMN voice_id TEXT NOT NULL DEFAULT 'RANDOM';
+-- 每篇文章的朗读音色（随机分配结果；NULL = 未分配，可空故无 DEFAULT）
+ALTER TABLE article ADD COLUMN tts_voice_id TEXT;
 -- 句子级朗读：补列后旧行（整段音频、无句序语义）会被读成「该段第 0 句」，
 -- 故补列同时清空 tts_cache（纯缓存，可再生；磁盘 WAV 由孤儿清理兜底）
 ALTER TABLE tts_cache ADD COLUMN sentence_index INTEGER NOT NULL DEFAULT 0;

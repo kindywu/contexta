@@ -88,20 +88,21 @@ void main() {
       await db.close();
     });
 
-    test('updateTtsVoice 持久化后读回，无行默认 BELLA', () async {
+    test('updateTtsVoice 持久化后读回，无行默认 RANDOM', () async {
       await repo.completeOnboarding('MEDIUM', 3);
-      // completeOnboarding 默认行 tts_voice_id = 'BELLA'
-      expect((await repo.getSettings())!.ttsVoice, TtsVoice.bella);
+      // completeOnboarding 默认行 tts_voice_id = 'RANDOM'（按文章随机）
+      expect((await repo.getSettings())!.ttsVoice,
+          const TtsVoiceSetting.random());
 
-      await repo.updateTtsVoice(TtsVoice.hugo);
+      await repo.updateTtsVoice(TtsVoiceSetting.fixed(TtsVoice.hugo));
       final settings = await repo.getSettings();
-      expect(settings!.ttsVoice, TtsVoice.hugo);
+      expect(settings!.ttsVoice, TtsVoiceSetting.fixed(TtsVoice.hugo));
       final row = await dao.get();
       expect(row!.ttsVoiceId, 'HUGO');
     });
 
     test('无行时不抛错（与 updateTtsSpeed 行为一致）', () async {
-      await repo.updateTtsVoice(TtsVoice.leo); // 空库，无 user_settings 行
+      await repo.updateTtsVoice(TtsVoiceSetting.fixed(TtsVoice.leo)); // 空库，无 user_settings 行
     });
   });
 

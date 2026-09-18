@@ -13,7 +13,7 @@ class SettingsUiState {
     this.dailyCount = 3,
     this.translationMode = 'FULL',
     this.ttsSpeed = 1.0,
-    this.ttsVoice = TtsVoice.bella,
+    this.ttsVoice = const TtsVoiceSetting.random(),
     this.masteryThreshold = 1,
     this.autoPlayAudio = false,
     this.stats = const SettingsStatsData(),
@@ -30,7 +30,7 @@ class SettingsUiState {
   final int dailyCount;
   final String translationMode;
   final double ttsSpeed;
-  final TtsVoice ttsVoice;
+  final TtsVoiceSetting ttsVoice;
   final int masteryThreshold;
   final bool autoPlayAudio;
   final SettingsStatsData stats;
@@ -54,7 +54,7 @@ class SettingsUiState {
     int? dailyCount,
     String? translationMode,
     double? ttsSpeed,
-    TtsVoice? ttsVoice,
+    TtsVoiceSetting? ttsVoice,
     int? masteryThreshold,
     bool? autoPlayAudio,
     SettingsStatsData? stats,
@@ -262,11 +262,11 @@ class SettingsController extends StateNotifier<SettingsUiState> {
     state = state.copyWith(ttsSpeed: speed);
   }
 
-  /// 更新朗读音色：写库成功后更新状态并回调（未变更则忽略）。
-  Future<void> updateTtsVoice(TtsVoice voice) async {
-    if (voice == state.ttsVoice) return;
-    await _settingsRepository.updateTtsVoice(voice);
-    state = state.copyWith(ttsVoice: voice);
+  /// 更新朗读音色设置（随机 / 固定）：写库成功后更新状态并回调（未变更则忽略）。
+  Future<void> updateTtsVoice(TtsVoiceSetting setting) async {
+    if (setting == state.ttsVoice) return;
+    await _settingsRepository.updateTtsVoice(setting);
+    state = state.copyWith(ttsVoice: setting);
     onTtsVoiceChanged?.call();
   }
 

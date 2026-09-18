@@ -1,6 +1,7 @@
 import '../model/article.dart';
 import '../model/article_batch.dart';
 import '../model/daily_learning_info.dart';
+import '../model/tts_voice.dart';
 
 /// 文章仓储接口（对齐 Kotlin ArticleRepository.kt 保留方法；2026-08-13
 /// 计划 B Task 6 移除本地生成管道后，删去全部生成/告警方法——CAS 认领、
@@ -50,4 +51,7 @@ abstract interface class ArticleRepository {
 
   /// 无条件标记阅读完成（幂等）。
   Future<void> forceMarkReadCompleted(int articleId);
+
+  /// 回写本篇的朗读音色（随机模式下首次朗读时分配；写后该文章一直用它）。
+  Future<void> setArticleTtsVoice(int articleId, TtsVoice voice);
 }

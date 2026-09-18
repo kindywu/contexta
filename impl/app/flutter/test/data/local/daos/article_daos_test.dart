@@ -192,6 +192,30 @@ void main() {
       expect(row.status, 'SUCCESS');
     });
 
+    test('setTtsVoice：写本篇音色；服务端同步（updateSyncedArticle）不覆盖', () async {
+      final batchId = await newBatch();
+      final a = await newArticle(batchId);
+      final b = await newArticle(batchId);
+
+      // 新文章未分配（NULL = 随机模式下待分配）
+      expect((await dao.getById(a))!.ttsVoiceId, isNull);
+      // dbValue 落库，不是 'RANDOM'（随机在设置层，落到文章上必须是具体音色）
+      await dao.setTtsVoice(a, 'HUGO');
+      expect((await dao.getById(a))!.ttsVoiceId, 'HUGO');
+
+      // 二次写入覆盖（改设置后重新分配用）
+      await dao.setTtsVoice(a, 'LUNA');
+      expect((await dao.getById(a))!.ttsVoiceId, 'LUNA');
+
+      // 只影响目标文章
+      expect((await dao.getById(b))!.ttsVoiceId, isNull);
+
+      // 服务端内容同步只改 title/orderIndex/contentCategory，音色不被重置
+      await dao.updateSyncedArticle(a,
+          title: '新标题', orderIndex: 3, contentCategory: 'NEWS');
+      expect((await dao.getById(a))!.ttsVoiceId, 'LUNA');
+    });
+
     test('addReadSeconds / markReadCompleted（>=120s 才标记）/ forceMarkReadCompleted', () async {
       final batchId = await newBatch();
       final a = await newArticle(batchId, accumulatedReadSeconds: 0);

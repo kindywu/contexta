@@ -338,10 +338,12 @@ class _LearningSettingsContent extends StatelessWidget {
           value: _ttsSpeedLabel(state.ttsSpeed),
           onClick: onShowTtsSpeedPicker,
         ),
-        // 朗读音色
+        // 朗读音色（默认「随机」：每篇文章首次朗读时随机定一个音色并保持不变）
         _SettingsPickerItem(
           label: '朗读音色',
-          description: 'KittenTTS 朗读时生效',
+          description: state.ttsVoice.isRandom
+              ? '每篇文章随机分配音色，首次朗读后固定'
+              : 'KittenTTS 朗读时生效',
           value: state.ttsVoice.label,
           onClick: onShowTtsVoicePicker,
         ),
@@ -952,8 +954,9 @@ class _VoicePickerDialog extends ConsumerStatefulWidget {
     required this.onDismiss,
   });
 
+  /// 当前选中的 dbValue（`'RANDOM'` 或具体音色名）。
   final String selectedValue;
-  final ValueChanged<TtsVoice> onSelect;
+  final ValueChanged<TtsVoiceSetting> onSelect;
   final VoidCallback onDismiss;
 
   @override
@@ -996,54 +999,81 @@ class _VoicePickerDialogState extends ConsumerState<_VoicePickerDialog> {
                 ?.copyWith(color: AppColors.ink),
           ),
           const SizedBox(height: AppSpacing.sm),
+          // 「随机」（默认）：每篇文章首次朗读时随机定一个音色并保持不变。
+          // 无试听喇叭——随机没有单一音色可试听（其余行的喇叭位用等宽占位对齐）。
+          _voiceRow(
+            label: '随机',
+            dbValue: TtsVoiceSetting.randomDbValue,
+            onSelect: () => widget.onSelect(const TtsVoiceSetting.random()),
+            engineFuture: engineFuture,
+          ),
           for (final voice in TtsVoice.values)
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () => widget.onSelect(voice),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 10, horizontal: 4),
-                      child: Row(
-                        children: [
-                          Icon(
-                            widget.selectedValue == voice.dbValue
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_unchecked,
-                            size: 20,
-                            color: widget.selectedValue == voice.dbValue
-                                ? AppColors.primary
-                                : AppColors.mutedSoft,
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Text(voice.label,
-                              style: AppType.textTheme.bodyLarge),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                // 试听喇叭：点击播固定例句；播放中的行高亮，再点停止
-                InkWell(
-                  onTap: () => _togglePreview(voice, engineFuture),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Icon(
-                      _previewingVoice == voice
-                          ? Icons.volume_up
-                          : Icons.volume_down_outlined,
-                      size: 22,
-                      color: _previewingVoice == voice
-                          ? AppColors.primary
-                          : AppColors.mutedSoft,
-                    ),
-                  ),
-                ),
-              ],
+            _voiceRow(
+              label: voice.label,
+              dbValue: voice.dbValue,
+              onSelect: () => widget.onSelect(TtsVoiceSetting.fixed(voice)),
+              previewVoice: voice,
+              engineFuture: engineFuture,
             ),
         ],
       ),
+    );
+  }
+
+  /// 音色单行（单选圈 + 名称 + 可选试听喇叭）。
+  ///
+  /// [previewVoice] 为 null（「随机」行）时不渲染试听喇叭，用等宽占位保持缩进对齐。
+  Widget _voiceRow({
+    required String label,
+    required String dbValue,
+    required VoidCallback onSelect,
+    required Future<TtsEngine> engineFuture,
+    TtsVoice? previewVoice,
+  }) {
+    final selected = widget.selectedValue == dbValue;
+    return Row(
+      children: [
+        Expanded(
+          child: InkWell(
+            onTap: onSelect,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    selected
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                    color: selected ? AppColors.primary : AppColors.mutedSoft,
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(label, style: AppType.textTheme.bodyLarge),
+                ],
+              ),
+            ),
+          ),
+        ),
+        // 试听喇叭：点击播固定例句；播放中的行高亮，再点停止
+        if (previewVoice == null)
+          const SizedBox(width: 38)
+        else
+          InkWell(
+            onTap: () => _togglePreview(previewVoice, engineFuture),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(
+                _previewingVoice == previewVoice
+                    ? Icons.volume_up
+                    : Icons.volume_down_outlined,
+                size: 22,
+                color: _previewingVoice == previewVoice
+                    ? AppColors.primary
+                    : AppColors.mutedSoft,
+              ),
+            ),
+          ),
+      ],
     );
   }
 

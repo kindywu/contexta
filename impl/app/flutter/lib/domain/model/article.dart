@@ -1,3 +1,5 @@
+import 'tts_voice.dart';
+
 /// 文章领域模型（对齐 Kotlin Article.kt；2026-08-13 计划 B Task 6 移除
 /// 本地生成管道后删去生成状态机字段 generationStartedAt/generationCompletedAt/
 /// retryCount/lastRetryAt/maxRetries/nextRetryAt）。
@@ -12,6 +14,13 @@ class Article {
   final String? readCompletedAt;
   final List<ArticleParagraph> paragraphs;
 
+  /// 本篇文章的朗读音色（`article.tts_voice_id`）。
+  ///
+  /// null = 尚未分配（音色设置选「随机」时，首次朗读前由阅读页随机分配并
+  /// 回写，此后该文章一直用它）；非 null 时即使全局设置改成别的音色，
+  /// 本文也已定音（随机分配的粘性）。
+  final TtsVoice? ttsVoice;
+
   const Article({
     required this.id,
     required this.batchId,
@@ -22,6 +31,7 @@ class Article {
     required this.accumulatedReadSeconds,
     required this.readCompletedAt,
     this.paragraphs = const [],
+    this.ttsVoice,
   });
 
   /// 与 Kotlin data class 的 toString 语义一致。

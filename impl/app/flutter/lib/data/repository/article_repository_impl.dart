@@ -1,6 +1,7 @@
 import '../../domain/model/article.dart';
 import '../../domain/model/article_batch.dart';
 import '../../domain/model/daily_learning_info.dart';
+import '../../domain/model/tts_voice.dart';
 import '../../domain/repository/article_repository.dart';
 import '../local/database.dart';
 import '../local/daos/article_daos.dart';
@@ -92,6 +93,10 @@ class ArticleRepositoryImpl implements ArticleRepository {
       _articleDao.forceMarkReadCompleted(articleId, _nowIso());
 
   @override
+  Future<void> setArticleTtsVoice(int articleId, TtsVoice voice) =>
+      _articleDao.setTtsVoice(articleId, voice.dbValue);
+
+  @override
   Stream<List<Article>> observeArticles(int batchId) =>
       _articleDao.watchByBatch(batchId).map((rows) => rows.map((r) => r.toModel()).toList());
 
@@ -110,6 +115,7 @@ class ArticleRepositoryImpl implements ArticleRepository {
       status: model.status,
       accumulatedReadSeconds: model.accumulatedReadSeconds,
       readCompletedAt: model.readCompletedAt,
+      ttsVoice: TtsVoice.tryFromDbValue(row.ttsVoiceId),
       paragraphs: paragraphRows
           .map((p) => ArticleParagraph(
               id: p.id,
@@ -148,5 +154,7 @@ extension on ArticleRow {
         status: ArticleStatus.fromDbValue(status),
         accumulatedReadSeconds: accumulatedReadSeconds,
         readCompletedAt: readCompletedAt,
+        // 宽松解析：未知值按「未分配」处理（宁可重新随机，不让阅读页加载失败）
+        ttsVoice: TtsVoice.tryFromDbValue(ttsVoiceId),
       );
 }

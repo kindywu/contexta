@@ -88,6 +88,13 @@ class Articles extends Table {
   /// 旧文章不冲突；同步时按 server_article_id 幂等 upsert。
   /// 旧库自愈补列见 database.dart selfHealArticleSyncColumn。
   IntColumn? get serverArticleId => integer().nullable()();
+
+  /// 本篇朗读音色（TtsVoice.dbValue 大写枚举名；**不是** 'RANDOM'——
+  /// 随机是设置层的语义，落到文章上时已解析成具体音色）。
+  /// null = 尚未分配（音色设置选「随机」的文章首次朗读前随机分配一次）。
+  /// 只由本地读写在，服务端同步（updateSyncedArticle）不触碰此列。
+  /// 旧库自愈补列见 database.dart selfHealArticleVoiceColumn。
+  TextColumn? get ttsVoiceId => text().nullable()();
 }
 
 /// 表 article_paragraph（ArticleParagraphEntity.kt）

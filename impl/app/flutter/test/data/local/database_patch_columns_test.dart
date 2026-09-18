@@ -19,7 +19,7 @@ import 'package:contexta/data/local/database.dart';
 ///    原生连接预建旧结构表，再经 `NativeDatabase.opened` 包装交给 drift。
 void main() {
   group('database_patch_columns', () {
-    test('旧结构库打开自愈：user_settings/tts_cache 补列且旧行默认 BELLA', () async {
+    test('旧结构库打开自愈：user_settings/tts_cache/article 补列且旧行默认 RANDOM', () async {
       final raw = raw_sqlite.sqlite3.openInMemory();
       raw.execute(
         'CREATE TABLE user_settings ('
@@ -54,7 +54,7 @@ void main() {
         ).get();
         final ttsVoice = cols.firstWhere(
           (r) => r.read<String>('name') == 'tts_voice_id');
-        expect(ttsVoice.read<String?>('dflt_value'), "'BELLA'");
+        expect(ttsVoice.read<String?>('dflt_value'), "'RANDOM'");
 
         final cacheCols = await db.customSelect(
           "SELECT name FROM pragma_table_info('tts_cache')",
@@ -74,7 +74,14 @@ void main() {
         final row = await db.customSelect(
           'SELECT tts_voice_id FROM user_settings WHERE id = 1',
         ).getSingle();
-        expect(row.read<String>('tts_voice_id'), 'BELLA');
+        expect(row.read<String>('tts_voice_id'), 'RANDOM');
+
+        // 2026-09-18：article.tts_voice_id（本篇朗读音色）
+        final articleCols = await db.customSelect(
+          "SELECT name FROM pragma_table_info('article')",
+        ).get();
+        expect(articleCols.map((r) => r.read<String>('name')),
+            contains('tts_voice_id'));
       } finally {
         await db.close();
       }

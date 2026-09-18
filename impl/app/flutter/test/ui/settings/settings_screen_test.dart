@@ -136,7 +136,7 @@ class _FakeSettingsRepo implements SettingsRepository {
   }
 
   @override
-  Future<void> updateTtsVoice(TtsVoice voice) async {
+  Future<void> updateTtsVoice(TtsVoiceSetting voice) async {
     updates.add('voice:${voice.dbValue}');
     settings = UserSettings(
       isOnboarded: settings.isOnboarded,
@@ -383,20 +383,21 @@ void main() {
   });
 
   group('朗读音色', () {
-    testWidgets('音色行显示当前值，弹窗 8 项可选，选择后行值更新', (tester) async {
+    testWidgets('音色行默认「随机」，弹窗 9 项可选，选择后行值更新', (tester) async {
       await pumpScreen(tester);
 
       expect(find.text('朗读音色'), findsOneWidget);
-      expect(find.text('贝拉 · Bella'), findsOneWidget);
+      expect(find.text('随机'), findsOneWidget); // 默认随机（按文章分配）
 
-      await tester.tap(find.text('贝拉 · Bella'));
+      await tester.tap(find.text('随机'));
       await tester.pumpAndSettle();
       expect(find.text('选择朗读音色'), findsOneWidget);
 
-      // 8 个音色标签（bella 同时在设置行 + 弹窗行，共 2 处）
+      // 9 项：随机 + 8 个音色（随机同时在设置行 + 弹窗行，共 2 处；
+      // 8 个音色名只出现在弹窗里，各 1 处）
+      expect(find.text('随机'), findsNWidgets(2));
       for (final voice in TtsVoice.values) {
-        final count = voice == TtsVoice.bella ? 2 : 1;
-        expect(find.text(voice.label), findsNWidgets(count));
+        expect(find.text(voice.label), findsOneWidget);
       }
 
       await tester.tap(find.text('露娜 · Luna'));
@@ -405,13 +406,37 @@ void main() {
       expect(settingsRepo.updates, contains('voice:LUNA'));
       expect(find.text('选择朗读音色'), findsNothing);
       expect(find.text('露娜 · Luna'), findsOneWidget); // 行值已更新
-      expect(find.text('贝拉 · Bella'), findsNothing);
+      expect(find.text('随机'), findsNothing);
     });
 
-    testWidgets('试听：8 个喇叭图标，点击播放固定例句（bella）', (tester) async {
+    testWidgets('固定音色改回「随机」→ 持久化 RANDOM，行值随之更新', (tester) async {
+      settingsRepo.settings = const UserSettings(
+        isOnboarded: true,
+        ttsVoice: TtsVoiceSetting.fixed(TtsVoice.hugo),
+      );
       await pumpScreen(tester);
 
-      await tester.tap(find.text('贝拉 · Bella'));
+      expect(find.text('雨果 · Hugo'), findsOneWidget);
+      await tester.tap(find.text('雨果 · Hugo'));
+      await tester.pumpAndSettle();
+
+      // 弹窗内也有「随机」字样（设置行 1 处 + 弹窗 1 处），限定在弹窗内点
+      await tester.tap(find.descendant(
+        of: find.byType(AppModal),
+        matching: find.text('随机'),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(settingsRepo.updates, contains('voice:RANDOM'));
+      expect(find.text('随机'), findsOneWidget); // 行值已更新
+      expect(find.text('雨果 · Hugo'), findsNothing);
+    });
+
+    testWidgets('试听：8 个喇叭图标（「随机」行无喇叭），点击播放固定例句（bella）',
+        (tester) async {
+      await pumpScreen(tester);
+
+      await tester.tap(find.text('随机'));
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.volume_down_outlined), findsNWidgets(8));
 
@@ -428,7 +453,7 @@ void main() {
     testWidgets('试听后选择音色 → 弹窗关闭且引擎 stop 被调用（关闭即停）', (tester) async {
       await pumpScreen(tester);
 
-      await tester.tap(find.text('贝拉 · Bella'));
+      await tester.tap(find.text('随机'));
       await tester.pumpAndSettle();
 
       // 试听 bella

@@ -111,6 +111,11 @@ class ArticleDao {
         contentCategory: Value(contentCategory),
       ));
 
+  /// 回写本篇朗读音色（随机分配结果；已分配的文章不会被覆盖为空）。
+  Future<void> setTtsVoice(int articleId, String voiceDbValue) =>
+      (_db.update(_db.articles)..where((t) => t.id.equals(articleId)))
+          .write(ArticlesCompanion(ttsVoiceId: Value(voiceDbValue)));
+
   Future<void> addReadSeconds(int articleId, int deltaSeconds) =>
       _db.customUpdate(
         'UPDATE article SET accumulated_read_seconds = accumulated_read_seconds + ? '

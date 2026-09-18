@@ -106,9 +106,9 @@ void main() {
       );
     });
 
-    test('article 表结构（T6 后 9 列：生成状态机 6 列已删，status 保留）', () async {
+    test('article 表结构（10 列：生成状态机 6 列已删，status 保留）', () async {
       final cols = await tableInfo('article');
-      expect(cols.length, 9);
+      expect(cols.length, 10);
       expectCol(cols, 'id', type: 'INTEGER', notNull: true, pk: true);
       expectCol(cols, 'batch_id', type: 'INTEGER', notNull: true, pk: false);
       expectCol(cols, 'order_index', type: 'INTEGER', notNull: true, pk: false);
@@ -120,6 +120,8 @@ void main() {
       expectCol(cols, 'read_completed_at', type: 'TEXT', notNull: false, pk: false);
       // Task 1（计划 B）加列：服务端文章 id（同步幂等键，nullable）
       expectCol(cols, 'server_article_id', type: 'INTEGER', notNull: false, pk: false);
+      // 2026-09-18 加列：本篇朗读音色（随机分配结果，NULL = 未分配）
+      expectCol(cols, 'tts_voice_id', type: 'TEXT', notNull: false, pk: false);
       expect(await tableSql('article'), contains('AUTOINCREMENT'));
     });
 

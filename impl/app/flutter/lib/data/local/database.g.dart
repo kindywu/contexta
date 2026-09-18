@@ -3264,6 +3264,17 @@ class $ArticlesTable extends Articles
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _ttsVoiceIdMeta = const VerificationMeta(
+    'ttsVoiceId',
+  );
+  @override
+  late final GeneratedColumn<String> ttsVoiceId = GeneratedColumn<String>(
+    'tts_voice_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -3275,6 +3286,7 @@ class $ArticlesTable extends Articles
     accumulatedReadSeconds,
     readCompletedAt,
     serverArticleId,
+    ttsVoiceId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3361,6 +3373,15 @@ class $ArticlesTable extends Articles
         ),
       );
     }
+    if (data.containsKey('tts_voice_id')) {
+      context.handle(
+        _ttsVoiceIdMeta,
+        ttsVoiceId.isAcceptableOrUnknown(
+          data['tts_voice_id']!,
+          _ttsVoiceIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -3406,6 +3427,10 @@ class $ArticlesTable extends Articles
         DriftSqlType.int,
         data['${effectivePrefix}server_article_id'],
       ),
+      ttsVoiceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tts_voice_id'],
+      ),
     );
   }
 
@@ -3439,6 +3464,13 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
   /// 旧文章不冲突；同步时按 server_article_id 幂等 upsert。
   /// 旧库自愈补列见 database.dart selfHealArticleSyncColumn。
   final int? serverArticleId;
+
+  /// 本篇朗读音色（TtsVoice.dbValue 大写枚举名；**不是** 'RANDOM'——
+  /// 随机是设置层的语义，落到文章上时已解析成具体音色）。
+  /// null = 尚未分配（音色设置选「随机」的文章首次朗读前随机分配一次）。
+  /// 只由本地读写在，服务端同步（updateSyncedArticle）不触碰此列。
+  /// 旧库自愈补列见 database.dart selfHealArticleVoiceColumn。
+  final String? ttsVoiceId;
   const ArticleRow({
     required this.id,
     required this.batchId,
@@ -3449,6 +3481,7 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     required this.accumulatedReadSeconds,
     this.readCompletedAt,
     this.serverArticleId,
+    this.ttsVoiceId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3467,6 +3500,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     }
     if (!nullToAbsent || serverArticleId != null) {
       map['server_article_id'] = Variable<int>(serverArticleId);
+    }
+    if (!nullToAbsent || ttsVoiceId != null) {
+      map['tts_voice_id'] = Variable<String>(ttsVoiceId);
     }
     return map;
   }
@@ -3488,6 +3524,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
       serverArticleId: serverArticleId == null && nullToAbsent
           ? const Value.absent()
           : Value(serverArticleId),
+      ttsVoiceId: ttsVoiceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ttsVoiceId),
     );
   }
 
@@ -3508,6 +3547,7 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
       ),
       readCompletedAt: serializer.fromJson<String?>(json['readCompletedAt']),
       serverArticleId: serializer.fromJson<int?>(json['serverArticleId']),
+      ttsVoiceId: serializer.fromJson<String?>(json['ttsVoiceId']),
     );
   }
   @override
@@ -3523,6 +3563,7 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
       'accumulatedReadSeconds': serializer.toJson<int>(accumulatedReadSeconds),
       'readCompletedAt': serializer.toJson<String?>(readCompletedAt),
       'serverArticleId': serializer.toJson<int?>(serverArticleId),
+      'ttsVoiceId': serializer.toJson<String?>(ttsVoiceId),
     };
   }
 
@@ -3536,6 +3577,7 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     int? accumulatedReadSeconds,
     Value<String?> readCompletedAt = const Value.absent(),
     Value<int?> serverArticleId = const Value.absent(),
+    Value<String?> ttsVoiceId = const Value.absent(),
   }) => ArticleRow(
     id: id ?? this.id,
     batchId: batchId ?? this.batchId,
@@ -3551,6 +3593,7 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     serverArticleId: serverArticleId.present
         ? serverArticleId.value
         : this.serverArticleId,
+    ttsVoiceId: ttsVoiceId.present ? ttsVoiceId.value : this.ttsVoiceId,
   );
   ArticleRow copyWithCompanion(ArticlesCompanion data) {
     return ArticleRow(
@@ -3573,6 +3616,9 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
       serverArticleId: data.serverArticleId.present
           ? data.serverArticleId.value
           : this.serverArticleId,
+      ttsVoiceId: data.ttsVoiceId.present
+          ? data.ttsVoiceId.value
+          : this.ttsVoiceId,
     );
   }
 
@@ -3587,7 +3633,8 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
           ..write('status: $status, ')
           ..write('accumulatedReadSeconds: $accumulatedReadSeconds, ')
           ..write('readCompletedAt: $readCompletedAt, ')
-          ..write('serverArticleId: $serverArticleId')
+          ..write('serverArticleId: $serverArticleId, ')
+          ..write('ttsVoiceId: $ttsVoiceId')
           ..write(')'))
         .toString();
   }
@@ -3603,6 +3650,7 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
     accumulatedReadSeconds,
     readCompletedAt,
     serverArticleId,
+    ttsVoiceId,
   );
   @override
   bool operator ==(Object other) =>
@@ -3616,7 +3664,8 @@ class ArticleRow extends DataClass implements Insertable<ArticleRow> {
           other.status == this.status &&
           other.accumulatedReadSeconds == this.accumulatedReadSeconds &&
           other.readCompletedAt == this.readCompletedAt &&
-          other.serverArticleId == this.serverArticleId);
+          other.serverArticleId == this.serverArticleId &&
+          other.ttsVoiceId == this.ttsVoiceId);
 }
 
 class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
@@ -3629,6 +3678,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
   final Value<int> accumulatedReadSeconds;
   final Value<String?> readCompletedAt;
   final Value<int?> serverArticleId;
+  final Value<String?> ttsVoiceId;
   const ArticlesCompanion({
     this.id = const Value.absent(),
     this.batchId = const Value.absent(),
@@ -3639,6 +3689,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     this.accumulatedReadSeconds = const Value.absent(),
     this.readCompletedAt = const Value.absent(),
     this.serverArticleId = const Value.absent(),
+    this.ttsVoiceId = const Value.absent(),
   });
   ArticlesCompanion.insert({
     this.id = const Value.absent(),
@@ -3650,6 +3701,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     required int accumulatedReadSeconds,
     this.readCompletedAt = const Value.absent(),
     this.serverArticleId = const Value.absent(),
+    this.ttsVoiceId = const Value.absent(),
   }) : batchId = Value(batchId),
        orderIndex = Value(orderIndex),
        contentCategory = Value(contentCategory),
@@ -3665,6 +3717,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     Expression<int>? accumulatedReadSeconds,
     Expression<String>? readCompletedAt,
     Expression<int>? serverArticleId,
+    Expression<String>? ttsVoiceId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -3677,6 +3730,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
         'accumulated_read_seconds': accumulatedReadSeconds,
       if (readCompletedAt != null) 'read_completed_at': readCompletedAt,
       if (serverArticleId != null) 'server_article_id': serverArticleId,
+      if (ttsVoiceId != null) 'tts_voice_id': ttsVoiceId,
     });
   }
 
@@ -3690,6 +3744,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     Value<int>? accumulatedReadSeconds,
     Value<String?>? readCompletedAt,
     Value<int?>? serverArticleId,
+    Value<String?>? ttsVoiceId,
   }) {
     return ArticlesCompanion(
       id: id ?? this.id,
@@ -3702,6 +3757,7 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
           accumulatedReadSeconds ?? this.accumulatedReadSeconds,
       readCompletedAt: readCompletedAt ?? this.readCompletedAt,
       serverArticleId: serverArticleId ?? this.serverArticleId,
+      ttsVoiceId: ttsVoiceId ?? this.ttsVoiceId,
     );
   }
 
@@ -3737,6 +3793,9 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
     if (serverArticleId.present) {
       map['server_article_id'] = Variable<int>(serverArticleId.value);
     }
+    if (ttsVoiceId.present) {
+      map['tts_voice_id'] = Variable<String>(ttsVoiceId.value);
+    }
     return map;
   }
 
@@ -3751,7 +3810,8 @@ class ArticlesCompanion extends UpdateCompanion<ArticleRow> {
           ..write('status: $status, ')
           ..write('accumulatedReadSeconds: $accumulatedReadSeconds, ')
           ..write('readCompletedAt: $readCompletedAt, ')
-          ..write('serverArticleId: $serverArticleId')
+          ..write('serverArticleId: $serverArticleId, ')
+          ..write('ttsVoiceId: $ttsVoiceId')
           ..write(')'))
         .toString();
   }
@@ -8898,6 +8958,7 @@ typedef $$ArticlesTableCreateCompanionBuilder =
       required int accumulatedReadSeconds,
       Value<String?> readCompletedAt,
       Value<int?> serverArticleId,
+      Value<String?> ttsVoiceId,
     });
 typedef $$ArticlesTableUpdateCompanionBuilder =
     ArticlesCompanion Function({
@@ -8910,6 +8971,7 @@ typedef $$ArticlesTableUpdateCompanionBuilder =
       Value<int> accumulatedReadSeconds,
       Value<String?> readCompletedAt,
       Value<int?> serverArticleId,
+      Value<String?> ttsVoiceId,
     });
 
 final class $$ArticlesTableReferences
@@ -9001,6 +9063,11 @@ class $$ArticlesTableFilterComposer
 
   ColumnFilters<int> get serverArticleId => $composableBuilder(
     column: $table.serverArticleId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ttsVoiceId => $composableBuilder(
+    column: $table.ttsVoiceId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9102,6 +9169,11 @@ class $$ArticlesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get ttsVoiceId => $composableBuilder(
+    column: $table.ttsVoiceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$ArticleBatchesTableOrderingComposer get batchId {
     final $$ArticleBatchesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -9166,6 +9238,11 @@ class $$ArticlesTableAnnotationComposer
 
   GeneratedColumn<int> get serverArticleId => $composableBuilder(
     column: $table.serverArticleId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get ttsVoiceId => $composableBuilder(
+    column: $table.ttsVoiceId,
     builder: (column) => column,
   );
 
@@ -9256,6 +9333,7 @@ class $$ArticlesTableTableManager
                 Value<int> accumulatedReadSeconds = const Value.absent(),
                 Value<String?> readCompletedAt = const Value.absent(),
                 Value<int?> serverArticleId = const Value.absent(),
+                Value<String?> ttsVoiceId = const Value.absent(),
               }) => ArticlesCompanion(
                 id: id,
                 batchId: batchId,
@@ -9266,6 +9344,7 @@ class $$ArticlesTableTableManager
                 accumulatedReadSeconds: accumulatedReadSeconds,
                 readCompletedAt: readCompletedAt,
                 serverArticleId: serverArticleId,
+                ttsVoiceId: ttsVoiceId,
               ),
           createCompanionCallback:
               ({
@@ -9278,6 +9357,7 @@ class $$ArticlesTableTableManager
                 required int accumulatedReadSeconds,
                 Value<String?> readCompletedAt = const Value.absent(),
                 Value<int?> serverArticleId = const Value.absent(),
+                Value<String?> ttsVoiceId = const Value.absent(),
               }) => ArticlesCompanion.insert(
                 id: id,
                 batchId: batchId,
@@ -9288,6 +9368,7 @@ class $$ArticlesTableTableManager
                 accumulatedReadSeconds: accumulatedReadSeconds,
                 readCompletedAt: readCompletedAt,
                 serverArticleId: serverArticleId,
+                ttsVoiceId: ttsVoiceId,
               ),
           withReferenceMapper: (p0) => p0
               .map(
