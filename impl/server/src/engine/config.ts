@@ -20,7 +20,7 @@ export function isValidTimezone(tz: string): boolean {
 const envSchema = z.object({
   LLM_API_KEY: z.string().min(1),
   LLM_BASE_URL: z.url().default("https://api.deepseek.com"),
-  LLM_MODEL: z.string().default("deepseek-v4-flash"),
+  LLM_MODEL: z.string().default("deepseek-flash"),
   /** 所有日期语义（"今天"、日志时间戳、日志文件名）以该时区为准；必填且启动时须与系统时区一致 */
   TIMEZONE: z
     .string()

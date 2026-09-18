@@ -1,7 +1,7 @@
 /**
  * GenerateResult（判别联合：article | cannot_write）的真实模型验收测试。
  *
- * 为什么必须真模型：整个设计依赖 deepseek-v4-flash 在该 prompt 下真的会按
+ * 为什么必须真模型：整个设计依赖 deepseek-flash 在该 prompt 下真的会按
  * 结构化 schema 输出两种变体、并在受限主题下输出拒答变体——fake LLM 测不到
  * 模型行为（今天 whitespace 案例即 fake 全绿、真机打脸）。
  *

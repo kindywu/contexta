@@ -13,32 +13,32 @@ cp .env.example .env   # 本地开发：填入 LLM_API_KEY 与 JWT_SECRET
 
 > **生产服务器不落密钥**（2026-09-08 起）：`/opt/contexta/server/.env` 只含非密钥配置，`LLM_API_KEY` / `JWT_SECRET` / `ADMIN_JWT_SECRET` / `ADMIN_INIT_PASSWORD` / `FEISHU_WEBHOOK_URL` / `FEISHU_WEBHOOK_SECRET` 全部由 GHA Secret 注入（见 §3.1）；人工在服务器启动须带键前缀：`LLM_API_KEY=... JWT_SECRET=... ADMIN_JWT_SECRET=... docker compose up -d`（或临时写入 .env）。
 
-| 变量 | 默认值 | 校验 | 说明 |
-|---|---|---|---|
-| `LLM_API_KEY` | **必填** | 非空 string | 生成与查词共用的 LLM key（缺失启动失败）；**生产经 GHA Secret 注入**（compose `environment` 覆盖 `.env`，见 §3.1），本地可直接填 `.env` |
-| `LLM_BASE_URL` | `https://api.deepseek.com` | URL | OpenAI 兼容端点；可换网关 |
-| `LLM_MODEL` | `deepseek-v4-flash` | string | 模型名（注意：思考模型 maxTokens 已由代码设为 64000，无需配置） |
-| `TIMEZONE` | **必填**（`.env.example` 为 `Asia/Shanghai`） | IANA 名（`Intl` 校验） | 所有日期语义唯一口径；**启动时须与系统时区一致**（`assertSystemTimezone` 硬闸，不一致拒绝运行） |
-| `DB_PATH` | `./data/pipeline.sqlite`（`.env.example` 设 `./data/contexta.db`） | string | 业务库：引擎 4 表 + 服务端表 + `article_review` 同库；父目录启动时自动创建 |
-| `CHECKPOINT_PATH` | `./data/langgraph.sqlite` | string | LangGraph 检查点库（独立文件；**首次部署需放置可写空文件/目录**，见 §3.5） |
-| `OUTPUT_DIR` | `./output` | string | 生成文章的 Markdown 落盘目录（文件名 `run_date-category-<ts>.md`） |
-| `BROWSER_CONCURRENCY` | `2` | 正 int | **同时打开的 Bun.WebView 视图数上限**（抓取层信号量，`sites/common.ts`）：满则排队等前一个视图关闭。Chrome **每进程一个**、所有视图共享它，而每个视图自带 renderer 与 1440×2000 合成缓冲（吃 /dev/shm）——不设闸时实际并发由 `SLOT_CONCURRENCY`（5）决定 |
-| `SLOT_CONCURRENCY` | `5` | 正 int | 每日生成并发槽位数上限（`runPool`）；每槽一条 LangGraph 线程 |
-| `PROXY_URL` | 空（不代理） | string | 出站 HTTP 代理（`http://` 形式）；空串转 undefined。作用于 LLM 调用（引擎 `createLLM` 与查词 `driverChat`） |
-| `PORT` | `8080` | int 1..65535 | 容器内监听端口（Bun.serve）；宿主经 compose 映射 `443:8080` 对外——安全组放行 443 |
-| `TLS_CERT_PATH` | 空（HTTP） | string（路径） | TLS 证书 PEM 路径（容器内视角，如 `/app/certs/server.crt`）；与 `TLS_KEY_PATH` **成对配置才启用 HTTPS**，只配一项或文件不存在 → 启动失败；见 §2.1 |
-| `TLS_KEY_PATH` | 空（HTTP） | string（路径） | TLS 私钥 PEM 路径（同上前提）；密钥只存宿主机 `./certs/`（gitignore），只读挂载进容器 |
-| `JWT_SECRET` | **必填** | ≥32 字符 | HS256 密钥（App 令牌）；`openssl rand -hex 32` 生成；<32 启动失败；**生产经 GHA Secret 注入**（与 ADMIN_JWT_SECRET 同机制，见 §3.1） |
-| `ADMIN_JWT_SECRET` | **必填** | ≥32 字符 | admin（Web 管理端）令牌密钥；双密钥鉴权——与 `JWT_SECRET` 分开，App 与 admin 令牌互不交叉；生产经 GHA Secret 注入（同 §3.1） |
-| `ADMIN_INIT_PASSWORD` | 空 | string | 设置时启动 seed 管理员 `admin`（argon2id）；已有 admin 行则跳过不覆盖；seed 后可移出 .env；生产可经 GHA Secret 注入（仅新库 seed 生效，同 §3.1） |
-| `WORD_QUOTA_DAILY` | `200` | 正 int | 用户每日查词配额（只计真实 LLM 调用；`users.quota_word_daily` 可 per-user 覆盖） |
-| `CACHE_TTL_DAYS` | `30` | 正 int | 查词缓存 TTL（命中不调 LLM 不扣配额） |
-| `CACHE_MAX_ROWS` | `5000` | 正 int | 查词缓存条数上限（超限删最旧 1 条） |
-| `DAILY_GENERATE_WINDOW` | `08:00-08:15` | `HH:MM-HH:MM`（开始必须早于结束） | 每日生成窗口（配置时区当日）：窗口内任意时刻触发，窗口内只生成**当天** 15 篇；错过窗口（进程不在/重启晚于窗口）**跳过不补不重试**——便于本地测试可直接改小/改后 |
-| `LLM_TIMEOUT_SECS` | `90` | 正 int | 查词链 LLM 调用硬预算（含 4 次尝试与退避等待；超预算 504 LLM_TIMEOUT） |
-| `REGENERATE_LIMIT` | `3` | 正 int | 单槽位拒绝补生成上限：同槽累计 rejected ≥ 上限 → `rejected_final` 不再自动补 |
-| `FEISHU_WEBHOOK_URL` | 空（不发） | URL（或空串） | 飞书群**自定义机器人** Webhook（每日运行**开始/结束两条**通知 + 未收口告警，详见架构文档 §8）：与 `FEISHU_WEBHOOK_SECRET` **两项都配置才发送**，任一为空 → 静默跳过（compose 未注入时 `${VAR:-}` 空串自动归一为未配置）；生产经 GHA Secret 注入（同 §3.1，不落 .env），本地测试可临时填入 `.env` |
-| `FEISHU_WEBHOOK_SECRET` | 空（不发） | string | 机器人签名密钥（机器人"安全设置 → 签名校验"）；与 `FEISHU_WEBHOOK_URL` 配套；生产经 GHA Secret 注入（同 §3.1） |
+| 变量                    | 默认值                                                             | 校验                              | 说明                                                                                                                                                                                                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------ | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `LLM_API_KEY`           | **必填**                                                           | 非空 string                       | 生成与查词共用的 LLM key（缺失启动失败）；**生产经 GHA Secret 注入**（compose `environment` 覆盖 `.env`，见 §3.1），本地可直接填 `.env`                                                                                                                                                          |
+| `LLM_BASE_URL`          | `https://api.deepseek.com`                                         | URL                               | OpenAI 兼容端点；可换网关                                                                                                                                                                                                                                                                        |
+| `LLM_MODEL`             | `deepseek-flash`                                                   | string                            | 模型名（注意：思考模型 maxTokens 已由代码设为 64000，无需配置）                                                                                                                                                                                                                                  |
+| `TIMEZONE`              | **必填**（`.env.example` 为 `Asia/Shanghai`）                      | IANA 名（`Intl` 校验）            | 所有日期语义唯一口径；**启动时须与系统时区一致**（`assertSystemTimezone` 硬闸，不一致拒绝运行）                                                                                                                                                                                                  |
+| `DB_PATH`               | `./data/pipeline.sqlite`（`.env.example` 设 `./data/contexta.db`） | string                            | 业务库：引擎 4 表 + 服务端表 + `article_review` 同库；父目录启动时自动创建                                                                                                                                                                                                                       |
+| `CHECKPOINT_PATH`       | `./data/langgraph.sqlite`                                          | string                            | LangGraph 检查点库（独立文件；**首次部署需放置可写空文件/目录**，见 §3.5）                                                                                                                                                                                                                       |
+| `OUTPUT_DIR`            | `./output`                                                         | string                            | 生成文章的 Markdown 落盘目录（文件名 `run_date-category-<ts>.md`）                                                                                                                                                                                                                               |
+| `BROWSER_CONCURRENCY`   | `2`                                                                | 正 int                            | **同时打开的 Bun.WebView 视图数上限**（抓取层信号量，`sites/common.ts`）：满则排队等前一个视图关闭。Chrome **每进程一个**、所有视图共享它，而每个视图自带 renderer 与 1440×2000 合成缓冲（吃 /dev/shm）——不设闸时实际并发由 `SLOT_CONCURRENCY`（5）决定                                          |
+| `SLOT_CONCURRENCY`      | `5`                                                                | 正 int                            | 每日生成并发槽位数上限（`runPool`）；每槽一条 LangGraph 线程                                                                                                                                                                                                                                     |
+| `PROXY_URL`             | 空（不代理）                                                       | string                            | 出站 HTTP 代理（`http://` 形式）；空串转 undefined。作用于 LLM 调用（引擎 `createLLM` 与查词 `driverChat`）                                                                                                                                                                                      |
+| `PORT`                  | `8080`                                                             | int 1..65535                      | 容器内监听端口（Bun.serve）；宿主经 compose 映射 `443:8080` 对外——安全组放行 443                                                                                                                                                                                                                 |
+| `TLS_CERT_PATH`         | 空（HTTP）                                                         | string（路径）                    | TLS 证书 PEM 路径（容器内视角，如 `/app/certs/server.crt`）；与 `TLS_KEY_PATH` **成对配置才启用 HTTPS**，只配一项或文件不存在 → 启动失败；见 §2.1                                                                                                                                                |
+| `TLS_KEY_PATH`          | 空（HTTP）                                                         | string（路径）                    | TLS 私钥 PEM 路径（同上前提）；密钥只存宿主机 `./certs/`（gitignore），只读挂载进容器                                                                                                                                                                                                            |
+| `JWT_SECRET`            | **必填**                                                           | ≥32 字符                          | HS256 密钥（App 令牌）；`openssl rand -hex 32` 生成；<32 启动失败；**生产经 GHA Secret 注入**（与 ADMIN_JWT_SECRET 同机制，见 §3.1）                                                                                                                                                             |
+| `ADMIN_JWT_SECRET`      | **必填**                                                           | ≥32 字符                          | admin（Web 管理端）令牌密钥；双密钥鉴权——与 `JWT_SECRET` 分开，App 与 admin 令牌互不交叉；生产经 GHA Secret 注入（同 §3.1）                                                                                                                                                                      |
+| `ADMIN_INIT_PASSWORD`   | 空                                                                 | string                            | 设置时启动 seed 管理员 `admin`（argon2id）；已有 admin 行则跳过不覆盖；seed 后可移出 .env；生产可经 GHA Secret 注入（仅新库 seed 生效，同 §3.1）                                                                                                                                                 |
+| `WORD_QUOTA_DAILY`      | `200`                                                              | 正 int                            | 用户每日查词配额（只计真实 LLM 调用；`users.quota_word_daily` 可 per-user 覆盖）                                                                                                                                                                                                                 |
+| `CACHE_TTL_DAYS`        | `30`                                                               | 正 int                            | 查词缓存 TTL（命中不调 LLM 不扣配额）                                                                                                                                                                                                                                                            |
+| `CACHE_MAX_ROWS`        | `5000`                                                             | 正 int                            | 查词缓存条数上限（超限删最旧 1 条）                                                                                                                                                                                                                                                              |
+| `DAILY_GENERATE_WINDOW` | `08:00-08:15`                                                      | `HH:MM-HH:MM`（开始必须早于结束） | 每日生成窗口（配置时区当日）：窗口内任意时刻触发，窗口内只生成**当天** 15 篇；错过窗口（进程不在/重启晚于窗口）**跳过不补不重试**——便于本地测试可直接改小/改后                                                                                                                                   |
+| `LLM_TIMEOUT_SECS`      | `90`                                                               | 正 int                            | 查词链 LLM 调用硬预算（含 4 次尝试与退避等待；超预算 504 LLM_TIMEOUT）                                                                                                                                                                                                                           |
+| `REGENERATE_LIMIT`      | `3`                                                                | 正 int                            | 单槽位拒绝补生成上限：同槽累计 rejected ≥ 上限 → `rejected_final` 不再自动补                                                                                                                                                                                                                     |
+| `FEISHU_WEBHOOK_URL`    | 空（不发）                                                         | URL（或空串）                     | 飞书群**自定义机器人** Webhook（每日运行**开始/结束两条**通知 + 未收口告警，详见架构文档 §8）：与 `FEISHU_WEBHOOK_SECRET` **两项都配置才发送**，任一为空 → 静默跳过（compose 未注入时 `${VAR:-}` 空串自动归一为未配置）；生产经 GHA Secret 注入（同 §3.1，不落 .env），本地测试可临时填入 `.env` |
+| `FEISHU_WEBHOOK_SECRET` | 空（不发）                                                         | string                            | 机器人签名密钥（机器人"安全设置 → 签名校验"）；与 `FEISHU_WEBHOOK_URL` 配套；生产经 GHA Secret 注入（同 §3.1）                                                                                                                                                                                   |
 
 ## 2. 云主机选型
 
@@ -59,19 +59,19 @@ timedatectl   # 确认 Local time 为 Asia/Shanghai
 
 **信任链与设计决策**：
 
-| 决策 | 理由 |
-|---|---|
-| 证书为 **IP 直连自签名 leaf**（CN=IP + `subjectAltName=IP:47.112.20.32`，P-256，10 年） | 无域名，Let's Encrypt 类 CA 不签发 IP 证书；SAN 必须含客户端连接的写法（IP 只能进 IP SAN，不能写 DNS） |
-| App 端把**同一份证书内嵌**为信任锚（Flutter asset → 启动注入 Dart `SecurityContext`） | 免设备安装 CA、免用户点击"继续访问"；作用域收窄到单证书。**实测（2026-09-17 真机）：Android network security config 对 Dart/Flutter 网络栈无效——Dart TLS 走 BoringSSL 自带信任链，不读 NSC**，仅配 NSC 会 `CERTIFICATE_VERIFY_FAILED: self signed certificate`，必须显式注入 |
-| 有效期 10 年 | 自签名无法自动续期；到期前必须重新生成并重发 App（见下） |
-| `curl`/浏览器需 `-k` 或忽略告警 | 自签名证书不在系统信任库；管理页首次访问点"继续前往"即可 |
+| 决策                                                                                    | 理由                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 证书为 **IP 直连自签名 leaf**（CN=IP + `subjectAltName=IP:47.112.20.32`，P-256，10 年） | 无域名，Let's Encrypt 类 CA 不签发 IP 证书；SAN 必须含客户端连接的写法（IP 只能进 IP SAN，不能写 DNS）                                                                                                                                                                       |
+| App 端把**同一份证书内嵌**为信任锚（Flutter asset → 启动注入 Dart `SecurityContext`）   | 免设备安装 CA、免用户点击"继续访问"；作用域收窄到单证书。**实测（2026-09-17 真机）：Android network security config 对 Dart/Flutter 网络栈无效——Dart TLS 走 BoringSSL 自带信任链，不读 NSC**，仅配 NSC 会 `CERTIFICATE_VERIFY_FAILED: self signed certificate`，必须显式注入 |
+| 有效期 10 年                                                                            | 自签名无法自动续期；到期前必须重新生成并重发 App（见下）                                                                                                                                                                                                                     |
+| `curl`/浏览器需 `-k` 或忽略告警                                                         | 自签名证书不在系统信任库；管理页首次访问点"继续前往"即可                                                                                                                                                                                                                     |
 
 **客户端信任链（App 端，两份公钥副本必须同源）**：
 
-| 位置 | 作用 | 是否进仓库 |
-|---|---|---|
-| `.local/tls/server.crt`（本地生成产物） | 生成源头 | 否（gitignore） |
-| `/opt/contexta/server/certs/server.crt`（服务器） | 服务端下发 | 否（只读挂载进容器） |
+| 位置                                                    | 作用                          | 是否进仓库           |
+| ------------------------------------------------------- | ----------------------------- | -------------------- |
+| `.local/tls/server.crt`（本地生成产物）                 | 生成源头                      | 否（gitignore）      |
+| `/opt/contexta/server/certs/server.crt`（服务器）       | 服务端下发                    | 否（只读挂载进容器） |
 | `impl/app/flutter/assets/certs/server.crt`（App asset） | Dart `SecurityContext` 信任锚 | **是**（公钥可公开） |
 
 App 侧读取链路（`lib/di/providers.dart` + `lib/main.dart`）：启动 `loadServerTrustCert()` 经 `rootBundle` 读 asset → `SecurityContext(withTrustedRoots: false)` 注入 `IOHttpClientAdapter`——**只信任内嵌证书**；证书缺失时回退默认信任库（本地开发场景）。
@@ -262,17 +262,17 @@ docker compose exec contexta-server bun run delete-daily -- --date 2026-08-29 --
 
 ## 7. 部署约束快速索引（实现已裁决，改部署/客户端前必读）
 
-| # | 约束 | 裁决语义 | 出处 |
-|---|---|---|---|
-| 1 | **difficulty 字典序** | 下发排序 `ORDER BY difficulty, order_index`——TEXT 按 ASCII 字典序（HIGH < LOW < MEDIUM），非自然难度序；App 端自行整理 | `article_reader.ts` |
-| 2 | **非法日期 = 空结果** | 下发 `?date=` 非法/任意字符串不校验、不 400，200 空数组；仅管理端补生成严格 ISO 校验 | `routers/articles.ts`、`routers/admin.ts` |
-| 3 | **JWT_SECRET ≥ 32 字符** | 启动硬校验，不足报错退出 | `config.ts` |
-| 4 | **TZ 影响日界** | 查词配额日界、文章日界、`/today`、日志时间戳全部按配置时区；`TIMEZONE` 与系统时区不一致**拒绝运行** | `engine/config.ts` `assertSystemTimezone` |
-| 5 | **error_code 表** | 错误语义固定 `{code, message, error_code}`，HTTP 状态码表达类别、error_code 细分；**新增错误必须走该表** | `response.ts`，见 architecture.md §7 |
-| 6 | **窗口触发** | 每日生成 = `DAILY_GENERATE_WINDOW`（默认 08:00-08:15，配置时区）窗口内任意时刻；只生成当天，错过跳过不补；生成日志只进 `logs/daily-*.log` | `services/daily_task.ts`、`config.ts` |
-| 7 | **admin 12h TTL** | admin token 12 小时（App token 30 天） | `jwt.ts` |
-| 8 | **免密直登** | App 登录不校验验证码（beta 简化），保留 `code` 字段；风险靠封禁兜底 | `services/auth_service.ts` |
-| 9 | **文章为全局共享池** | 同难度用户读同批文章（3 难度 × 5 篇/天）；下发需 JWT，与查词配额无关 | 设计决策 |
-| 10 | **source_url 不下发** | 文章 App 契约不含 `source_url`（仅管理端可见）；`regenerate_count`/`order_index` 为派生字段 | `article_reader.ts` |
-| 11 | **TLS 证书三重绑定** | 证书 SAN = 客户端连接的 IP（IP 必须进 IP SAN）；私钥只存服务器 `certs/`（600，gitignore）；App 内嵌同一份证书注入 Dart `SecurityContext`（NSC 对 Dart 无效）——**重签证书 = 必须重发 App**（§2.1） | `config.ts`、`deploy/generate_tls_cert.sh`、`providers.dart`、`main.dart` |
-| 12 | **TLS 二选一硬闸** | `TLS_CERT_PATH`/`TLS_KEY_PATH` 只配一项或文件缺失 → 启动失败（不静默回退 HTTP）；两项都空 = HTTP（本地开发） | `config.ts` `refine`/`superRefine` |
+| #   | 约束                     | 裁决语义                                                                                                                                                                                          | 出处                                                                      |
+| --- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 1   | **difficulty 字典序**    | 下发排序 `ORDER BY difficulty, order_index`——TEXT 按 ASCII 字典序（HIGH < LOW < MEDIUM），非自然难度序；App 端自行整理                                                                            | `article_reader.ts`                                                       |
+| 2   | **非法日期 = 空结果**    | 下发 `?date=` 非法/任意字符串不校验、不 400，200 空数组；仅管理端补生成严格 ISO 校验                                                                                                              | `routers/articles.ts`、`routers/admin.ts`                                 |
+| 3   | **JWT_SECRET ≥ 32 字符** | 启动硬校验，不足报错退出                                                                                                                                                                          | `config.ts`                                                               |
+| 4   | **TZ 影响日界**          | 查词配额日界、文章日界、`/today`、日志时间戳全部按配置时区；`TIMEZONE` 与系统时区不一致**拒绝运行**                                                                                               | `engine/config.ts` `assertSystemTimezone`                                 |
+| 5   | **error_code 表**        | 错误语义固定 `{code, message, error_code}`，HTTP 状态码表达类别、error_code 细分；**新增错误必须走该表**                                                                                          | `response.ts`，见 architecture.md §7                                      |
+| 6   | **窗口触发**             | 每日生成 = `DAILY_GENERATE_WINDOW`（默认 08:00-08:15，配置时区）窗口内任意时刻；只生成当天，错过跳过不补；生成日志只进 `logs/daily-*.log`                                                         | `services/daily_task.ts`、`config.ts`                                     |
+| 7   | **admin 12h TTL**        | admin token 12 小时（App token 30 天）                                                                                                                                                            | `jwt.ts`                                                                  |
+| 8   | **免密直登**             | App 登录不校验验证码（beta 简化），保留 `code` 字段；风险靠封禁兜底                                                                                                                               | `services/auth_service.ts`                                                |
+| 9   | **文章为全局共享池**     | 同难度用户读同批文章（3 难度 × 5 篇/天）；下发需 JWT，与查词配额无关                                                                                                                              | 设计决策                                                                  |
+| 10  | **source_url 不下发**    | 文章 App 契约不含 `source_url`（仅管理端可见）；`regenerate_count`/`order_index` 为派生字段                                                                                                       | `article_reader.ts`                                                       |
+| 11  | **TLS 证书三重绑定**     | 证书 SAN = 客户端连接的 IP（IP 必须进 IP SAN）；私钥只存服务器 `certs/`（600，gitignore）；App 内嵌同一份证书注入 Dart `SecurityContext`（NSC 对 Dart 无效）——**重签证书 = 必须重发 App**（§2.1） | `config.ts`、`deploy/generate_tls_cert.sh`、`providers.dart`、`main.dart` |
+| 12  | **TLS 二选一硬闸**       | `TLS_CERT_PATH`/`TLS_KEY_PATH` 只配一项或文件缺失 → 启动失败（不静默回退 HTTP）；两项都空 = HTTP（本地开发）                                                                                      | `config.ts` `refine`/`superRefine`                                        |

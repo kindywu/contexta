@@ -11,7 +11,7 @@ test("loadConfig: LLM_API_KEY 缺失抛错并提示 .env.example", () => {
 test("loadConfig: 缺省默认值正确", () => {
   const cfg = loadConfig(baseEnv);
   expect(cfg.llmBaseUrl).toBe("https://api.deepseek.com");
-  expect(cfg.llmModel).toBe("deepseek-v4-flash");
+  expect(cfg.llmModel).toBe("deepseek-flash");
   expect(cfg.dbPath).toBe("./data/pipeline.sqlite");
   expect(cfg.checkpointPath).toBe("./data/langgraph.sqlite");
   expect(cfg.outputDir).toBe("./output");
