@@ -14,6 +14,7 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "getLine1Number" -> result.success(readLine1Number())
+                    "getDeviceLabel" -> result.success(readDeviceLabel())
                     else -> result.notImplemented()
                 }
             }
@@ -37,6 +38,19 @@ class MainActivity : FlutterActivity() {
             tm.line1Number?.takeIf { it.isNotBlank() }
         } catch (_: SecurityException) {
             null
+        }
+    }
+
+    /// 设备机型展示名（如 "Xiaomi 14"、"OPPO PGP110"）。
+    /// 厂商名首字母大写；机型号已含厂商名时（如 "Xiaomi 2201123G"）不重复拼接。
+    private fun readDeviceLabel(): String {
+        val manufacturer = android.os.Build.MANUFACTURER
+            .replaceFirstChar { it.uppercase() }
+        val model = android.os.Build.MODEL
+        return if (model.startsWith(manufacturer, ignoreCase = true)) {
+            model
+        } else {
+            "$manufacturer $model"
         }
     }
 }

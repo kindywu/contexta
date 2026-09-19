@@ -14,6 +14,7 @@ import '../core/platform/device_form_factor.dart';
 import '../core/time/iso8601.dart';
 import '../data/auth/auth_service.dart';
 import '../data/auth/device_id_provider.dart';
+import '../data/auth/device_label_reader.dart';
 import '../data/auth/native_phone_reader.dart';
 import '../data/local/database_open.dart';
 import '../data/local/daos/article_daos.dart';
@@ -140,6 +141,11 @@ final deviceIdProvider = Provider<DeviceIdProvider>(
 /// 本机号码读取（MethodChannel `contexta/native`；不可用返回 null 走手动输入）。
 final nativePhoneReaderProvider = Provider<NativePhoneReader>(
   (ref) => NativePhoneReader(),
+);
+
+/// 设备机型名读取（登录上报 device_name；通道不可用 → null）。
+final deviceLabelReaderProvider = Provider<DeviceLabelReader>(
+  (ref) => DeviceLabelReader(),
 );
 
 /// 认证状态机（登录/登出/401 恢复）。构造时接线 ServerApiClient 的
