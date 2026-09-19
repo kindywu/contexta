@@ -22,9 +22,12 @@ import 'add_word_controller.dart';
 ///   单词详情卡（词头 22sp + 音标 + SenseBlock 词性块）+
 ///   「再录一个」+「返回生词本」
 class AddWordScreen extends ConsumerStatefulWidget {
-  const AddWordScreen({super.key, required this.onBack});
+  const AddWordScreen({super.key, required this.onBack, this.leadingInset = 0});
 
   final VoidCallback onBack;
+
+  /// 顶栏左端额外让位（跑在平板上时由路由传系统「窗口控件」让位值；手机树 0）。
+  final double leadingInset;
 
   @override
   ConsumerState<AddWordScreen> createState() => _AddWordScreenState();
@@ -51,7 +54,11 @@ class _AddWordScreenState extends ConsumerState<AddWordScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            AppTopBar(title: '录入单词', onBack: widget.onBack),
+            AppTopBar(
+              title: '录入单词',
+              onBack: widget.onBack,
+              leadingInset: widget.leadingInset,
+            ),
             Expanded(
               child: state.success != null
                   ? _AddWordResultContent(
