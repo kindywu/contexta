@@ -73,11 +73,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _login(String phone) async {
-    final result =
+    final outcome =
         await ref.read(authServiceProvider.notifier).loginWithPhone(phone);
     if (!mounted) return;
     setState(() => _loading = false);
-    switch (result) {
+    switch (outcome.result) {
       case AuthResult.success:
         _navigateAfterLogin();
       case AuthResult.banned:

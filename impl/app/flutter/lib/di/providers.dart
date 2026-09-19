@@ -158,6 +158,7 @@ final authServiceProvider = StateNotifierProvider<AuthService, AuthState>((
     settings: ref.watch(settingsRepositoryProvider),
     deviceId: () => ref.read(deviceIdProvider).getDeviceId(),
     readPhone: () => ref.read(nativePhoneReaderProvider).readLine1Number(),
+    readDeviceLabel: () => ref.read(deviceLabelReaderProvider).readDeviceLabel(),
   );
   ref
       .read(serverApiClientProvider)

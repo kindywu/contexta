@@ -70,6 +70,15 @@ Future<void> _seedAuth(
       serverTokenExpiresAt: Value(expiresAtMillis),
     ));
 
+/// 等待状态机走到 [status]（401 → authCallback 的 handleServerFailure 异步
+/// 清 token + 置态，drift I/O 需真实事件循环；不阻塞首屏的启动校验用例用）。
+Future<void> _waitForStatus(AuthService service, AuthStatus status) async {
+  for (var i = 0; i < 100; i++) {
+    if (service.state.status == status) return;
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -84,6 +93,8 @@ void main() {
   String deviceId = 'dev-fixed-001';
   /// 注入的本机号码（fake NativePhoneReader；null = 读不到）。
   String? line1Number;
+  /// 注入的机型名（fake DeviceLabelReader；null = 读不到 → body 不含 device_name）。
+  String? deviceLabel;
 
   setUp(() {
     db = AppDatabase.forTesting(NativeDatabase.memory());
@@ -101,8 +112,10 @@ void main() {
       settings: settings,
       deviceId: () async => deviceId,
       readPhone: () async => line1Number,
+      readDeviceLabel: () async => deviceLabel,
     );
     line1Number = null;
+    deviceLabel = null;
   });
 
   tearDown(() async {
@@ -118,7 +131,7 @@ void main() {
       expect(service.state.phone, isNull);
     });
 
-    test('2. token 有效（未过期）→ 不调 API → loggedIn', () async {
+    test('2. token 有效（未过期）→ 不调登录接口 → 立即 loggedIn', () async {
       final now = DateTime.now().millisecondsSinceEpoch;
       await _seedAuth(
         db,
@@ -126,9 +139,11 @@ void main() {
         token: 'tok-valid',
         expiresAtMillis: now + 3600000,
       );
-      // 一旦触网即失败：有效 token 不允许调登录接口
-      adapter.handler = (options) async =>
-          throw StateError('有效 token 不应调用任何 API: ${options.uri}');
+      // 登录接口一旦被调即失败：有效 token 不允许静默重登；
+      // 启动校验的 /api/auth/me 正常应答（异步、不阻塞首屏）
+      adapter.handler = (options) async => options.uri.path == '/api/auth/login'
+          ? throw StateError('有效 token 不应调用登录接口: ${options.uri}')
+          : _json(200, {'code': 0, 'data': {}});
 
       await service.ensureLoggedIn();
 
@@ -180,7 +195,8 @@ void main() {
       line1Number = '13800000000';
       var loginCalls = 0;
       adapter.handler = (options) async {
-        loginCalls++;
+        // 预览（守卫）不计入：只统计真正的登录请求，验证单飞
+        if (options.uri.path == '/api/auth/login') loginCalls++;
         return _json(200, {
           'code': 0,
           'data': {'token': 'tok-fresh', 'expires_at': 9999999999},
@@ -210,7 +226,7 @@ void main() {
       expect(service.state.status, AuthStatus.loggedOut);
     });
 
-    test('token 过期 + 本机号码存在但登录接口失败 → loggedOut（静默）', () async {
+    test('token 过期 + preview 网络失败 → 不重登（fail-closed → loggedOut）', () async {
       final now = DateTime.now().millisecondsSinceEpoch;
       await _seedAuth(
         db,
@@ -219,7 +235,9 @@ void main() {
         expiresAtMillis: now - 1000,
       );
       line1Number = '13800000000';
+      var loginCalled = false;
       adapter.handler = (options) async {
+        if (options.uri.path == '/api/auth/login') loginCalled = true;
         throw DioException(
           requestOptions: options,
           type: DioExceptionType.connectionError,
@@ -229,6 +247,7 @@ void main() {
 
       await service.ensureLoggedIn(); // 不抛
 
+      expect(loginCalled, isFalse); // 预览失败 → 不自动登录（转手动）
       expect(service.state.status, AuthStatus.loggedOut);
     });
   });
@@ -244,9 +263,10 @@ void main() {
             },
           });
 
-      final result = await service.loginWithPhone('13912345678');
+      final outcome = await service.loginWithPhone('13912345678');
 
-      expect(result, AuthResult.success);
+      expect(outcome.result, AuthResult.success);
+      expect(outcome.evicted, isEmpty);
       expect(adapter.lastRequest!.uri.path, '/api/auth/login');
       expect(adapter.lastRequest!.data,
           {'phone': '13912345678', 'device_id': deviceId});
@@ -265,9 +285,9 @@ void main() {
             'error_code': 'BANNED',
           });
 
-      final result = await service.loginWithPhone('13912345678');
+      final outcome = await service.loginWithPhone('13912345678');
 
-      expect(result, AuthResult.banned);
+      expect(outcome.result, AuthResult.banned);
       expect(service.state.status, isNot(AuthStatus.loggedIn));
     });
 
@@ -280,9 +300,9 @@ void main() {
         );
       };
 
-      final result = await service.loginWithPhone('13912345678');
+      final outcome = await service.loginWithPhone('13912345678');
 
-      expect(result, AuthResult.networkError);
+      expect(outcome.result, AuthResult.networkError);
     });
   });
 
@@ -377,6 +397,162 @@ void main() {
       expect(service.state.status, AuthStatus.loggedOut);
       final row = await dao.get();
       expect(row!.serverToken, isNull);
+    });
+  });
+
+  group('登录预览与静默重登守卫', () {
+    test('checkLoginImpact：有将被挤设备 → willEvict', () async {
+      adapter.handler = (options) async => _json(200, {
+            'code': 0,
+            'data': {
+              'evicted': [
+                {'device_id': 'old1', 'device_name': 'Xiaomi 14', 'issued_at': 1758000000000}
+              ]
+            }
+          });
+      final impact = await service.checkLoginImpact('13800000000');
+      expect(impact.kind, LoginImpactKind.willEvict);
+      expect(impact.evicted.single.deviceId, 'old1');
+      expect(adapter.lastRequest!.uri.path, '/api/auth/login/preview');
+    });
+
+    test('checkLoginImpact：网络失败 → networkError（不登录）', () async {
+      adapter.handler = (_) async => throw DioException(
+          requestOptions: RequestOptions(path: '/api/auth/login/preview'),
+          type: DioExceptionType.connectionError);
+      expect((await service.checkLoginImpact('13800000000')).kind,
+          LoginImpactKind.networkError);
+    });
+
+    test('静默重登：会挤人 → 不登录（loggedOut）', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await _seedAuth(db, phone: '13800000000', token: 'tok-stale', expiresAtMillis: now - 1000);
+      line1Number = '13800000000';
+      var loginCalled = false;
+      adapter.handler = (options) async {
+        if (options.uri.path == '/api/auth/login/preview') {
+          return _json(200, {
+            'code': 0,
+            'data': {
+              'evicted': [
+                {'device_id': 'other', 'device_name': 'iPad', 'issued_at': 1758000000000}
+              ]
+            }
+          });
+        }
+        loginCalled = true;
+        return _json(200, {'code': 0, 'data': {'token': 'x', 'expires_at': 9999999999}});
+      };
+
+      await service.ensureLoggedIn();
+
+      expect(loginCalled, isFalse);
+      expect(service.state.status, AuthStatus.loggedOut);
+    });
+
+    test('静默重登：不挤人 → 正常登录（带 device_name）', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await _seedAuth(db, phone: '13800000000', token: 'tok-stale', expiresAtMillis: now - 1000);
+      line1Number = '13800000000';
+      deviceLabel = 'Xiaomi 14';
+      adapter.handler = (options) async => options.uri.path == '/api/auth/login/preview'
+          ? _json(200, {'code': 0, 'data': {'evicted': []}})
+          : _json(200, {'code': 0, 'data': {'token': 'tok-new', 'expires_at': 9999999999}});
+
+      await service.ensureLoggedIn();
+
+      expect(service.state.status, AuthStatus.loggedIn);
+      expect(adapter.lastRequest!.uri.path, '/api/auth/login');
+      expect(adapter.lastRequest!.data, {
+        'phone': '13800000000',
+        'device_id': deviceId,
+        'device_name': 'Xiaomi 14',
+      });
+    });
+  });
+
+  group('被踢通知与启动校验', () {
+    test('handleServerFailure(evicted, detail) → 通知 + 清 token；consume 后只弹一次', () async {
+      await _seedAuth(db, phone: '13800000000', token: 'tok', expiresAtMillis: DateTime.now().millisecondsSinceEpoch + 1000);
+      await service.handleServerFailure(AuthFailureKind.evicted, {
+        'reason': 'evicted',
+        'ended_at': 1758000000123,
+        'by': {'device_id': 'd3', 'device_name': 'iPhone 15 Pro', 'issued_at': 1758000000000},
+      });
+
+      expect(service.state.status, AuthStatus.evicted);
+      final notice = service.state.evictionNotice!;
+      expect(notice.reason, EvictionReason.evicted);
+      expect(notice.by!.deviceName, 'iPhone 15 Pro');
+      expect(notice.endedAtMillis, 1758000000123);
+      expect((await dao.get())!.serverToken, isNull); // token 已清
+
+      service.consumeEvictionNotice();
+      expect(service.state.evictionNotice, isNull);
+      expect(service.state.status, AuthStatus.loggedOut);
+    });
+
+    test('clearKickedStatus 保留通知（守卫清状态不吞提示）', () async {
+      await service.handleServerFailure(AuthFailureKind.evicted, null);
+      service.clearKickedStatus();
+      expect(service.state.status, AuthStatus.loggedOut);
+      expect(service.state.evictionNotice, isNotNull); // 无 detail → 通用通知
+      expect(service.state.evictionNotice!.by, isNull); // 不编造下手设备
+    });
+
+    test('detail.reason=relogin → 通知原因 relogin（同设备重登挤掉旧会话）', () async {
+      await service.handleServerFailure(AuthFailureKind.evicted, {
+        'reason': 'relogin',
+        'ended_at': 1758000000999,
+        'by': {'device_id': 'd9', 'device_name': 'iPhone 15 Pro', 'issued_at': 1758000000000},
+      });
+
+      final notice = service.state.evictionNotice!;
+      expect(notice.reason, EvictionReason.relogin);
+      expect(notice.by!.deviceId, 'd9');
+      expect(notice.endedAtMillis, 1758000000999);
+    });
+
+    test('启动校验：本地 token 有效但服务端已踢 → evicted + 通知', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await _seedAuth(db, phone: '13800000000', token: 'tok-valid', expiresAtMillis: now + 3600000);
+      // 生产由 providers 接线；单测里显式接上（401 经此回调收尾）
+      client.setAuthCallback(service.handleServerFailure);
+      adapter.handler = (options) async => options.uri.path == '/api/auth/me'
+          ? _json(401, {
+              'code': 401,
+              'message': 'unauthorized',
+              'error_code': 'EVICTED',
+              'detail': {
+                'reason': 'evicted',
+                'ended_at': 1758000000123,
+                'by': {'device_id': 'd9', 'device_name': 'iPad', 'issued_at': 1758000000000},
+              }
+            })
+          : throw StateError('不应调用其他接口: ${options.uri}');
+
+      await service.ensureLoggedIn();
+      expect(service.state.status, AuthStatus.loggedIn); // 首屏不等网络
+      await service.inflightSessionValidation;           // 等校验完成
+      await _waitForStatus(service, AuthStatus.evicted); // 401 回调异步收尾
+
+      expect(service.state.status, AuthStatus.evicted);
+      expect(service.state.evictionNotice!.by!.deviceName, 'iPad');
+      expect((await dao.get())!.serverToken, isNull);
+    });
+
+    test('启动校验：网络失败 → 保持 loggedIn（不误报）', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await _seedAuth(db, phone: '13800000000', token: 'tok-valid', expiresAtMillis: now + 3600000);
+      adapter.handler = (_) async => throw DioException(
+          requestOptions: RequestOptions(path: '/api/auth/me'),
+          type: DioExceptionType.connectionError);
+
+      await service.ensureLoggedIn();
+      await service.inflightSessionValidation;
+
+      expect(service.state.status, AuthStatus.loggedIn);
+      expect(service.state.evictionNotice, isNull);
     });
   });
 }
