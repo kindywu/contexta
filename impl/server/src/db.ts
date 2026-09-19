@@ -72,12 +72,32 @@ const SERVER_DDL: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_article_delivery_client_date
     ON article_delivery(phone, difficulty, delivery_date)`,
+  `CREATE TABLE IF NOT EXISTS device_evictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    device_name TEXT,
+    reason TEXT NOT NULL CHECK (reason IN ('evicted','relogin')),
+    ended_at INTEGER NOT NULL,
+    by_device_id TEXT NOT NULL,
+    by_device_name TEXT,
+    by_issued_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_device_evictions_lookup
+    ON device_evictions(phone, device_id, ended_at)`,
 ];
 
 /** 幂等建服务端表：逐条 run（CREATE TABLE / INDEX 均 IF NOT EXISTS）。 */
 export function ensureServerSchema(db: Database): void {
   for (const stmt of SERVER_DDL) {
     db.run(stmt);
+  }
+  // 存量库补列（幂等建表不覆盖已存在的表；模式对齐 engine/db.ts 的旧库补列）：
+  // device_sessions.device_name —— 多设备登录提示（2026-09-18）新增，客户端登录时上报机型名
+  const sessionCols = db.query(`PRAGMA table_info(device_sessions)`).all() as { name: string }[];
+  if (!sessionCols.some((c) => c.name === "device_name")) {
+    db.run(`ALTER TABLE device_sessions ADD COLUMN device_name TEXT`);
   }
 }
 
