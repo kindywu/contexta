@@ -232,6 +232,7 @@ void main() {
       settings: settingsRepo,
       deviceId: () async => 'dev-1',
       readPhone: () async => null,
+      readDeviceLabel: () async => null,
     );
   });
 

@@ -10,15 +10,21 @@ import '../../domain/error/pipeline_blocking_exception.dart';
 ///   QUOTA_EXCEEDED / LLM_* / PIPELINE_BLOCKING / BAD_PARAM ...）；
 ///   网络层错误固定为 'NETWORK'，无法解析时兜底 'UNKNOWN'。
 /// - [statusCode]：HTTP 状态码；网络错误时为 null。
+/// - [detail]：服务端 error body 的 `detail` 字段（当前仅 401 EVICTED 携带：
+///   被挤下线的原因 / 时刻 / 下手设备）；无该键时为 null，不编造。
 class ServerApiException implements Exception {
   final String errorCode;
   final String message;
   final int? statusCode;
 
+  /// 错误附加数据（服务端 error body 的 detail 字段；当前仅 EVICTED 使用）。
+  final Map<String, dynamic>? detail;
+
   const ServerApiException({
     required this.errorCode,
     required this.message,
     this.statusCode,
+    this.detail,
   });
 
   @override
@@ -73,7 +79,9 @@ class ServerApiClient {
   /// 当前登录 token（null = 未登录，不附加 Authorization 头）。
   final Future<String?> Function() tokenProvider;
 
-  void Function(AuthFailureKind kind)? _authCallback;
+  /// 认证失败回调：(类别, 错误附加数据 detail)。detail 仅 EVICTED 携带
+  /// （谁 / 何时挤掉本机），其余错误为 null。
+  void Function(AuthFailureKind kind, Map<String, dynamic>? detail)? _authCallback;
 
   /// 已触发过认证回调的类别：单 token 生命周期内每种只触发一次，
   /// 避免并发请求同时 401 时重复弹登出 / 重复调登出接口。
@@ -85,7 +93,11 @@ class ServerApiClient {
   String? _lastSeenToken;
 
   /// 注册认证失败回调（登录失效 / 踢下线 / 封禁 → 由上层决定登出提示等）。
-  void setAuthCallback(void Function(AuthFailureKind kind)? cb) => _authCallback = cb;
+  /// [detail] 为服务端 error body 的 detail（仅 EVICTED 携带），其余为 null。
+  void setAuthCallback(
+    void Function(AuthFailureKind kind, Map<String, dynamic>? detail)? cb,
+  ) =>
+      _authCallback = cb;
 
   Future<T> get<T>(
     String path, {
@@ -133,10 +145,12 @@ class ServerApiClient {
         // data is T 已保证（Dart 3.2+ 类型参数提升），可直接返回
         return data;
       }
+      final rawDetail = body['detail'];
       throw ServerApiException(
         errorCode: body['error_code']?.toString() ?? 'UNKNOWN',
         message: body['message']?.toString() ?? '',
         statusCode: resp.statusCode,
+        detail: rawDetail is Map<String, dynamic> ? rawDetail : null,
       );
     } on DioException catch (e) {
       if (e.type == DioExceptionType.connectionError ||
@@ -152,10 +166,13 @@ class ServerApiClient {
       final body = e.response?.data;
       if (body is Map<String, dynamic>) {
         final code = body['error_code']?.toString() ?? 'UNKNOWN';
+        final rawDetail = body['detail'];
+        final detail = rawDetail is Map<String, dynamic> ? rawDetail : null;
         final ex = ServerApiException(
           errorCode: code,
           message: body['message']?.toString() ?? '',
           statusCode: e.response?.statusCode,
+          detail: detail,
         );
         if (code == 'TOKEN_EXPIRED' || code == 'EVICTED' || code == 'BANNED') {
           final kind = code == 'EVICTED'
@@ -166,7 +183,7 @@ class ServerApiClient {
           debugPrint('[ServerApiClient] 401 kind=$kind path=${e.requestOptions.path} token=${(_lastSeenToken ?? 'null').substring(0, (_lastSeenToken ?? 'null').length > 8 ? 8 : (_lastSeenToken ?? 'null').length)}');
           if (_notifiedAuthKinds.add(kind)) {
             try {
-              _authCallback?.call(kind);
+              _authCallback?.call(kind, detail);
             } catch (_) {
               // 回调自身异常不得覆盖原始 ServerApiException
             }

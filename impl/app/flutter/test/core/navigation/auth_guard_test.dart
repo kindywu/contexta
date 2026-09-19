@@ -181,6 +181,7 @@ void main() {
       settings: settings,
       deviceId: () async => 'dev-1',
       readPhone: () async => line1,
+      readDeviceLabel: () async => null,
     );
     router = buildRouter(
       formFactor: DeviceFormFactor.phone,

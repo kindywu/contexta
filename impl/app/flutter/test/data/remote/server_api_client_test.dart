@@ -46,7 +46,7 @@ ResponseBody _json(int statusCode, Object body) => ResponseBody.fromString(
 
 (ServerApiClient, _StubAdapter) _makeClient({
   Future<String?> Function()? tokenProvider,
-  void Function(AuthFailureKind kind)? onAuth,
+  void Function(AuthFailureKind kind, Map<String, dynamic>? detail)? onAuth,
 }) {
   final adapter = _StubAdapter();
   final dio = Dio();
@@ -113,7 +113,7 @@ void main() {
   group('ServerApiClient 错误路径（非 2xx + error_code）', () {
     test('401 TOKEN_EXPIRED → ServerApiException + authCallback(tokenExpired)', () async {
       final authCalls = <AuthFailureKind>[];
-      final (client, adapter) = _makeClient(onAuth: authCalls.add);
+      final (client, adapter) = _makeClient(onAuth: (kind, _) => authCalls.add(kind));
       adapter.handler = (options) async => _json(401, {
             'code': 401,
             'message': 'token expired',
@@ -132,7 +132,7 @@ void main() {
 
     test('401 EVICTED → ServerApiException + authCallback(evicted)', () async {
       final authCalls = <AuthFailureKind>[];
-      final (client, adapter) = _makeClient(onAuth: authCalls.add);
+      final (client, adapter) = _makeClient(onAuth: (kind, _) => authCalls.add(kind));
       adapter.handler = (options) async => _json(401, {
             'code': 401,
             'message': 'evicted',
@@ -149,7 +149,7 @@ void main() {
 
     test('403 BANNED → ServerApiException + authCallback(banned)', () async {
       final authCalls = <AuthFailureKind>[];
-      final (client, adapter) = _makeClient(onAuth: authCalls.add);
+      final (client, adapter) = _makeClient(onAuth: (kind, _) => authCalls.add(kind));
       adapter.handler = (options) async => _json(403, {
             'code': 403,
             'message': 'banned',
@@ -167,7 +167,7 @@ void main() {
 
     test('502 LLM_RECOVERABLE_EXHAUSTED → ServerApiException，不触发 authCallback', () async {
       final authCalls = <AuthFailureKind>[];
-      final (client, adapter) = _makeClient(onAuth: authCalls.add);
+      final (client, adapter) = _makeClient(onAuth: (kind, _) => authCalls.add(kind));
       adapter.handler = (options) async => _json(502, {
             'code': 502,
             'message': 'llm exhausted',
@@ -184,7 +184,7 @@ void main() {
 
     test('400 QUOTA_EXCEEDED → ServerApiException，不触发 authCallback', () async {
       final authCalls = <AuthFailureKind>[];
-      final (client, adapter) = _makeClient(onAuth: authCalls.add);
+      final (client, adapter) = _makeClient(onAuth: (kind, _) => authCalls.add(kind));
       adapter.handler = (options) async => _json(400, {
             'code': 400,
             'message': 'quota exceeded',
@@ -238,7 +238,7 @@ void main() {
     test('2xx + code!=0 → ServerApiException（envelope 业务错误，不触发 authCallback）',
         () async {
       final authCalls = <AuthFailureKind>[];
-      final (client, adapter) = _makeClient(onAuth: authCalls.add);
+      final (client, adapter) = _makeClient(onAuth: (kind, _) => authCalls.add(kind));
       adapter.handler = (options) async => _json(200, {
             'code': 1001,
             'message': 'bad param',
@@ -253,6 +253,46 @@ void main() {
             .having((e) => e.statusCode, 'statusCode', 200)),
       );
       expect(authCalls, isEmpty);
+    });
+
+    test('401 EVICTED 带 detail → 异常与回调都拿到 detail', () async {
+      final (client, adapter) = _makeClient();
+      var seenKind = AuthFailureKind.tokenExpired;
+      Map<String, dynamic>? seenDetail;
+      client.setAuthCallback((kind, detail) {
+        seenKind = kind;
+        seenDetail = detail;
+      });
+      adapter.handler = (_) async => _json(401, {
+            'code': 401,
+            'message': 'unauthorized',
+            'error_code': 'EVICTED',
+            'detail': {
+              'reason': 'evicted',
+              'ended_at': 1758000000123,
+              'by': {'device_id': 'd3', 'device_name': 'iPhone 15 Pro', 'issued_at': 1758000000000},
+            },
+          });
+      await expectLater(
+        client.get<Map<String, dynamic>>('/api/auth/me', parser: (d) => d as Map<String, dynamic>),
+        throwsA(isA<ServerApiException>()
+            .having((e) => e.errorCode, 'errorCode', 'EVICTED')
+            .having((e) => e.detail?['reason'], 'detail.reason', 'evicted')),
+      );
+      expect(seenKind, AuthFailureKind.evicted);
+      expect(seenDetail!['ended_at'], 1758000000123);
+    });
+
+    test('401 EVICTED 无 detail → detail 为 null（不编造）', () async {
+      final (client, adapter) = _makeClient();
+      adapter.handler = (_) async =>
+          _json(401, {'code': 401, 'message': 'unauthorized', 'error_code': 'EVICTED'});
+      try {
+        await client.get<Map<String, dynamic>>('/api/auth/me', parser: (d) => d as Map<String, dynamic>);
+        fail('应抛 ServerApiException');
+      } on ServerApiException catch (e) {
+        expect(e.detail, isNull);
+      }
     });
   });
 
@@ -330,7 +370,7 @@ void main() {
 
     test('并发两个 401 → authCallback 只触发 1 次（按 kind 去重）', () async {
       final authCalls = <AuthFailureKind>[];
-      final (client, adapter) = _makeClient(onAuth: authCalls.add);
+      final (client, adapter) = _makeClient(onAuth: (kind, _) => authCalls.add(kind));
       adapter.handler = (options) async => _json(401, {
             'code': 401,
             'message': 'token expired',
@@ -352,7 +392,7 @@ void main() {
       final authCalls = <AuthFailureKind>[];
       var token = 'tok-a';
       final (client, adapter) =
-          _makeClient(tokenProvider: () async => token, onAuth: authCalls.add);
+          _makeClient(tokenProvider: () async => token, onAuth: (kind, _) => authCalls.add(kind));
       adapter.handler = (options) async => _json(401, {
             'code': 401,
             'message': 'token expired',
@@ -376,7 +416,7 @@ void main() {
 
     test('authCallback 抛异常 → 不吞掉原始 ServerApiException', () async {
       final (client, adapter) = _makeClient(
-        onAuth: (_) => throw StateError('callback boom'),
+        onAuth: (_, _) => throw StateError('callback boom'),
       );
       adapter.handler = (options) async => _json(401, {
             'code': 401,

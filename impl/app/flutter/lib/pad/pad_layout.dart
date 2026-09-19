@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/widgets.dart';
 
 import '../core/theme/app_dimens.dart';
@@ -97,4 +99,12 @@ abstract final class PadLayout {
   /// 页内上下留白。
   static const double pageTopPadding = 16;
   static const double pageBottomPadding = 8;
+
+  /// 顶栏内容为系统「窗口控件」让出的左侧宽度（仅 iOS 非零）。
+  ///
+  /// iPadOS 26+ 窗口化运行时，系统会在窗口左上角悬浮一个「…」窗口控件胶囊
+  /// （约 82×26dp、距窗口左缘约 8dp），**画在应用内容之上**——顶栏左端的返回键
+  /// 正好被它盖住（2026-09-19 iPad 模拟器实测，`UIRequiresFullScreen` 已设也
+  /// 不生效）。iOS 上顶栏内容整体右让这么多；Android 无此控件，保持原布局。
+  static double get windowControlsLeftInset => Platform.isIOS ? 96 : 0;
 }

@@ -276,16 +276,22 @@ class _PadReadingScreenState extends ConsumerState<PadReadingScreen> {
                 ),
               ),
 
-              // 左上角常驻返回键（唤出态淡出，位置让给顶栏里的那个）
+              // 左下角常驻返回键（唤出态淡出，位置让给顶栏里的那个）
+              //
+              // 2026-09-19 修正：原左上角位置被 iPadOS 26+ 的「窗口控件」
+              // （左上角 … 胶囊，画在应用之上）遮挡 → 移到正文让出的页码带左端。
               Positioned(
-                left: AppSpacing.xxs,
-                top: AppSpacing.xxs,
+                left: AppSpacing.xs,
+                bottom: 0,
+                height: PadLayout.pagePillRowHeight,
                 child: IgnorePointer(
                   ignoring: _chromeVisible,
                   child: AnimatedOpacity(
                     opacity: _chromeVisible ? 0 : 1,
                     duration: AppMotion.base,
-                    child: PadReadingFloatingBack(onBack: widget.onBack),
+                    child: Center(
+                      child: PadReadingFloatingBack(onBack: widget.onBack),
+                    ),
                   ),
                 ),
               ),

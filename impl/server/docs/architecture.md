@@ -18,7 +18,7 @@ flowchart TB
         R["routers（HTTP 层）<br/>health / auth / llm / articles / admin / 静态"]
         S["services（业务层）<br/>auth_service / llm_service / admin_service /<br/>admin_articles / review_service / article_delivery /<br/>article_reader（映射）/ daily_task"]
         E["engine（文章生成引擎, 原样迁入）<br/>LangGraph 图 + graph/daily 编排 + sites 抓取"]
-        DB["contexta.db<br/>pipeline 4 表 + 服务端 6 表 + article_review"]
+        DB["contexta.db<br/>pipeline 4 表 + 服务端 7 表 + article_review"]
         CP["langgraph.sqlite<br/>检查点（checkpoints / writes）"]
         UI["admin-ui（Vue3 + antd，dist 随仓库静态托管）"]
     end
@@ -35,7 +35,7 @@ flowchart TB
 - **技术栈**：Bun（运行时）+ Hono 4（HTTP 框架）+ `bun:sqlite`（业务库与检查点库，WAL）+ jsonwebtoken（HS256）+ zod（配置/协议校验）+ LangChain/LangGraph（`@langchain/core`、`@langchain/langgraph`、`@langchain/langgraph-checkpoint`、`@langchain/openai`）+ turndown（正文 HTML → Markdown）。无编译步骤：TS 直接由 Bun 执行，`tsc --noEmit` 仅作类型校验。
 - **单进程**：HTTP 服务与后台任务（每日生成循环）同进程；进程退出即任务结束，无外部 cron。
 - **双数据库**：
-  - `contexta.db`（`DB_PATH`）：引擎 4 表（`article_batches`/`articles`/`article_paragraphs`/`batch_slots`）+ 服务端 6 表（`users`/`admin_user`/`device_sessions`/`usage_log`/`word_lookup_cache`/`article_delivery`）+ `article_review`。与旧 Rust 结构唯一差异：**`articles` 不再有 `embedding` 列**（pipeline 本地向量检索未迁移）。
+  - `contexta.db`（`DB_PATH`）：引擎 4 表（`article_batches`/`articles`/`article_paragraphs`/`batch_slots`）+ 服务端 7 表（`users`/`admin_user`/`device_sessions`/`usage_log`/`word_lookup_cache`/`article_delivery`/`device_evictions`）+ `article_review`。与旧 Rust 结构唯一差异：**`articles` 不再有 `embedding` 列**（pipeline 本地向量检索未迁移）。
   - `langgraph.sqlite`（`CHECKPOINT_PATH`）：LangGraph 检查点独立存储（`checkpoints`/`writes` 两表），与业务库无关——用于进程崩溃/网络故障后的断点续跑。
 - **引擎迁入差异**：pipeline 原样迁入（Rust 时期的 fetch 改 Bun.WebView、sqlx 改 bun:sqlite、axum 改 Hono），运行期唯一差异 = embedding 列移除。
 
@@ -46,8 +46,8 @@ impl/server/
   src/
     main.ts                    # 组装：配置+时区硬闸 → 建库建表 → seed admin → 日志初始化 → 路由 → serve → 每日窗口任务 → 优雅退出
     config.ts                  # 服务端配置（zod）：PORT/双 JWT 密钥/配额/缓存/每日生成窗口/LLM 端点字段
-    db.ts                      # 服务端表 DDL（幂等）+ seedAdminIfNeeded + verifyAdminPassword
-    auth.ts                    # AuthUser / AdminAuth 认证提取器（封禁/会话/角色校验）
+    db.ts                      # 服务端表 DDL（幂等）+ 存量库幂等补列 + seedAdminIfNeeded + verifyAdminPassword
+    auth.ts                    # AuthUser / AdminAuth 认证提取器（封禁/会话/角色校验；EVICTED 附 detail）
     middleware/
       require_auth.ts          # 登录保护中间件：requireAppAuth / requireAdminAuth（认证结果入上下文）
       request_logger.ts        # 请求访问日志：app/web 通道分流（身份从上下文读，自身不认证）
@@ -69,13 +69,13 @@ impl/server/
 | 模块 | 职责要点 |
 |---|---|
 | `config.ts` | `loadServerConfig`（服务端）+ `engine/config.ts` 的 `loadConfig`（引擎）从同一份环境变量读取（`.env` 由 Bun 自动加载）；**双 JWT 密钥**：`JWT_SECRET`（App 端签发/验证）与 `ADMIN_JWT_SECRET`（Admin 端），均 <32 字符、`LLM_API_KEY` 缺失、`TIMEZONE` 非法即启动失败 |
-| `db.ts` | `ensureServerSchema` 幂等建服务端表（逐条 `CREATE TABLE IF NOT EXISTS`）；`seedAdminIfNeeded`（argon2id 哈希，仅在无该 username 行时插入，不覆盖既有密码）；`verifyAdminPassword` |
-| `auth.ts` | `resolveAuthUser`：JWT 校验 → **先封禁后会话**（被封禁得 403 BANNED 而非 401 EVICTED）→ `iat == issued_at` 毫秒精确匹配，行不存在（登出/被挤掉）或落后一律 401 EVICTED。`resolveAdminAuth`：JWT + `role == "admin"`。二者为认证提取器，调用方是 middleware（非 handler） |
+| `db.ts` | `ensureServerSchema` 幂等建服务端表（逐条 `CREATE TABLE IF NOT EXISTS`）+ **存量库幂等补列**（`PRAGMA table_info(device_sessions)` 无 `device_name` 时 `ALTER TABLE ADD COLUMN`，新库/老库同一路径；模式对齐 `engine/db.ts`）；`seedAdminIfNeeded`（argon2id 哈希，仅在无该 username 行时插入，不覆盖既有密码）；`verifyAdminPassword` |
+| `auth.ts` | `resolveAuthUser`：JWT 校验 → **先封禁后会话**（被封禁得 403 BANNED 而非 401 EVICTED）→ `iat == issued_at` 毫秒精确匹配，行不存在（登出/被挤掉）或落后一律 401 EVICTED；判为 EVICTED 时经 `authService.evictionDetail` 查「谁在何时结束了本会话」，查到则随 `detail` 下发（查不到——如主动登出——不带 `detail`）。`resolveAdminAuth`：JWT + `role == "admin"`。二者为认证提取器，调用方是 middleware（非 handler） |
 | `middleware/require_auth.ts` | 登录保护中间件：`requireAppAuth`（App 接口，`appUser` 写上下文）/ `requireAdminAuth`（`/api/admin/*`，login 公开放行，`adminUser` 写上下文）；认证失败抛原 ApiError（401 TOKEN_EXPIRED/EVICTED、403 BANNED），经子路由 attachErrorHandler 统一响应 |
 | `middleware/request_logger.ts` | 请求访问日志：挂主 app 首位覆盖所有请求；身份从上下文读取（appUser 打码手机号 / adminUser `admin:名` / anon），自身不认证不读库；`/admin*` 与 `/api/admin/*` → web 通道（admin-*.log，stdout 品红），其余 → app 通道（app-*.log，stdout 青色） |
 | `jwt.ts` | **双密钥**：App token 用 `appJwtSecret`（JWT_SECRET 签发/验证），admin token 用 `adminJwtSecret`——两端令牌互不通用（交叉使用验签失败 401 TOKEN_EXPIRED）。App token 30 天（`APP_TOKEN_TTL_SECS`），admin token **12 小时**（`ADMIN_TOKEN_TTL_SECS`）。App token 的 `iat` 为**毫秒**（`authService.login` 落库的实际 `issued_at`），jsonwebtoken 原样透传无舍入——秒粒度无法区分同秒内两次重登 |
-| `response.ts` | `ApiError(status, code, errorCode)` + 各类工厂（badRequest/quotaExceeded/unauthorized/banned/notFound/llmFatal/llmRecoverableExhausted/llmTimeout/pipelineBlocking/internal）；`attachErrorHandler` 挂到每个子路由（子路由错误就地消化，顶层 onError 只兜 main 侧） |
-| `services/auth_service.ts` | 免密直登：自动注册 → 封禁检查 → 会话行 `issued_at` 全局单调（`MAX(issued_at)+1` 与墙钟取大，防时钟回拨，单条 INSERT…SELECT 原子）→ 挤掉保留最新 2 条 → token 的 iat 取落库 `issued_at` |
+| `response.ts` | `ApiError(status, code, errorCode, message, detail?)` + 各类工厂（badRequest/quotaExceeded/unauthorized/banned/notFound/llmFatal/llmRecoverableExhausted/llmTimeout/pipelineBlocking/internal）；`errorBody` 仅在 `detail !== undefined` 时输出该字段（现有错误形状不变；目前仅 `unauthorized("EVICTED", detail)` 使用）；`attachErrorHandler` 挂到每个子路由（子路由错误就地消化，顶层 onError 只兜 main 侧） |
+| `services/auth_service.ts` | 免密直登：自动注册 → 封禁检查 → 会话行 `issued_at` 全局单调（**读会话快照 → 在 JS 里算 `issued_at = max(MAX(issued_at)+1, now)`（墙钟取大，防时钟回拨）→ 写回，三步在同一同步块内完成、无 `await`——单进程事件循环模型下等价原子**；不再用单条 `INSERT…SELECT`：写挤下线账本需要 pre-upsert 的会话快照与同设备 `previous` 行，必须先 SELECT 出快照再回写）→ 挤掉保留最新 2 条（`MAX_ACTIVE_DEVICES`）→ token 的 iat 取落库 `issued_at`；**2026-09-18 多设备登录提示扩展**：`login` 记录 `device_name`（机型名，`COALESCE` 不覆盖已有值）、返回 `{token, evicted}`（本次实际被删会话）；`previewEvictions`（纯模拟不落库，与 login 共用 `pickEvicted` 判定规则）；被挤/同设备重登写 `device_evictions` 账本（evicted/relogin 两种 reason，带下手设备快照）；`evictionDetail`（401 EVICTED 的 detail 数据源） |
 | `services/llm_service.ts` | 查词网关：缓存 → 配额 → LLM → 解析 → 记账 → 写缓存（见 §5） |
 | `services/admin_service.ts` | 管理侧：admin 登录 / 用户列表（含今日查词次数）/ 封禁解封 / 配额覆盖 / 今日用量汇总 |
 | `services/admin_articles.ts` | 管理端文章读取与编辑：文章列表（分页/排序/状态过滤/统计）、文章详情（含槽位历史）、审核期内容编辑（`PUT /api/admin/articles/:id`） |
@@ -88,13 +88,13 @@ impl/server/
 ### 2.1 依赖纪律
 
 - **单向分层**：`routers → services → engine`。router 只做参数提取/组包；**鉴权由 middleware 前置拦截**（require_auth 挂各路由工厂内，认证结果经上下文供 handler 读取）；service 承载业务语义；engine 只负责"生成一篇文章/一天文章"。
-- **业务库读写边界**：引擎侧库读写只允许 `engine/db.ts`（batch_slots/articles/article_paragraphs 的 select/insert/update）；服务端表读写只允许 `src/db.ts` 与各 services（users/device_sessions/usage_log/word_lookup_cache/article_review）。其余模块拿到的是 `Database` 连接但不得直接散布 SQL（models 集中在两处）。
+- **业务库读写边界**：引擎侧库读写只允许 `engine/db.ts`（batch_slots/articles/article_paragraphs 的 select/insert/update）；服务端表读写只允许 `src/db.ts` 与各 services（users/device_sessions/usage_log/word_lookup_cache/article_review/device_evictions）。其余模块拿到的是 `Database` 连接但不得直接散布 SQL（models 集中在两处）。
 - **引擎"纯编排"纪律**：LangGraph 图节点（`graph/nodes.ts`）是 `state → 部分 state 更新` 的纯函数，依赖（LLM、站点映射、随机数、URL 去重集合）经闭包注入；图上不碰业务库。持久化只发生在编排层（`graph/daily.ts` 的 `persistSlot`）与跨模块的 `review_service.reRunSlot`——生成结果三态（success/rejected/error）返回后由编排方决定落库形态。检查点库（langgraph.sqlite）由 `BunSqliteCheckpointer` 独占，业务代码不读它（replay/retry 工具除外）。
 - **测试 seam**：`llm_service.wordLookup(db, cfg, chat, ...)` 的 `chat`、`review_service` 的 `gen`、`DailyTask` 的全部分支（genDaily/retryFailed/reRun/ensure/now/sleep）均可注入假实现——生产用引擎真实现，测试不真调 LLM。
 
-## 3. 数据模型（contexta.db，引擎 4 表 + 服务端 6 表 + article_review）
+## 3. 数据模型（contexta.db，引擎 4 表 + 服务端 7 表 + article_review）
 
-建表由启动时 `ensureSchema(db)`（引擎）+ `ensureServerSchema(db)`（服务端）幂等执行（全部 `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`；**代码无 ALTER TABLE**——新结构对新建库生效，存量库演进见 config-and-deploy §5.2）。引擎索引随 `DROP TABLE` 语义处理（删除重建日库时），服务端索引随建表重建。`tool/migrations/001-init.sql` 为 Rust 时期遗留（结构已并入上述两个 ensure 函数，不再执行）；`tool/db_version` = 0（从未发布生产）。
+建表由启动时 `ensureSchema(db)`（引擎）+ `ensureServerSchema(db)`（服务端）幂等执行（全部 `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`）；**存量库补列**同样在 `ensureServerSchema` 内幂等执行（`PRAGMA table_info` 探列 → 缺列才 `ALTER TABLE ADD COLUMN`，见 §3.2「device_name」；模式对齐 `engine/db.ts` 的旧库补列）——重启自愈，不依赖一次性补丁脚本（未发布阶段的整体升级策略见 config-and-deploy §5.2）。引擎索引随 `DROP TABLE` 语义处理（删除重建日库时），服务端索引随建表重建。`tool/migrations/001-init.sql` 为 Rust 时期遗留（结构已并入上述两个 ensure 函数，不再执行）；`tool/db_version` = 0（从未发布生产）。
 
 ### 3.1 引擎 4 表（pipeline 原样，`articles` 无 embedding 列）
 
@@ -105,17 +105,29 @@ impl/server/
 | `article_paragraphs` | id PK、article_id FK、paragraph_index（0 基）、text_en、text_zh | UNIQUE(article_id, paragraph_index) |
 | `batch_slots` | id PK、batch_id FK、run_date、slot_index、difficulty、thread_id、status CHECK(`pending`/`success`/`rejected`/`error`)、attempts（图内实际生成轮数）、article_id FK 可空、error_message（失败/拒绝原因：基础话术 + 具体明细——违规条目/命中内容/来源 URL，可空——新数据落库，旧库启动幂等补列）、updated_at | UNIQUE(batch_id, slot_index)；索引 `(run_date)`；**槽位 = 文章占位**：每天 3 难度 × 5 篇 = 15 槽 |
 
-### 3.2 服务端 6 表 + article_review
+### 3.2 服务端 7 表 + article_review
 
 | 表 | 关键列 | 约束/索引 |
 |---|---|---|
 | `users` | phone **PK**、status（normal/banned）、banned_reason、quota_word_daily（null=全局默认）、quota_article_daily（null=全局默认 `DEFAULT_ARTICLE_QUOTA_DAILY=5`）、created_at、updated_at | 长期实体；时间戳 Unix millis INTEGER |
 | `admin_user` | username **PK**、password_hash（argon2id）、created_at、updated_at | — |
-| `device_sessions` | id PK、phone、device_id、issued_at、last_active_at | UNIQUE(phone, device_id)；索引 `(phone)` |
+| `device_sessions` | id PK、phone、device_id、**device_name**（客户端登录上报的机型名；可空 = 旧版本 App / 老会话行未上报，展示降级「未知设备」）、issued_at、last_active_at | UNIQUE(phone, device_id)；索引 `(phone)`；`device_name TEXT` 由 `ensureServerSchema` 幂等补列统一添加（CREATE TABLE 中未声明；见下） |
 | `usage_log` | id PK、phone（可空=服务端任务侧）、endpoint（word_lookup/…）、prompt_tokens、completion_tokens、latency_ms、created_at | 索引 `(phone, created_at)`、`(created_at)`；流水账 |
 | `word_lookup_cache` | word **PK**、result_json、created_at | 跨用户共享缓存 |
 | `article_delivery` | id PK、phone、device_id、difficulty、article_id FK articles、delivery_date（yyyy-MM-dd TEXT）、created_at | UNIQUE(phone, article_id)——同一 phone（含重装换 device_id / 多设备）**永不重复投同一篇**（学习者是"人"，不读相同文章）；索引 `(phone, difficulty, delivery_date)`（同日冻结查询）；流水账（投放账本） |
+| `device_evictions` | id PK、phone、device_id（被结束会话的设备）、device_name（被结束设备的机型**快照**，可空）、reason CHECK(`evicted`/`relogin`)、ended_at（会话失效时刻，毫秒）、by_device_id（下手设备；relogin 时 = 本机）、by_device_name（下手设备机型快照，可空）、by_issued_at（下手设备本次登录的 `issued_at`）、created_at | 索引 `(phone, device_id, ended_at)`（401 detail 查找：该 phone×设备在 token 签发时刻之后的最近一条结束事件）；**流水账（db:TYPE）**——写入后不再修改，by_* 为快照字段（不引用当前会话状态，会话行删除后仍可解释历史） |
 | `article_review` | id PK、article_id **UNIQUE** FK articles、slot_id FK batch_slots、status CHECK(`pending_review`/`approved`/`rejected`/`rejected_final`)、reject_reason、reviewed_by、reviewed_at、created_at、updated_at | 索引 `(slot_id)`；**审核行挂在文章上**，一篇文章至多一行（重生成产生新文章 → 新行，旧行保留为历史） |
+
+**`device_name` 的补列路径**（2026-09-18）：该列**不在** `CREATE TABLE device_sessions` 的 DDL 里，由 `ensureServerSchema` 末尾的补列分支统一添加——`PRAGMA table_info(device_sessions)` 查不到 `device_name` 就 `ALTER TABLE device_sessions ADD COLUMN device_name TEXT`（新库与存量库走同一路径；重复执行幂等）。对齐 `engine/db.ts` 的旧库补列模式；**重启自愈**，一次性 `/tmp` 补丁脚本仅为例外场景（见 config-and-deploy §5.2）。
+
+**`device_evictions` 写入时机**（唯一写入方是 `authService.login`；`logout` **不写**）：
+
+| 场景 | reason | 被结束方（device_id/device_name） | 下手方（by_*） |
+|---|---|---|---|
+| 第 3 台登录，挤掉 `issued_at` 最旧的会话 | `evicted` | 被删会话行（删除前快照） | 本次登录设备 + 其落库 `issued_at` |
+| 同 `device_id` 重登（旧 token 因 `iat` 落后失效） | `relogin` | 本机旧会话（`previous.device_name` 快照） | 本机（`device_name ?? previous.device_name`） |
+
+`by_device_name` 回退规则：本次登录未上报机型名时，回退本机已存会话的 `device_name`（`previous?.device_name`），都没有才留 null（不臆造）。`ended_at` 取本次登录的 `now`——与下手设备 `issued_at` 同刻事件（代码判定用 `ended_at >= token.iat`，见 §6）。
 
 ### 3.3 langgraph.sqlite（检查点）
 
@@ -318,23 +330,58 @@ flowchart TD
 
 ## 6. 认证与账号体系
 
-- **应用端**：phone = 账号，免密直登（beta 简化，保留 `code` 字段预留升级验证码）。`device_sessions` 为权威状态（非 JWT 黑名单）：每 phone 至多 **2 个**活跃会话（登录按 issued_at 最新的 2 条保留，旧会话被挤掉）；`issued_at` 按 phone 全局单调（`MAX(issued_at)+1` 与墙钟取大，防时钟回拨/同毫秒并发），token 的 `iat` = 实际落库的 `issued_at`（毫秒）——**重登即令旧 token 失效**（`resolveAuthUser` 精确比对 `iat == issued_at`，不等 → 401 EVICTED）。
+- **应用端**：phone = 账号，免密直登（beta 简化，保留 `code` 字段预留升级验证码）。`device_sessions` 为权威状态（非 JWT 黑名单）：每 phone 至多 **2 个**活跃会话（`MAX_ACTIVE_DEVICES = 2`；登录按 `(issued_at DESC, id DESC)` 最新 2 条保留，其余被删）；`issued_at` 按 phone 全局单调（`MAX(issued_at)+1` 与墙钟取大，防时钟回拨/同毫秒并发），token 的 `iat` = 实际落库的 `issued_at`（毫秒）——**重登即令旧 token 失效**（`resolveAuthUser` 精确比对 `iat == issued_at`，不等 → 401 EVICTED）。多设备登录提示的完整链路（预览 → 确认 → 登录 → 账本 → 被挤方 401 detail）见 §6.1。
 - **管理员**：独立 `admin_user` 表（argon2id）+ `POST /api/admin/login` → admin JWT（claim `role: admin`，TTL **12 小时**——App token 30 天）；`/api/admin/*` 在提取器层校验 role（非 admin → 401 TOKEN_EXPIRED，不区分用户名或密码错误——防枚举）。
 - **封禁**：`resolveAuthUser` 先查封禁再查会话——被封禁账号得 **403 BANNED**（而非 401 EVICTED）；login 同样封禁检查先于会话（被封禁账号登录也得 403 BANNED）。
 - **seed**：`ADMIN_INIT_PASSWORD` 设置时启动 seed `admin`（无该 username 行才插入，重复调用不覆盖既有密码）；seed 后可移出 .env。
 
+### 6.1 多设备登录提示（2026-09-18）
+
+「预览 → 确认 → 登录 → 账本 → 被挤方 401 detail」的完整链路：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant N as App(新设备)
+    participant S as Server(authService)
+    participant DB as contexta.db
+    participant O as App(旧设备)
+
+    N->>S: POST /api/auth/login/preview {phone, device_id}
+    Note over S: 纯模拟不落库：previewEvictions<br/>本机以伪 issued_at 参与 (issued_at DESC, id DESC) 排序<br/>保留前 2，其余 = 将被挤（0/1 条）
+    S-->>N: {evicted:[{device_id, device_name, issued_at, last_active_at}]}
+    N->>N: 会挤人 → 确认框；用户取消 = 不登录、不挤人
+    N->>S: POST /api/auth/login {phone, device_id, device_name?}
+    Note over S: 自动注册 → 封禁检查(403 BANNED)<br/>issued_at = max(MAX(issued_at)+1, now)<br/>upsert 本机会话（device_name 用 COALESCE 不覆盖旧值）
+    S->>DB: 同 device_id 重登 → INSERT device_evictions(reason='relogin', by=本机)
+    S->>DB: 对每个被挤行 INSERT device_evictions(reason='evicted', by=本机快照)
+    S->>DB: DELETE 被挤会话行（保留最新 2）
+    S-->>N: {token, expires_at, evicted:[本次实际被删会话]}
+    Note over N: 实际 evicted ≠ 预览 → 提示差异（并发）
+    O->>S: 下次请求（冷启动校验 GET /api/auth/me 或任一受保护接口）
+    Note over S: resolveAuthUser：先封禁后会话<br/>sessionIssuedAt != token.iat → 401 EVICTED<br/>evictionDetail：ended_at >= token.iat 的最近一条
+    S-->>O: 401 {error_code: EVICTED, detail:{reason, ended_at, by:{device_id, device_name, issued_at}}}
+    Note over O: 清 token + 一次性弹窗（谁在何时登录）
+```
+
+- **预览**（`POST /api/auth/login/preview`，公开，同 login）：`authService.previewEvictions` 用与登录**同一个** `pickEvicted` 函数（避免两处规则漂移）——把本机以伪 `issued_at = max(MAX+1, now)` 并入快照排序，取 `(issued_at DESC, id DESC)` 前 2 为保留集，其余为"将被挤"。**不落库、无副作用**（预览后原 token 仍有效）。本机已是活跃 2 台之一（重登只刷新自己）→ `evicted: []`。
+- **登录**：`login` 返回 `{token, evicted}`——`evicted` = 本次**实际被删除**的会话（客户端据此发现"预览为空却挤了人"的并发差异）。`device_name` 可选（旧版本 App 不传 → NULL），upsert 时 `device_name = COALESCE(excluded.device_name, device_sessions.device_name)` **不覆盖**已存名字。
+- **账本**：被删会话 → `reason='evicted'`；同 device_id 重登（旧 token 因 iat 落后失效）→ `reason='relogin'`；`logout` 删除会话行但**不写账本**（主动登出的旧 token 得 401 无 detail，不编造"被挤下线"）。
+- **被挤方 401 detail**：`resolveAuthUser` 判 EVICTED 时调 `evictionDetail(db, phone, deviceId, claims.iat)`——取 `ended_at >= token.iat` 的最近一条（**含同刻**：`issued_at` 单调 +1 抬升，端到端极快时 `ended_at == token.iat` 完全可能；严格早于签发时刻的是更早旧会话，不作为本次失效原因）；查到 → `detail{reason, ended_at, by{device_id, device_name, issued_at}}`，查不到（logout / 老数据）→ 无 detail，客户端降级通用文案。
+- **`device_evictions` / `device_sessions.device_name` 的列与写入语义**见 §3.2。
+
 ## 7. 统一 envelope 与 error_code 表
 
 - 成功：HTTP 200，`{"code": 0, "data": ...}`
-- 失败：`{"code": <HTTP 状态码或业务码>, "message": "...", "error_code": "<细分错误码>"}`
-- 实现：`ApiError(status, code, errorCode)`；各子路由 `attachErrorHandler`——handler 内 throw ApiError → 对应 status + errorBody；`SyntaxError`（畸形 JSON body）→ 400 BAD_PARAM；其余异常 → 500 INTERNAL（记 error 日志）。
+- 失败：`{"code": <HTTP 状态码或业务码>, "message": "...", "error_code": "<细分错误码>"}`，**可选 `detail`**：错误响应的附加数据字段，仅 `EVICTED` 使用（`{reason, ended_at, by:{device_id, device_name, issued_at}}`，见 §6）；`errorBody` 仅在 `detail !== undefined` 时下发该键——缺失时响应形状与旧版完全一致（不出现 `"detail": null`）。
+- 实现：`ApiError(status, code, errorCode, message, detail?)`；各子路由 `attachErrorHandler`——handler 内 throw ApiError → 对应 status + errorBody；`SyntaxError`（畸形 JSON body）→ 400 BAD_PARAM；其余异常 → 500 INTERNAL（记 error 日志）。
 
 | HTTP | body `code` | `error_code` | 触发场景 | 说明 |
 |---|---|---|---|---|
 | 400 | 400 | `BAD_PARAM` | 空 word、登录缺 phone/device_id、非法 generate 日期、delivery 参数非法（difficulty/count）、编辑校验失败、畸形 JSON body | |
 | 400 | 40001 | `QUOTA_EXCEEDED` | 查词每日配额超限 | App 提示配额 |
 | 401 | 401 | `TOKEN_EXPIRED` | 未带/无效/过期 token；admin 用户名或密码错误（不区分，防枚举）；admin role 不符 | 重新登录 |
-| 401 | 401 | `EVICTED` | 会话被挤掉/登出（`iat != issued_at`） | 提示已在其他设备登录 |
+| 401 | 401 | `EVICTED` | 会话被挤掉/登出（`iat != issued_at`） | 提示已在其他设备登录；**可选 `detail{reason, ended_at, by{device_id, device_name, issued_at}}`**——被挤（`evicted`）/同设备重登（`relogin`）时记录可得则下发（`ended_at >= token.iat` 的最近一条，含同刻）；主动登出/老数据查不到 → 无 detail |
 | 403 | 403 | `BANNED` | 账号被封禁（先封禁后会话；login 同） | 提示账号被封禁 |
 | 404 | 404 | `NOT_FOUND` | 资源不存在 / 不可过审行（守卫不满足/重复审核）/ 不可编辑文章 / 槽位不存在 | |
 | 500 | 500 | `LLM_FATAL` | LLM 不可恢复错误（400/401/403） | |
@@ -390,9 +437,12 @@ flowchart TD
 
 ### 应用端（App JWT，`resolveAuthUser`）
 
+> 认证公开放行：`POST /api/auth/login` 与 `POST /api/auth/login/preview`；其余应用端端点均经 `requireAppAuth` 拦截。
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/auth/login` | `{phone, device_id, code?}` → `{token, expires_at}`；自动注册、2 设备挤掉 |
+| POST | `/api/auth/login` | `{phone, device_id, device_name?, code?}`（缺 phone/device_id → 400 BAD_PARAM）→ `{token, expires_at, evicted:[{device_id, device_name, issued_at, last_active_at}]}`；自动注册、2 设备挤掉（`evicted` = 本次实际被删会话，见 §6） |
+| POST | `/api/auth/login/preview` | 登录预览（公开，同 login）：`{phone, device_id}` → `{evicted:[…]}`；**纯模拟不落库**，此刻登录将被挤掉的设备（见 §6） |
 | POST | `/api/auth/logout` | 删除会话行（body `{device_id?}`） |
 | GET | `/api/auth/me` | `{phone}` |
 | POST | `/api/llm/word-lookup` | `{word}` → WordDetail（查词兜底，§5 链路） |
