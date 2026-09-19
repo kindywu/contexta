@@ -201,6 +201,59 @@ describe("auth", () => {
     // 严格早于签发时刻的结束事件属于更早的旧会话 → 不匹配
     expect(authService.evictionDetail(db, phone, "old", now + 1)).toBeUndefined();
   });
+
+  test("被挤设备 401 EVICTED 带 detail（谁、何时）", async () => {
+    // 直调 service 造带名字的会话：HTTP 路由的 device_name 透传属 Task 4（同 preview 用例）
+    const loginDevice = (device: string, name?: string) =>
+      authService.login(db, cfg, "13200000000", device, name);
+    const t1 = loginDevice("v1", "Xiaomi 14").token;
+    loginDevice("v2", "iPad");
+    loginDevice("v3", "iPhone 15 Pro"); // 挤掉 v1
+    const res = await login(t1); // 顶部辅助：GET /api/auth/me
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error_code).toBe("EVICTED");
+    expect(body.detail.reason).toBe("evicted");
+    expect(body.detail.by.device_id).toBe("v3");
+    expect(body.detail.by.device_name).toBe("iPhone 15 Pro");
+    expect(typeof body.detail.ended_at).toBe("number");
+  });
+
+  test("登出后的旧 token：401 EVICTED 无 detail（不编造设备）", async () => {
+    const loginRes = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "13200000001", device_id: "w1" }),
+    });
+    const token = (await loginRes.json()).data.token;
+    await app.request("/api/auth/logout", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ device_id: "w1" }),
+    });
+    const res = await login(token);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error_code).toBe("EVICTED");
+    expect(body.detail).toBeUndefined();
+  });
+
+  test("同设备重登的旧 token：detail.reason = relogin", async () => {
+    const loginDevice = () =>
+      app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: "13200000002", device_id: "x1" }),
+      });
+    const old = (await (await loginDevice()).json()).data.token;
+    await loginDevice();
+    const res = await login(old); // 顶部辅助：GET /api/auth/me
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error_code).toBe("EVICTED");
+    expect(body.detail.reason).toBe("relogin");
+    expect(body.detail.by.device_id).toBe("x1");
+  });
 });
 
 describe("admin login", () => {

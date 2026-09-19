@@ -8,6 +8,8 @@ export class ApiError extends Error {
     public readonly code: number,     // body.code
     public readonly errorCode: string,
     message: string,
+    /** 可选附加数据（随 error body 的 detail 字段下发；仅特定错误使用，如 EVICTED）。 */
+    public readonly detail?: unknown,
   ) {
     super(message);
   }
@@ -23,8 +25,9 @@ export function badRequest(message: string, errorCode = "BAD_PARAM"): ApiError {
 export function quotaExceeded(message: string): ApiError {
   return new ApiError(400, 40001, "QUOTA_EXCEEDED", message);
 }
-export function unauthorized(errorCode: string): ApiError {
-  return new ApiError(401, 401, errorCode, "unauthorized");
+/** [detail] 仅在提供时随响应下发（现有错误形状不变）。 */
+export function unauthorized(errorCode: string, detail?: unknown): ApiError {
+  return new ApiError(401, 401, errorCode, "unauthorized", detail);
 }
 /** 登录凭据错误（用户名不存在/密码错误）：与 token 过期的 TOKEN_EXPIRED 区分。
  *  统一响应不区分具体原因，防账号枚举；前端据此显示「用户名或密码错误」而非「登录已过期」。 */
@@ -54,8 +57,19 @@ export function internal(err: unknown): ApiError {
   return new ApiError(500, 500, "INTERNAL", "internal error");
 }
 
-export function errorBody(e: ApiError): { code: number; message: string; error_code: string } {
-  return { code: e.code, message: e.message, error_code: e.errorCode };
+export function errorBody(e: ApiError): {
+  code: number;
+  message: string;
+  error_code: string;
+  detail?: unknown;
+} {
+  const body: { code: number; message: string; error_code: string; detail?: unknown } = {
+    code: e.code,
+    message: e.message,
+    error_code: e.errorCode,
+  };
+  if (e.detail !== undefined) body.detail = e.detail;
+  return body;
 }
 
 /**

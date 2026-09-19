@@ -29,7 +29,11 @@ export function resolveAuthUser(
   }
   if (authService.isBanned(db, claims.sub)) throw banned("account banned");
   const issuedAt = authService.sessionIssuedAt(db, claims.sub, claims.device_id);
-  if (issuedAt !== claims.iat) throw unauthorized("EVICTED");
+  if (issuedAt !== claims.iat) {
+    // 被挤下线/重登：附上"谁在何时"（查不到记录——如主动登出——则不带 detail）
+    const detail = authService.evictionDetail(db, claims.sub, claims.device_id, claims.iat);
+    throw unauthorized("EVICTED", detail);
+  }
   return { phone: claims.sub, deviceId: claims.device_id };
 }
 
