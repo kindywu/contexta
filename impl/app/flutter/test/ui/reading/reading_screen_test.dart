@@ -192,7 +192,10 @@ Article makeSentenceScrollArticle() => Article(
   accumulatedReadSeconds: 0,
   readCompletedAt: null,
   paragraphs: [
-    for (var i = 0; i < 12; i++)
+    // 24 段而不是 12：待验证的段 5 后面必须有足够内容，否则「句首行对齐视口
+    // 1/3」的目标 offset 会超过 maxScrollExtent 被 clamp，断言量到的是滚动
+    // 上限而不是对齐规则（正文 22sp 后段落变高，12 段已不够）。
+    for (var i = 0; i < 24; i++)
       if (i == 5)
         const ArticleParagraph(
           id: 205,
@@ -228,6 +231,18 @@ double paragraphTop(WidgetTester tester, int index) {
   final finder = paragraphFinder(index);
   expect(finder, findsWidgets, reason: '段落 $index 应已构建');
   return tester.getTopLeft(finder).dy;
+}
+
+/// 把测试视口换成 800×1400 的高视口。
+///
+/// 默认测试视口 800×600 太矮：正文 22sp 后段落块高约 239（默认视口下近乎占满），
+/// 「段落顶部在 1/3 线上方 → 目标 offset 为负被 clamp」与「靠后的段落已构建」
+/// 这两个几何前提都不再成立。拉高视口是为了让这些用例继续验证真实规则，而不是
+/// 放宽断言——真机（411×731，视口约 600dp）上短段落走的就是这些分支。
+void useTallViewport(WidgetTester tester) {
+  tester.view.physicalSize = const Size(800, 1400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
 }
 
 /// 朗读段英文正文 RichText 中带底色的 span 的底色（无底色返回 null）。
@@ -696,6 +711,7 @@ void main() {
 
   group('自动滚动', () {
     testWidgets('全文朗读段落切换 → 滚动到视口 1/3 处', (tester) async {
+      useTallViewport(tester);
       stub.article = makeLongArticle();
       await pumpScreen(tester);
 
@@ -750,6 +766,7 @@ void main() {
     });
 
     testWidgets('按句滚动：当前句首行对齐视口 1/3（句内偏移叠加）', (tester) async {
+      useTallViewport(tester);
       stub.article = makeSentenceScrollArticle();
       await pumpScreen(tester);
 

@@ -77,11 +77,27 @@ void main() {
     expect(result.pageOf(1), 1);
   });
 
-  test('译文隐藏时段落更矮（同页能装下更多）', () {
+  test('译文隐藏时单块更矮（页高相同时每页装得下更多块）', () {
+    // 直接比单块高度而不是比「首页 usedHeight」：分页会尽可能往一页里塞块，
+    // 块变矮反而让首页塞进更多块、usedHeight 更大。
+    final paginator = buildPaginator();
+    double heightOf(TranslationMode mode) => paginator.heightOf(
+      shortA,
+      pageWidth: 530,
+      bodyTextScaler: TextScaler.noScaling,
+      labelTextScaler: TextScaler.noScaling,
+      translationMode: mode,
+    );
+
+    expect(heightOf(TranslationMode.hidden), lessThan(heightOf(TranslationMode.full)));
+
     final full = paginate([shortA, shortB, shortC], pageHeight: 200);
-    final hidden = paginate([shortA, shortB, shortC], pageHeight: 200, mode: TranslationMode.hidden);
+    final hidden = paginate(
+      [shortA, shortB, shortC],
+      pageHeight: 200,
+      mode: TranslationMode.hidden,
+    );
     expect(hidden.pages.length, lessThanOrEqualTo(full.pages.length));
-    expect(hidden.pages.first.usedHeight, lessThan(full.pages.first.usedHeight));
   });
 
   test('spreadCount 按两页一跨页向上取整', () {
