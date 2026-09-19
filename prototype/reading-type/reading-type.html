@@ -1,0 +1,340 @@
+<!doctype html>
+<!--
+  THROWAWAY PROTOTYPE — 阅读页排版（字号 / 行距 / 段间距）方案对比。
+  问题：参考图（别的英文阅读 App）的排版，折算成本项目的三种候选档位，选哪个？
+  A = 现状 18/14sp  B = 推荐 22/17sp（参考图对齐）  C = 大字 24/18sp
+
+  单位：1 CSS px = 1 dp（手机框宽 411dp；参考图按可调的逻辑宽度等比缩放显示）。
+  打开：open prototype/reading-type/reading-type.html
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>原型 · 阅读页排版对比</title>
+<style>
+  :root {
+    /* AppColors（lib/core/theme/app_colors.dart） */
+    --primary: #CC785C;
+    --canvas: #FAF9F5;
+    --surface-soft: #F5F0E8;
+    --surface-card: #EFE9DE;
+    --hairline: #E6DFD8;
+    --ink: #141413;
+    --body: #3D3D3A;
+    --muted: #6C6A64;
+    --muted-soft: #8E8B82;
+    /* 当前 variant 注入的阅读排版变量（默认 B） */
+    --en-size: 22px;  --en-lh: 34px;
+    --cn-size: 17px;  --cn-lh: 25px;
+    --cn-color: #6C6A64;
+    --gap-en-cn: 16px;
+    --gap-para: 28px;
+    --page-pad: 20px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 0 96px;
+    background: #DED9CE;
+    font-family: -apple-system, "Helvetica Neue", Inter, sans-serif;
+    color: var(--ink);
+  }
+  .stage {
+    display: flex; gap: 28px; align-items: flex-start;
+    padding: 28px; overflow-x: auto;
+  }
+  .col { flex: 0 0 auto; }
+  .col-title {
+    font-size: 13px; font-weight: 600; letter-spacing: .04em;
+    color: #5A553F; margin: 0 0 8px 2px; text-transform: uppercase;
+  }
+  .col-note { font-size: 12px; color: #6C6A64; margin: 6px 0 0 2px; max-width: 400px; line-height: 1.5; }
+
+  /* ── 手机框（411 × 731 dp，对照 AVD pixel）── */
+  .phone {
+    width: 411px; height: 731px; background: var(--canvas);
+    border-radius: 14px; overflow: hidden; position: relative;
+    display: flex; flex-direction: column;
+    box-shadow: 0 8px 28px rgba(20,20,19,.18);
+  }
+  /* ── 平板跨页（1280×800 dp，缩放显示）── */
+  .pad-wrap {
+    position: absolute; top: 0; left: 0; width: 1280px; height: 800px;
+    transform-origin: top left;
+  }
+  .pad {
+    width: 1280px; height: 800px; background: var(--canvas);
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 8px 28px rgba(20,20,19,.18);
+  }
+  /* 缩放 0.5 后视觉尺寸 640×400 */
+  .pad-clip { position: relative; width: 640px; height: 400px; }
+
+  /* ── 页面 chrome（对照 reading_screen.dart）── */
+  .progress { height: 3px; background: var(--primary); width: 38%; }
+  .appbar {
+    height: 56px; display: flex; align-items: center; gap: 12px;
+    padding: 0 var(--page-pad); flex: 0 0 auto;
+  }
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 18px; border: 1px solid var(--hairline);
+    display: grid; place-items: center; color: var(--body); font-size: 15px; background: var(--canvas);
+  }
+  .icon-btn.plain { border: none; }
+  .mode-pill {
+    font-size: 12px; font-weight: 600; letter-spacing: .06em; color: var(--muted);
+    border: 1px solid var(--hairline); border-radius: 999px; padding: 5px 10px;
+  }
+  .spacer { flex: 1; }
+
+  .scroll { flex: 1 1 auto; overflow: hidden; padding: 0 var(--page-pad); }
+  .title {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 28px; line-height: 34px; letter-spacing: -.3px; color: var(--ink);
+    margin: 0 0 16px;
+  }
+  .divider { height: 1px; background: var(--hairline); margin: 0 0 24px; }
+
+  /* ── 正文（RichText，默认 sans = Roboto/系统无衬线）── */
+  .en {
+    font-size: var(--en-size); line-height: var(--en-lh); color: var(--ink);
+    font-weight: 400; margin: 0;
+  }
+  .cn {
+    font-size: var(--cn-size); line-height: var(--cn-lh); color: var(--cn-color);
+    font-weight: 400; margin: 0;
+  }
+  .group { margin-bottom: var(--gap-para); }
+  .cn-block { margin-top: var(--gap-en-cn); }
+  /* 段尾内联播放钮（18dp，MutedSoft） */
+  .inline-play { display: inline-block; width: 18px; height: 18px; vertical-align: -4px; }
+  /* 生词珊瑚底纹（生词本高亮） */
+  .vocab { background: rgba(204,120,92,.22); border-radius: 2px; }
+
+  /* ── 底部播放条（ReadingPlayerBar）── */
+  .player {
+    flex: 0 0 auto; background: var(--surface-card);
+    padding: 12px 20px; display: flex; align-items: center; gap: 12px;
+  }
+  .play-btn {
+    width: 44px; height: 44px; border-radius: 22px; background: var(--primary);
+    display: grid; place-items: center; color: #fff;
+  }
+  .play-status { font-size: 14px; font-weight: 500; color: var(--body); }
+  .speed {
+    font-size: 12px; font-weight: 600; color: #fff; background: var(--primary);
+    border-radius: 6px; padding: 4px 8px;
+  }
+
+  /* ── 参考图（按逻辑宽度缩放，1 CSS px = 1 dp）── */
+  .ref-frame { overflow: hidden; border-radius: 14px; box-shadow: 0 8px 28px rgba(20,20,19,.18); }
+  .ref-frame img { display: block; width: 100%; }
+
+  /* ── 读数面板 ── */
+  .readout {
+    margin: 18px 28px 0; background: #fff; border-radius: 10px; padding: 14px 18px;
+    font: 12px/1.7 ui-monospace, "SF Mono", Menlo, monospace; color: #3D3D3A;
+    max-width: 900px; box-shadow: 0 2px 10px rgba(20,20,19,.08);
+  }
+  .readout b { color: #CC785C; }
+
+  /* ── 浮动切换条 ── */
+  .switcher {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 14px;
+    background: #181715; color: #FAF9F5; border-radius: 999px;
+    padding: 10px 16px; box-shadow: 0 8px 24px rgba(0,0,0,.28);
+    font-size: 13px; font-weight: 500; z-index: 99;
+  }
+  .switcher button {
+    background: none; border: 0; color: #FAF9F5; font-size: 16px;
+    cursor: pointer; padding: 2px 8px; border-radius: 6px;
+  }
+  .switcher button:hover { background: #35322D; }
+  .switcher .label { min-width: 210px; text-align: center; }
+  .switcher .sep { width: 1px; height: 18px; background: #4A463F; }
+  .switcher select {
+    background: #252320; color: #FAF9F5; border: 1px solid #4A463F;
+    border-radius: 6px; font-size: 12px; padding: 3px 6px;
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="col">
+    <h2 class="col-title">参考图（别的 App）</h2>
+    <div class="ref-frame" id="refFrame">
+      <img src="reference.jpg" alt="参考截图">
+    </div>
+    <p class="col-note" id="refNote"></p>
+  </div>
+
+  <div class="col">
+    <h2 class="col-title">手机 411dp（Contexta）</h2>
+    <div class="phone" id="phone"></div>
+    <p class="col-note">iPhone/Android 手机端阅读页，宽度 411dp（对照 AVD pixel）。</p>
+  </div>
+
+  <div class="col">
+    <h2 class="col-title">平板跨页 1280×800dp（缩放 0.5）</h2>
+    <div class="pad-clip">
+      <div class="pad-wrap" id="padWrap"><div class="pad" id="pad"></div></div>
+    </div>
+    <p class="col-note">平板书页模式左右两页；字号变大后每页可容纳的段落变少，分页由 ArticlePaginator 自动重算。</p>
+  </div>
+</div>
+
+<div class="readout" id="readout"></div>
+
+<div class="switcher">
+  <button id="prev" title="上一个（←）">◀</button>
+  <span class="label" id="swLabel"></span>
+  <button id="next" title="下一个（→）">▶</button>
+  <span class="sep"></span>
+  <label style="font-size:12px;display:flex;align-items:center;gap:6px">
+    参考图设备宽度
+    <select id="refWidth">
+      <option value="360">360dp</option>
+      <option value="393" selected>393dp</option>
+      <option value="411">411dp</option>
+    </select>
+  </label>
+</div>
+
+<script>
+// ── 文章内容（取自参考图那篇文章，便于逐行对照换行位置）──
+const TITLE = 'Where China’s Barbecue Culture Runs Deepest';
+const PARAS = [
+  { en: 'After hosting a lively festival, the city covered its streets with banners celebrating its beef, inviting visitors from around the world to discover a distinctive northern taste.',
+    cn: '在举办了一场盛况空前的节庆活动后，这座城市又让赞颂本地牛肉的横幅遍布街头，诚邀世界各地的游客前来领略独具特色的北方风味。',
+    vocab: ['festival', 'banners', 'distinctive'] },
+  { en: 'Qiqihar’s main competitors are not foreign pitmasters but other Chinese cities, each with its own grilling tradition.',
+    cn: '齐齐哈尔的主要对手并非外国烤肉大师，而是中国其他各有烧烤传统的城市。',
+    vocab: ['competitors', 'pitmasters', 'tradition'] },
+  { en: 'Barbecue has become a major part of China’s food culture, and the national market was valued at more than 600 billion yuan last year.',
+    cn: '烧烤已成为中国饮食文化的重要组成部分，去年全国市场规模超过六千亿元。',
+    vocab: ['culture', 'valued'] },
+  { en: 'Every summer, families gather around charcoal grills on the banks of the Nen River, and the smell of cumin and beef fat drifts across the whole city.',
+    cn: '每年夏天，家家户户都会聚集在嫩江边的炭火烤炉旁，孜然与牛油的香气弥漫整座城市。',
+    vocab: ['charcoal', 'cumin'] },
+];
+
+// ── 三个候选档位 ──
+const VARIANTS = {
+  A: { name: '现状 18/14sp', enSize: 18, enLh: 30, cnSize: 14, cnLh: 22, cnColor: '#8E8B82',
+       gapEnCn: 4, gapPara: 8, pad: 20 },
+  B: { name: '推荐 22/17sp（对齐参考图）', enSize: 22, enLh: 34, cnSize: 17, cnLh: 25, cnColor: '#6C6A64',
+       gapEnCn: 16, gapPara: 28, pad: 20 },
+  C: { name: '大字 24/18sp', enSize: 24, enLh: 37, cnSize: 18, cnLh: 27, cnColor: '#6C6A64',
+       gapEnCn: 16, gapPara: 28, pad: 20 },
+};
+
+const KEY = new URLSearchParams(location.search).get('variant') || 'B';
+const ORDER = ['A', 'B', 'C'];
+
+function paraHtml(p) {
+  let en = p.en;
+  for (const w of p.vocab) {
+    en = en.replace(new RegExp('\\b' + w + '\\b', 'gi'), m => `<span class="vocab">${m}</span>`);
+  }
+  return `
+    <div class="group">
+      <p class="en">${en}<span class="inline-play">🔊</span></p>
+      <div class="cn-block"><p class="cn">${p.cn}</p></div>
+    </div>`;
+}
+
+function pageChrome(inner) {
+  return `
+    <div class="progress"></div>
+    <div class="appbar">
+      <div class="icon-btn plain">←</div>
+      <span class="mode-pill">译文</span>
+      <span class="spacer"></span>
+      <div class="icon-btn">✓</div>
+    </div>
+    <div class="scroll">${inner}</div>
+    <div class="player">
+      <div class="play-btn">▶</div>
+      <span class="play-status">朗读全文</span>
+      <span class="spacer"></span>
+      <span class="speed">1x</span>
+    </div>`;
+}
+
+function render(v) {
+  const s = VARIANTS[v];
+  const root = document.documentElement.style;
+  root.setProperty('--en-size', s.enSize + 'px');
+  root.setProperty('--en-lh', s.enLh + 'px');
+  root.setProperty('--cn-size', s.cnSize + 'px');
+  root.setProperty('--cn-lh', s.cnLh + 'px');
+  root.setProperty('--cn-color', s.cnColor);
+  root.setProperty('--gap-en-cn', s.gapEnCn + 'px');
+  root.setProperty('--gap-para', s.gapPara + 'px');
+  root.setProperty('--page-pad', s.pad + 'px');
+
+  const paras = PARAS.map(paraHtml).join('');
+  document.getElementById('phone').innerHTML =
+    pageChrome(`<h1 class="title">${TITLE}</h1><div class="divider"></div>${paras}`);
+
+  // 平板跨页：左页 = 标题 + 前两段，右页 = 后两段（示意分页结果）
+  document.getElementById('pad').innerHTML = `
+    <div class="progress" style="width:26%"></div>
+    <div style="display:flex;flex:1 1 auto;overflow:hidden">
+      <div style="flex:1;padding:24px calc(var(--page-pad) + 20px);border-right:1px solid var(--hairline)">
+        <h1 class="title">${TITLE}</h1><div class="divider"></div>
+        ${PARAS.slice(0, 2).map(paraHtml).join('')}
+      </div>
+      <div style="flex:1;padding:24px calc(var(--page-pad) + 20px)">
+        ${PARAS.slice(2, 3).map(paraHtml).join('')}
+      </div>
+    </div>
+    <div style="height:56px;display:flex;align-items:center;justify-content:center;gap:10px;background:var(--surface-soft)">
+      <span class="mode-pill">1–2 / 4</span>
+      <span class="mode-pill">目录</span>
+    </div>`;
+
+  document.getElementById('swLabel').textContent = `${v} — ${s.name}`;
+  document.getElementById('readout').innerHTML =
+    `<b>${v} — ${s.name}</b><br>` +
+    `英文正文 font-size <b>${s.enSize}</b>px · line-height <b>${s.enLh}</b>px（${(s.enLh/s.enSize).toFixed(2)}×）<br>` +
+    `中文译文 font-size <b>${s.cnSize}</b>px · line-height <b>${s.cnLh}</b>px（${(s.cnLh/s.cnSize).toFixed(2)}×） · color <b>${s.cnColor}</b>${s.cnColor === '#8E8B82' ? '（mutedSoft）' : '（muted）'}<br>` +
+    `英文→译文间距 <b>${s.gapEnCn}</b>dp · 段落之间 <b>${s.gapPara}</b>dp · 左右留白 <b>${s.pad}</b>dp`;
+
+  document.querySelectorAll('.switcher button').forEach(() => {});
+  history.replaceState(null, '', '?variant=' + v);
+}
+
+function cycle(d) {
+  const cur = new URLSearchParams(location.search).get('variant') || 'B';
+  const i = ORDER.indexOf(cur);
+  render(ORDER[(i + d + ORDER.length) % ORDER.length]);
+}
+
+function setRefWidth(w) {
+  document.getElementById('refFrame').style.width = w + 'px';
+  const note = document.getElementById('refNote');
+  const enPx = 66 * w / 1156;   // 参考图英文正文实测 66 image px
+  const cnPx = 55 * w / 1156;
+  note.innerHTML = `参考图按 <b>${w}dp</b> 逻辑宽度显示（1 CSS px = 1 dp）。` +
+    `据此折算：英文正文 <b>${enPx.toFixed(1)}dp</b>、中文译文约 <b>${cnPx.toFixed(1)}dp</b>、` +
+    `英文行距约 <b>${(101 * w / 1156).toFixed(1)}dp</b>（1.5×）。` +
+    `如果你知道原图机型，把宽度调到对应值再做比对。`;
+}
+
+document.getElementById('prev').onclick = () => cycle(-1);
+document.getElementById('next').onclick = () => cycle(1);
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowLeft') cycle(-1);
+  if (e.key === 'ArrowRight') cycle(1);
+});
+document.getElementById('refWidth').onchange = e => setRefWidth(+e.target.value);
+
+document.getElementById('padWrap').style.transform = 'scale(0.5)';
+render(KEY in VARIANTS ? KEY : 'B');
+setRefWidth(393);
+</script>
+</body>
+</html>
