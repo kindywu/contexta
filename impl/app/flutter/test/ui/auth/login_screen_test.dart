@@ -236,11 +236,18 @@ void main() {
 
     testWidgets('BANNED → SnackBar 封禁文案，状态不变更', (tester) async {
       line1 = '13800000000';
-      adapter.handler = (options) async => _json(403, {
-            'code': 403,
-            'message': 'banned',
-            'error_code': 'BANNED',
-          });
+      // 预览放行：本用例测的是 login 返回 BANNED 的展示；若预览也 403，
+      // fail-closed 会在预览阶段拦截（且文案是「登录失败」），测不到本路径。
+      adapter.handler = (options) async {
+        if (options.uri.path == '/api/auth/login/preview') {
+          return _json(200, {'code': 0, 'data': {'evicted': []}});
+        }
+        return _json(403, {
+          'code': 403,
+          'message': 'banned',
+          'error_code': 'BANNED',
+        });
+      };
 
       await pumpLogin(tester);
       await tester.tap(find.text('本机号码快速登录'));
@@ -304,6 +311,144 @@ void main() {
 
       expect(find.widgetWithText(SnackBar, '请输入 11 位手机号'), findsOneWidget);
       expect(adapter.lastRequest, isNull);
+    });
+  });
+
+  group('登录预览确认框', () {
+    Future<ResponseBody> previewThenLogin(
+        RequestOptions options, List<String> paths) async {
+      paths.add(options.uri.path);
+      if (options.uri.path == '/api/auth/login/preview') {
+        return _json(200, {
+          'code': 0,
+          'data': {
+            'evicted': [
+              {'device_id': 'old1', 'device_name': 'Xiaomi 14', 'issued_at': 1758000000000}
+            ]
+          }
+        });
+      }
+      return _json(200, {'code': 0, 'data': {'token': 'tok-1', 'expires_at': 9999999999}});
+    }
+
+    testWidgets('预览会挤人 → 弹确认框；取消 → 不登录不挤人', (tester) async {
+      final paths = <String>[];
+      adapter.handler = (options) => previewThenLogin(options, paths);
+      line1 = '13800000000';
+      await pumpLogin(tester);
+
+      await tester.tap(find.text('本机号码快速登录'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('将有一台设备退出登录'), findsOneWidget);
+      expect(find.textContaining('Xiaomi 14 · old1'), findsOneWidget);
+
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('将有一台设备退出登录'), findsNothing);
+      expect(paths.where((p) => p == '/api/auth/login'), isEmpty); // 未登录
+      expect(settings.settings.serverToken, isNull);
+      expect(find.text('本机号码快速登录'), findsOneWidget); // loading 已复位
+    });
+
+    testWidgets('确认「继续登录」→ 调 login 并成功回跳', (tester) async {
+      final paths = <String>[];
+      adapter.handler = (options) => previewThenLogin(options, paths);
+      line1 = '13800000000';
+      await pumpLogin(tester);
+
+      await tester.tap(find.text('本机号码快速登录'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('继续登录'));
+      await tester.pumpAndSettle();
+
+      expect(paths, contains('/api/auth/login'));
+      expect(settings.settings.serverToken, 'tok-1');
+      expect(find.text('home'), findsOneWidget); // 登录成功回跳
+      expect(find.byType(SnackBar), findsNothing); // 实际挤人 = 预览 → 不提示差异
+    });
+
+    testWidgets('预览为空 → 不弹框直接登录', (tester) async {
+      final paths = <String>[];
+      adapter.handler = (options) async {
+        paths.add(options.uri.path);
+        if (options.uri.path == '/api/auth/login/preview') {
+          return _json(200, {'code': 0, 'data': {'evicted': []}});
+        }
+        return _json(200, {'code': 0, 'data': {'token': 'tok-2', 'expires_at': 9999999999}});
+      };
+      line1 = '13800000000';
+      await pumpLogin(tester);
+
+      await tester.tap(find.text('本机号码快速登录'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('将有一台设备退出登录'), findsNothing);
+      expect(paths, contains('/api/auth/login/preview')); // 确实走了预览
+      expect(paths, contains('/api/auth/login'));
+    });
+
+    testWidgets('预览服务端错误（fail-closed）→ 不登录、有提示、loading 复位',
+        (tester) async {
+      final paths = <String>[];
+      adapter.handler = (options) async {
+        paths.add(options.uri.path);
+        return _json(500, {
+          'code': 500,
+          'message': 'boom',
+          'error_code': 'INTERNAL',
+        });
+      };
+      line1 = '13800000000';
+      await pumpLogin(tester);
+
+      await tester.tap(find.text('本机号码快速登录'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('登录失败，请稍后重试'), findsOneWidget);
+      expect(paths, isNot(contains('/api/auth/login'))); // 预览失败不登录
+      expect(settings.settings.serverToken, isNull);
+      expect(find.text('本机号码快速登录'), findsOneWidget); // loading 已复位
+    });
+
+    testWidgets('并发差异：实际挤掉的与预览不同 → 登录成功并提示实际设备',
+        (tester) async {
+      final paths = <String>[];
+      adapter.handler = (options) async {
+        paths.add(options.uri.path);
+        if (options.uri.path == '/api/auth/login/preview') {
+          return _json(200, {
+            'code': 0,
+            'data': {
+              'evicted': [
+                {'device_id': 'old1', 'device_name': 'Xiaomi 14', 'issued_at': 1758000000000}
+              ]
+            }
+          });
+        }
+        // 预览说 old1，实际挤掉的是 old2（并发下另一台先登录）
+        return _json(200, {
+          'code': 0,
+          'data': {
+            'token': 'tok-1',
+            'expires_at': 9999999999,
+            'evicted': [
+              {'device_id': 'old2', 'device_name': 'iPad', 'issued_at': 1758000000000}
+            ]
+          }
+        });
+      };
+      line1 = '13800000000';
+      await pumpLogin(tester);
+
+      await tester.tap(find.text('本机号码快速登录'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('继续登录'));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(SnackBar, '已将《iPad · old2》挤下线'), findsOneWidget);
+      expect(find.text('home'), findsOneWidget); // 差异不阻断登录
     });
   });
 }
