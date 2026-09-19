@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../data/auth/auth_service.dart';
+import '../platform/system_chrome_inset.dart';
 import '../../ui/addword/add_word_screen.dart';
 import '../../ui/auth/login_screen.dart';
 import '../../pad/pad_home_screen.dart';
@@ -124,8 +125,11 @@ GoRouter buildRouter({
       ),
       GoRoute(
         path: Routes.addWord,
-        builder: (context, state) =>
-            AddWordScreen(onBack: () => context.pop()),
+        builder: (context, state) => AddWordScreen(
+          onBack: () => context.pop(),
+          // 平板：顶栏左端让位系统「窗口控件」（iPadOS 26+ 会盖住返回键）
+          leadingInset: isPad ? systemWindowControlsLeftInset : 0,
+        ),
       ),
       GoRoute(
         path: Routes.login,

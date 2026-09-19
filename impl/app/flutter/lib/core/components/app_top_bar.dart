@@ -7,25 +7,32 @@ import 'app_button.dart';
 
 /// 统一顶栏：44dp 返回钮（MutedSoft）+ serif 标题 + 右侧 actions 槽位。
 /// 对照 Kotlin ui/components/AppTopBar.kt。
+///
+/// [leadingInset]：左端额外让位（跑在平板上时传系统「窗口控件」让位值，
+/// 见 [systemWindowControlsLeftInset]；手机树传 0）。默认 0 = 原布局。
 class AppTopBar extends StatelessWidget {
   const AppTopBar({
     super.key,
     required this.title,
     this.onBack,
     this.actions = const [],
+    this.leadingInset = 0,
   });
 
   final String title;
   final VoidCallback? onBack;
   final List<Widget> actions;
+  final double leadingInset;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: AppColors.background,
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 6,
+      padding: EdgeInsets.only(
+        left: AppSpacing.sm + leadingInset,
+        right: AppSpacing.sm,
+        top: 6,
+        bottom: 6,
       ),
       child: Row(
         children: [

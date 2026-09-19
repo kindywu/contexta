@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'data/background/sync_callback_dispatcher.dart';
+import 'data/remote/server_trust.dart';
 import 'core/platform/app_orientation.dart';
 import 'core/platform/device_form_factor.dart';
 import 'core/theme/app_theme.dart';
@@ -20,8 +21,8 @@ Future<void> main() async {
   // 原生侧（AndroidManifest）覆盖引擎启动前的启动窗口（闪屏期）；
   // 此处覆盖引擎启动后的运行期旋转。详见 docs/app-orientation.md。
   await applyOrientationPolicy(formFactor);
-  // 自签名 HTTPS 信任锚：预载内嵌证书（Dart TLS 栈不读 Android NSC，必须显式注入，
-  // 见 di/providers.dart；失败仅告警，本地开发/无证书场景继续默认信任库）
+  // 自签名 HTTPS 证书钉扎：预载内嵌证书（Dart TLS 栈不读系统信任配置，必须显式注入，
+  // 见 data/remote/server_trust.dart；失败仅告警，本地开发/无证书场景继续默认信任库）
   await loadServerTrustCert();
   // 2026-08-14（计划 B Task 8）：workmanager 换每日同步任务——
   // 定时拉取服务端已审核文章（幂等 upsert）。首次任务延迟 2h

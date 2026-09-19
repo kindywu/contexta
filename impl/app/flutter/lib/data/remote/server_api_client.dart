@@ -184,8 +184,9 @@ class ServerApiClient {
           if (_notifiedAuthKinds.add(kind)) {
             try {
               _authCallback?.call(kind, detail);
-            } catch (_) {
-              // 回调自身异常不得覆盖原始 ServerApiException
+            } catch (cbErr) {
+              // 回调自身异常不得覆盖原始 ServerApiException —— 但必须留痕
+              debugPrint('[ServerApiClient] authCallback threw: $cbErr');
             }
           }
         }

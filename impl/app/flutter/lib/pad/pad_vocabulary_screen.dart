@@ -7,6 +7,7 @@ import '../core/theme/app_colors.dart';
 import '../core/theme/app_dimens.dart';
 import '../core/theme/app_type.dart';
 import '../ui/vocabulary/vocabulary_controller.dart';
+import 'pad_layout.dart';
 import '../ui/vocabulary/vocabulary_screen.dart' show VocabularyCard;
 
 /// Pad 生词本：**闪卡居中 + 右侧统计栏**。
@@ -160,6 +161,9 @@ class _PadVocabularyScreenState extends ConsumerState<PadVocabularyScreen> {
 }
 
 /// 顶栏：返回 + 进度（第 N / 共 M）+ 录入生词。
+///
+/// 左端为系统「窗口控件」让位（[PadLayout.windowControlsLeftInset]，仅 iOS 非零）：
+/// iPadOS 26+ 窗口化时左上角的「…」胶囊画在内容之上，会盖住返回键（实测）。
 class _PadVocabularyTopBar extends StatelessWidget {
   const _PadVocabularyTopBar({
     required this.currentIndex,
@@ -176,8 +180,8 @@ class _PadVocabularyTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.sm,
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.sm + PadLayout.windowControlsLeftInset,
         6,
         AppSpacing.sm,
         6,

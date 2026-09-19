@@ -2,6 +2,7 @@ import 'package:contexta/core/components/app_badge.dart';
 import 'package:contexta/core/components/app_button.dart';
 import 'package:contexta/core/components/app_card.dart';
 import 'package:contexta/core/components/app_modal.dart';
+import 'package:contexta/core/components/app_top_bar.dart';
 import 'package:contexta/core/components/bottom_nav_bar.dart';
 import 'package:contexta/core/components/loading_indicator.dart';
 import 'package:contexta/core/theme/app_colors.dart';
@@ -223,6 +224,36 @@ void main() {
 
       expect(find.text('暂无文章'), findsOneWidget);
       expect(find.text('去设置里调整'), findsOneWidget);
+    });
+  });
+
+  group('AppTopBar（左上角让位）', () {
+    testWidgets('leadingInset 把返回键整体右推（平板避让系统窗口控件）',
+        (tester) async {
+      await tester.pumpWidget(wrap(Column(children: [
+        AppTopBar(title: '录入单词', onBack: () {}, leadingInset: 0),
+        AppTopBar(title: '录入单词', onBack: () {}, leadingInset: 96),
+      ])));
+
+      final bars = find.byType(AppTopBar);
+      final back0 = find.descendant(of: bars.first, matching: find.byType(Icon));
+      final back96 = find.descendant(of: bars.last, matching: find.byType(Icon));
+      final dx0 = tester.getTopLeft(back0).dx;
+      final dx96 = tester.getTopLeft(back96).dx;
+
+      expect(dx96 - dx0, closeTo(96, 0.5));
+    });
+
+    testWidgets('默认（手机树）不加让位：leadingInset 缺省等价于 0', (tester) async {
+      await tester.pumpWidget(wrap(Column(children: [
+        AppTopBar(title: 'T', onBack: () {}),
+        AppTopBar(title: 'T', onBack: () {}, leadingInset: 0),
+      ])));
+      final bars = find.byType(AppTopBar);
+      double backDx(Finder bar) => tester
+          .getTopLeft(find.descendant(of: bar, matching: find.byType(Icon)))
+          .dx;
+      expect(backDx(bars.first), backDx(bars.last));
     });
   });
 }

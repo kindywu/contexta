@@ -206,8 +206,10 @@ class AuthService extends StateNotifier<AuthState> {
   Future<void> _validateSession() async {
     try {
       await _api.me();
-    } catch (_) {
-      // 网络失败 / 401：后者已由 handleServerFailure 处理，此处不重复
+    } catch (e) {
+      // 网络失败 / 401：后者已由 handleServerFailure 处理，此处不重复处理。
+      // 仍要留痕——「失败但保持本地登录态」这一决策必须可诊断（不静默吞错）。
+      debugPrint('[AuthService] session validation failed (keep local login): $e');
     }
   }
 
@@ -221,12 +223,15 @@ class AuthService extends StateNotifier<AuthState> {
           ? const LoginImpact(LoginImpactKind.clear)
           : LoginImpact(LoginImpactKind.willEvict, preview.evicted);
     } on ServerApiException catch (e) {
+      debugPrint('[AuthService] preview failed: code=${e.errorCode} '
+          'status=${e.statusCode} msg=${e.message}');
       return LoginImpact(
         e.errorCode == 'NETWORK'
             ? LoginImpactKind.networkError
             : LoginImpactKind.serverError,
       );
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[AuthService] preview UNEXPECTED: $e\n$st');
       return const LoginImpact(LoginImpactKind.serverError);
     }
   }
@@ -305,8 +310,9 @@ class AuthService extends StateNotifier<AuthState> {
     try {
       final deviceId = await _deviceId();
       await _api.logout(deviceId: deviceId);
-    } catch (_) {
-      // 登出接口失败也继续本地登出
+    } catch (e) {
+      // 登出接口失败也继续本地登出（用户意图不能被网络失败阻断），但要留痕
+      debugPrint('[AuthService] logout API failed (continuing local logout): $e');
     }
     await _settings.clearAuth();
     state = const AuthState(status: AuthStatus.loggedOut);
@@ -373,8 +379,10 @@ class AuthService extends StateNotifier<AuthState> {
         endedAtMillis: endedAt.toInt(),
         by: SessionDevice.fromJson(by),
       );
-    } catch (_) {
-      // by 形状通过但字段缺失 / 类型不符 → 通用通知（by=null），不编造设备
+    } catch (e) {
+      // by 形状通过但字段缺失 / 类型不符 → 通用通知（by=null），不编造设备；留痕
+      debugPrint('[AuthService] malformed eviction detail.by, '
+          'falling back to generic notice: $e');
       return EvictionNotice(
         reason: reason,
         endedAtMillis: DateTime.now().millisecondsSinceEpoch,
