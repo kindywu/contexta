@@ -134,14 +134,19 @@ class _PillTextButton extends StatelessWidget {
   }
 }
 
-/// 沉浸态常驻的退出入口：书页左上角的浅底圆形返回键。
+/// 沉浸态常驻的退出入口：书页**左下角**（页码带左端）的浅底圆形返回键。
 ///
 /// 唤出工具栏时它淡出，把位置让给顶栏里的返回键——两处是同一个动作，同时
 /// 出现就是两个箭头抢一次点击。屏幕上因此**永远恰好有一个**返回入口：
 /// 收起态是这个圆键，唤出态是顶栏左端那个。
 ///
-/// 尺寸取 [AppPage.minTouchTarget] 并**贴到屏幕最左**：书页在 1280dp 横屏上
-/// 距屏幕左边只有 50dp（居中留白），按钮再往右就会切进正文标题的第一个字母。
+/// 位置在 2026-09-19 从左上角移到左下角：iPadOS 26+ 窗口化时系统「窗口控件」
+/// （左上角 … 胶囊）悬浮在应用内容之上，正好盖住原来的位置。左下角落在正文
+/// 已经让出的页码带里（`PadLayout.pagePillRowHeight`），既不压正文标题，也不与
+/// 任何系统控件重叠；横向仍贴屏幕左缘（书页在 1280dp 横屏上距左边只有 50dp，
+/// 按钮再往右就会切进标题的第一个字母）。
+///
+/// 尺寸取 [AppPage.minTouchTarget]。
 class PadReadingFloatingBack extends StatelessWidget {
   const PadReadingFloatingBack({super.key, required this.onBack});
 
@@ -177,6 +182,9 @@ class PadReadingFloatingBack extends StatelessWidget {
 /// 平板横向空间充裕，标题直接放顶栏（手机上标题在正文流里）。
 /// 左端的返回键与收起态常驻的 [PadReadingFloatingBack] 是同一个动作的两副
 /// 面孔：唤出时后者淡出，本栏滑入接替，读者眼里始终有一个返回入口。
+///
+/// 左端内容在 iOS 上额外右让 [PadLayout.windowControlsLeftInset]：iPadOS 26+
+/// 窗口化时系统「窗口控件」悬浮在左上角，否则会盖住返回键（2026-09-19 实测）。
 class PadReadingTopBar extends StatelessWidget {
   const PadReadingTopBar({
     super.key,
@@ -198,7 +206,11 @@ class PadReadingTopBar extends StatelessWidget {
     return Container(
       height: PadLayout.chromeTopBarHeight,
       color: AppColors.background,
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+      // 左端为系统「窗口控件」让位（仅 iOS 非零，见 PadLayout.windowControlsLeftInset）
+      padding: EdgeInsets.only(
+        left: AppSpacing.sm + PadLayout.windowControlsLeftInset,
+        right: AppSpacing.sm,
+      ),
       child: Row(
         children: [
           IconButton(
