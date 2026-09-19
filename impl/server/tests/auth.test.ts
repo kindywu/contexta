@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { ensureServerSchema, seedAdminIfNeeded } from "../src/db";
 import { authRouter } from "../src/routers/auth";
+import { authService } from "../src/services/auth_service";
 import { adminRouter } from "../src/routers/admin";
 import { resolveAuthUser } from "../src/auth";
 import { loadServerConfig } from "../src/config";
@@ -79,25 +80,14 @@ describe("auth", () => {
   });
 
   test("preview：第 3 台设备将挤掉最旧会话（含设备名与时间）且无副作用", async () => {
-    const loginDevice = (device: string, name?: string) =>
-      app.request("/api/auth/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ phone: "13300000000", device_id: device, device_name: name }),
-      });
-    const t1 = (await (await loginDevice("p1", "Xiaomi 14")).json()).data.token;
-    await loginDevice("p2", "iPad");
-    const res = await app.request("/api/auth/login/preview", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "13300000000", device_id: "p3" }),
-    });
-    expect(res.status).toBe(200);
-    const { data } = await res.json();
-    expect(data.evicted).toHaveLength(1);
-    expect(data.evicted[0].device_id).toBe("p1");
-    expect(data.evicted[0].device_name).toBe("Xiaomi 14");
-    expect(typeof data.evicted[0].issued_at).toBe("number");
+    // 直调 service：HTTP 路由的 device_name 透传属 Task 4，预置带名字的会话只能走 service
+    const t1 = authService.login(db, cfg, "13300000000", "p1", "Xiaomi 14").token;
+    authService.login(db, cfg, "13300000000", "p2", "iPad");
+    const evicted = authService.previewEvictions(db, "13300000000", "p3");
+    expect(evicted).toHaveLength(1);
+    expect(evicted[0].device_id).toBe("p1");
+    expect(evicted[0].device_name).toBe("Xiaomi 14");
+    expect(typeof evicted[0].issued_at).toBe("number");
     // 预览无副作用：p1 的既有 token 仍有效
     expect((await login(t1)).status).toBe(200); // login() = 文件顶部 /api/auth/me 辅助
   });
@@ -111,12 +101,7 @@ describe("auth", () => {
       });
     await loginDevice("q1");
     await loginDevice("q2");
-    const res = await app.request("/api/auth/login/preview", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ phone: "13300000001", device_id: "q1" }),
-    });
-    expect((await res.json()).data.evicted).toEqual([]);
+    expect(authService.previewEvictions(db, "13300000001", "q1")).toEqual([]);
   });
 
   test("login：第 3 台登录返回实际挤掉的设备", async () => {
