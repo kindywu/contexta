@@ -335,6 +335,11 @@ class AuthService extends StateNotifier<AuthState> {
   }
 
   /// 解析服务端 detail（缺失/畸形 → 通用通知，不编造设备）。
+  ///
+  /// **绝不抛**：401 回调是 fire-and-forget（ServerApiClient 的 void 回调字段
+  /// 接不住 rejected Future），一旦抛出就是「token 已清但状态未置」的残局，
+  /// 且该 kind 已进去重集合不会再通知。故 `by` 除形状检查外再兜一层
+  /// try/catch：形状对但字段缺失 / 类型不符（脏数据、老服务端）同样回退。
   EvictionNotice _noticeFromDetail(Map<String, dynamic>? detail) {
     final endedAt = detail?['ended_at'];
     final by = detail?['by'];
@@ -347,10 +352,18 @@ class AuthService extends StateNotifier<AuthState> {
         endedAtMillis: DateTime.now().millisecondsSinceEpoch,
       );
     }
-    return EvictionNotice(
-      reason: reason,
-      endedAtMillis: endedAt.toInt(),
-      by: SessionDevice.fromJson(by),
-    );
+    try {
+      return EvictionNotice(
+        reason: reason,
+        endedAtMillis: endedAt.toInt(),
+        by: SessionDevice.fromJson(by),
+      );
+    } catch (_) {
+      // by 形状通过但字段缺失 / 类型不符 → 通用通知（by=null），不编造设备
+      return EvictionNotice(
+        reason: reason,
+        endedAtMillis: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
   }
 }

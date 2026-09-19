@@ -513,6 +513,29 @@ void main() {
       expect(notice.endedAtMillis, 1758000000999);
     });
 
+    test('detail.by 畸形（形状对但缺字段）→ 不抛，回退通用通知 + token 已清', () async {
+      await _seedAuth(
+        db,
+        phone: '13800000000',
+        token: 'tok',
+        expiresAtMillis: DateTime.now().millisecondsSinceEpoch + 3600000,
+      );
+
+      // by 非空对象但缺 device_id / issued_at（脏数据 / 老服务端）：
+      // SessionDevice.fromJson 会抛 TypeError —— 401 回调 fire-and-forget，
+      // 抛出即「token 已清但状态未置」的残局，必须回退通用通知
+      await service.handleServerFailure(AuthFailureKind.evicted, {
+        'reason': 'evicted',
+        'ended_at': 1758000000123,
+        'by': <String, dynamic>{},
+      });
+
+      expect(service.state.status, AuthStatus.evicted);
+      expect(service.state.evictionNotice, isNotNull);
+      expect(service.state.evictionNotice!.by, isNull); // 通用通知，不编造设备
+      expect((await dao.get())!.serverToken, isNull);   // token 已清
+    });
+
     test('启动校验：本地 token 有效但服务端已踢 → evicted + 通知', () async {
       final now = DateTime.now().millisecondsSinceEpoch;
       await _seedAuth(db, phone: '13800000000', token: 'tok-valid', expiresAtMillis: now + 3600000);
