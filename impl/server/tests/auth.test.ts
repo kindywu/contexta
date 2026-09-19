@@ -142,6 +142,65 @@ describe("auth", () => {
     });
     expect(rows()).toHaveLength(2);
   });
+
+  test("被挤行 by_device_name：下手设备本次不带名且无已存会话 → 不臆造（null）", async () => {
+    const phone = "13300000004";
+    // 直调 service：HTTP 路由的 device_name 透传属 Task 4（同 preview 用例）
+    const loginDevice = (device: string, name?: string) =>
+      authService.login(db, cfg, phone, device, name);
+    loginDevice("t1", "iPad");
+    loginDevice("t2", "Galaxy");
+    loginDevice("t3", "Pixel"); // 挤掉 t1（issued_at 最旧）
+    loginDevice("t4", "Watch"); // 挤掉 t2 → t2 的会话行已被删除
+    loginDevice("t2"); // 不带名字重登：本次挤掉 t3
+    const row = db
+      .query(
+        `SELECT by_device_id, by_device_name FROM device_evictions
+         WHERE phone = ? AND device_id = 't3' AND reason = 'evicted' ORDER BY id DESC LIMIT 1`,
+      )
+      .get(phone) as { by_device_id: string; by_device_name: string | null };
+    expect(row.by_device_id).toBe("t2");
+    // t2 的会话行已被 t4 挤掉，没有可回退的名字（会话表 ≤2 行 ⟹ 下手方若已有会话就不会挤人）
+    expect(row.by_device_name).toBe(null);
+  });
+
+  test("被挤行 by_device_name：存量库 >2 条会话时回退下手设备已存名字", async () => {
+    const phone = "13300000005";
+    // 直接造 3 条会话行：login 的裁剪不变量保证线上 ≤2 行，但存量/asset 库可能遗留更多
+    const now = Date.now();
+    const ins = db.query(
+      "INSERT INTO device_sessions (phone, device_id, device_name, issued_at, last_active_at) VALUES (?, ?, ?, ?, ?)",
+    );
+    ins.run(phone, "d1", "iPad", now, now);
+    ins.run(phone, "d2", "Galaxy", now + 1, now + 1);
+    ins.run(phone, "d3", "Pixel", now + 2, now + 2);
+    // d3 不带名字重登：previous 命中 d3（已存名字 'Pixel'），本次挤掉最旧的 d1
+    const { evicted } = authService.login(db, cfg, phone, "d3");
+    expect(evicted.map((e) => e.device_id)).toEqual(["d1"]);
+    const row = db
+      .query(
+        `SELECT by_device_id, by_device_name FROM device_evictions
+         WHERE phone = ? AND device_id = 'd1' AND reason = 'evicted' ORDER BY id DESC LIMIT 1`,
+      )
+      .get(phone) as { by_device_id: string; by_device_name: string | null };
+    expect(row.by_device_id).toBe("d3");
+    expect(row.by_device_name).toBe("Pixel"); // 回退 prior 已存名字（修复前为 null）
+  });
+
+  test("evictionDetail：结束与签发同刻（ended_at == sinceIssuedAt）仍算本 token 的失效事件", async () => {
+    const phone = "13300000006";
+    const now = Date.now();
+    db.query(
+      `INSERT INTO device_evictions
+         (phone, device_id, device_name, reason, ended_at, by_device_id, by_device_name, by_issued_at, created_at)
+       VALUES (?, 'old', 'iPad', 'evicted', ?, 'new', 'Pixel', ?, ?)`,
+    ).run(phone, now, now + 1, now);
+    const detail = authService.evictionDetail(db, phone, "old", now);
+    expect(detail?.reason).toBe("evicted");
+    expect(detail?.by.device_name).toBe("Pixel");
+    // 严格早于签发时刻的结束事件属于更早的旧会话 → 不匹配
+    expect(authService.evictionDetail(db, phone, "old", now + 1)).toBeUndefined();
+  });
 });
 
 describe("admin login", () => {

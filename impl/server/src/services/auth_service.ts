@@ -142,7 +142,7 @@ export const authService = {
         reason: "evicted",
         endedAt: now,
         byDeviceId: deviceId,
-        byDeviceName: deviceName ?? null,
+        byDeviceName: deviceName ?? previous?.device_name ?? null,
         byIssuedAt: issuedAt,
       });
     }
@@ -185,11 +185,14 @@ export const authService = {
     deviceId: string,
     sinceIssuedAt: number,
   ): EvictionDetail | undefined {
+    // 会话签发时刻起的结束事件（含同刻）才是让该 token 失效的事件；
+    // ended_at 严格小于 sinceIssuedAt 的属于更早的旧会话，不能作为本次失效原因。
+    // （issued_at 单调 +1 抬升，端到端极快时 ended_at == token.iat 完全可能，用 > 会漏报）
     const row = db
       .query(
         `SELECT reason, ended_at, by_device_id, by_device_name, by_issued_at
          FROM device_evictions
-         WHERE phone = ? AND device_id = ? AND ended_at > ?
+         WHERE phone = ? AND device_id = ? AND ended_at >= ?
          ORDER BY id DESC LIMIT 1`,
       )
       .get(phone, deviceId, sinceIssuedAt) as
