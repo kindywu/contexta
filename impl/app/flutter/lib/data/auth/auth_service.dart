@@ -313,6 +313,8 @@ class AuthService extends StateNotifier<AuthState> {
   }
 
   /// ServerApiClient 401 回调：清 token + 按类别置状态；EVICTED 组装一次性通知。
+  /// tokenExpired / banned 分支**保留**待展示通知（与 [clearKickedStatus] 同理：
+  /// 通知只由 UI 经 [consumeEvictionNotice] 消费，不被状态变更吞掉）。
   /// [detail]：服务端 error body 的 detail（仅 EVICTED 携带「谁 / 何时挤掉本机」），
   /// 缺失 / 畸形 → 通用通知（不编造设备）。
   Future<void> handleServerFailure(
@@ -323,14 +325,27 @@ class AuthService extends StateNotifier<AuthState> {
     await _settings.clearAuth();
     switch (kind) {
       case AuthFailureKind.tokenExpired:
-        state = const AuthState(status: AuthStatus.loggedOut);
+        // 保留待展示通知：被踢提示可能还挂在屏幕上（未消费），此时任何携带
+        // 空 token 的受保护请求都会返回 TOKEN_EXPIRED——整体替换状态会凭空
+        // 吞掉「谁在何时登录、本机已退出」这一核心信息（与 clearKickedStatus 同理）。
+        state = AuthState(
+          status: AuthStatus.loggedOut,
+          phone: state.phone,
+          tokenExpiresAt: state.tokenExpiresAt,
+          evictionNotice: state.evictionNotice,
+        );
       case AuthFailureKind.evicted:
         state = AuthState(
           status: AuthStatus.evicted,
           evictionNotice: _noticeFromDetail(detail),
         );
       case AuthFailureKind.banned:
-        state = const AuthState(status: AuthStatus.banned);
+        state = AuthState(
+          status: AuthStatus.banned,
+          phone: state.phone,
+          tokenExpiresAt: state.tokenExpiresAt,
+          evictionNotice: state.evictionNotice,
+        );
     }
   }
 

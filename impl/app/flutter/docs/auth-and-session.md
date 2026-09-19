@@ -305,6 +305,7 @@ classDiagram
 |------|------|
 | 预览网络失败 / 超时 | `LoginImpact.networkError` → SnackBar「网络不可用，请检查网络后重试」；**不登录**（fail-closed） |
 | 预览其他错误（400 / 5xx / 畸形） | `LoginImpact.serverError` → SnackBar「登录失败，请稍后重试」；**不登录** |
+| 服务端为旧版本（无 `POST /api/auth/login/preview`，404 → `UNKNOWN`） | 同上：`serverError` →「登录失败，请稍后重试」；**不登录**（fail-closed）。**无降级路径**——须先升级服务端（部署顺序见 server `config-and-deploy.md` §5.2） |
 | 预览会挤人 + 用户取消 | 停在登录页，不调登录接口、不挤人 |
 | 登录 403 `BANNED` | `AuthResult.banned` → SnackBar「账号已被封禁，无法登录」；同时 403 认证回调置 `banned`（守卫随即清为 `loggedOut`，本地浏览不受影响） |
 | 登录网络失败 / 其他错误 | `AuthResult.networkError` / `serverError` → 对应 SnackBar；方法不抛异常 |
@@ -364,6 +365,7 @@ sequenceDiagram
 |------|------|
 | **通知仅内存、进程被杀即丢** | 被踢提示不落库（App 无表变更）。被踢与展示之间进程被杀 → 提示丢失；token 已清，下次启动按未登录处理（不会误报，只是看不到原因）。服务端账本仍在，可查。 |
 | **预览是公开接口** | 知道手机号者可查询该号的设备名与登录时间。当前账号模型本就是"手机号免密登录"（知道手机号即可登录并拿到全部数据），未新增暴露类别；`code` 字段保留给未来验证码升级。 |
+| **登录硬依赖服务端预览端点** | 登录三步的第一步是 `POST /api/auth/login/preview`，且 preview 非 `clear` 一律不登录（fail-closed）。**旧服务端 + 新 App = 登录不可用**（preview 404 → `serverError`，无降级路径）——部署必须服务端先于 / 随 App 一起升级（见 server `config-and-deploy.md` §5.2）；反向（新服务端 + 旧 App）兼容。 |
 | **静默重登不自动挤人** | 会挤人即放弃自动重登（转手动），代价是"token 过期 + 新设备已占满 2 台"时用户需手动操作一次；收益是**不存在无人确认就踢人的路径**。 |
 | **无机型名的旧会话只能显示短码** | 存量会话 `device_name` 为 NULL → 「未知设备 · 短码」；各设备重新登录后自然补齐，不做历史回填。 |
 | **封禁无独立提示** | 被踢有一次性弹窗（有账本可解释"谁在何时"），封禁只在登录时由 403 BANNED 文案承载（守卫直接清为 loggedOut 放行）。 |
@@ -382,7 +384,7 @@ sequenceDiagram
 |------|------|
 | `test/data/auth/device_id_provider_test.dart` | device_id 生成 32 位 hex、持久化后固定 |
 | `test/data/auth/device_label_reader_test.dart` | 频道 mock：Android 名 / iOS 名 / 异常回退 null |
-| `test/data/auth/auth_service_test.dart` | 启动恢复（无 token / 有效 token / 过期静默重登 / 单飞）；登录成功落库；BANNED / 网络 / 其他错误；`handleServerFailure` 三态与通知消费一次；`clearKickedStatus` 保留通知；`detail.reason=relogin`；`detail.by` 畸形回退；启动校验被踢 / 网络失败不误报；预览/静默重登守卫 |
+| `test/data/auth/auth_service_test.dart` | 启动恢复（无 token / 有效 token / 过期静默重登 / 单飞）；登录成功落库；BANNED / 网络 / 其他错误；`handleServerFailure` 三态与通知消费一次；`clearKickedStatus` 保留通知；**待展示通知期间 401 TOKEN_EXPIRED 不吞通知**；`detail.reason=relogin`；`detail.by` 畸形回退；启动校验被踢 / 网络失败不误报；预览/静默重登守卫 |
 | `test/ui/auth/login_screen_test.dart` | 确认框渲染与取消（不调 login）、确认后登录、并发差异提示 |
 | `test/ui/auth/eviction_notice_host_test.dart` | 两棵树都能弹、文案含设备名与时间、消费后不再弹 |
 | 服务端 `tests/auth.test.ts` / `tests/db.test.ts` | preview / login evicted / 账本三态 / detail / 幂等补列（见 server 文档） |

@@ -227,6 +227,7 @@ touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.
 - 未上线期间升级路径（二选一）：
   1. **新库重建**：停服 → 新目录部署新版 → 空库自动建表 → `tool/import-data.ts` 重新导入管线数据（历史文章标 approved）→ 启动；同日之内文章缺失由每日任务/手动补生成补齐。
   2. **就地重启**：同版本小改（无 schema 变更，或变更已被幂等补列覆盖——重启即自愈）→ 同步代码 + `bun install` → `systemctl restart contexta-server`（数据文件不动）。
+- **部署顺序纪律（2026-09-18 起）**：新 App 的登录**硬依赖**新预览端点 `POST /api/auth/login/preview`（登录三段式的第一步，见 architecture.md §6.1）。**服务端必须先于 / 随 App 一起升级**——旧服务端 + 新 App 时 preview 返回 404（客户端 `errorCode=UNKNOWN`）→ `serverError` → fail-closed，用户只见「登录失败，请稍后重试」，**登录直接不可用，无降级路径**。反向兼容：新服务端 + 旧 App 正常（旧 App 不调 preview、不传 `device_name`；login 响应新增的 `evicted` 字段被旧 App 忽略）。
 - 任一 schema 变更前：**备份先行**（§5.1 三件套）→ 验证（integrity_check / 表数 / 行数）→ 再重启。
 - **证书类变更**（换 IP / 证书到期 / 私钥轮换）：`generate_tls_cert.sh` 重签 → 推服务器 `certs/` → 重启 → **同步 App 内嵌证书并重新打包**（否则已装 App 全部失联，见 §2.1 ⚠️）。
 - 若 schema 变更是"发布后"性质（db_version ≥ 1），才启用编号迁移 + drift 双写纪律——当前不适用。

@@ -492,6 +492,25 @@ void main() {
       expect(service.state.status, AuthStatus.loggedOut);
     });
 
+    test('待展示通知期间 401 TOKEN_EXPIRED → loggedOut 但通知保留（不得吞掉）', () async {
+      // 通知已生成、还挂在屏幕上（未点「知道了」）
+      await service.handleServerFailure(AuthFailureKind.evicted, {
+        'reason': 'evicted',
+        'ended_at': 1758000000123,
+        'by': {'device_id': 'd3', 'device_name': 'iPhone 15 Pro', 'issued_at': 1758000000000},
+      });
+      expect(service.state.evictionNotice, isNotNull);
+
+      // 此间任何携带空 token 的受保护请求返回 401 TOKEN_EXPIRED
+      // （token 已被上一步清空）→ 状态归位 loggedOut，但通知必须原样保留
+      await service.handleServerFailure(AuthFailureKind.tokenExpired, null);
+
+      expect(service.state.status, AuthStatus.loggedOut);
+      expect(service.state.evictionNotice, isNotNull);
+      expect(service.state.evictionNotice!.by!.deviceName, 'iPhone 15 Pro');
+      expect(service.state.evictionNotice!.endedAtMillis, 1758000000123);
+    });
+
     test('clearKickedStatus 保留通知（守卫清状态不吞提示）', () async {
       await service.handleServerFailure(AuthFailureKind.evicted, null);
       service.clearKickedStatus();
