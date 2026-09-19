@@ -7,6 +7,7 @@ import 'core/platform/app_orientation.dart';
 import 'core/platform/device_form_factor.dart';
 import 'core/theme/app_theme.dart';
 import 'di/providers.dart';
+import 'ui/auth/eviction_notice_host.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -71,6 +72,9 @@ class MainApp extends ConsumerWidget {
         // 登录守卫集成在 routerProvider（authServiceProvider 状态变化 →
         // refreshListenable 重估重定向，无需重建 router）
         routerConfig: ref.watch(routerProvider),
+        // 被踢提示（两棵树共用）：监听 authService 的待展示通知
+        builder: (context, child) =>
+            EvictionNoticeHost(child: child ?? const SizedBox.shrink()),
       ),
     );
   }
