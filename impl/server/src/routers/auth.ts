@@ -11,11 +11,23 @@ export function authRouter(db: Database, cfg: ServerConfig): Hono<ApiEnv> {
   attachErrorHandler(app);
 
   app.post("/api/auth/login", async (c) => {
-    const body = await c.req.json<{ phone?: string; device_id?: string; code?: string }>();
+    const body = await c.req.json<{
+      phone?: string;
+      device_id?: string;
+      device_name?: string;
+      code?: string;
+    }>();
     if (!body.phone || !body.device_id) throw badRequest("phone and device_id required");
-    const result = authService.login(db, cfg, body.phone, body.device_id);
+    const result = authService.login(db, cfg, body.phone, body.device_id, body.device_name);
     const expiresAt = Math.floor(Date.now() / 1000) + APP_TOKEN_TTL_SECS;
     return c.json(ok({ token: result.token, expires_at: expiresAt, evicted: result.evicted }));
+  });
+
+  // 登录预览（公开，同 login）：此刻登录会挤掉谁 —— 客户端据此弹确认框
+  app.post("/api/auth/login/preview", async (c) => {
+    const body = await c.req.json<{ phone?: string; device_id?: string }>();
+    if (!body.phone || !body.device_id) throw badRequest("phone and device_id required");
+    return c.json(ok({ evicted: authService.previewEvictions(db, body.phone, body.device_id) }));
   });
 
   // login 公开放行；logout / me 需登录

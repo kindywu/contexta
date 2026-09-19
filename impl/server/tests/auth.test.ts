@@ -254,6 +254,46 @@ describe("auth", () => {
     expect(body.detail.reason).toBe("relogin");
     expect(body.detail.by.device_id).toBe("x1");
   });
+
+  test("preview 契约：缺参数 400；正常 200 且 snake_case", async () => {
+    const bad = await app.request("/api/auth/login/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "13100000000" }),
+    });
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error_code).toBe("BAD_PARAM");
+
+    const okRes = await app.request("/api/auth/login/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "13100000000", device_id: "y1" }),
+    });
+    expect(okRes.status).toBe(200);
+    expect((await okRes.json()).data).toEqual({ evicted: [] });
+  });
+
+  test("login 收 device_name 并落库（重登不覆盖已有名字）", async () => {
+    await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "13100000001", device_id: "z1", device_name: "Xiaomi 14" }),
+    });
+    const row = db
+      .query("SELECT device_name FROM device_sessions WHERE phone = ? AND device_id = ?")
+      .get("13100000001", "z1") as { device_name: string | null };
+    expect(row.device_name).toBe("Xiaomi 14");
+    // 旧版本重登（不带 device_name）→ 保留已存名字
+    await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "13100000001", device_id: "z1" }),
+    });
+    const row2 = db
+      .query("SELECT device_name FROM device_sessions WHERE phone = ? AND device_id = ?")
+      .get("13100000001", "z1") as { device_name: string | null };
+    expect(row2.device_name).toBe("Xiaomi 14");
+  });
 });
 
 describe("admin login", () => {
