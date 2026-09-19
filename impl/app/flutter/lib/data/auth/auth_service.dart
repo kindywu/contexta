@@ -188,7 +188,12 @@ class AuthService extends StateNotifier<AuthState> {
   }
 
   /// ServerApiClient 401 回调：清 token + 按类别置状态。
-  Future<void> handleServerFailure(AuthFailureKind kind) async {
+  /// [detail]：服务端 error body 的 detail（仅 EVICTED 携带「谁 / 何时挤掉本机」），
+  /// 当前未使用（保留形参以匹配回调签名，后续被踢提示消费）。
+  Future<void> handleServerFailure(
+    AuthFailureKind kind, [
+    Map<String, dynamic>? detail,
+  ]) async {
     debugPrint('[AuthService] handleServerFailure: kind=$kind — CLEARING TOKEN');
     await _settings.clearAuth();
     switch (kind) {
