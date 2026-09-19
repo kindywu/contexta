@@ -13,9 +13,9 @@ export function authRouter(db: Database, cfg: ServerConfig): Hono<ApiEnv> {
   app.post("/api/auth/login", async (c) => {
     const body = await c.req.json<{ phone?: string; device_id?: string; code?: string }>();
     if (!body.phone || !body.device_id) throw badRequest("phone and device_id required");
-    const token = authService.login(db, cfg, body.phone, body.device_id);
+    const result = authService.login(db, cfg, body.phone, body.device_id);
     const expiresAt = Math.floor(Date.now() / 1000) + APP_TOKEN_TTL_SECS;
-    return c.json(ok({ token, expires_at: expiresAt }));
+    return c.json(ok({ token: result.token, expires_at: expiresAt, evicted: result.evicted }));
   });
 
   // login 公开放行；logout / me 需登录

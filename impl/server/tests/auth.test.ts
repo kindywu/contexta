@@ -77,6 +77,86 @@ describe("auth", () => {
     expect(res.status).toBe(400);
     expect((await res.json()).error_code).toBe("BAD_PARAM");
   });
+
+  test("preview：第 3 台设备将挤掉最旧会话（含设备名与时间）且无副作用", async () => {
+    const loginDevice = (device: string, name?: string) =>
+      app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: "13300000000", device_id: device, device_name: name }),
+      });
+    const t1 = (await (await loginDevice("p1", "Xiaomi 14")).json()).data.token;
+    await loginDevice("p2", "iPad");
+    const res = await app.request("/api/auth/login/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "13300000000", device_id: "p3" }),
+    });
+    expect(res.status).toBe(200);
+    const { data } = await res.json();
+    expect(data.evicted).toHaveLength(1);
+    expect(data.evicted[0].device_id).toBe("p1");
+    expect(data.evicted[0].device_name).toBe("Xiaomi 14");
+    expect(typeof data.evicted[0].issued_at).toBe("number");
+    // 预览无副作用：p1 的既有 token 仍有效
+    expect((await login(t1)).status).toBe(200); // login() = 文件顶部 /api/auth/me 辅助
+  });
+
+  test("preview：已是活跃 2 台之一的设备 → 空", async () => {
+    const loginDevice = (device: string) =>
+      app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: "13300000001", device_id: device }),
+      });
+    await loginDevice("q1");
+    await loginDevice("q2");
+    const res = await app.request("/api/auth/login/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ phone: "13300000001", device_id: "q1" }),
+    });
+    expect((await res.json()).data.evicted).toEqual([]);
+  });
+
+  test("login：第 3 台登录返回实际挤掉的设备", async () => {
+    const loginDevice = (device: string) =>
+      app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: "13300000002", device_id: device }),
+      });
+    await loginDevice("r1");
+    await loginDevice("r2");
+    const { data } = await (await loginDevice("r3")).json();
+    expect(data.evicted).toHaveLength(1);
+    expect(data.evicted[0].device_id).toBe("r1");
+  });
+
+  test("流水账：被挤写 evicted、同设备重登写 relogin、登出不写", async () => {
+    const loginDevice = (device: string) =>
+      app.request("/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: "13300000003", device_id: device, device_name: "Dev" }),
+      });
+    const rows = () =>
+      db.query(`SELECT device_id, reason FROM device_evictions WHERE phone=? ORDER BY id`)
+        .all("13300000003") as { device_id: string; reason: string }[];
+    await loginDevice("s1");
+    await loginDevice("s1"); // 同设备重登 → relogin
+    expect(rows()).toEqual([{ device_id: "s1", reason: "relogin" }]);
+    const t2 = (await (await loginDevice("s2")).json()).data.token;
+    await loginDevice("s3"); // 挤掉 s1（issued_at 最旧）→ evicted
+    expect(rows()[1]).toEqual({ device_id: "s1", reason: "evicted" });
+    // 登出不记账：logout 删除会话行，但流水表不新增
+    await app.request("/api/auth/logout", {
+      method: "POST",
+      headers: { authorization: `Bearer ${t2}`, "content-type": "application/json" },
+      body: JSON.stringify({ device_id: "s2" }),
+    });
+    expect(rows()).toHaveLength(2);
+  });
 });
 
 describe("admin login", () => {
