@@ -9,6 +9,7 @@ import '../local/daos/article_daos.dart';
 import '../local/daos/settings_daos.dart';
 import '../remote/article_api.dart';
 import '../remote/server_api_client.dart';
+import '../remote/server_trust.dart';
 import '../sync/sync_articles_usecase.dart';
 
 /// 后台每日同步任务名（`registerPeriodicTask` 的 uniqueName 与 taskName 同名，
@@ -39,6 +40,9 @@ SyncUseCaseBuilder? syncUseCaseBuilderOverride;
 /// - 生命周期：本函数内打开的数据库，成功路径交由调用方
 ///   （[handleDailySyncTask] finally）关闭；失败路径在此 close 后 rethrow。
 Future<SyncArticlesUseCase?> buildSyncUseCase() async {
+  // 证书钉扎素材：后台 isolate 与主 isolate 各自持有静态缓存，
+  // main() 的预载不会带过来，这里必须自行加载一次（幂等）。
+  await loadServerTrustCert();
   final db = await buildAppDatabase();
   try {
     final settings = await UserSettingsDao(db).get();
@@ -57,6 +61,12 @@ Future<SyncArticlesUseCase?> buildSyncUseCase() async {
         sendTimeout: const Duration(seconds: 15),
       ),
     );
+    // TLS：与前台同一套证书钉扎（后台 isolate 不经过 providers，必须自行装配；
+    // 2026-09-19 前这里漏装，自签名部署下后台同步必然握手失败）。
+    final trustAdapter = buildServerTrustAdapter();
+    if (trustAdapter != null) {
+      dio.httpClientAdapter = trustAdapter;
+    }
     final apiClient = ServerApiClient(
       dio,
       baseUrl: AppConfig.serverBaseUrl,

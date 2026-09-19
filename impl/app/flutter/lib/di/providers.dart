@@ -1,10 +1,6 @@
-import 'dart:io';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
-import 'package:dio/io.dart';
-import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -23,6 +19,7 @@ import '../data/local/daos/word_daos.dart';
 import '../data/remote/article_api.dart';
 import '../data/remote/llm_api.dart';
 import '../data/remote/server_api_client.dart';
+import '../data/remote/server_trust.dart';
 import '../data/sync/sync_articles_usecase.dart';
 import '../data/repository/article_repository_impl.dart';
 import '../data/repository/settings_repository_impl.dart';
@@ -59,42 +56,7 @@ final serverConfiguredProvider = Provider<bool>(
   (ref) => AppConfig.serverBaseUrl.isNotEmpty,
 );
 
-/// 内嵌自签名服务端证书（信任锚）——随 App 打包（pubspec `assets/certs/server.crt`）。
-///
-/// ⚠️ 与服务器 `/opt/contexta/server/certs/server.crt` 必须是同一份；换 IP / 重签后
-/// 必须同步替换本文件并重新打包（否则握手即断，见 config-and-deploy.md §2.1）。
-const serverCertAssetPath = 'assets/certs/server.crt';
-
-/// 证书字节缓存：main() 启动时经 [loadServerTrustCert] 预载（rootBundle 唯一可靠
-/// 途径——debug 模式下 Flutter asset 不在文件系统里，直接按路径读会失败）。
-Uint8List? _serverTrustCertBytes;
-
-/// 启动时预载内嵌证书（幂等；失败仅告警——本地开发无证书场景允许缺省）。
-Future<void> loadServerTrustCert() async {
-  try {
-    _serverTrustCertBytes =
-        (await rootBundle.load(serverCertAssetPath)).buffer.asUint8List();
-  } catch (e) {
-    debugPrint('[Dio] 内嵌服务端证书不可用，回退默认信任库: $e');
-  }
-}
-
-/// 构造只信任内嵌证书的 TLS 上下文；证书未加载/加载失败 → null（走默认信任库）。
-///
-/// 必要性：Dart 的 TLS 栈（BoringSSL）**不读** Android network security config，
-/// 仅靠 NSC 配置会导致 `CERTIFICATE_VERIFY_FAILED: self signed certificate`
-/// （2026-09-17 真机实测）。
-SecurityContext? _buildServerTrustContext() {
-  final bytes = _serverTrustCertBytes;
-  if (bytes == null) return null;
-  try {
-    return SecurityContext(withTrustedRoots: false)
-      ..setTrustedCertificatesBytes(bytes);
-  } catch (e) {
-    debugPrint('[Dio] 内嵌证书解析失败，回退默认信任库: $e');
-    return null;
-  }
-}
+/// 内嵌自签名服务端证书与 TLS 装配见 [server_trust.dart]（证书钉扎；2026-09-19 起）。
 
 /// 服务端 API 客户端（认证拦截每次请求从 user_settings 读 token；
 /// 登录/登出/同步共用同一实例——T2 遗留：token 变化自动重置 401 去重）。
@@ -107,16 +69,10 @@ final serverApiClientProvider = Provider<ServerApiClient>((ref) {
       sendTimeout: const Duration(seconds: 15),
     ),
   );
-  // TLS 信任锚：内嵌自签名证书（HTTPS 部署的证书链）；无证书时不改写（默认信任库）。
-  final trustContext = _buildServerTrustContext();
-  if (trustContext != null) {
-    dio.httpClientAdapter = IOHttpClientAdapter(
-      createHttpClient: () {
-        final client = HttpClient(context: trustContext);
-        client.badCertificateCallback = (cert, host, port) => false; // 显式拒绝非内嵌证书
-        return client;
-      },
-    );
+  // TLS：证书钉扎（内嵌自签名证书）；证书未加载 → 不改写适配器（默认信任库）。
+  final trustAdapter = buildServerTrustAdapter();
+  if (trustAdapter != null) {
+    dio.httpClientAdapter = trustAdapter;
   }
   return ServerApiClient(
     dio,
