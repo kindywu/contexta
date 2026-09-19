@@ -7,29 +7,38 @@ import '../../ui/reading/translation_visibility.dart';
 import '../pad_layout.dart';
 import 'pad_spread_reader.dart' show rightPageNumberOf;
 
-/// 沉浸式阅读器底部**唯一常驻**的控件带：页码胶囊 `12 / 345` + 朗读入口。
+/// 沉浸式阅读器底部**唯一常驻**的控件带：页码胶囊 `12 / 345` + 朗读入口
+/// + 译文模式。
 ///
-/// 它同时解决四件事，所以值得常驻：
+/// 它同时解决五件事，所以值得常驻：
 /// 1. **你在哪**——总页数与当前位置，不用唤出控件就能看到；
 /// 2. **可以点**——是"上下栏能唤出"的发现性入口（否则用户永远不知道有顶栏）；
 /// 3. **不打扰**——一行小字加浅底胶囊，比常驻工具栏安静得多；
 /// 4. **读得出声**——「朗读全文」就摆在页码旁边，不必先猜到工具栏里藏着它；
-///    朗读进行中它原地变成暂停键（沉浸态下也必须停得下来）。
+///    朗读进行中它原地变成暂停键（沉浸态下也必须停得下来）；
+/// 5. **看得到译文模式**——译文模式在平板上原本只在唤出态顶栏里，读者找不到
+///    （2026-09-20 实测反馈：手机上常驻的「译文」在平板上"没有"）。它和返回键
+///    是同一类常驻件，成本却只有半枚胶囊——不像返回键那样需要独立圆钮，
+///    直接并进这条带子即可。
 class PadPagePill extends StatelessWidget {
   const PadPagePill({
     super.key,
     required this.pageController,
     required this.totalPages,
     required this.isSpeaking,
+    required this.translationMode,
     required this.onToggleChrome,
     required this.onTogglePlayback,
+    required this.onCycleTranslationMode,
   });
 
   final PageController pageController;
   final int totalPages;
   final bool isSpeaking;
+  final TranslationMode translationMode;
   final VoidCallback onToggleChrome;
   final VoidCallback onTogglePlayback;
+  final VoidCallback onCycleTranslationMode;
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +90,11 @@ class PadPagePill extends StatelessWidget {
               label: isSpeaking ? '暂停' : '朗读全文',
               onTap: onTogglePlayback,
             ),
+            const SizedBox(width: AppSpacing.sm),
+            _PillTranslationButton(
+              mode: translationMode,
+              onTap: onCycleTranslationMode,
+            ),
           ],
         );
       },
@@ -124,6 +138,62 @@ class _PillTextButton extends StatelessWidget {
                 label,
                 style: AppType.textTheme.labelMedium?.copyWith(
                   color: AppColors.bodyText,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 浅底胶囊译文按钮（页码带常驻）：`译文 模糊 ▾`。
+///
+/// 与唤出态顶栏的 [_TranslationChip] 是同一个动作的两副面孔——收起态常驻在
+/// 页码带，唤出时整条页码带淡出、由顶栏那枚接替（同一时刻只有一个入口）。
+/// 形态抄**手机顶栏的译文 chip**（`译文` 灰 + 模式名深 + `▾`），读者在两棵树
+/// 上看到的是同一套措辞；点一下循环到下一个模式，不是弹菜单。
+class _PillTranslationButton extends StatelessWidget {
+  const _PillTranslationButton({required this.mode, required this.onTap});
+
+  final TranslationMode mode;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.surfaceSoft,
+      borderRadius: BorderRadius.circular(AppRadius.pill),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: 6,
+          ),
+          child: Row(
+            children: [
+              Text(
+                '译文',
+                style: AppType.textTheme.labelMedium?.copyWith(
+                  color: AppColors.mutedSoft,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                mode.label,
+                style: AppType.textTheme.labelMedium?.copyWith(
+                  color: AppColors.bodyText,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xxs),
+              Text(
+                '▾',
+                style: AppType.textTheme.labelSmall?.copyWith(
+                  color: AppColors.mutedSoft,
+                  letterSpacing: 0,
                 ),
               ),
             ],

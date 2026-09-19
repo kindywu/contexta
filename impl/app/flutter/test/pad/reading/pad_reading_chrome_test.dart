@@ -25,14 +25,18 @@ void main() {
     bool isSpeaking = false,
     VoidCallback? onToggleChrome,
     VoidCallback? onTogglePlayback,
+    TranslationMode translationMode = TranslationMode.full,
+    VoidCallback? onCycleTranslationMode,
   }) => pump(
     tester,
     PadPagePill(
       pageController: controller,
       totalPages: totalPages,
       isSpeaking: isSpeaking,
+      translationMode: translationMode,
       onToggleChrome: onToggleChrome ?? () {},
       onTogglePlayback: onTogglePlayback ?? () {},
+      onCycleTranslationMode: onCycleTranslationMode ?? () {},
     ),
   );
 
@@ -62,8 +66,10 @@ void main() {
                   pageController: controller,
                   totalPages: totalPages,
                   isSpeaking: false,
+                  translationMode: TranslationMode.full,
                   onToggleChrome: () {},
                   onTogglePlayback: () {},
+                  onCycleTranslationMode: () {},
                 ),
               ),
             ),
@@ -126,6 +132,26 @@ void main() {
       await tester.tap(find.text('暂停'));
       await tester.pumpAndSettle();
       expect(playbackToggles, 1);
+    });
+
+    testWidgets('译文模式常驻在胶囊带，点一下循环到下一个模式', (tester) async {
+      var cycles = 0;
+      await pumpPill(
+        tester,
+        translationMode: TranslationMode.blurred,
+        onCycleTranslationMode: () => cycles++,
+      );
+
+      expect(
+        find.text('译文'),
+        findsOneWidget,
+        reason: '译文模式在平板上原本只在唤出态顶栏，读者找不到（2026-09-20 实测）',
+      );
+      expect(find.text('模糊'), findsOneWidget);
+
+      await tester.tap(find.text('模糊'));
+      await tester.pumpAndSettle();
+      expect(cycles, 1);
     });
 
     testWidgets('随翻页实时更新页号', (tester) async {
