@@ -7,7 +7,7 @@ App 冷启动时**第一帧落在哪个页面**，以及此后每次导航的重
 1. **启动落点**：已完成引导的用户直接落首页，引导页一帧都不渲染；未完成的落在引导页。
 2. **登录守卫**：未登录**不**拦截本地浏览；已登录访问登录页回跳。
 
-路由表本身（`/home`、`/reading/:articleId`、底栏四个一级页……）见 `lib/core/navigation/routes.dart`，不在本主题展开。
+路由表本身（`/home`、`/reading/:articleId`、底栏四个一级页……）见 `lib/core/navigation/routes.dart`，不在本主题展开；登录态状态机、登录三段式、被踢提示与多设备会话本身见 [auth-and-session.md](auth-and-session.md)。
 
 ## 业务功能线
 
@@ -24,7 +24,7 @@ App 冷启动时**第一帧落在哪个页面**，以及此后每次导航的重
 ### 登录
 
 - **未登录可浏览所有本地路由**（阅读 / 词汇 / 参考 / 设置本地均可用）。唯一需要登录的是同步与远程查词，二者各自有降级；两个首页各有一条「未登录 + 登录」入口（服务端已配置时才显示）——手机是滚动流顶部的横幅，平板是内容区顶部的一条状态带（`PadLoginBanner`）。
-- **被踢下线 / 封禁**：清为 `loggedOut` 后放行，不强制跳登录页，也不打断当前浏览。
+- **被踢下线 / 封禁**：清为 `loggedOut` 后放行，不强制跳登录页，也不打断当前浏览。清状态时**保留待展示的被踢通知**（`EvictionNoticeHost` 弹窗消费，见 [auth-and-session.md](auth-and-session.md)）——守卫只消除 `evicted` / `banned` 残留态，不吞提示。
 - **已登录访问 `/login`**：回跳到 `from` 查询参数指定的来源页（校验：非空、以 `/` 开头、且不是 `/login`，防手工构造无限重定向循环），没有合法 `from` 就回首页。
 
 ## 技术实现线
@@ -82,7 +82,7 @@ flowchart TD
     Q5 -->|是| EL[await ensureLoggedIn<br/>本地 token 恢复 / 过期静默重登]
     Q5 -->|否| Q6
     EL --> Q6{evicted 或 banned?}
-    Q6 -->|是| CK[clearKickedStatus 后放行]
+    Q6 -->|是| CK["clearKickedStatus 后放行<br/>（保留待展示的被踢通知）"]
     Q6 -->|否| Q7{loggedIn 且访问 /login?}
     Q7 -->|是| BACK[回跳 from 校验后 / 否则回 /home]
     Q7 -->|否| PASS4[放行]
@@ -140,6 +140,7 @@ sequenceDiagram
 
 - **读取引导状态失败**（DB 未就绪 / 损坏）：`_isOnboarded` 捕获异常，`debugPrint` 记录后按「未引导」处理——留在引导页。既不让异常抛进重定向中断导航，也不误跳进空首页。
 - **`ensureLoggedIn` 失败**（无本地 token / 过期且重登失败）：`AuthService` 内部落态为 `loggedOut`，守卫放行，本地浏览不受影响。
+- **被踢 / 封禁状态**：守卫调 `clearKickedStatus()` 清为 `loggedOut` 放行；被踢的一次性通知**不被吞掉**（保留在 `authServiceProvider` 状态里，由挂在 `MaterialApp.router` builder 上的 `EvictionNoticeHost` 弹出，见 [auth-and-session.md](auth-and-session.md)）。
 - **`databaseProvider` 失败**：`MainApp` 的 `error` 分支渲染「数据库初始化失败：$e」，路由树根本不构建。
 
 ## 测试覆盖

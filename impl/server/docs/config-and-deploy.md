@@ -219,13 +219,14 @@ touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.
 - **热备**：`sqlite3 <db> ".backup <路径>"` 或停服拷贝（WAL checkpoint 后三件套齐拷）。
 - 恢复：停服 → 三件套回拷（覆盖同名 `-wal`/`-shm`）→ 启动；注意设备端还有 App 本地缓存，恢复服务端会回滚服务端侧数据。
 
-### 5.2 升级（未上线阶段策略：无迁移体系）
+### 5.2 升级（未上线阶段策略：无编号迁移体系）
 
-- 当前 `tool/db_version` = 0（**从未发布生产**），**没有版本化迁移**：schema 变更直接改 `ensureSchema` / `ensureServerSchema`（全部 `CREATE TABLE/INDEX IF NOT EXISTS`，**代码中无任何 ALTER TABLE**——新增列不自动补到既有库），不存在 001/002 升级链。
-- **存量库加列的正确姿势**：新库重建（重新导入/再生成，见下），或用一次性 SQL 补丁脚本（放 `/tmp` 不留仓库）就地 `ALTER TABLE`——模型与 Flutter 端 `tool/migrations/` 的 MIGRATION 纪律一致（发布后才启用编号迁移 + 双写）。
+- 当前 `tool/db_version` = 0（**从未发布生产**），**没有版本化迁移**：schema 变更直接改 `ensureSchema` / `ensureServerSchema`（建表全部 `CREATE TABLE/INDEX IF NOT EXISTS`），不存在 001/002 升级链。
+- **存量库加列 = 幂等补列，重启自愈**（2026-09-18 起）：`ensureServerSchema` 现在包含**幂等补列**——`PRAGMA table_info(<表>)` 探列，缺列才 `ALTER TABLE ADD COLUMN`（模式对齐引擎 `engine/db.ts` 的旧库补列；当前唯一实例：`device_sessions.device_name`，见 architecture.md §3.2）。服务重启即自动补齐既有库结构，**不需要**手工 SQL、也不依赖一次性补丁脚本。
+- **一次性 `/tmp` 补丁脚本仅为例外场景**：补列逻辑无法幂等表达时（如需要数据回填 / 表重建 / 改约束），或需要在不重启服务的前提下临时救急——脚本放 `/tmp` 不留仓库、用完即弃。同 Flutter 端 `tool/migrations/` 的 MIGRATION 纪律（`tool/` 只放生产脚本；发布后才启用编号迁移 + 双写）。
 - 未上线期间升级路径（二选一）：
   1. **新库重建**：停服 → 新目录部署新版 → 空库自动建表 → `tool/import-data.ts` 重新导入管线数据（历史文章标 approved）→ 启动；同日之内文章缺失由每日任务/手动补生成补齐。
-  2. **就地重启**：同版本小改（无 schema 变更）→ 同步代码 + `bun install` → `systemctl restart contexta-server`（数据文件不动）。
+  2. **就地重启**：同版本小改（无 schema 变更，或变更已被幂等补列覆盖——重启即自愈）→ 同步代码 + `bun install` → `systemctl restart contexta-server`（数据文件不动）。
 - 任一 schema 变更前：**备份先行**（§5.1 三件套）→ 验证（integrity_check / 表数 / 行数）→ 再重启。
 - **证书类变更**（换 IP / 证书到期 / 私钥轮换）：`generate_tls_cert.sh` 重签 → 推服务器 `certs/` → 重启 → **同步 App 内嵌证书并重新打包**（否则已装 App 全部失联，见 §2.1 ⚠️）。
 - 若 schema 变更是"发布后"性质（db_version ≥ 1），才启用编号迁移 + drift 双写纪律——当前不适用。
