@@ -24,6 +24,20 @@ abstract final class AppPage {
   static const double minTouchTarget = 44;
 }
 
+/// 阅读页正文排版间距（手机 / 平板共用）。
+///
+/// 手机上由 `_ReadingParagraph` / `ReadingParagraph` 渲染，平板上还要被
+/// `ArticlePaginator` 离线测高——**测量与渲染必须引用同一份常量**，各写一份
+/// 字面量会漂移成「测量页高 ≠ 实际渲染高」，表现为溢出页底。
+abstract final class AppReading {
+  /// 英文正文 → 中文译文
+  static const double enToTranslationGap = 16;
+
+  /// 段落之间（译文底 → 下一段英文顶）。段间距算在前一段的块高里，块间无额外
+  /// 间距——否则分页测量需要知道「本段是否落在页首」才能减掉，复杂且易错。
+  static const double paragraphGap = 28;
+}
+
 /// 动效时长（对照 Kotlin ui/theme/Motion.kt；原型 150/200/300ms）。
 abstract final class AppMotion {
   static const Duration fast = Duration(milliseconds: 150);

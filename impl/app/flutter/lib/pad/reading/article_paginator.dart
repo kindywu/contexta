@@ -8,8 +8,13 @@ import '../../ui/reading/translation_visibility.dart';
 import '../../ui/reading/word_spans.dart';
 import 'reading_block.dart';
 
-/// 段落与译文之间的固定间距（对照 _ReadingParagraph 的 SizedBox(height: 4)）。
-const double kParagraphGap = 4;
+/// 段内 / 段间间距，与手机路径引用同一份 token（AppReading）。
+///
+/// 手机：`_ReadingParagraph` / `ReadingParagraph`；平板：本文件的 `heightOf`。
+/// 两处数值必须同源——各写一份字面量就会漂移成「测量页高 ≠ 实际渲染高」，
+/// 表现为书页溢出页底。
+const double kEnToTranslationGap = AppReading.enToTranslationGap;
+const double kParagraphGap = AppReading.paragraphGap;
 
 /// 标题块内的固定间距（对照手机路径：标题 → AppSpacing.md → 1px 分隔线 →
 /// AppSpacing.lg）。分页测量与书页渲染共用同一批常量——定义处引用设计
@@ -242,10 +247,8 @@ class ArticlePaginator {
     var height = painter.height;
     painter.dispose();
 
-    // 段内固定间距（SizedBox(height: 4)）在手机路径无条件存在
-    height += kParagraphGap;
-
-    if (translationMode == TranslationMode.hidden) return height;
+    // 无译文：只有块尾的段间距（渲染路径没有「英文 → 译文」空隙）
+    if (translationMode == TranslationMode.hidden) return height + kParagraphGap;
 
     // 译文是 Text，吃 MediaQuery 字体缩放
     final translation = TextPainter(
@@ -254,7 +257,7 @@ class ArticlePaginator {
       textScaler: labelTextScaler,
       maxLines: null,
     )..layout(maxWidth: pageWidth);
-    height += translation.height + kParagraphGap;
+    height += kEnToTranslationGap + translation.height + kParagraphGap;
     translation.dispose();
     return height;
   }

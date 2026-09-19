@@ -85,7 +85,9 @@ class PadContinueCard extends ConsumerWidget {
                         preview ?? '打开文章开始今天的阅读',
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: AppType.readingTranslation.copyWith(
+                        // 正文预览是卡片里的小字，**不跟**阅读页译文样式
+                        // （AppType.readingTranslation 是 17sp 正文级字号）
+                        style: AppType.textTheme.bodyMedium!.copyWith(
                           color: AppColors.bodyText,
                         ),
                       ),

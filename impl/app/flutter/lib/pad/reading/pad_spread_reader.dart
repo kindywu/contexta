@@ -219,8 +219,8 @@ class _PadSpreadReaderState extends State<PadSpreadReader> {
       case ParagraphBlock(:final index):
         final paragraph = widget.paragraphs[index];
         // 块间无额外间距：段落块的渲染高必须正好等于 ReadingParagraph 的高
-        // （段内间距已由 ReadingParagraph 自己带，见 ArticlePaginator.heightOf），
-        // 外面再包一层 Padding 会让每段多出 4dp、整页比测量值高——溢出页底。
+        // （段内间距与段间距都由 ReadingParagraph 自己带，见 ArticlePaginator.heightOf），
+        // 外面再包一层 Padding 会让每段多出间距、整页比测量值高——溢出页底。
         return ReadingParagraph(
           key: widget.paragraphKey(index),
           textKey: widget.paragraphTextKey(index),

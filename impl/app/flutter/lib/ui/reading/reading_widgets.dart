@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_dimens.dart';
 import '../../core/theme/app_type.dart';
 import 'reading_controller.dart';
 import 'translation_visibility.dart';
@@ -159,45 +160,40 @@ class ReadingParagraphState extends State<ReadingParagraph> {
             ],
           ),
         ),
-        const SizedBox(height: 4),
+        // 无译文时不留「英文 → 译文」的空隙；段间距在块尾无条件保留
+        if (widget.translationMode != TranslationMode.hidden)
+          const SizedBox(height: AppReading.enToTranslationGap),
         // 中文译文：4 模式
         switch (widget.translationMode) {
-          TranslationMode.full => Padding(
-            padding: const EdgeInsets.only(bottom: 4),
+          TranslationMode.full => _TranslationText(
+            text: widget.chineseTranslation,
+            onTap: widget.onTranslationClick,
+          ),
+          TranslationMode.dim => Opacity(
+            opacity: 0.55,
             child: _TranslationText(
               text: widget.chineseTranslation,
               onTap: widget.onTranslationClick,
             ),
           ),
-          TranslationMode.dim => Opacity(
-            opacity: 0.55,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: _TranslationText(
-                text: widget.chineseTranslation,
-                onTap: widget.onTranslationClick,
-              ),
-            ),
-          ),
-          TranslationMode.blurred => Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            // 点击揭示：isRevealed 时显示明文，否则模糊（对照 Kotlin
-            // ReadingScreen 的 BLURRED 分支 if (isRevealed) 拆解）
-            child: widget.isRevealed
-                ? _TranslationText(
+          // 点击揭示：isRevealed 时显示明文，否则模糊（对照 Kotlin
+          // ReadingScreen 的 BLURRED 分支 if (isRevealed) 拆解）
+          TranslationMode.blurred => widget.isRevealed
+              ? _TranslationText(
+                  text: widget.chineseTranslation,
+                  onTap: widget.onTranslationClick,
+                )
+              : ImageFiltered(
+                  imageFilter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                  child: _TranslationText(
                     text: widget.chineseTranslation,
                     onTap: widget.onTranslationClick,
-                  )
-                : ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-                    child: _TranslationText(
-                      text: widget.chineseTranslation,
-                      onTap: widget.onTranslationClick,
-                    ),
                   ),
-          ),
+                ),
           TranslationMode.hidden => const SizedBox.shrink(),
         },
+        // 段落间距算在本段块高内（块间无额外间距）——分页测量见 ArticlePaginator
+        const SizedBox(height: AppReading.paragraphGap),
       ],
     );
   }

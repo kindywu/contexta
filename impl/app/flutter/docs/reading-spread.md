@@ -175,13 +175,15 @@ ArticlePaginator buildPadPaginator(TextStyle ambientTextStyle) => ArticlePaginat
 
 ### 块高测量
 
+字号与间距取值见 [reading-typography.md](reading-typography.md)（本文只讲怎么测）。
+
 | 块 | 测量构成 |
 |----|---------|
 | `TitleBlock` | 标题文字高（`RichText` 渲染 → 用 `bodyTextScaler`）+ `kTitleGapBelow`(16) + `kTitleDividerHeight`(1) + `kTitleGapAfterDivider`(24) |
-| `ParagraphBlock` | 英文正文高（含段尾两个 `WidgetSpan` 占位：4dp 空隙 + 18×18 内联播放钮）+ `kParagraphGap`(4) + 译文高（非隐藏时）+ `kParagraphGap`(4) |
+| `ParagraphBlock` | 英文正文高（含段尾两个 `WidgetSpan` 占位：4dp 空隙 + 18×18 内联播放钮）+ `kEnToTranslationGap`(16) + 译文高（非隐藏时）+ `kParagraphGap`(28)；译文隐藏时只有正文高 + `kParagraphGap`(28) |
 | `MarkAsReadBlock` | `kMarkAsReadTopGap`(24) + 按钮文字高（`AppButton` 用 `Text` 渲染 → 用 `labelTextScaler`）＋上下各 `kButtonVerticalPadding`(12) |
 
-间距常量与 `AppSpacing` token 绑定（`kTitleGapBelow = AppSpacing.md` 等），**渲染层必须 import 这些常量而不是重打字面量**——两份真源必然漂移。
+间距常量与设计 token 绑定（`kTitleGapBelow = AppSpacing.md`、`kEnToTranslationGap = AppReading.enToTranslationGap` 等），**渲染层必须 import 这些常量而不是重打字面量**——两份真源必然漂移。段内 / 段间间距 token 定义在 `core/theme/app_dimens.dart`（手机树与平板树都从这里取，见「阅读排版」一节），因为手机 `_ReadingParagraph` 与书页 `ReadingParagraph` 是两棵树里各自独立的实现。
 
 #### 两个 textScaler（易错点）
 

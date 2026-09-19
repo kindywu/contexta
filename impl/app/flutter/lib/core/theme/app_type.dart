@@ -102,18 +102,27 @@ abstract final class AppType {
 
   /// ── 阅读页样式 ──
   ///
-  /// 取值来自 textTheme 的 copyWith，与改造前 reading_screen.dart 内联写法
-  /// **完全等价**（手机渲染结果不变）。提取出来的原因：pad 书页模式要按这些
-  /// 样式离线测量页高（ArticlePaginator），测量与渲染必须同一份真源。
+  /// 取值来自 textTheme 的 copyWith。提取出来的原因：pad 书页模式要按这些
+  /// 样式离线测量页高（ArticlePaginator），测量与渲染必须同一份真源——手机
+  /// 阅读页也直接引用这里，不再各写一份内联字面量。
+  ///
+  /// 正文 22sp / 行高 34sp（1.55×）：行高倍数比 bodyLarge 的 1.56 略紧，但
+  /// 段落之间留 AppReading.paragraphGap（app_dimens.dart）的空白分组，整页
+  /// 观感更松弛。
   static final TextStyle readingBody = textTheme.bodyLarge!.copyWith(
     color: AppColors.ink,
-    fontSize: 18,
-    height: 30 / 18,
+    fontSize: 22,
+    height: 34 / 22,
   );
 
   /// 段落译文（BLURRED 模糊 / DIM 淡化不改尺寸，故与 FULL 同一份）。
+  ///
+  /// 17sp ≈ 正文的 0.77：译文是辅助线但不是脚注，低于 body-sm 那一档会读不动。
+  /// 颜色用 muted（不是 muted-soft）——浅灰在 17sp 下对比度不足。
   static final TextStyle readingTranslation = textTheme.bodyMedium!.copyWith(
-    color: AppColors.mutedSoft,
+    color: AppColors.muted,
+    fontSize: 17,
+    height: 25 / 17,
   );
 
   /// 文章标题（朗读时另外叠加 backgroundColor）。
