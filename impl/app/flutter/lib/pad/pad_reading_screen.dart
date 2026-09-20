@@ -267,9 +267,12 @@ class _PadReadingScreenState extends ConsumerState<PadReadingScreen> {
                               pageController: _pageController,
                               totalPages: _paginatedCache!.pages.length,
                               isSpeaking: state.isSpeakingFullArticle,
+                              translationMode: state.translationMode,
                               onToggleChrome: _toggleChrome,
                               onTogglePlayback:
                                   notifier.toggleFullArticlePlayback,
+                              onCycleTranslationMode:
+                                  notifier.cycleTranslationMode,
                             ),
                     ),
                   ),
