@@ -176,7 +176,7 @@ flowchart TD
 - **pickCategory**（无 LLM）：按难度从类别池均匀随机（`rng` 注入）：LOW=daily_conversation/scene_description/simple_story；MEDIUM=news/expository/argumentative/personal_essay；HIGH=academic_abstract/debate_speech/legal_document/art_criticism。
 - **path 判定**（`resolvePath`）：类别在 `sites.config.ts` 配置了 ≥1 个权威站点 → A（有来源支撑），否则 B（模型知识）。当前配置：chinadaily + tencent 覆盖 `news`/`expository`，其余 9 类走 B。
 - **A 链**：`fetchLinks`（随机洗牌本站点抓列表：Bun.WebView 打开首页 → 等待 JS 懒加载列表 → 锚点快照 → 站点规则抽取 `ArticleLink[]`——**视图受 `BROWSER_CONCURRENCY` 信号量限流、每次调用带硬超时**，见 config-and-deploy.md §6；新鲜度过滤 = 近 5 天已用 URL + 本轮共享 `usedUrls` 去重；标题含受限人名直接出局）→ `chooseArticle`（随机选篇 → 抓正文 HTML → 清洗 → turndown 转 Markdown（截断 12000 字符）→ 正文含受限人名则跳过换篇；命中即从候选列表移出）→ `extractFacts`（LLM 结构化抽取 FactSheet：who/what/when/where/why/how/keyNumbers/keyNames；全空 = 源不适配 → 回 chooseArticle 换篇，封顶 3 次 → rejected）→ `generateA`。
-- **B 链**：`pickTopic` → `generateB`（模型知识生成，prompt 含"基于可靠常识、虚构需标明、禁用受限人名"）。
+- **B 链**：`pickTopic` → `generateB`（模型知识生成，prompt 含"基于可靠常识、正文不得出现元提示/免责声明、禁用受限人名"；虚构故事不要求在文中标注虚构）。
 - **pickTopic（仅 pathB，LLM）**：先定"写什么"再写作，防同批选题雷同——见下方 §4.1.1。
 - **generate（A/B 共用实现）**：结构化输出 `GenerateResult` 判别联合——`{"type":"article", titleEn, titleZh, paragraphs:[{en,zh}]}` 或 `{"type":"cannot_write"}`（模型判主题违规/缺依据 → 业务拒答，A 回边换源、B 短路）。其余失败（空白/结构畸形/技术错误）→ error 终态，不做自动重试（手动重试见 replay）。prompt 注入：素材（pathA 的来源标题/URL/正文/事实卡）+ 本槽选题（`topic`，pathB 且有选题时）+ 上轮违规反馈（lastViolations）+ 近 5 天成功文章标题。
 - **leadersCheck**（无 LLM，A/B 共用）：文章标题/段落中英全文子串匹配 `const/coreLeaders.ts` 受限人名名单，命中即整篇 rejected（设计：名单为硬限制，不回边重试）。
