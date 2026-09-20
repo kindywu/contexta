@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// - 语法数据完整性（4 组 23 条、字段齐全、例句成对）
 /// - 字母表 / 音标分组规模
 /// - phoneme 拟音映射全覆盖（48 个音标均有映射）
-/// - speak 文本规则（字母格先读字母名，音标格只读例词）
+/// - speak 文本规则（字母格先读字母名，音标格先读拟音，再读例词）
 
 void main() {
   group('语法数据', () {
@@ -40,7 +40,16 @@ void main() {
         expect(item.char, isNotEmpty);
         expect(item.phone, startsWith('/'));
         expect(item.example, isNotEmpty);
+        expect(item.full, startsWith('/'), reason: 'missing IPA for ${item.example}');
+        expect(item.full, endsWith('/'));
         expect(item.cn, isNotEmpty);
+      }
+    });
+
+    test('音标分组每项都有例词完整音标', () {
+      for (final item in phonicsGroups.expand((g) => g.items)) {
+        expect(item.full, startsWith('/'), reason: 'missing IPA for ${item.example}');
+        expect(item.full, endsWith('/'));
       }
     });
 
@@ -77,6 +86,13 @@ void main() {
       expect(phonemeOwnSound('/ŋ/'), 'nguh');
     });
 
+    test('短元音 /dz 用同音锚词（不用会被读成字母名的拼写）', () {
+      // 送 espeak-ng 音素器会读出目标音的锚词；反例见 reference_data.dart 注释
+      expect(phonemeOwnSound('/ɪ/'), 'it'); // 反例 'ih' → ˈaɪ
+      expect(phonemeOwnSound('/e/'), 'ed'); // 反例 'eh' → ˈeɪ
+      expect(phonemeOwnSound('/dz/'), 'ads'); // 反例 'dzuh' → dee-zuh
+    });
+
     test('未知音标返回 null', () {
       expect(phonemeOwnSound('/zzz/'), isNull);
     });
@@ -87,6 +103,7 @@ void main() {
       char: 'A a',
       reading: '/eɪ/',
       example: 'Apple',
+      exampleIpa: '/ˈæpəl/',
       exampleCn: '苹果',
       isPhonetic: false,
     );
@@ -100,6 +117,7 @@ void main() {
         char: 'W w',
         reading: '/ˈdʌbljuː/',
         example: 'Water',
+        exampleIpa: '/ˈwɔːtə/',
         exampleCn: '水',
         isPhonetic: false,
       );
@@ -109,21 +127,35 @@ void main() {
         char: 'X x',
         reading: '/eks/',
         example: 'X-ray',
+        exampleIpa: '/ˈeksreɪ/',
         exampleCn: 'X光',
         isPhonetic: false,
       );
       expect(speakTextFor(x), 'X. X-ray');
     });
 
-    test('音标格：只读例词', () {
+    test('音标格：先读拟音再读例词（句号停顿）', () {
       const cell = ReferenceCellData(
-        char: '/eɪ/',
+        char: '/iː/',
         reading: '单元音 (12)',
         example: 'see',
+        exampleIpa: '/siː/',
         exampleCn: '',
         isPhonetic: true,
       );
-      expect(speakTextFor(cell), 'see');
+      expect(speakTextFor(cell), 'ee. see');
+    });
+
+    test('音标格拟音缺失：兜底只读例词（不把 IPA 送进 TTS）', () {
+      const unknown = ReferenceCellData(
+        char: '/??/',
+        reading: 'x',
+        example: 'see',
+        exampleIpa: '/siː/',
+        exampleCn: '',
+        isPhonetic: true,
+      );
+      expect(speakTextFor(unknown), 'see');
     });
 
     test('音标格 own sound：映射优先，缺失兜底例词', () {
@@ -131,6 +163,7 @@ void main() {
         char: '/iː/',
         reading: '单元音 (12)',
         example: 'see',
+        exampleIpa: '/siː/',
         exampleCn: '',
         isPhonetic: true,
       );
@@ -140,6 +173,7 @@ void main() {
         char: '/??/',
         reading: 'x',
         example: 'see',
+        exampleIpa: '/siː/',
         exampleCn: '',
         isPhonetic: true,
       );

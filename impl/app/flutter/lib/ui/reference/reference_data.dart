@@ -10,6 +10,7 @@ class ReferenceCellData {
     required this.char,
     required this.reading,
     required this.example,
+    required this.exampleIpa,
     required this.exampleCn,
     required this.isPhonetic,
   });
@@ -17,6 +18,7 @@ class ReferenceCellData {
   final String char; // 字母 "A a" 或音标 "/iː/"
   final String reading; // 字母 → 音标；音标 → 分类名
   final String example; // 例词
+  final String exampleIpa; // 例词完整音标（弹窗「拼写」行）
   final String exampleCn; // 例词中文
   final bool isPhonetic; // false=字母格子, true=音标格子
 }
@@ -270,42 +272,44 @@ class AlphabetItem {
     required this.char,
     required this.phone,
     required this.example,
+    required this.full,
     required this.cn,
   });
 
   final String char;
   final String phone;
   final String example;
+  final String full; // 例词完整音标（弹窗「拼写」行；英式，与 phonicsGroups 同一体系）
   final String cn;
 }
 
 const List<AlphabetItem> alphabetData = [
-  AlphabetItem(char: 'A a', phone: '/eɪ/', example: 'Apple', cn: '苹果'),
-  AlphabetItem(char: 'B b', phone: '/biː/', example: 'Ball', cn: '球'),
-  AlphabetItem(char: 'C c', phone: '/siː/', example: 'Cat', cn: '猫'),
-  AlphabetItem(char: 'D d', phone: '/diː/', example: 'Dog', cn: '狗'),
-  AlphabetItem(char: 'E e', phone: '/iː/', example: 'Egg', cn: '鸡蛋'),
-  AlphabetItem(char: 'F f', phone: '/ef/', example: 'Fish', cn: '鱼'),
-  AlphabetItem(char: 'G g', phone: '/dʒiː/', example: 'Girl', cn: '女孩'),
-  AlphabetItem(char: 'H h', phone: '/eɪtʃ/', example: 'Hat', cn: '帽子'),
-  AlphabetItem(char: 'I i', phone: '/aɪ/', example: 'Ice', cn: '冰'),
-  AlphabetItem(char: 'J j', phone: '/dʒeɪ/', example: 'Juice', cn: '果汁'),
-  AlphabetItem(char: 'K k', phone: '/keɪ/', example: 'Key', cn: '钥匙'),
-  AlphabetItem(char: 'L l', phone: '/el/', example: 'Lion', cn: '狮子'),
-  AlphabetItem(char: 'M m', phone: '/em/', example: 'Moon', cn: '月亮'),
-  AlphabetItem(char: 'N n', phone: '/en/', example: 'Nest', cn: '巢'),
-  AlphabetItem(char: 'O o', phone: '/əʊ/', example: 'Orange', cn: '橙子'),
-  AlphabetItem(char: 'P p', phone: '/piː/', example: 'Pen', cn: '钢笔'),
-  AlphabetItem(char: 'Q q', phone: '/kjuː/', example: 'Queen', cn: '女王'),
-  AlphabetItem(char: 'R r', phone: '/ɑːr/', example: 'Rain', cn: '雨'),
-  AlphabetItem(char: 'S s', phone: '/es/', example: 'Sun', cn: '太阳'),
-  AlphabetItem(char: 'T t', phone: '/tiː/', example: 'Tree', cn: '树'),
-  AlphabetItem(char: 'U u', phone: '/juː/', example: 'Umbrella', cn: '雨伞'),
-  AlphabetItem(char: 'V v', phone: '/viː/', example: 'Violin', cn: '小提琴'),
-  AlphabetItem(char: 'W w', phone: '/ˈdʌbljuː/', example: 'Water', cn: '水'),
-  AlphabetItem(char: 'X x', phone: '/eks/', example: 'X-ray', cn: 'X光'),
-  AlphabetItem(char: 'Y y', phone: '/waɪ/', example: 'Yellow', cn: '黄色'),
-  AlphabetItem(char: 'Z z', phone: '/zed/', example: 'Zebra', cn: '斑马'),
+  AlphabetItem(char: 'A a', phone: '/eɪ/', example: 'Apple', full: '/ˈæpəl/', cn: '苹果'),
+  AlphabetItem(char: 'B b', phone: '/biː/', example: 'Ball', full: '/bɔːl/', cn: '球'),
+  AlphabetItem(char: 'C c', phone: '/siː/', example: 'Cat', full: '/kæt/', cn: '猫'),
+  AlphabetItem(char: 'D d', phone: '/diː/', example: 'Dog', full: '/dɒɡ/', cn: '狗'),
+  AlphabetItem(char: 'E e', phone: '/iː/', example: 'Egg', full: '/eɡ/', cn: '鸡蛋'),
+  AlphabetItem(char: 'F f', phone: '/ef/', example: 'Fish', full: '/fɪʃ/', cn: '鱼'),
+  AlphabetItem(char: 'G g', phone: '/dʒiː/', example: 'Girl', full: '/ɡɜːl/', cn: '女孩'),
+  AlphabetItem(char: 'H h', phone: '/eɪtʃ/', example: 'Hat', full: '/hæt/', cn: '帽子'),
+  AlphabetItem(char: 'I i', phone: '/aɪ/', example: 'Ice', full: '/aɪs/', cn: '冰'),
+  AlphabetItem(char: 'J j', phone: '/dʒeɪ/', example: 'Juice', full: '/dʒuːs/', cn: '果汁'),
+  AlphabetItem(char: 'K k', phone: '/keɪ/', example: 'Key', full: '/kiː/', cn: '钥匙'),
+  AlphabetItem(char: 'L l', phone: '/el/', example: 'Lion', full: '/ˈlaɪən/', cn: '狮子'),
+  AlphabetItem(char: 'M m', phone: '/em/', example: 'Moon', full: '/muːn/', cn: '月亮'),
+  AlphabetItem(char: 'N n', phone: '/en/', example: 'Nest', full: '/nest/', cn: '巢'),
+  AlphabetItem(char: 'O o', phone: '/əʊ/', example: 'Orange', full: '/ˈɒrɪndʒ/', cn: '橙子'),
+  AlphabetItem(char: 'P p', phone: '/piː/', example: 'Pen', full: '/pen/', cn: '钢笔'),
+  AlphabetItem(char: 'Q q', phone: '/kjuː/', example: 'Queen', full: '/kwiːn/', cn: '女王'),
+  AlphabetItem(char: 'R r', phone: '/ɑːr/', example: 'Rain', full: '/reɪn/', cn: '雨'),
+  AlphabetItem(char: 'S s', phone: '/es/', example: 'Sun', full: '/sʌn/', cn: '太阳'),
+  AlphabetItem(char: 'T t', phone: '/tiː/', example: 'Tree', full: '/triː/', cn: '树'),
+  AlphabetItem(char: 'U u', phone: '/juː/', example: 'Umbrella', full: '/ʌmˈbrelə/', cn: '雨伞'),
+  AlphabetItem(char: 'V v', phone: '/viː/', example: 'Violin', full: '/ˌvaɪəˈlɪn/', cn: '小提琴'),
+  AlphabetItem(char: 'W w', phone: '/ˈdʌbljuː/', example: 'Water', full: '/ˈwɔːtə/', cn: '水'),
+  AlphabetItem(char: 'X x', phone: '/eks/', example: 'X-ray', full: '/ˈeksreɪ/', cn: 'X光'),
+  AlphabetItem(char: 'Y y', phone: '/waɪ/', example: 'Yellow', full: '/ˈjeləʊ/', cn: '黄色'),
+  AlphabetItem(char: 'Z z', phone: '/zed/', example: 'Zebra', full: '/ˈzebrə/', cn: '斑马'),
 ];
 
 /// 音标分组（对照 Kotlin phonicsGroups）。
@@ -398,9 +402,14 @@ const List<PhonicsGroup> phonicsGroups = [
 /// 音标 → 拟音映射（对照 Kotlin phonemeSoundMap）。
 /// TTS 无法直接朗读 IPA 符号，每个音标配一个可读文本；
 /// 值为近似拟音，个别音标（短元音/个别辅音）依赖真机试听微调。
+///
+/// 拟音文本用 espeak-ng（与 App 内 CEPhonemizer 同源规则族）离线核过：
+/// 送进音素器后该音必须**原样出现**，否则就是被当字母拼读。
+/// 三个反例已替换——/ɪ/ "ih"→ˈaɪ（读成 eye）、/e/ "eh"→ˈeɪ（读成 ay）、
+/// /dz/ "dzuh"→"dee-zuh"，分别换成同音锚词 it (/ɪt/)、ed (/ed 的 ɛ/)、ads (/ædz/)。
 const Map<String, String> phonemeSoundMap = {
   // 单元音
-  '/iː/': 'ee', '/ɪ/': 'ih', '/e/': 'eh', '/æ/': 'ack',
+  '/iː/': 'ee', '/ɪ/': 'it', '/e/': 'ed', '/æ/': 'ack',
   '/ɑː/': 'ah', '/ɒ/': 'aw', '/ɔː/': 'or', '/ʊ/': 'ook',
   '/uː/': 'oo', '/ʌ/': 'uh', '/ɜː/': 'er', '/ə/': 'uh',
   // 双元音
@@ -415,7 +424,7 @@ const Map<String, String> phonemeSoundMap = {
   '/h/': 'huh', '/r/': 'ruh',
   // 破擦音
   '/tʃ/': 'chuh', '/dʒ/': 'juh', '/tr/': 'truh', '/dr/': 'druh',
-  '/ts/': 'tsuh', '/dz/': 'dzuh',
+  '/ts/': 'tsuh', '/dz/': 'ads',
   // 鼻辅音
   '/m/': 'muh', '/n/': 'nuh', '/ŋ/': 'nguh',
   // 舌侧音
@@ -432,7 +441,12 @@ String ownSoundFor(ReferenceCellData cell) => cell.isPhonetic
     ? (phonemeOwnSound(cell.char) ?? cell.example)
     : cell.char.substring(0, 1);
 
-/// 发音文本：字母格先读字母名再读例词（句号停顿），音标格只读例词。
-String speakTextFor(ReferenceCellData cell) => cell.isPhonetic
-    ? cell.example
-    : '${cell.char.substring(0, 1)}. ${cell.example}';
+/// 发音文本：字母格先读字母名再读例词，音标格先读自身拟音再读例词
+/// （句号分隔 = 两段独立发声、中间有停顿）。
+///
+/// 拟音缺失（未知音标）时兜底只读例词——不能把 IPA 原文送进 TTS。
+String speakTextFor(ReferenceCellData cell) {
+  if (!cell.isPhonetic) return '${cell.char.substring(0, 1)}. ${cell.example}';
+  final ownSound = phonemeOwnSound(cell.char);
+  return ownSound == null ? cell.example : '$ownSound. ${cell.example}';
+}

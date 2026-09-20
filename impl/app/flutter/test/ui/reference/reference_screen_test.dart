@@ -1,3 +1,4 @@
+import 'package:contexta/core/theme/app_colors.dart';
 import 'package:contexta/di/providers.dart';
 import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/tts/tts_engine.dart';
@@ -9,8 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// Reference 页 widget 测试（Task 28）。
 /// 数据完整性已由 reference_data_test 覆盖，此处验证 UI 接线：
 /// - tabs 切换（字母表 / 音标 / 语法）
-/// - 字母格 / 音标格点击 → 弹窗内容（大字 / 音标 / 例词 / 发音按钮）
-/// - 弹窗发音：大字读 own sound，发音按钮读 speak 文本
+/// - 字母格 / 音标格点击 → 弹窗内容（符号位 / 注脚 / 例词 / 拼写行 / 发音按钮）
+/// - 弹窗发音：符号位读 own sound，发音按钮读 speak 文本
 /// - 语法折叠展开（默认展开第一组，可折叠 / 展开）
 /// - 路由接线（app_router_test 覆盖）
 
@@ -80,15 +81,16 @@ void main() {
   });
 
   group('字母格弹窗', () {
-    testWidgets('点击字母格 → 弹窗展示大字/音标/例词/发音按钮', (tester) async {
+    testWidgets('点击字母格 → 弹窗展示字母/音标/例词/拼写/发音按钮', (tester) async {
       await pumpScreen(tester);
 
       await tester.tap(find.text('A a'));
       await tester.pumpAndSettle();
 
-      expect(find.text('A a'), findsNWidgets(2)); // 格子 + 弹窗大字
-      expect(find.text('/eɪ/'), findsNWidgets(2)); // 格子 + 弹窗音标
+      expect(find.text('A a'), findsNWidgets(2)); // 格子 + 弹窗符号位
+      expect(find.text('/eɪ/'), findsNWidgets(2)); // 格子 + 弹窗注脚
       expect(find.text('Apple'), findsOneWidget);
+      expect(find.text('/ˈæpəl/'), findsOneWidget); // 拼写行（例词完整音标）
       expect(find.text('苹果'), findsOneWidget);
       expect(find.text('发音'), findsOneWidget);
 
@@ -96,6 +98,21 @@ void main() {
       await tester.tap(find.text('发音'));
       await tester.pumpAndSettle();
       expect(tts.spoken, ['A. Apple']);
+    });
+
+    testWidgets('弹窗排版：例词 40sp 珊瑚主角、符号位 28sp', (tester) async {
+      await pumpScreen(tester);
+
+      await tester.tap(find.text('A a'));
+      await tester.pumpAndSettle();
+
+      final word = tester.widget<Text>(find.text('Apple'));
+      expect(word.style?.fontSize, 40);
+      expect(word.style?.color, AppColors.primary);
+
+      final symbol = tester.widget<Text>(find.text('A a').last);
+      expect(symbol.style?.fontSize, 28);
+      expect(symbol.style?.color, AppColors.ink);
     });
 
     testWidgets('弹窗大字点击 → 读字母名', (tester) async {
@@ -128,7 +145,7 @@ void main() {
   });
 
   group('音标格弹窗', () {
-    testWidgets('点击音标格 → 分类名 + 例词 + 发音读例词', (tester) async {
+    testWidgets('点击音标格 → 分类名 + 例词 + 拼写 + 发音读「拟音 + 例词」', (tester) async {
       await pumpScreen(tester);
 
       await tester.tap(find.text('音标'));
@@ -137,15 +154,16 @@ void main() {
       await tester.tap(find.text('/iː/').first);
       await tester.pumpAndSettle();
 
-      // 弹窗：分类名（Muted 正文）+ 例词 see（珊瑚）
-      // 'see' 出现 2 次：网格格子 + 弹窗例词
-      expect(find.text('单元音 (12)'), findsNWidgets(2)); // 分组头 + 弹窗
+      // 弹窗：分类名（Muted 小字）+ 例词 see（珊瑚 40sp）+ 拼写 /siː/
+      // 'see' / '/siː/' 各出现 2 次：网格格子 + 弹窗
+      expect(find.text('单元音 (12)'), findsNWidgets(2)); // 分组头 + 弹窗注脚
       expect(find.text('see'), findsNWidgets(2));
+      expect(find.text('/siː/'), findsNWidgets(2));
       expect(find.text('发音'), findsOneWidget);
 
       await tester.tap(find.text('发音'));
       await tester.pumpAndSettle();
-      expect(tts.spoken, ['see']);
+      expect(tts.spoken, ['ee. see']);
     });
 
     testWidgets('音标大字点击 → 读自身拟音', (tester) async {
