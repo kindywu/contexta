@@ -14,7 +14,7 @@ import 'reference_data.dart';
 /// - 字母表：26 字母 4 列网格（字母 + 音标），点击弹详情
 /// - 音标：分组 SectionHeader（Primary 竖条 + 标题）+ 3 列网格
 /// - 语法：可折叠分组（▸/▾）+ 语法卡片（名称/规则/中文/例句引文）
-/// - 格子弹窗：大字（56sp）点击发音 + 音标/例词 + 「发音」按钮
+/// - 格子弹窗：符号 28sp + 例词 40sp 主角 + 例词音标（拼写行）+ 「发音」按钮
 class ReferenceScreen extends ConsumerStatefulWidget {
   const ReferenceScreen({super.key});
 
@@ -153,6 +153,7 @@ class _AlphabetContent extends StatelessWidget {
                         char: item.char,
                         reading: item.phone,
                         example: item.example,
+                        exampleIpa: item.full,
                         exampleCn: item.cn,
                         isPhonetic: false,
                       )),
@@ -214,6 +215,7 @@ class _PhonicsContent extends StatelessWidget {
                           char: item.phone,
                           reading: group.name,
                           example: item.example,
+                          exampleIpa: item.full,
                           exampleCn: '',
                           isPhonetic: true,
                         )),
@@ -468,8 +470,10 @@ class _GrammarCard extends StatelessWidget {
   }
 }
 
-/// 格子弹窗：56sp 大字（点击发音）+ 音标/分类 + 例词 + 发音按钮
-/// （对照 Kotlin AppModal 内容）。
+/// 格子弹窗（字母格 / 音标格统一同一套 5 槽）：
+/// ① 顶部行 28sp 符号 + 小号注脚（字母 → 音标；音标 → 分类名）
+/// ② 例词 40sp 主角（珊瑚，点击读词）③ 例词完整音标（拼写行）
+/// ④ 例词中文（仅字母格有）⑤ 发音按钮（读「符号 + 例词」两段）。
 class _ReferenceCellModal extends ConsumerWidget {
   const _ReferenceCellModal({required this.cell, required this.onDismiss});
 
@@ -495,46 +499,63 @@ class _ReferenceCellModal extends ConsumerWidget {
               tint: AppColors.mutedSoft,
             ),
           ),
-          // 56sp serif 大字：点击朗读（字母读字母名，音标读自身拟音）
-          InkWell(
-            onTap: () => controller.speak(ownSoundFor(cell)),
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Text(
-                cell.char,
-                textAlign: TextAlign.center,
-                style: AppType.textTheme.displayLarge
-                    ?.copyWith(fontSize: 56, height: 60 / 56),
+          // ① 顶部行：符号（点击朗读——字母读字母名，音标读自身拟音）
+          //    + 小号注脚（字母格 = 音标 15sp 珊瑚；音标格 = 分类名 12sp Muted）
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              InkWell(
+                onTap: () => controller.speak(ownSoundFor(cell)),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Text(
+                    cell.char,
+                    textAlign: TextAlign.center,
+                    style: AppType.textTheme.displayMedium
+                        ?.copyWith(color: AppColors.ink),
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          // reading：字母 → 音标（珊瑚）；音标 → 分类名（Muted）
-          Text(
-            cell.reading,
-            textAlign: TextAlign.center,
-            style: cell.isPhonetic
-                ? AppType.textTheme.bodyMedium?.copyWith(color: AppColors.muted)
-                : AppType.phonetic.copyWith(fontSize: 15),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                cell.reading,
+                style: cell.isPhonetic
+                    ? AppType.textTheme.labelSmall
+                        ?.copyWith(color: AppColors.mutedSoft)
+                    : AppType.phonetic.copyWith(fontSize: 15),
+              ),
+            ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          // 例词：大字 + 珊瑚 + 可点击发音
+          // ② 例词：主角大字（serif 400 珊瑚，display 级不加粗）+ 可点击发音
           InkWell(
             onTap: () => controller.speak(cell.example),
             borderRadius: BorderRadius.circular(AppRadius.sm),
             child: Padding(
-              padding: const EdgeInsets.all(4),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: Text(
                 cell.example,
                 textAlign: TextAlign.center,
-                style: AppType.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w500,
+                style: AppType.textTheme.displayLarge?.copyWith(
+                  fontSize: 40,
+                  height: 44 / 40,
                   color: AppColors.primary,
                 ),
               ),
             ),
           ),
+          const SizedBox(height: 2),
+          // ③ 拼写行：例词完整音标（英式，与分组数据同一体系）
+          if (cell.exampleIpa.isNotEmpty)
+            Text(
+              cell.exampleIpa,
+              textAlign: TextAlign.center,
+              style: AppType.phonetic.copyWith(fontSize: 15),
+            ),
+          // ④ 例词中文（音标格无此数据）
           if (cell.exampleCn.isNotEmpty) ...[
             const SizedBox(height: 2),
             Text(
@@ -544,6 +565,7 @@ class _ReferenceCellModal extends ConsumerWidget {
             ),
           ],
           const SizedBox(height: AppPage.minTouchTarget ~/ 2 - 2),
+          // ⑤ 发音：符号 + 例词两段（句号分隔）
           AppButton(
             text: '发音',
             onClick: () => controller.speak(speakTextFor(cell)),
