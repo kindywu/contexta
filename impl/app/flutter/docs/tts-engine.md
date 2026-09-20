@@ -8,17 +8,19 @@
 
 用户点击朗读后，阅读页控制器（ReadingController）通过 `ttsEngineProvider`（`lib/di/providers.dart`，FutureProvider 懒加载）取得引擎，调用 `speak` / `speakFullArticle` / `speakSentences` 发声（朗读单元 = 句子，见 [reading-sentence-highlight.md](reading-sentence-highlight.md)）。用户无感知的是语音由哪条引擎链发声——KittenTTS 可用则用 KittenTTS（本地合成、音质好、不依赖系统引擎），否则静默回退系统 TTS。
 
-**音色选择**：KittenTTS 内置 8 个英语音色（Bella/Jasper/Luna/Bruno/Rosie/Hugo/Kiki/Leo）。设置页音色选择器的**默认项是「随机」**：文章朗读时，每篇文章在进入时随机分配一个音色（8 个等概率，男女不限）并写入 `article.tts_voice_id`，此后这篇一直用它——同一篇文章反复朗读听感一致，不同文章各有各的声音。用户也可在设置页显式选一个具体音色，此时**全站固定**用该音色、不再随机（阅读页忽略文章已分配的音色）。选择持久化到 `user_settings.tts_voice_id`（`'RANDOM'` 或具体音色名）。非文章入口（参考页例句、词汇页单词）在「随机」模式下也随机取一个（按会话稳定，见下）。系统 TTS 回退时音色不生效（系统引擎没有音色概念），但功能不受影响。
+**音色选择**：KittenTTS 内置 8 个英语音色（Bella/Jasper/Luna/Bruno/Rosie/Hugo/Kiki/Leo）。设置页音色选择器的**默认项是「随机」**：文章朗读时，每篇文章在进入时随机分配一个音色（8 个等概率，男女不限）并写入 `article.tts_voice_id`，此后这篇一直用它——同一篇文章反复朗读听感一致，不同文章各有各的声音。用户也可在设置页显式选一个具体音色，此时**全站固定**用该音色、不再随机（阅读页忽略文章已分配的音色）。选择持久化到 `user_settings.tts_voice_id`（`'RANDOM'` 或具体音色名）。非文章入口里的**词汇页单词**在「随机」模式下也随机取一个（按会话稳定，见下）；**参考页固定 `bella`**，不跟随该设置（见下条）。系统 TTS 回退时音色不生效（系统引擎没有音色概念），但功能不受影响。
 
-**参考页发音（非文章入口）**：格子与弹窗内点符号只读自身（字母读字母名、音标读拟音 `phonemeOwnSound`），点例词只读例词；弹窗「发音」按钮读**两段**——`speakTextFor` 拼成 `'<拟音或字母名>. <例词>'`（句号 = 两段独立发声、中间有停顿），如 `/iː/` → `ee. see`。拟音缺失（未知音标）时兜底只读例词——IPA 原文绝不进 TTS。
+**参考页发音（非文章入口）**：字母格走 TTS——点符号大字读字母名，点例词大字读例词，弹窗「发音」按钮由 `speakTextFor` 拼成 `'<字母名>. <例词>'` 一段读完（句号 = 两段独立发声、中间有停顿），如 `A. Apple`。**音标格不走 TTS**：TTS 读不出 IPA 符号，音标本身的发音是随包分发的真人录音（例词仍由 TTS 读）——见 [phoneme-audio.md](phoneme-audio.md)。
 
-朗读质量的五个坑（均已在代码层处理）：
+**参考页音色固定 `bella`**：`referenceControllerProvider` 不读 `user_settings.tts_voice_id`，构造时写死（`ReferenceController._voice` 默认值）。理由：参考页是「对着表一个个听」的场景，字母表与音标前后切换时音色必须一致，跟着全局设置走会导致每换一格换一个嗓子。设置页换音色对参考页无影响，阅读页/词汇页照旧。
+
+朗读质量的四个坑（均已在代码层处理）：
 
 1. **init 挂起**：CEPhonemizer 未传词典路径时，插件会从 `raw.githubusercontent.com` 下载 en_rules/en_list，http 无超时——国内网络下 `KittenTTS.create()` 永久挂起（CPU 0%），朗读链路被阻塞。解决：词典打包进 assets（`assets/kittentts_models/en_rules`、`en_list`，共 ~260KB），create() 显式传 `rulesPath`/`listPath` 直用本地文件，零网络依赖。
 2. **音素器静默降级**：词典文件缺失时 `allowRuleBasedFallback` 兜底到纯规则音素器——发音质量明显变差（提交 9fb6c89 注释：「音质略差但可用」）。这就是 2026-08-10 真机「朗读效果变差」的根因：旧 APK 安装留下的 `.installed` marker 让新代码跳过资产拷贝，词典从未拷入。修复后 marker 不再是跳过拷贝的充分条件（见下）。
 3. **首字母大写的词被逐字母拼读**（2026-09-18 iOS 模拟器实测）：标题 "Why the Sky Is Blue" 被读成 "S K Y"，而正文里小写的 sky 正常。原因是插件的音素器对**首字母大写**的词走单独的 capital 词典分支（插件源码 `src/cephonemizer/phonemizer.cpp` 的 `$capital` / `capital_dict_`，见 `phonemizer.cpp:2017`），未命中时退化为逐字母拼读。解决：`KittenTtsEngine` 在**送合成前统一转小写**（`normalizeTtsText`，作用于 `speak`/`speakSentences`/`speakFullArticle`/`pregenerateSentences` 四个入口）——Kokoro/KittenTTS 模型本身以小写文本训练、音素查表前也会 normalise 大小写，故转小写无副作用。只动**送合成**的文本：界面显示、句子高亮、缓存键（段落 + 句序 + 语速 + 音色，不含文本）都不受影响；系统 TTS 不做此转换（平台 TTS 大小写处理正确，转换反而会改变 NASA 一类缩写的读法）。
 4. **插件默认存储目录在 iOS 上建不出来**（2026-09-18 模拟器实测）：插件把 `storageDirectory` 默认为 `<appSupport>/KittenTTS`，在 iOS 沙箱里 `Directory.create` 抛 `PathNotFoundException: Creation failed … errno = 2`；该异常被 `allowRuleBasedFallback` 吞掉 → **静默降级为规则音素器**，表现为「朗读能出声但发音奇怪」，且日志里 `[KittenTtsEngine] init SUCCESS` 一切正常。解决两处：`KittenTtsPluginSession.create` 显式传 `storageDirectory: <解压出的模型目录>`（我们自己的目录，创建必然成功）；`allowRuleBasedFallback: false`——词典加载失败时让 KittenTTS **整体不可用**（回退系统 TTS，听感正常），而不是「能出声但发音是错的」。诊断手法：把 `allowRuleBasedFallback` 关掉后 init 会直接报错并暴露真实原因；保持关闭则「init SUCCESS」即等价于「CE 音素器已加载」。
-5. **拟音文本被当字母拼读**（2026-09-20 离线核验）：音标符号（IPA）不能直接送 TTS，参考页给每个音标配一个可读拟音（`phonemeSoundMap`，`reference_data.dart`）。但拟音本身若不像英文词，音素器同样会逐字母读——`ih` → `ˈaɪ`（/ɪ/ 读成 "eye"）、`eh` → `ˈeɪ`（/e/ 读成 "ay"）、`dzuh` → "dee-zuh"（/dz/ 读成两个音节）。解决：三者换成**同音锚词** `it`（/ɪt/）、`ed`（/ed/ 的 ɛ）、`ads`（/ædz/）。核验手法：espeak-ng 与插件 CEPhonemizer 同源规则族，用 `espeak -q --ipa -v en-us "<拟音>"` 离线核——音素输出里必须**原样出现目标音**，否则就是被拼读了（48 个音标逐个核过，其余 45 个通过）。核验是代理手段，最终以真机试听为准。
+5. **IPA 符号不能直接送 TTS**：参考页音标发音改用随包录音后此坑消失（录音是 mp3，不经过音素器）；送进 TTS 的只剩例词与字母名这类真词。见 [phoneme-audio.md](phoneme-audio.md)。
 
 ## 技术实现线
 
@@ -171,6 +173,6 @@ flowchart TD
 - `test/data/local/daos/article_daos_test.dart`：`setTtsVoice` 写库 / 只影响目标文章 / 服务端同步不覆盖
 - `test/ui/settings/settings_controller_test.dart` / `settings_screen_test.dart`：音色选择持久化 + 试听/停播 + provider invalidate
 - 阅读页/参考页/词汇页测试：voice 透传到 engine（fake 断言 lastVoice）
-- `test/ui/reference/reference_data_test.dart`：拟音锚词（/ɪ/ `it`、/e/ `ed`、/dz/ `ads`）、speak 文本两段式（拟音 + 例词；拟音缺失兜底只读例词）、例词完整音标齐全（26 字母 + 48 音标）
+- `test/ui/reference/reference_data_test.dart`：字母格 speak 文本两段式（字母名 + 例词）、例词完整音标齐全（26 字母 + 48 音标）；音标录音部分见 [phoneme-audio.md](phoneme-audio.md)
 - `test/ui/reference/reference_screen_test.dart`：弹窗排版（例词 40sp 珊瑚主角、符号位 28sp ink）、拼写行渲染、发音按钮读 `ee. see`
 - 真机验证：2026-08-10 修复后 init 0.7s、词典拷入后音质恢复；2026-08-09 init 挂起修复时验证 7 段全文朗读正常

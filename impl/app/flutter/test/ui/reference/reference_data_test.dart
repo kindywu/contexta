@@ -1,11 +1,14 @@
+import 'dart:io';
+
+import 'package:contexta/domain/audio/phoneme_audio.dart';
 import 'package:contexta/ui/reference/reference_data.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Reference 页静态数据测试（对照 Kotlin GrammarDataTest + SpeakTextTest）：
 /// - 语法数据完整性（4 组 23 条、字段齐全、例句成对）
 /// - 字母表 / 音标分组规模
-/// - phoneme 拟音映射全覆盖（48 个音标均有映射）
-/// - speak 文本规则（字母格先读字母名，音标格先读拟音，再读例词）
+/// - 音标录音齐全（manifest 覆盖 48 个音标、文件真实存在）
+/// - speak 文本规则（字母格先读字母名再读例词；音标格不走 TTS）
 
 void main() {
   group('语法数据', () {
@@ -56,45 +59,46 @@ void main() {
     test('音标分组：8 组 48 个音标', () {
       final all = phonicsGroups.expand((g) => g.items).toList();
       expect(all.length, 48);
+      // 组名不带条目数——标题上的 "(N)" 由 reference_screen 按 items.length 拼，
+      // 弹窗注脚直接用组名（否则单个音标旁边挂个数字会被当成它的属性）
       expect(phonicsGroups.map((g) => g.name), [
-        '单元音 (12)',
-        '双元音 (8)',
-        '爆破音 (6)',
-        '摩擦音 (10)',
-        '破擦音 (6)',
-        '鼻辅音 (3)',
-        '舌侧音 (1)',
-        '半元音 (2)',
+        '单元音',
+        '双元音',
+        '爆破音',
+        '摩擦音',
+        '破擦音',
+        '鼻辅音',
+        '舌侧音',
+        '半元音',
       ]);
+      expect(phonicsGroups.map((g) => g.items.length), [12, 8, 6, 10, 6, 3, 1, 2]);
     });
   });
 
-  group('phoneme 拟音映射', () {
-    test('网格中每个音标都有拟音映射', () {
+  group('音标录音（assets/phonetics/）', () {
+    // 这组是「网格里每个音标都出得了声」的守门人：抓取脚本换人声/改文件名后，
+    // 一旦与 phonicsGroups 的 48 个符号对不上，这里直接红。
+    final manifestFile = File('assets/phonetics/manifest.json');
+
+    test('manifest.json 存在且覆盖全部 48 个音标', () {
+      expect(manifestFile.existsSync(), isTrue,
+          reason: '缺 assets/phonetics/manifest.json——跑 tool/fetch-phonetics-yyb.ts 生成');
+
+      final files = phonemeFilesFromManifest(manifestFile.readAsStringSync());
       final phones = phonicsGroups.expand((g) => g.items).map((i) => i.phone);
       for (final phone in phones) {
-        expect(phonemeOwnSound(phone), isNotNull,
-            reason: 'missing own-sound mapping for $phone');
+        expect(files[normalizePhone(phone)], isNotNull, reason: '音标 $phone 没有对应录音');
       }
     });
 
-    test('抽查映射值', () {
-      expect(phonemeOwnSound('/iː/'), 'ee');
-      expect(phonemeOwnSound('/æ/'), 'ack');
-      expect(phonemeOwnSound('/b/'), 'buh');
-      expect(phonemeOwnSound('/aɪ/'), 'eye');
-      expect(phonemeOwnSound('/ŋ/'), 'nguh');
-    });
-
-    test('短元音 /dz 用同音锚词（不用会被读成字母名的拼写）', () {
-      // 送 espeak-ng 音素器会读出目标音的锚词；反例见 reference_data.dart 注释
-      expect(phonemeOwnSound('/ɪ/'), 'it'); // 反例 'ih' → ˈaɪ
-      expect(phonemeOwnSound('/e/'), 'ed'); // 反例 'eh' → ˈeɪ
-      expect(phonemeOwnSound('/dz/'), 'ads'); // 反例 'dzuh' → dee-zuh
-    });
-
-    test('未知音标返回 null', () {
-      expect(phonemeOwnSound('/zzz/'), isNull);
+    test('manifest 里每个文件都真实存在（非空）', () {
+      final files = phonemeFilesFromManifest(manifestFile.readAsStringSync());
+      expect(files, isNotEmpty);
+      for (final entry in files.entries) {
+        final f = File('assets/phonetics/${entry.value}');
+        expect(f.existsSync(), isTrue, reason: '${entry.key} → ${entry.value} 不在盘上');
+        expect(f.lengthSync(), greaterThan(512), reason: '${entry.value} 内容可疑');
+      }
     });
   });
 
@@ -134,7 +138,7 @@ void main() {
       expect(speakTextFor(x), 'X. X-ray');
     });
 
-    test('音标格：先读拟音再读例词（句号停顿）', () {
+    test('音标格：TTS 只念例词，音标本身交给录音（不把 IPA 送进 TTS）', () {
       const cell = ReferenceCellData(
         char: '/iː/',
         reading: '单元音 (12)',
@@ -143,10 +147,10 @@ void main() {
         exampleCn: '',
         isPhonetic: true,
       );
-      expect(speakTextFor(cell), 'ee. see');
+      expect(speakTextFor(cell), 'see');
     });
 
-    test('音标格拟音缺失：兜底只读例词（不把 IPA 送进 TTS）', () {
+    test('未知音标同样只念例词（不因缺录音把 IPA 送进 TTS）', () {
       const unknown = ReferenceCellData(
         char: '/??/',
         reading: 'x',
@@ -156,32 +160,6 @@ void main() {
         isPhonetic: true,
       );
       expect(speakTextFor(unknown), 'see');
-    });
-
-    test('音标格 own sound：映射优先，缺失兜底例词', () {
-      const cell = ReferenceCellData(
-        char: '/iː/',
-        reading: '单元音 (12)',
-        example: 'see',
-        exampleIpa: '/siː/',
-        exampleCn: '',
-        isPhonetic: true,
-      );
-      expect(ownSoundFor(cell), 'ee');
-
-      const unknown = ReferenceCellData(
-        char: '/??/',
-        reading: 'x',
-        example: 'see',
-        exampleIpa: '/siː/',
-        exampleCn: '',
-        isPhonetic: true,
-      );
-      expect(ownSoundFor(unknown), 'see');
-    });
-
-    test('字母格 own sound 是字母名', () {
-      expect(ownSoundFor(alphabetCell), 'A');
     });
   });
 }

@@ -1,7 +1,9 @@
 import 'package:contexta/core/theme/app_colors.dart';
 import 'package:contexta/di/providers.dart';
+import 'package:contexta/domain/audio/phoneme_audio.dart';
 import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/tts/tts_engine.dart';
+import 'package:contexta/ui/reference/reference_controller.dart';
 import 'package:contexta/ui/reference/reference_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,9 +13,20 @@ import 'package:flutter_test/flutter_test.dart';
 /// 数据完整性已由 reference_data_test 覆盖，此处验证 UI 接线：
 /// - tabs 切换（字母表 / 音标 / 语法）
 /// - 字母格 / 音标格点击 → 弹窗内容（符号位 / 注脚 / 例词 / 拼写行 / 发音按钮）
-/// - 弹窗发音：符号位读 own sound，发音按钮读 speak 文本
+/// - 弹窗发音：字母格走 TTS，音标格走随包录音（不走 TTS）
 /// - 语法折叠展开（默认展开第一组，可折叠 / 展开）
 /// - 路由接线（app_router_test 覆盖）
+
+/// 假录音库：记录播放过哪些音标（widget 测试里不碰真实 audioplayers）。
+class _AudioStub implements PhonemeAudio {
+  final List<String> played = [];
+
+  @override
+  Future<bool> play(String phone) async {
+    played.add(phone);
+    return true;
+  }
+}
 
 class _TtsStub implements TtsEngine {
   final List<String> spoken = [];
@@ -45,15 +58,18 @@ class _TtsStub implements TtsEngine {
 
 void main() {
   late _TtsStub tts;
+  late _AudioStub audio;
 
   setUp(() {
     tts = _TtsStub();
+    audio = _AudioStub();
   });
 
   Future<void> pumpScreen(WidgetTester tester) async {
     await tester.pumpWidget(ProviderScope(
       overrides: [
         ttsEngineProvider.overrideWith((ref) async => tts),
+        phonemeAudioProvider.overrideWithValue(audio),
       ],
       child: const MaterialApp(home: ReferenceScreen()),
     ));
@@ -145,7 +161,7 @@ void main() {
   });
 
   group('音标格弹窗', () {
-    testWidgets('点击音标格 → 分类名 + 例词 + 拼写 + 发音读「拟音 + 例词」', (tester) async {
+    testWidgets('点击音标格 → 分类名 + 例词 + 拼写 + 发音「录音 + 例词」', (tester) async {
       await pumpScreen(tester);
 
       await tester.tap(find.text('音标'));
@@ -156,17 +172,22 @@ void main() {
 
       // 弹窗：分类名（Muted 小字）+ 例词 see（珊瑚 40sp）+ 拼写 /siː/
       // 'see' / '/siː/' 各出现 2 次：网格格子 + 弹窗
-      expect(find.text('单元音 (12)'), findsNWidgets(2)); // 分组头 + 弹窗注脚
+      expect(find.text('单元音 (12)'), findsOneWidget); // 分组头（带条目数）
+      expect(find.text('单元音'), findsOneWidget); // 弹窗注脚只显示组名
       expect(find.text('see'), findsNWidgets(2));
       expect(find.text('/siː/'), findsNWidgets(2));
       expect(find.text('发音'), findsOneWidget);
 
       await tester.tap(find.text('发音'));
       await tester.pumpAndSettle();
-      expect(tts.spoken, ['ee. see']);
+      expect(audio.played, ['/iː/']); // 音标本身：录音
+
+      // 录音与例词之间停一拍（默认 1s）——测试里把时钟推过去
+      await tester.pump(ReferenceController.defaultPhonemeWordGap);
+      expect(tts.spoken, ['see']); // 例词：TTS（音标不经过 TTS）
     });
 
-    testWidgets('音标大字点击 → 读自身拟音', (tester) async {
+    testWidgets('音标大字点击 → 放录音（不走 TTS）', (tester) async {
       await pumpScreen(tester);
 
       await tester.tap(find.text('音标'));
@@ -177,7 +198,8 @@ void main() {
 
       await tester.tap(find.text('/iː/').last); // 弹窗大字
       await tester.pumpAndSettle();
-      expect(tts.spoken, ['ee']);
+      expect(audio.played, ['/iː/']);
+      expect(tts.spoken, isEmpty);
     });
   });
 

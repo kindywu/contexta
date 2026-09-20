@@ -182,7 +182,9 @@ class _PhonicsContent extends StatelessWidget {
     return Column(
       children: [
         for (final group in phonicsGroups) ...[
-          _SectionHeader(title: group.name),
+          // 分组标题带本组条目数；弹窗注脚只显示组名（见下 `reading: group.name`）——
+          // 「这组有几个」放在标题上才读得通，挂在单个音标旁边会被当成这个音标的属性
+          _SectionHeader(title: '${group.name} (${group.items.length})'),
           for (final row in _chunked(group.items, 3)) ...[
             Row(
               children: [
@@ -499,7 +501,7 @@ class _ReferenceCellModal extends ConsumerWidget {
               tint: AppColors.mutedSoft,
             ),
           ),
-          // ① 顶部行：符号（点击朗读——字母读字母名，音标读自身拟音）
+          // ① 顶部行：符号（点击发音——字母读字母名，音标放随包录音）
           //    + 小号注脚（字母格 = 音标 15sp 珊瑚；音标格 = 分类名 12sp Muted）
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -507,7 +509,7 @@ class _ReferenceCellModal extends ConsumerWidget {
             textBaseline: TextBaseline.alphabetic,
             children: [
               InkWell(
-                onTap: () => controller.speak(ownSoundFor(cell)),
+                onTap: () => controller.playSymbol(cell),
                 borderRadius: BorderRadius.circular(AppRadius.sm),
                 child: Padding(
                   padding: const EdgeInsets.all(4),
@@ -565,10 +567,10 @@ class _ReferenceCellModal extends ConsumerWidget {
             ),
           ],
           const SizedBox(height: AppPage.minTouchTarget ~/ 2 - 2),
-          // ⑤ 发音：符号 + 例词两段（句号分隔）
+          // ⑤ 发音：符号 + 例词两段（音标格 = 先录音后例词；字母格 = 一段 TTS）
           AppButton(
             text: '发音',
-            onClick: () => controller.speak(speakTextFor(cell)),
+            onClick: () => controller.playCell(cell),
           ),
           const SizedBox(height: 4),
         ],

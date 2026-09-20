@@ -8,6 +8,7 @@ import '../core/config/app_config.dart';
 import '../core/navigation/app_router.dart';
 import '../core/platform/device_form_factor.dart';
 import '../core/time/iso8601.dart';
+import '../data/audio/asset_phoneme_audio.dart';
 import '../data/auth/auth_service.dart';
 import '../data/auth/device_id_provider.dart';
 import '../data/auth/device_label_reader.dart';
@@ -29,6 +30,7 @@ import '../data/repository/word_repository_impl.dart';
 import '../data/tts/tts_cache_manager.dart';
 import '../data/tts/tts_engine_factory.dart';
 import '../domain/repository/article_repository.dart';
+import '../domain/audio/phoneme_audio.dart';
 import '../domain/repository/settings_repository.dart';
 import '../domain/repository/stats_repository.dart';
 import '../domain/repository/vocabulary_repository.dart';
@@ -175,6 +177,11 @@ final ttsEngineProvider = FutureProvider<TtsEngine>((ref) {
     kittenAssetBasePath: 'assets/kittentts_models',
     cache: ref.watch(ttsCacheManagerProvider),
   ).create();
+});
+
+/// 音标录音库（48 个音标，随包分发；音标发音不走 TTS）。
+final phonemeAudioProvider = Provider<PhonemeAudio>((ref) {
+  return AssetPhonemeAudio();
 });
 
 /// 词库仓储（LRU(50) + Semaphore(3)，单例：缓存与并发限制跨调用共享）。
