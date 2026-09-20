@@ -58,7 +58,7 @@ export const CATEGORY_GUIDANCE: Record<Category, string> = {
   scene_description:
     "场景描写：静态或动态场景的细节描绘，多用感官词汇，画面感强",
   simple_story:
-    "简短故事：情节简单完整，人物明确，明显是虚构创作（注：文中需标明为虚构故事）",
+    "简短故事：情节简单完整，人物明确，明显是虚构创作（用虚构人物与情节，不影射真人真事）",
   news:
     "新闻报道体：只陈述事实，逐字基于权威来源信息，不得添加来源之外的细节、推测或评价",
   expository:
@@ -113,7 +113,6 @@ export function buildGenerateSystemPrompt(params: {
 - No speculation, no comparison with unrelated facts, no value judgments.`
       : `Path B rules (knowledge-based):
 - Write from reliable general knowledge only. For any quote/attribution, use only ones you are certain are real and verifiable; when unsure, invent the idea instead of the attribution.
-- If the article is fictional, say so clearly in the first paragraph.
 - Avoid making subjective value judgments on controversial topics.
 ABSOLUTELY FORBIDDEN:
 - NEVER mention, reference, quote, describe, or construct any content around the following named persons. The article must not contain ANY of these Chinese names (in titles, English text, or Chinese text), and must not be about them, their quotes, their works, or their deeds:
@@ -127,6 +126,7 @@ TASK SPEC:
 - Target: ${TARGET_PARAGRAPHS} paragraphs, each 50-120 English words, English and Chinese paragraph-aligned.
 - Output: an English title and a Chinese title.
 - The article is for language learning; keep it informative and engaging.
+- Output ONLY the article (title + paragraphs). Never add meta-commentary or a disclaimer about the text itself — no "This is a fictional story", no note that the content is invented, AI-written, or meant for English learners, no framing sentence or sign-off. The one exception is a notice the category guidance above explicitly requires (e.g. the legal-information notice).
 - If the topic would violate any forbidden rule or lacks credible grounding, refuse by outputting exactly:
   {"type":"cannot_write"}
   Do not produce vague or borderline content instead, and never reply with a prose refusal sentence.

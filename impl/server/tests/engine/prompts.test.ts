@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import {
+  buildGenerateSystemPrompt,
   buildGenerateUserContent,
   buildTopicPlannerUser,
+  CATEGORY_GUIDANCE,
 } from "../../src/engine/graph/prompts";
 
 const base = {
@@ -43,6 +45,19 @@ test("buildGenerateUserContent: 空选题/纯空白 → 不输出 TOPIC 行（�
     expect(user).not.toContain("TOPIC —");
     expect(user).toContain("RECENTLY PUBLISHED ARTICLES");
   }
+});
+
+test("buildGenerateSystemPrompt: 不再要求'虚构需标明'，且禁止正文出现元提示", () => {
+  for (const path of ["A", "B"] as const) {
+    const p = buildGenerateSystemPrompt({ difficulty: "LOW", category: "simple_story", path });
+    // 旧规则（正是 "This is a fictional story" 的来源）必须消失
+    expect(p).not.toContain("say so clearly");
+    // 新规则：正文只写文章本身
+    expect(p).toContain("This is a fictional story");
+    expect(p).toContain("Never add meta-commentary");
+  }
+  // 类别指引里也不该再要求文中标注虚构
+  expect(CATEGORY_GUIDANCE.simple_story).not.toContain("标明");
 });
 
 test("buildTopicPlannerUser: 槽位规格 + 已用标题/已占选题都带给规划器", () => {
