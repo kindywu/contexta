@@ -52,6 +52,9 @@ flutter:
   assets:
     - assets/contexta.db
     - assets/seed_articles.json
+    # 48 个国际音标的真人录音（约 1.1MB）+ manifest.json 符号映射；
+    # 音标发音不走 TTS，改放这里的录音（见 lib/domain/audio/phoneme_audio.dart）
+    - assets/phonetics/
     - assets/kittentts_models/
     # 自签名服务端证书（信任锚）：Dart 的 TLS 栈不读 Android network security config，
     # 必须显式注入 SecurityContext（见 lib/di/providers.dart、config-and-deploy.md §2.1）

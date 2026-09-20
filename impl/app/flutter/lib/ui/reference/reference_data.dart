@@ -333,7 +333,7 @@ class PhonicsGroup {
 }
 
 const List<PhonicsGroup> phonicsGroups = [
-  PhonicsGroup(name: '单元音 (12)', items: [
+  PhonicsGroup(name: '单元音', items: [
     PhonicsItem(phone: '/iː/', example: 'see', full: '/siː/'),
     PhonicsItem(phone: '/ɪ/', example: 'sit', full: '/sɪt/'),
     PhonicsItem(phone: '/e/', example: 'bed', full: '/bed/'),
@@ -347,7 +347,7 @@ const List<PhonicsGroup> phonicsGroups = [
     PhonicsItem(phone: '/ɜː/', example: 'bird', full: '/bɜːd/'),
     PhonicsItem(phone: '/ə/', example: 'about', full: '/əˈbaʊt/'),
   ]),
-  PhonicsGroup(name: '双元音 (8)', items: [
+  PhonicsGroup(name: '双元音', items: [
     PhonicsItem(phone: '/eɪ/', example: 'cake', full: '/keɪk/'),
     PhonicsItem(phone: '/aɪ/', example: 'time', full: '/taɪm/'),
     PhonicsItem(phone: '/ɔɪ/', example: 'boy', full: '/bɔɪ/'),
@@ -357,7 +357,7 @@ const List<PhonicsGroup> phonicsGroups = [
     PhonicsItem(phone: '/eə/', example: 'hair', full: '/heər/'),
     PhonicsItem(phone: '/ʊə/', example: 'tour', full: '/tʊər/'),
   ]),
-  PhonicsGroup(name: '爆破音 (6)', items: [
+  PhonicsGroup(name: '爆破音', items: [
     PhonicsItem(phone: '/p/', example: 'pen', full: '/pen/'),
     PhonicsItem(phone: '/b/', example: 'book', full: '/bʊk/'),
     PhonicsItem(phone: '/t/', example: 'top', full: '/tɒp/'),
@@ -365,7 +365,7 @@ const List<PhonicsGroup> phonicsGroups = [
     PhonicsItem(phone: '/k/', example: 'cat', full: '/kæt/'),
     PhonicsItem(phone: '/ɡ/', example: 'go', full: '/ɡəʊ/'),
   ]),
-  PhonicsGroup(name: '摩擦音 (10)', items: [
+  PhonicsGroup(name: '摩擦音', items: [
     PhonicsItem(phone: '/f/', example: 'fish', full: '/fɪʃ/'),
     PhonicsItem(phone: '/v/', example: 'van', full: '/væn/'),
     PhonicsItem(phone: '/θ/', example: 'think', full: '/θɪŋk/'),
@@ -377,7 +377,7 @@ const List<PhonicsGroup> phonicsGroups = [
     PhonicsItem(phone: '/h/', example: 'hat', full: '/hæt/'),
     PhonicsItem(phone: '/r/', example: 'red', full: '/red/'),
   ]),
-  PhonicsGroup(name: '破擦音 (6)', items: [
+  PhonicsGroup(name: '破擦音', items: [
     PhonicsItem(phone: '/tʃ/', example: 'chips', full: '/tʃɪps/'),
     PhonicsItem(phone: '/dʒ/', example: 'jump', full: '/dʒʌmp/'),
     PhonicsItem(phone: '/tr/', example: 'tree', full: '/triː/'),
@@ -385,68 +385,26 @@ const List<PhonicsGroup> phonicsGroups = [
     PhonicsItem(phone: '/ts/', example: 'cats', full: '/kæts/'),
     PhonicsItem(phone: '/dz/', example: 'beds', full: '/bedz/'),
   ]),
-  PhonicsGroup(name: '鼻辅音 (3)', items: [
+  PhonicsGroup(name: '鼻辅音', items: [
     PhonicsItem(phone: '/m/', example: 'man', full: '/mæn/'),
     PhonicsItem(phone: '/n/', example: 'nose', full: '/nəʊz/'),
     PhonicsItem(phone: '/ŋ/', example: 'sing', full: '/sɪŋ/'),
   ]),
-  PhonicsGroup(name: '舌侧音 (1)', items: [
+  PhonicsGroup(name: '舌侧音', items: [
     PhonicsItem(phone: '/l/', example: 'leg', full: '/leɡ/'),
   ]),
-  PhonicsGroup(name: '半元音 (2)', items: [
+  PhonicsGroup(name: '半元音', items: [
     PhonicsItem(phone: '/j/', example: 'yes', full: '/jes/'),
     PhonicsItem(phone: '/w/', example: 'wet', full: '/wet/'),
   ]),
 ];
 
-/// 音标 → 拟音映射（对照 Kotlin phonemeSoundMap）。
-/// TTS 无法直接朗读 IPA 符号，每个音标配一个可读文本；
-/// 值为近似拟音，个别音标（短元音/个别辅音）依赖真机试听微调。
+/// 字母格的整段发音文本：先读字母名再读例词（句号分隔 = 两段独立发声、中间有停顿）。
 ///
-/// 拟音文本用 espeak-ng（与 App 内 CEPhonemizer 同源规则族）离线核过：
-/// 送进音素器后该音必须**原样出现**，否则就是被当字母拼读。
-/// 三个反例已替换——/ɪ/ "ih"→ˈaɪ（读成 eye）、/e/ "eh"→ˈeɪ（读成 ay）、
-/// /dz/ "dzuh"→"dee-zuh"，分别换成同音锚词 it (/ɪt/)、ed (/ed 的 ɛ/)、ads (/ædz/)。
-const Map<String, String> phonemeSoundMap = {
-  // 单元音
-  '/iː/': 'ee', '/ɪ/': 'it', '/e/': 'ed', '/æ/': 'ack',
-  '/ɑː/': 'ah', '/ɒ/': 'aw', '/ɔː/': 'or', '/ʊ/': 'ook',
-  '/uː/': 'oo', '/ʌ/': 'uh', '/ɜː/': 'er', '/ə/': 'uh',
-  // 双元音
-  '/eɪ/': 'ay', '/aɪ/': 'eye', '/ɔɪ/': 'oy', '/aʊ/': 'ow',
-  '/əʊ/': 'oh', '/ɪə/': 'ear', '/eə/': 'air', '/ʊə/': 'oor',
-  // 爆破音
-  '/p/': 'puh', '/b/': 'buh', '/t/': 'tuh', '/d/': 'duh',
-  '/k/': 'kuh', '/ɡ/': 'guh',
-  // 摩擦音
-  '/f/': 'fuh', '/v/': 'vuh', '/θ/': 'thuh', '/ð/': 'thuh',
-  '/s/': 'suh', '/z/': 'zuh', '/ʃ/': 'shuh', '/ʒ/': 'zhuh',
-  '/h/': 'huh', '/r/': 'ruh',
-  // 破擦音
-  '/tʃ/': 'chuh', '/dʒ/': 'juh', '/tr/': 'truh', '/dr/': 'druh',
-  '/ts/': 'tsuh', '/dz/': 'ads',
-  // 鼻辅音
-  '/m/': 'muh', '/n/': 'nuh', '/ŋ/': 'nguh',
-  // 舌侧音
-  '/l/': 'luh',
-  // 半元音
-  '/j/': 'yuh', '/w/': 'wuh',
-};
-
-/// 音标自身拟音文本；未知音标返回 null（调用方兜底读例词）。
-String? phonemeOwnSound(String phone) => phonemeSoundMap[phone];
-
-/// 弹窗大字发音文本：字母格读字母名，音标格读自身拟音（映射缺失兜底例词）。
-String ownSoundFor(ReferenceCellData cell) => cell.isPhonetic
-    ? (phonemeOwnSound(cell.char) ?? cell.example)
-    : cell.char.substring(0, 1);
-
-/// 发音文本：字母格先读字母名再读例词，音标格先读自身拟音再读例词
-/// （句号分隔 = 两段独立发声、中间有停顿）。
-///
-/// 拟音缺失（未知音标）时兜底只读例词——不能把 IPA 原文送进 TTS。
+/// 音标格不走 TTS（TTS 读不出 IPA，早先用「拟音英文拼写」糊弄的路子已废弃）：
+/// 音标本身的发音是随包录音，见 `lib/domain/audio/phoneme_audio.dart` 与
+/// `ReferenceController.playCell`。音标格传进来只返回例词。
 String speakTextFor(ReferenceCellData cell) {
-  if (!cell.isPhonetic) return '${cell.char.substring(0, 1)}. ${cell.example}';
-  final ownSound = phonemeOwnSound(cell.char);
-  return ownSound == null ? cell.example : '$ownSound. ${cell.example}';
+  if (cell.isPhonetic) return cell.example;
+  return '${cell.char.substring(0, 1)}. ${cell.example}';
 }
