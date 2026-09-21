@@ -103,6 +103,20 @@ void main() {
       }
     });
 
+    test('每条读音的例词都必须含这个字母（否则那行教不了这个字母）', () {
+      // 2026-09-22 修过的 bug：A 的 /ɔː/ 用了音标库的 door——door 里没有 a。
+      // 音标库那个例词不含该字母时（C/k 的 key、G/dʒ 的 jump、I/aɪ 的 my…），
+      // 这行改用站点例词 + TTS 预生成录音（见 letterSounds 里带 example: 的行）。
+      for (final group in letterSounds) {
+        final letter = group.letter.toLowerCase();
+        for (final row in soundRowsOf(group.letter)) {
+          expect(row.example.toLowerCase(), contains(letter),
+              reason: '${group.letter} 的 ${row.phoneme} 例词是「${row.example}」，'
+                  '里面没有 $letter——换成站点例词（并跑生成用例补录音）');
+        }
+      }
+    });
+
     test('读音行：例词与音标取自音标库（同符号同一个词，才能配上例词录音）', () {
       final byPhone = {
         for (final item in phonicsGroups.expand((g) => g.items))
@@ -227,7 +241,7 @@ void main() {
       }
     });
 
-    test('自带例词（站点例词）在 manifest 里有 TTS 预生成录音，词与表格对得上', () {
+    test('自带例词在 manifest 里有 TTS 预生成录音，词与表格对得上', () {
       final letterWords = letterWordClipsFromManifest(manifestFile.readAsStringSync());
       final own = [
         for (final group in letterSounds)
@@ -235,17 +249,23 @@ void main() {
             if (row.isOwnExample) row,
       ];
       expect(own, isNotEmpty, reason: '一条自带例词都没有？数据变了吧');
-      expect(own.map((r) => normalizePhone(r.phoneme)).toSet().length, own.length,
-          reason: 'letterWords 按符号索引，自带例词的读音不能重符号');
       for (final row in own) {
-        final clip = letterWords[normalizePhone(row.phoneme)];
+        final clip = letterWords[letterWordKey(row.letter, row.phoneme)];
         expect(clip, isNotNull,
-            reason: '${row.phoneme} 缺 letterWords 条目——跑 integration_test 的生成用例');
+            reason: '${row.letter} 的 ${row.phoneme} 缺 letterWords 条目——'
+                '跑 integration_test 的生成用例');
         expect(clip!.word, row.example,
             reason: '录音读的是 ${clip.word}，表格里写的是 ${row.example}');
         final f = File('assets/phonetics/${clip.file}');
         expect(f.existsSync(), isTrue, reason: '${clip.file} 不在盘上');
         expect(f.lengthSync(), greaterThan(512), reason: '${clip.file} 内容可疑');
+      }
+      // 反向：清单里的每条都要有对应的读音行（改数据时别留下孤儿录音）
+      final rowsByKey = {
+        for (final row in own) letterWordKey(row.letter, row.phoneme): row,
+      };
+      for (final key in letterWords.keys) {
+        expect(rowsByKey, contains(key), reason: '$key 在清单里，但读音表里没有这条自带例词');
       }
     });
 

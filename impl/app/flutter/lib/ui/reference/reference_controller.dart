@@ -120,7 +120,7 @@ class ReferenceController {
   /// `letterWords` 那批），录音缺了回退 TTS 读例词。
   Future<void> playLetterExample(LetterSoundRow row) async {
     final played = row.isOwnExample
-        ? await _phonemeAudio.playLetterWord(row.phoneme)
+        ? await _phonemeAudio.playLetterWord(row.letter, row.phoneme)
         : await _phonemeAudio.playWord(row.phoneme);
     if (!played) await speak(row.example);
   }

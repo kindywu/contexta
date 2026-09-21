@@ -49,8 +49,9 @@ AssetPhonemeAudio _audio(_FakeClipPlayer player) {
     ],
     // 字母读音行的例词：TTS 预生成，与音标库那套并列（/z/ 两边都有、内容不同）
     'letterWords': [
-      {'phoneme': 'z', 'word': 'xylophone', 'file': 'l03.mp3'},
-      {'phoneme': 'ks', 'word': 'box', 'file': 'l01.mp3'},
+      {'letter': 'X', 'phoneme': 'z', 'word': 'xylophone', 'file': 'l21.mp3'},
+      {'letter': 'X', 'phoneme': 'ks', 'word': 'box', 'file': 'l19.mp3'},
+      {'letter': 'S', 'phoneme': 'z', 'word': 'is', 'file': 'l14.mp3'},
     ],
   });
   return AssetPhonemeAudio(
@@ -96,15 +97,18 @@ void main() {
     expect(player.played, isEmpty);
   });
 
-  test('字母读音行的例词：走 letterWords 那批（同一个 /z/ 与音标库不串）', () async {
+  test('字母读音行的例词：按字母 + 音标查（同一个 /z/ 两套例词不串）', () async {
     final player = _FakeClipPlayer();
     final audio = _audio(player);
 
-    expect(await audio.playLetterWord('/z/'), isTrue);
-    expect(player.played, ['phonetics/l03.mp3'], reason: '放的是 xylophone，不是音标库的 zoo');
+    expect(await audio.playLetterWord('X', '/z/'), isTrue);
+    expect(player.played, ['phonetics/l21.mp3'],
+        reason: 'X 那条放 xylophone，不是 S 的 is、也不是音标库的 zoo');
+    expect(await audio.playLetterWord('S', '/z/'), isTrue);
+    expect(player.played, ['phonetics/l21.mp3', 'phonetics/l14.mp3']);
 
     expect(await audio.playWord('/z/'), isTrue);
-    expect(player.played, ['phonetics/l03.mp3', 'phonetics/w30.mp3'],
+    expect(player.played, ['phonetics/l21.mp3', 'phonetics/l14.mp3', 'phonetics/w30.mp3'],
         reason: '音标格的例词仍走音标库那套');
   });
 
@@ -114,13 +118,13 @@ void main() {
 
     expect(await audio.play('/ks/'), isFalse);
     expect(await audio.playWord('/ks/'), isFalse);
-    expect(await audio.playLetterWord('/ks/'), isTrue);
-    expect(player.played, ['phonetics/l01.mp3']);
+    expect(await audio.playLetterWord('X', '/ks/'), isTrue);
+    expect(player.played, ['phonetics/l19.mp3']);
   });
 
-  test('音标库里的例词不走 letterWords：/iː/ 返回 false', () async {
+  test('字母对不上就没有这条：X 的 /iː/ 返回 false', () async {
     final player = _FakeClipPlayer();
-    expect(await _audio(player).playLetterWord('/iː/'), isFalse);
+    expect(await _audio(player).playLetterWord('X', '/iː/'), isFalse);
     expect(player.played, isEmpty);
   });
 
@@ -160,7 +164,7 @@ void main() {
     );
     expect(await audio.play('/ʊ/'), isFalse);
     expect(await audio.playWord('/ʊ/'), isFalse);
-    expect(await audio.playLetterWord('/z/'), isFalse);
+    expect(await audio.playLetterWord('X', '/z/'), isFalse);
     expect(player.played, isEmpty);
   });
 }

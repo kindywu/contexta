@@ -81,9 +81,9 @@ bun run tool/import-phonetics-audio.ts --phonemes-from <ipa_web 目录>
 |------|------|------|
 | `s*.mp3`（音标） | 44.1kHz 单声道 96kbps | 不降到 16kHz：/s/ /ʃ/ /f/ /θ/ 的能量集中在 4kHz 以上，降到 16k 会先把它们磨钝——而换这一包图的就是读音准。48 个约 590KB |
 | `w*.mp3`（例词） | 16kHz 单声道 40kbps | 沿用人工录音包原样 |
-| `l*.mp3`（字母读音行的站点例词，3 个） | 24kHz 单声道 64kbps | 不走本主题的导入脚本，由 App 自带的 KittenTTS 预生成——见 [reference-alphabet.md](reference-alphabet.md)「素材来源」 |
+| `l*.mp3`（字母读音行的站点例词，23 个） | 24kHz 单声道 64kbps | 不走本主题的导入脚本，由 App 自带的 KittenTTS 预生成——见 [reference-alphabet.md](reference-alphabet.md)「素材来源」 |
 
-三套合计约 920KB。相对 `assets/` 总量（66MB：TTS 模型 43MB + 库 23MB）可忽略，所以音标那边选了保真而非省体积。
+三套合计约 1.2MB。相对 `assets/` 总量（66MB：TTS 模型 43MB + 库 23MB）可忽略，所以音标那边选了保真而非省体积。
 
 **源文件是 ADTS AAC 却挂着 `.mp3` 扩展名**——这是换包路上最深的一个坑，两处会静默出错：
 

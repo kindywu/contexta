@@ -61,29 +61,30 @@ void main() {
   });
 
   group('letterWords（字母读音行的例词录音）', () {
-    test('解析符号 → 录音文件 + 词', () {
+    test('按「字母 + 符号」解析（同一个音标在不同字母下是两条）', () {
       final words = letterWordClipsFromManifest(jsonEncode({
         'letterWords': [
-          {'phoneme': 'ks', 'word': 'box', 'file': 'l01.mp3'},
-          {'phoneme': 'z', 'word': 'xylophone', 'file': 'l03.mp3'},
+          {'letter': 'X', 'phoneme': 'ks', 'word': 'box', 'file': 'l19.mp3'},
+          {'letter': 'D', 'phoneme': 'dʒ', 'word': 'educate', 'file': 'l04.mp3'},
+          {'letter': 'G', 'phoneme': 'dʒ', 'word': 'giant', 'file': 'l07.mp3'},
         ],
       }));
 
-      expect(words.keys.toList()..sort(), ['ks', 'z']);
-      expect(words['ks']?.file, 'l01.mp3');
-      expect(words['ks']?.word, 'box');
-      expect(words['z']?.word, 'xylophone');
+      expect(words[letterWordKey('X', '/ks/')]?.file, 'l19.mp3');
+      expect(words[letterWordKey('D', '/dʒ/')]?.word, 'educate');
+      expect(words[letterWordKey('G', '/dʒ/')]?.word, 'giant');
+      expect(words, hasLength(3), reason: '同一个音标两条不能互相覆盖');
     });
 
-    test('符号同样过归一化（斜杠 / ɡ↔g）', () {
+    test('字母大小写与符号写法都归一（x / 斜杠 / ɡ↔g）', () {
       final words = letterWordClipsFromManifest(jsonEncode({
         'letterWords': [
-          {'phoneme': '/ɡ/', 'word': 'go', 'file': 'l09.mp3'},
+          {'letter': 'x', 'phoneme': '/ɡ/', 'word': 'go', 'file': 'l09.mp3'},
         ],
       }));
 
-      expect(words.keys, ['g'], reason: 'ɡ(U+0261) 归一到 g');
-      expect(words['g']?.file, 'l09.mp3');
+      expect(words[letterWordKey('X', 'ɡ')]?.file, 'l09.mp3');
+      expect(words[letterWordKey('x', '/ɡ/')]?.file, 'l09.mp3');
     });
 
     test('整段缺失（旧 manifest）：空表，不抛', () {
@@ -94,11 +95,11 @@ void main() {
       expect(letterWordClipsFromManifest('{oops'), isEmpty);
       final words = letterWordClipsFromManifest(jsonEncode({
         'letterWords': [
-          {'phoneme': 'ks'}, // 缺 word/file → 跳过
-          {'phoneme': 'gz', 'word': 'exam', 'file': 'l02.mp3'},
+          {'phoneme': 'ks', 'word': 'box'}, // 缺 letter/file → 跳过
+          {'letter': 'X', 'phoneme': 'gz', 'word': 'exam', 'file': 'l20.mp3'},
         ],
       }));
-      expect(words.keys, ['gz']);
+      expect(words.keys, [letterWordKey('X', 'gz')]);
     });
   });
 }

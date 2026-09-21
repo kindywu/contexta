@@ -497,26 +497,31 @@ const List<LetterSounds> letterSounds = [
     LetterSound('/eɪ/', LetterSoundKind.common),
     LetterSound('/æ/', LetterSoundKind.common),
     LetterSound('/ɑː/', LetterSoundKind.common),
-    LetterSound('/ɔː/', LetterSoundKind.common),
+    LetterSound('/ɔː/', LetterSoundKind.common,
+        example: 'all', exampleIpa: '/ɔːl/'),
     LetterSound('/ə/', LetterSoundKind.reduced),
   ]),
   LetterSounds('B', [
     LetterSound('/b/', LetterSoundKind.common),
   ]),
   LetterSounds('C', [
-    LetterSound('/k/', LetterSoundKind.hard),
-    LetterSound('/s/', LetterSoundKind.soft),
+    LetterSound('/k/', LetterSoundKind.hard, example: 'cat', exampleIpa: '/kæt/'),
+    LetterSound('/s/', LetterSoundKind.soft,
+        example: 'city', exampleIpa: '/ˈsɪti/'),
     LetterSound('/tʃ/', LetterSoundKind.common),
   ]),
   LetterSounds('D', [
     LetterSound('/d/', LetterSoundKind.common),
-    LetterSound('/dʒ/', LetterSoundKind.common),
+    LetterSound('/dʒ/', LetterSoundKind.common,
+        example: 'educate', exampleIpa: '/ˈedʒukeɪt/'),
   ]),
   LetterSounds('E', [
     LetterSound('/e/', LetterSoundKind.common),
     LetterSound('/iː/', LetterSoundKind.common),
-    LetterSound('/ə/', LetterSoundKind.reduced),
-    LetterSound('/ɜː/', LetterSoundKind.common),
+    LetterSound('/ə/', LetterSoundKind.reduced,
+        example: 'open', exampleIpa: '/ˈəʊpən/'),
+    LetterSound('/ɜː/', LetterSoundKind.common,
+        example: 'her', exampleIpa: '/hɜː/'),
     LetterSound('/ɪə/', LetterSoundKind.common),
   ]),
   LetterSounds('F', [
@@ -524,17 +529,21 @@ const List<LetterSounds> letterSounds = [
   ]),
   LetterSounds('G', [
     LetterSound('/ɡ/', LetterSoundKind.hard),
-    LetterSound('/dʒ/', LetterSoundKind.soft),
+    LetterSound('/dʒ/', LetterSoundKind.soft,
+        example: 'giant', exampleIpa: '/ˈdʒaɪənt/'),
   ]),
   LetterSounds('H', [
     LetterSound('/h/', LetterSoundKind.common),
   ]),
   LetterSounds('I', [
-    LetterSound('/aɪ/', LetterSoundKind.common),
+    LetterSound('/aɪ/', LetterSoundKind.common,
+        example: 'time', exampleIpa: '/taɪm/'),
     LetterSound('/ɪ/', LetterSoundKind.common),
     LetterSound('/ɜː/', LetterSoundKind.common),
-    LetterSound('/ə/', LetterSoundKind.reduced),
-    LetterSound('/iː/', LetterSoundKind.common),
+    LetterSound('/ə/', LetterSoundKind.reduced,
+        example: 'pencil', exampleIpa: '/ˈpensəl/'),
+    LetterSound('/iː/', LetterSoundKind.common,
+        example: 'machine', exampleIpa: '/məˈʃiːn/'),
   ]),
   LetterSounds('J', [
     LetterSound('/dʒ/', LetterSoundKind.common),
@@ -555,8 +564,10 @@ const List<LetterSounds> letterSounds = [
   LetterSounds('O', [
     LetterSound('/əʊ/', LetterSoundKind.common),
     LetterSound('/ɒ/', LetterSoundKind.common),
-    LetterSound('/ʌ/', LetterSoundKind.common),
-    LetterSound('/uː/', LetterSoundKind.common),
+    LetterSound('/ʌ/', LetterSoundKind.common,
+        example: 'son', exampleIpa: '/sʌn/'),
+    LetterSound('/uː/', LetterSoundKind.common,
+        example: 'do', exampleIpa: '/duː/'),
     LetterSound('/ɔː/', LetterSoundKind.common),
     LetterSound('/ə/', LetterSoundKind.reduced),
   ]),
@@ -564,27 +575,33 @@ const List<LetterSounds> letterSounds = [
     LetterSound('/p/', LetterSoundKind.common),
   ]),
   LetterSounds('Q', [
-    LetterSound('/k/', LetterSoundKind.common),
+    LetterSound('/k/', LetterSoundKind.common,
+        example: 'quit', exampleIpa: '/kwɪt/'),
   ]),
   LetterSounds('R', [
     LetterSound('/r/', LetterSoundKind.common),
   ]),
   LetterSounds('S', [
     LetterSound('/s/', LetterSoundKind.common),
-    LetterSound('/z/', LetterSoundKind.common),
+    LetterSound('/z/', LetterSoundKind.common,
+        example: 'is', exampleIpa: '/ɪz/'),
     LetterSound('/ʃ/', LetterSoundKind.common),
     LetterSound('/ʒ/', LetterSoundKind.common),
   ]),
   LetterSounds('T', [
     LetterSound('/t/', LetterSoundKind.common),
-    LetterSound('/ʃ/', LetterSoundKind.common),
-    LetterSound('/tʃ/', LetterSoundKind.common),
+    LetterSound('/ʃ/', LetterSoundKind.common,
+        example: 'nation', exampleIpa: '/ˈneɪʃən/'),
+    LetterSound('/tʃ/', LetterSoundKind.common,
+        example: 'nature', exampleIpa: '/ˈneɪtʃə/'),
   ]),
   LetterSounds('U', [
     LetterSound('/ʌ/', LetterSoundKind.common),
     LetterSound('/uː/', LetterSoundKind.common),
-    LetterSound('/ʊ/', LetterSoundKind.common),
-    LetterSound('/ɜː/', LetterSoundKind.common),
+    LetterSound('/ʊ/', LetterSoundKind.common,
+        example: 'put', exampleIpa: '/pʊt/'),
+    LetterSound('/ɜː/', LetterSoundKind.common,
+        example: 'turn', exampleIpa: '/tɜːn/'),
     LetterSound('/ə/', LetterSoundKind.reduced),
     LetterSound('/ʊə/', LetterSoundKind.common),
   ]),
@@ -607,8 +624,10 @@ const List<LetterSounds> letterSounds = [
   ]),
   LetterSounds('Y', [
     LetterSound('/aɪ/', LetterSoundKind.common),
-    LetterSound('/ɪ/', LetterSoundKind.common),
-    LetterSound('/iː/', LetterSoundKind.common),
+    LetterSound('/ɪ/', LetterSoundKind.common,
+        example: 'gym', exampleIpa: '/dʒɪm/'),
+    LetterSound('/iː/', LetterSoundKind.common,
+        example: 'happy', exampleIpa: '/ˈhæpi/'),
     LetterSound('/j/', LetterSoundKind.common),
   ]),
   LetterSounds('Z', [
@@ -619,6 +638,7 @@ const List<LetterSounds> letterSounds = [
 /// 弹层与连播共用的一行读音：例词、例词音标、有没有录音都已解析好。
 class LetterSoundRow {
   const LetterSoundRow({
+    required this.letter,
     required this.phoneme,
     required this.kind,
     required this.example,
@@ -627,6 +647,9 @@ class LetterSoundRow {
     required this.isOwnExample,
     this.note,
   });
+
+  /// 这一行属于哪个字母（'A'）——自带例词的录音按「字母 + 音标」查。
+  final String letter;
 
   final String phoneme;
   final LetterSoundKind kind;
@@ -655,15 +678,17 @@ List<LetterSoundRow> soundRowsOf(String letter) =>
 /// 26 个字母的读音行（惰性建一次，网格格子上的「N 种读音」也用它）。
 final Map<String, List<LetterSoundRow>> _letterSoundRows = {
   for (final group in letterSounds)
-    group.letter: [for (final sound in group.sounds) _rowOf(sound)],
+    group.letter: [for (final sound in group.sounds) _rowOf(group.letter, sound)],
 };
 
-LetterSoundRow _rowOf(LetterSound sound) {
+LetterSoundRow _rowOf(String letter, LetterSound sound) {
   final item = _phonicsItemOf(sound.phoneme);
-  // 自带例词 = 音标库那套例词对这个字母不成立（X 的 box/exam/xylophone），
-  // 例词录音改由 manifest 的 letterWords 段给（TTS 预生成）。
+  // 自带例词 = 音标库那套例词对这个字母不成立（音标库里没有这个音，或那个词
+  // 里压根没有这个字母：A 的 /ɔː/ 是 door、C 的 /k/ 是 key……），
+  // 例词录音改由 manifest 的 letterWords 段给（TTS 预生成，按字母 + 音标查）。
   final own = sound.example != null;
   return LetterSoundRow(
+    letter: letter,
     phoneme: sound.phoneme,
     kind: sound.kind,
     example: own ? sound.example! : (item?.example ?? ''),

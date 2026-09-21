@@ -23,11 +23,12 @@ abstract class PhonemeAudio {
   Future<bool> playWord(String phone);
 
   /// 播放**字母读音行**那条例词的录音（manifest 的 `letterWords`，TTS 预生成），
+  /// 按「字母 + 音标」查（例词是跟着字母走的：`dʒ` 在 D 是 educate、在 G 是 giant）；
   /// `false` = 没有这条（调用方回退 TTS 读例词）。
   ///
   /// 与 [playWord] 分开是因为同一个符号可以有两套例词：X 的 `/z/` 在音标库里
   /// 是 `zoo`，字母读音行里是 `xylophone`。
-  Future<bool> playLetterWord(String phone);
+  Future<bool> playLetterWord(String letter, String phone);
 
   /// 立刻掐掉当前播放（连播被「停止」时用）。没在播就什么也不做。
   Future<void> stop();
@@ -54,7 +55,14 @@ String normalizePhone(String phone) =>
 
 /// 字母读音行的一条例词录音（`letterWords` 那批，由 TTS 预生成）。
 class LetterWordClip {
-  const LetterWordClip({required this.file, required this.word});
+  const LetterWordClip({
+    required this.letter,
+    required this.file,
+    required this.word,
+  });
+
+  /// 属于哪个字母（同一个音标在不同字母下例词不同）。
+  final String letter;
 
   /// 录音文件名（`l01.mp3` 这类纯 ASCII 序号）。
   final String file;
@@ -62,6 +70,10 @@ class LetterWordClip {
   /// 这条录音读的是哪个词——与表格里的例词对不上就是串了。
   final String word;
 }
+
+/// `letterWords` 的查表键：字母（统一大写）+ 归一化音标。
+String letterWordKey(String letter, String phone) =>
+    '${letter.toUpperCase()}|${normalizePhone(phone)}';
 
 /// 从 manifest.json 解析「符号 → 录音」映射，键为归一化符号（`iː`）。
 ///
@@ -92,8 +104,8 @@ Map<String, PhonemeClip> phonemeClipsFromManifest(String manifestJson) {
   return out;
 }
 
-/// 从 manifest.json 的 `letterWords` 段解析「符号 → 字母读音行例词录音」，
-/// 键同样是归一化符号。结构异常/整段缺失时返回空表（调用方回退 TTS）。
+/// 从 manifest.json 的 `letterWords` 段解析「字母 + 符号 → 例词录音」，
+/// 键为 [letterWordKey]。结构异常/整段缺失时返回空表（调用方回退 TTS）。
 Map<String, LetterWordClip> letterWordClipsFromManifest(String manifestJson) {
   final out = <String, LetterWordClip>{};
   try {
@@ -103,11 +115,18 @@ Map<String, LetterWordClip> letterWordClipsFromManifest(String manifestJson) {
     if (list is! List) return out;
     for (final entry in list) {
       if (entry is! Map) continue;
+      final letter = entry['letter'];
       final phoneme = entry['phoneme'];
       final word = entry['word'];
       final file = entry['file'];
-      if (phoneme is String && word is String && file is String && phoneme.isNotEmpty) {
-        out[normalizePhone(phoneme)] = LetterWordClip(file: file, word: word);
+      if (letter is String &&
+          phoneme is String &&
+          word is String &&
+          file is String &&
+          letter.isNotEmpty &&
+          phoneme.isNotEmpty) {
+        out[letterWordKey(letter, phoneme)] =
+            LetterWordClip(letter: letter, file: file, word: word);
       }
     }
   } catch (_) {
