@@ -2,7 +2,7 @@
 
 | 文件 | 作用 |
 |------|------|
-| `import-phonetics-audio.ts` | **App 实际使用的那套**：本地录音包（zip）→ `assets/phonetics/`（音标 48 + 例词 48） |
+| `import-phonetics-audio.ts` | **App 实际使用的那套**：本地录音包（zip）→ `assets/phonetics/`（音标 48 + 例词 48）；另有 `--phonemes-from` 模式只换 48 个音标本身 |
 | `fetch-phonetics-yyb.ts` | 已退役：英语音标网 → App assets（2026-09-21 前的素材源，见文末「退役的抓取链路」） |
 | `fetch-phonetics.ts` | 已退役：Cambridge 源抓取（44/48），曾是上一套的补齐素材 |
 | `lib/webview.ts` | 上面两个抓取脚本共用的 Bun.WebView 骨架（硬超时守卫、软导航轮询、页面内串行批量下载） |
@@ -46,6 +46,44 @@ assets/phonetics/
 ```
 
 **为什么落盘不用包内的 IPA 文件名**：macOS 默认大小写不敏感、Unicode 还有 NFC/NFD 归一化差异，manifest 里的名字可能和实际文件名对不上。文件名只当不透明句柄，**符号 → 文件以 manifest 为准**；包内原名不再保留（导入后不复用原包，需要时重新 `--zip` 导一次）。
+
+---
+
+# tool/import-phonetics-audio.ts --phonemes-from — 只换 48 个音标本身
+
+2026-09-21 加的第二个模式：换掉音标读音，**例词（`w*.mp3`）与 manifest 的符号映射一字不动**。
+
+```bash
+cd impl/server
+bun run tool/import-phonetics-audio.ts --phonemes-from <ipa_web 目录> [--out <dir>]
+```
+
+源目录需含 `meta.json`（`symbols[].symbol` → `symbols[].audio`）。当前用的是音标站 `ipa_web`，音频出处 [resetsix/english-ipa](https://github.com/resetsix/english-ipa)。
+
+## 执行流程
+
+1. 读源 `meta.json` 建「符号 → 音频路径」表；读**现有** `manifest.json` 拿「符号 → `sNN.mp3`」槽位。
+2. **先校验覆盖再动手**：源里缺任何一个 App 需要的符号就整体退出（码 1），不写任何文件（避免半新半旧的包）。
+3. 逐个转码写回该符号自己的 `sNN.mp3`；`w*.mp3` 与 `phonemes[]` 不动。
+4. 只更新 `manifest.json` 的 `source` 字段，记下出处与转码规格。
+
+**按符号替换，不按位置**：App 的 `phonicsGroups` 顺序与 manifest 顺序**不同**（前者的第 5 个是 `ɑː`，后者是 `ʌ`），按序号对位会整体错位、发音张冠李戴。
+
+## 两个必须知道的坑
+
+1. **源文件是 ADTS AAC 却挂着 `.mp3` 扩展名**（`file` 认作 `MPEG ADTS, AAC, v4 LC`, 44.1kHz 立体声）。CoreAudio 按扩展名挑解析器，`.mp3` 一律打不开——`afinfo` 报 `AudioFileOpenURL failed`，直接喂 `afconvert` 报 `Couldn't open input file`。**必须先复制成 `.aac` 再解码**（脚本每次都无条件改名，不做探测）。同理这包音频也不能原样进 App。
+2. **`afconvert` 会「静默截断」**：对挂 `.mp3` 名的 ADTS 它**退出码 0、stderr 空**，却只写出 0.057s 的碎片（0.95s 的源 → 5KB wav）。所以光判退出码不够——脚本编码后回读产物验时长，短于 0.2s 即报错退出。这类漏进去在 App 里表现成「点了没声」，排查成本极高。
+
+## 转码规格
+
+`afconvert`（解码）→ `lame -b 96 -m m`（编码），落盘 **44.1kHz 单声道 96kbps mp3**。
+采样率**不降到 16kHz**：/s/ /ʃ/ /f/ /θ/ 的能量集中在 4kHz 以上，降到 16k 会先把它们磨钝，而换这一包图的就是读音准。体积代价可忽略（48 个约 590KB，`assets/` 总量 66MB）。
+
+**不裁静音、不做响度归一**（换包时明确选择「原样转码」）。源录音首尾静音约 0.52s/条、条间响度差约 28dB；代价是连播整轮由 ~1.6 分钟变为 ~2.2 分钟。若日后要改，优先裁静音而非改停顿时长。
+
+## 依赖
+
+`afconvert`（macOS 自带）+ `lame`（`brew install lame`）。
 
 ## 后续（尚未做）
 

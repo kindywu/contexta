@@ -24,7 +24,13 @@
 - 格与格（同组）：例词读完紧接下一格，不额外停
 - **组与组：再停 1s**（`defaultGroupGap`），换组听得出来
 
-约 1.8s/格，48 格 + 7 个组界整轮约 1.6 分钟。播放中当前格珊瑚描边高亮并自动滚到可见；再点同一个按钮即停。见「连播状态机」。
+**节奏由录音长度决定**：整轮 = Σ(音标 + 例词) + 48 次「格内停 1s」+ 7 次「组间停 1s」。
+2026-09-21 换 `ipa_web` 音标后，音标段平均 1.02s（旧包 0.32s）、例词段 0.52s，
+故整轮约 **2.2 分钟**、约 **2.69s/格**（旧包约 1.6 分钟 / 1.8s/格）。
+变长主要来自新录音本身更长 + 首尾静音未裁（换包时明确选择「原样转码」）——
+若日后觉得拖沓，先考虑裁掉 ~0.3s 前导 / ~0.22s 尾部静音，而不是改停顿时长。
+
+播放中当前格珊瑚描边高亮并自动滚到可见；再点同一个按钮即停。见「连播状态机」。
 
 **为什么音标不用 TTS**：TTS 引擎读不出 IPA 符号。早先的替代方案是给每个音标配一段「拟音英文拼写」（`/ɪ/` → "it"、`/dz/` → "ads"）送进 TTS——拟音本身不像英文词时又会被音素器逐字母拼读，得靠离线核验逐个挑锚词，48 个音标全靠人工调参，且终究不是那个音。改用真人录音后这条链路整个消失。
 
@@ -36,23 +42,54 @@
 
 ### 素材来源与产出（导入脚本）
 
-录音包（zip，人工提供）→ `impl/server/tool/import-phonetics-audio.ts` → `impl/app/flutter/assets/phonetics/`：
+素材有两个来源，由 `impl/server/tool/import-phonetics-audio.ts` 的两个模式分别导入
+`impl/app/flutter/assets/phonetics/`：
 
 ```mermaid
 flowchart LR
     A[录音包.zip] --> B["音标/ 48 个<br/>01_iː.mp3 …"]
     A --> C["例句/ 48 个<br/>01_iː_see.mp3 …"]
-    B --> D[import-phonetics-audio.ts]
+    B --> D["--zip 模式<br/>import-phonetics-audio.ts"]
     C --> D
-    D --> E["s01..s48.mp3<br/>（音标本身）"]
-    D --> F["w01..w48.mp3<br/>（例词）"]
-    D --> G["manifest.json<br/>符号 → 两段录音"]
+    D --> E["w01..w48.mp3<br/>（例词，16kHz）"]
+    D --> F["manifest.json<br/>符号 → 两段录音"]
+    F --> G["--phonemes-from 模式<br/>（只换 s*.mp3）"]
+    H["ipa_web/audio<br/>vowel-i-long.mp3 …<br/>+ meta.json"] --> G
+    G --> I["s01..s48.mp3<br/>（音标本身，44.1kHz）"]
 ```
+
+**`--zip` 模式**（整套导入，含例词）：
 
 - 包内文件名 = `<序号>_<符号>[_<例词>].mp3`，序号 01–48（音标与例词两目录序号一一对应，脚本按序号配对，缺一方就报错退出）。
 - 落盘改成**纯 ASCII 序号**（`s` = symbol、`w` = word）：macOS 大小写不敏感 + Unicode 有 NFC/NFD 差异，含 IPA 的文件名容易与清单对不上——**符号与文件的对应只认 manifest**。
-- 脚本按 `reference_data.dart` 的 `phonicsGroups` 正则读出 App 需要的 48 个符号做覆盖率比对（不在脚本里重复维护清单），缺符号退出码 1。
-- 音频规格：16kHz 单声道 mp3，96 个文件共约 390KB（旧素材 48 个约 1.1MB——新包码率低但更小更齐）。
+
+**`--phonemes-from` 模式**（只换 48 个音标本身，例词与清单映射一字不动）：
+
+```
+bun run tool/import-phonetics-audio.ts --phonemes-from <ipa_web 目录>
+```
+
+- 源为音标站 `ipa_web`（音频取自 [resetsix/english-ipa](https://github.com/resetsix/english-ipa)），其 `meta.json` 给出 `symbols[].symbol` → `audio` 的对应。
+- **按符号替换，不按位置**：App 的 `phonicsGroups` 顺序（… ɑː ɒ ɔː ʊ uː ʌ ɜː ə …）与 manifest 顺序（… ʌ ɜː ə uː ʊ ɔː ɒ ɑː …）**不同**，按序号对位会整体错位、发音张冠李戴。替换只改每个符号自己 `file` 槽里的内容（`iː` 写 `s01.mp3`、`r` 写 `s46.mp3`……），所以 manifest 与 `w*.mp3` 完全不动。
+- 覆盖先校验后写入：源里缺任何一个符号整体退出（码 1），不留半新半旧的包。
+- 脚本按 `reference_data.dart` 的 `phonicsGroups` 正则读出 App 需要的 48 个符号做覆盖率比对（不在脚本里重复维护清单）。
+
+**音频规格**（音标与例词**不同码率**，是有意的）：
+
+| 素材 | 规格 | 理由 |
+|------|------|------|
+| `s*.mp3`（音标） | 44.1kHz 单声道 96kbps | 不降到 16kHz：/s/ /ʃ/ /f/ /θ/ 的能量集中在 4kHz 以上，降到 16k 会先把它们磨钝——而换这一包图的就是读音准。48 个约 590KB |
+| `w*.mp3`（例词） | 16kHz 单声道 40kbps | 沿用人工录音包原样 |
+
+两套合计约 880KB。相对 `assets/` 总量（66MB：TTS 模型 43MB + 库 23MB）可忽略，所以音标那边选了保真而非省体积。
+
+**源文件是 ADTS AAC 却挂着 `.mp3` 扩展名**——这是换包路上最深的一个坑，两处会静默出错：
+
+1. **CoreAudio 按扩展名挑解析器**，`.mp3` 一律打不开：`afinfo` 报 `AudioFileOpenURL failed`，直接喂 `afconvert` 报 `Couldn't open input file`。解决办法是**先复制成 `.aac` 再解码**——脚本里 `transcodePhoneme` 每次都无条件改名，不依赖探测。
+2. **`afconvert` 会「静默截断」**：对挂 `.mp3` 名的 ADTS 它**退出码 0、stderr 空**，却只写出 0.057s 的碎片（0.95s 的源 → 5KB wav）。所以光判退出码不够——脚本编码后回读产物验时长，短于 0.2s 就报错退出。这类漏进去在 App 里表现成「点了没声」，排查成本极高。
+
+同理，**这包音频也不能原样进 App**（App 侧同样打不开 `.mp3` 名的 ADTS），必须转码后再落盘。
+
 - 完整性由测试守门：`reference_data_test` 断言 manifest 覆盖 `phonicsGroups` 全部 48 个符号、每个符号都有例词录音、例词与表格一致、每个文件真实存在且非空。
 
 ### 符号到文件的映射
@@ -183,9 +220,11 @@ stateDiagram-v2
 
 | 资产 | 内容 |
 |------|------|
-| `assets/phonetics/s01.mp3` … `s48.mp3` | 48 个音标本身的录音 |
-| `assets/phonetics/w01.mp3` … `w48.mp3` | 48 个例词录音 |
-| `assets/phonetics/manifest.json` | `phonemes[]`：`symbol` / `normalized`(查表键) / `keyword`(例词) / `file` / `wordFile` |
+| `assets/phonetics/s01.mp3` … `s48.mp3` | 48 个音标本身的录音（44.1kHz 单声道，源 `ipa_web`） |
+| `assets/phonetics/w01.mp3` … `w48.mp3` | 48 个例词录音（16kHz 单声道，源人工录音包） |
+| `assets/phonetics/manifest.json` | `phonemes[]`：`symbol` / `normalized`(查表键) / `keyword`(例词) / `file` / `wordFile`；另带 `source` 记两个来源的出处与转码规格 |
+
+`manifest.json` 只承载**符号 → 文件**的对应，不含音频参数；两套录音码率不同对播放无影响（`audioplayers` 逐文件解码）。`source` 是给未来换素材的人看的出处账（哪个文件来自哪一包、什么规格），不参与播放。
 
 `pubspec.yaml` 声明 `assets/phonetics/`（整个目录，含 manifest）。
 

@@ -1,7 +1,7 @@
 {
   "source": {
     "pack": "ipa_audio.zip",
-    "note": "真人录音：音标 48 + 例词 48（16kHz 单声道 mp3）"
+    "note": "音标（s*.mp3）取自 https://github.com/resetsix/english-ipa，2026-09-21 起用，44100Hz 单声道 96kbps、未裁静音未归一响度；例词（w*.mp3）沿用人工录音包（16kHz 单声道 mp3）"
   },
   "count": 48,
   "phonemes": [
