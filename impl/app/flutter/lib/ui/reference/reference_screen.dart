@@ -955,20 +955,19 @@ class _LetterSoundTile extends StatelessWidget {
         borderRadius: radius,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: AppPage.minTouchTarget),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm,
-              vertical: AppSpacing.xs,
-            ),
+          // stretch + padding：两个点击区各占满整行高度（各自都是 ≥44dp 的
+          // 触摸目标，符合 DESIGN.md 的 touch target 要求）
+          child: IntrinsicHeight(
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 InkWell(
                   onTap: onPlaySound,
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 6,
+                      horizontal: AppSpacing.sm,
+                      vertical: AppSpacing.xs,
                     ),
                     child: Row(
                       children: [
@@ -997,12 +996,12 @@ class _LetterSoundTile extends StatelessWidget {
                   borderRadius: BorderRadius.circular(AppRadius.sm),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 4,
-                      vertical: 4,
+                      horizontal: AppSpacing.sm,
+                      vertical: AppSpacing.xs,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
                           row.example,
