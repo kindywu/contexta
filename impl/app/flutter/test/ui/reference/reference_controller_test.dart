@@ -360,7 +360,7 @@ void main() {
           reason: '两格各停一拍 = 至少 200ms');
     });
 
-    test('连播：组与组之间再停一拍（组内不停）', () async {
+    test('连播：组与组之间再停一拍（组间那一拍是 groupGap）', () async {
       expect(ReferenceController.defaultGroupGap, const Duration(seconds: 1));
 
       final controller = ReferenceController(
@@ -370,7 +370,8 @@ void main() {
         groupGap: const Duration(milliseconds: 150),
       );
 
-      // 两组：第一组一格、第二组两格——组界只跨一次，组内那两格之间不该多停
+      // 两组：第一组一格、第二组两格——跨一次组界只停 groupGap 那一拍
+      // （格子之间那一拍用的是 phonemeWordGap，这里已置零）
       final sw = Stopwatch()..start();
       await controller.playSequence(const [
         [_phoneticCell],
@@ -378,9 +379,28 @@ void main() {
       ]);
       sw.stop();
 
-      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(150),
-          reason: '跨了一次组界 = 至少停一拍');
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(150));
       expect(sw.elapsedMilliseconds, lessThan(300), reason: '只该停一次');
+    });
+
+    test('连播：同一组里格子之间也停一拍（例词读完歇一拍再进下一格）', () async {
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(_RecordingTts()),
+        phonemeAudio: _FakePhonemeAudio(),
+        phonemeWordGap: const Duration(milliseconds: 100),
+        groupGap: Duration.zero,
+      );
+
+      final sw = Stopwatch()..start();
+      await controller.playSequence(const [
+        [_phoneticCell, _bookCell],
+      ]);
+      sw.stop();
+
+      // 两格各一拍「音标 → 例词」+ 格子之间一拍 = 3 拍
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(280),
+          reason: '少了格子之间那一拍只有 2 拍');
+      expect(sw.elapsedMilliseconds, lessThan(600));
     });
 
     test('连播：只播一组（「播这组」）没有组边界，不等组间那一拍', () async {

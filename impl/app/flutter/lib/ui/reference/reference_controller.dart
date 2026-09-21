@@ -203,7 +203,7 @@ class ReferenceController {
     await done.future.timeout(_speakTimeout, onTimeout: () {});
   }
 
-  /// 连播 [groups]：组内逐个走一遍「音标录音 → 停一拍 → 例词录音」，
+  /// 连播 [groups]：组内逐个走一遍「音标录音 → 停一拍 → 例词录音 → 读完停一拍」，
   /// **组与组之间再停一拍**（`_groupGap`，让「换了一组」听得出来）。
   ///
   /// 传 `[cellsOf(group)]` 就是只播一组（没有组边界，自然不额外停）。
@@ -224,8 +224,13 @@ class ReferenceController {
         await Future<void>.delayed(_groupGap);
         if (token != _sequenceToken) return;
       }
-      for (final cell in cells) {
+      for (final (cellIndex, cell) in cells.indexed) {
         if (token != _sequenceToken) return;
+        // 上一格的例词读完 → 歇一拍再进下一格（第一格前面是组间那一拍）
+        if (cellIndex > 0) {
+          await Future<void>.delayed(_phonemeWordGap);
+          if (token != _sequenceToken) return;
+        }
         onCell?.call(cell);
         await _playCell(cell, () => token != _sequenceToken);
       }
