@@ -342,27 +342,27 @@ const List<PhonicsGroup> phonicsGroups = [
     PhonicsItem(phone: '/ɒ/', example: 'hot', full: '/hɒt/'),
     PhonicsItem(phone: '/ɔː/', example: 'door', full: '/dɔːr/'),
     PhonicsItem(phone: '/ʊ/', example: 'book', full: '/bʊk/'),
-    PhonicsItem(phone: '/uː/', example: 'moon', full: '/muːn/'),
+    PhonicsItem(phone: '/uː/', example: 'blue', full: '/bluː/'),
     PhonicsItem(phone: '/ʌ/', example: 'cup', full: '/kʌp/'),
     PhonicsItem(phone: '/ɜː/', example: 'bird', full: '/bɜːd/'),
     PhonicsItem(phone: '/ə/', example: 'about', full: '/əˈbaʊt/'),
   ]),
   PhonicsGroup(name: '双元音', items: [
-    PhonicsItem(phone: '/eɪ/', example: 'cake', full: '/keɪk/'),
-    PhonicsItem(phone: '/aɪ/', example: 'time', full: '/taɪm/'),
+    PhonicsItem(phone: '/eɪ/', example: 'day', full: '/deɪ/'),
+    PhonicsItem(phone: '/aɪ/', example: 'my', full: '/maɪ/'),
     PhonicsItem(phone: '/ɔɪ/', example: 'boy', full: '/bɔɪ/'),
-    PhonicsItem(phone: '/aʊ/', example: 'house', full: '/haʊs/'),
-    PhonicsItem(phone: '/əʊ/', example: 'home', full: '/həʊm/'),
-    PhonicsItem(phone: '/ɪə/', example: 'ear', full: '/ɪər/'),
+    PhonicsItem(phone: '/aʊ/', example: 'now', full: '/naʊ/'),
+    PhonicsItem(phone: '/əʊ/', example: 'go', full: '/ɡəʊ/'),
+    PhonicsItem(phone: '/ɪə/', example: 'near', full: '/nɪər/'),
     PhonicsItem(phone: '/eə/', example: 'hair', full: '/heər/'),
     PhonicsItem(phone: '/ʊə/', example: 'tour', full: '/tʊər/'),
   ]),
   PhonicsGroup(name: '爆破音', items: [
     PhonicsItem(phone: '/p/', example: 'pen', full: '/pen/'),
-    PhonicsItem(phone: '/b/', example: 'book', full: '/bʊk/'),
-    PhonicsItem(phone: '/t/', example: 'top', full: '/tɒp/'),
+    PhonicsItem(phone: '/b/', example: 'bag', full: '/bæɡ/'),
+    PhonicsItem(phone: '/t/', example: 'tea', full: '/tiː/'),
     PhonicsItem(phone: '/d/', example: 'dog', full: '/dɒɡ/'),
-    PhonicsItem(phone: '/k/', example: 'cat', full: '/kæt/'),
+    PhonicsItem(phone: '/k/', example: 'key', full: '/kiː/'),
     PhonicsItem(phone: '/ɡ/', example: 'go', full: '/ɡəʊ/'),
   ]),
   PhonicsGroup(name: '摩擦音', items: [
@@ -372,13 +372,13 @@ const List<PhonicsGroup> phonicsGroups = [
     PhonicsItem(phone: '/ð/', example: 'this', full: '/ðɪs/'),
     PhonicsItem(phone: '/s/', example: 'sun', full: '/sʌn/'),
     PhonicsItem(phone: '/z/', example: 'zoo', full: '/zuː/'),
-    PhonicsItem(phone: '/ʃ/', example: 'ship', full: '/ʃɪp/'),
+    PhonicsItem(phone: '/ʃ/', example: 'shoe', full: '/ʃuː/'),
     PhonicsItem(phone: '/ʒ/', example: 'vision', full: '/ˈvɪʒən/'),
     PhonicsItem(phone: '/h/', example: 'hat', full: '/hæt/'),
     PhonicsItem(phone: '/r/', example: 'red', full: '/red/'),
   ]),
   PhonicsGroup(name: '破擦音', items: [
-    PhonicsItem(phone: '/tʃ/', example: 'chips', full: '/tʃɪps/'),
+    PhonicsItem(phone: '/tʃ/', example: 'chair', full: '/tʃeər/'),
     PhonicsItem(phone: '/dʒ/', example: 'jump', full: '/dʒʌmp/'),
     PhonicsItem(phone: '/tr/', example: 'tree', full: '/triː/'),
     PhonicsItem(phone: '/dr/', example: 'dress', full: '/dres/'),
@@ -395,9 +395,30 @@ const List<PhonicsGroup> phonicsGroups = [
   ]),
   PhonicsGroup(name: '半元音', items: [
     PhonicsItem(phone: '/j/', example: 'yes', full: '/jes/'),
-    PhonicsItem(phone: '/w/', example: 'wet', full: '/wet/'),
+    PhonicsItem(phone: '/w/', example: 'water', full: '/ˈwɔːtə/'),
   ]),
 ];
+
+/// 音标格 → 弹窗 / 连播用的格子数据（网格与连播共用一份构造，别各拼一套）。
+ReferenceCellData phoneticCellOf(PhonicsGroup group, PhonicsItem item) =>
+    ReferenceCellData(
+      char: item.phone,
+      reading: group.name,
+      example: item.example,
+      exampleIpa: item.full,
+      exampleCn: '',
+      isPhonetic: true,
+    );
+
+/// 整张音标表 48 格，按分组切开（「连播全部」的顺序：组内按表格顺序，
+/// 组与组之间由连播多停一拍）。
+final List<List<ReferenceCellData>> allPhoneticGroups = [
+  for (final group in phonicsGroups) phoneticCellsOf(group),
+];
+
+/// 一个分组的格子（「播这组」用）。
+List<ReferenceCellData> phoneticCellsOf(PhonicsGroup group) =>
+    [for (final item in group.items) phoneticCellOf(group, item)];
 
 /// 字母格的整段发音文本：先读字母名再读例词（句号分隔 = 两段独立发声、中间有停顿）。
 ///

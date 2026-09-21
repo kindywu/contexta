@@ -19,33 +19,42 @@ void main() {
     });
   });
 
-  group('phonemeFilesFromManifest', () {
-    test('解析 normalized → file', () {
+  group('phonemeClipsFromManifest', () {
+    test('解析 normalized → 音标 / 例词两段录音', () {
       const json = '''
       {
         "phonemes": [
-          {"symbol": "i:", "normalized": "iː", "file": "v01.mp3"},
-          {"symbol": "əU", "normalized": "əʊ", "file": "v17.mp3"}
+          {"symbol": "iː", "normalized": "iː", "keyword": "see", "file": "s01.mp3", "wordFile": "w01.mp3"},
+          {"symbol": "əʊ", "normalized": "əʊ", "keyword": "go", "file": "s16.mp3", "wordFile": "w16.mp3"}
         ]
       }''';
-      final files = phonemeFilesFromManifest(json);
-      expect(files, {'iː': 'v01.mp3', 'əʊ': 'v17.mp3'});
+      final clips = phonemeClipsFromManifest(json);
+      expect(clips['iː']?.file, 's01.mp3');
+      expect(clips['iː']?.wordFile, 'w01.mp3');
+      expect(clips['əʊ']?.file, 's16.mp3');
+      expect(clips['əʊ']?.wordFile, 'w16.mp3');
     });
 
     test('normalized 缺失时退回 symbol，键统一归一化', () {
-      const json = '{"phonemes":[{"symbol":"/ɡ/","file":"c07.mp3"}]}';
-      expect(phonemeFilesFromManifest(json), {'g': 'c07.mp3'});
+      const json = '{"phonemes":[{"symbol":"/ɡ/","file":"s26.mp3"}]}';
+      final clips = phonemeClipsFromManifest(json);
+      expect(clips.keys, ['g']);
+      expect(clips['g']?.file, 's26.mp3');
+      expect(clips['g']?.wordFile, isNull, reason: '没有 wordFile 就是 null（该例词回退 TTS）');
     });
 
     test('坏 JSON / 结构不符 → 空表（页面回退例词，不抛）', () {
-      expect(phonemeFilesFromManifest('not json'), isEmpty);
-      expect(phonemeFilesFromManifest('{"phonemes":"oops"}'), isEmpty);
-      expect(phonemeFilesFromManifest('{}'), isEmpty);
+      expect(phonemeClipsFromManifest('not json'), isEmpty);
+      expect(phonemeClipsFromManifest('{"phonemes":"oops"}'), isEmpty);
+      expect(phonemeClipsFromManifest('{}'), isEmpty);
     });
 
-    test('跳过无条件缺字段的条目', () {
-      const json = '{"phonemes":[{"file":"a.mp3"},{"normalized":"x"},{"normalized":"y","file":"b.mp3"}]}';
-      expect(phonemeFilesFromManifest(json), {'y': 'b.mp3'});
+    test('跳过无条件缺字段的条目；wordFile 为空串按缺失处理', () {
+      const json =
+          '{"phonemes":[{"file":"a.mp3"},{"normalized":"x"},{"normalized":"y","file":"b.mp3","wordFile":""}]}';
+      final clips = phonemeClipsFromManifest(json);
+      expect(clips.keys, ['y']);
+      expect(clips['y']?.wordFile, isNull);
     });
   });
 }

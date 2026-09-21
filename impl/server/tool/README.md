@@ -1,15 +1,62 @@
-本目录三部分：
+本目录：
 
 | 文件 | 作用 |
 |------|------|
-| `fetch-phonetics-yyb.ts` | **App 实际使用的那套**：英语音标网 → `assets/phonetics/`（48/48，缺口用 Cambridge 补） |
-| `fetch-phonetics.ts` | Cambridge 源抓取（44/48）——不直接进 App，只作为上面那个脚本的补齐素材 |
-| `lib/webview.ts` | 上面两个脚本共用的 Bun.WebView 骨架（硬超时守卫、软导航轮询、页面内串行批量下载） |
+| `import-phonetics-audio.ts` | **App 实际使用的那套**：本地录音包（zip）→ `assets/phonetics/`（音标 48 + 例词 48） |
+| `fetch-phonetics-yyb.ts` | 已退役：英语音标网 → App assets（2026-09-21 前的素材源，见文末「退役的抓取链路」） |
+| `fetch-phonetics.ts` | 已退役：Cambridge 源抓取（44/48），曾是上一套的补齐素材 |
+| `lib/webview.ts` | 上面两个抓取脚本共用的 Bun.WebView 骨架（硬超时守卫、软导航轮询、页面内串行批量下载） |
 | `import-data.ts` | 服务端数据导入（pipelin → 服务端业务库） |
 
-**两个 phonetics 源的关系**：App 的 `phonicsGroups` 是 48 个（DJ / 国内教材体系，含 `/tr/ /dr/ /ts/ /dz/` 四个音丛）。Cambridge 只有 44 个（缺那 4 个音丛）；英语音标网名义上 48 个，但**其中 18 个的录音已被站长从服务器删掉**（详见下文），实际只有 30 个。所以 48 个完整集 = 音标网 30 + Cambridge 补 18，落在 `assets/phonetics/`（Cambridge 那 176 个文件不随仓库携带，只在整份重建时临时抓一份）。
+---
+
+# tool/import-phonetics-audio.ts — 音标录音导入（录音包 → App assets）
+
+把人工提供的录音包（zip）导入 `assets/phonetics/`。包内两个目录：`音标/` 48 个音标本身 + `例句/` 48 个例词，文件名形如 `01_iː.mp3`、`01_iː_see.mp3`（序号 + 符号 [+ 例词]）。
+
+**为什么换掉抓取链路**：抓来的那套音色不统一（30 个音标网播音员 + 18 个 Cambridge 播音员，站上缺的 18 个文件已删），且**例词只有 TTS 没有录音**。新包是同一播音员的一套，音标与例词都能放录音。详见 [docs/phoneme-audio.md](../../app/flutter/docs/phoneme-audio.md)。
+
+## 用法
+
+```bash
+cd impl/server
+bun run tool/import-phonetics-audio.ts --zip <录音包.zip> [--out <dir>]
+```
+
+| 参数 | 缺省 | 说明 |
+|------|------|------|
+| `--zip` | **必填** | 录音包路径 |
+| `--out` | `impl/app/flutter/assets/phonetics` | 输出目录 |
+
+## 执行流程
+
+1. `ditto -x -k` 解压到临时目录（zip 内是非 ASCII 文件名，`unzip` 会按 CP437 猜错编码；包内可能套一层目录，脚本自动往里找 `音标/`）。
+2. 两个目录各按 `<序号>_<符号>[_<例词>].mp3` 解析，按序号配对；只在一侧出现的序号直接报错退出（避免「音标有、例词没有」的半套素材落盘）。
+3. 落盘 `s01.mp3`…`s48.mp3`（音标本身）+ `w01.mp3`…`w48.mp3`（例词），并清掉目录里旧的 `v*.mp3` / `c*.mp3`。
+4. 写 `manifest.json`：`symbol` / `normalized` / `keyword` / `file` / `wordFile`。
+5. 覆盖率比对：从 `lib/ui/reference/reference_data.dart` 的 `phonicsGroups` 正则读出 App 需要的 48 个符号（不在脚本里重复维护清单），缺符号则退出码 1。
+
+## 输出
+
+```
+assets/phonetics/
+  s01.mp3 … s48.mp3   # 音标本身
+  w01.mp3 … w48.mp3   # 例词（序号与音标一一对应）
+  manifest.json
+```
+
+**为什么落盘不用包内的 IPA 文件名**：macOS 默认大小写不敏感、Unicode 还有 NFC/NFD 归一化差异，manifest 里的名字可能和实际文件名对不上。文件名只当不透明句柄，**符号 → 文件以 manifest 为准**；包内原名不再保留（导入后不复用原包，需要时重新 `--zip` 导一次）。
+
+## 后续（尚未做）
+
+- 版权：录音来源需确认；**对外分发前先确认授权**（与 asset 库携带个人数据同一类约束）。
+- 表格例词与录音的一致性靠测试守门（`reference_data_test`）：换包后例词变了，表里没跟着改就直接红。
 
 ---
+
+# 退役的抓取链路
+
+> 以下两个脚本是 2026-09-21 前的素材来源，**产物已不再进 App**（见上节新链路）。保留是因为它们记录了那套素材的来路与那些坑（源站死链、限流）；重跑没有意义——App 用的已经是人工录音包。
 
 # tool/fetch-phonetics.ts — 音标发音抓取（Cambridge 源）
 
@@ -77,7 +124,7 @@ Cambridge 另有 6 个 App 未用：`ɝː` `ɚ` `oʊ` `aɪə` `aʊə` `t̬`（�
 
 # tool/fetch-phonetics-yyb.ts — 音标发音抓取（英语音标网 → App assets，48 个齐全）
 
-抓 [英语音标网](https://yingyuyinbiao.com/) 的 [英语元音(20个)](https://yingyuyinbiao.com/英语元音/) + [英语辅音(28个)](https://yingyuyinbiao.com/英语辅音/) 两页上的 48 个音标发音，落在 `assets/phonetics/`。**这是 App 实际使用的那一套**——符号体系（DJ，国内教材）与 `reference_data.dart` 的 `phonicsGroups` 完全对齐，且 48 个齐全；接入方式见 [docs/phoneme-audio.md](../../app/flutter/docs/phoneme-audio.md)。
+抓 [英语音标网](https://yingyuyinbiao.com/) 的 [英语元音(20个)](https://yingyuyinbiao.com/英语元音/) + [英语辅音(28个)](https://yingyuyinbiao.com/英语辅音/) 两页上的 48 个音标发音。**已退役**：产出的是 2026-09-21 之前在用的那套（30 个本站 + 18 个 Cambridge 补齐，音色不统一；例词无录音），现已被人工录音包取代（见上节）。符号体系（DJ / 国内教材）与 `phonicsGroups` 对齐这点仍然成立。
 
 ## 用法
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:contexta/domain/audio/phoneme_audio.dart';
 import 'package:contexta/domain/model/tts_voice.dart';
 import 'package:contexta/domain/tts/tts_engine.dart';
@@ -41,17 +43,31 @@ class _RecordingTts implements TtsEngine {
           callback) {}
 }
 
-/// 假录音库：记下播过哪些音标；`missing` 里的符号按「无录音」返回 false。
+/// 假录音库：记下播过哪些音标 / 例词；`missing` / `missingWord` 里的符号按
+/// 「无该段录音」返回 false。
 class _FakePhonemeAudio implements PhonemeAudio {
-  _FakePhonemeAudio({this.missing = const {}});
+  _FakePhonemeAudio({this.missing = const {}, this.missingWord = const {}});
 
   final Set<String> missing;
+  final Set<String> missingWord;
   final List<String> played = [];
+  final List<String> playedWords = [];
+  int stopCount = 0;
+
+  @override
+  Future<void> stop() async => stopCount++;
 
   @override
   Future<bool> play(String phone) async {
     if (missing.contains(phone)) return false;
     played.add(phone);
+    return true;
+  }
+
+  @override
+  Future<bool> playWord(String phone) async {
+    if (missingWord.contains(phone)) return false;
+    playedWords.add(phone);
     return true;
   }
 }
@@ -61,6 +77,24 @@ const _phoneticCell = ReferenceCellData(
   reading: '单元音',
   example: 'see',
   exampleIpa: '/siː/',
+  exampleCn: '',
+  isPhonetic: true,
+);
+
+const _bookCell = ReferenceCellData(
+  char: '/ʊ/',
+  reading: '单元音',
+  example: 'book',
+  exampleIpa: '/bʊk/',
+  exampleCn: '',
+  isPhonetic: true,
+);
+
+const _aboutCell = ReferenceCellData(
+  char: '/ə/',
+  reading: '单元音',
+  example: 'about',
+  exampleIpa: '/əˈbaʊt/',
   exampleCn: '',
   isPhonetic: true,
 );
@@ -151,7 +185,7 @@ void main() {
       expect(tts.spoken, ['see']);
     });
 
-    test('发音按钮：先录音后例词，且送进 TTS 的只有例词', () async {
+    test('发音按钮：音标录音 → 例词录音，两段都走录音（TTS 不发声）', () async {
       final tts = _RecordingTts();
       final audio = _FakePhonemeAudio();
       final controller = ReferenceController(
@@ -163,6 +197,23 @@ void main() {
       await controller.playCell(_phoneticCell);
 
       expect(audio.played, ['/iː/']);
+      expect(audio.playedWords, ['/iː/']);
+      expect(tts.spoken, isEmpty, reason: '两段都有录音，不该惊动 TTS');
+    });
+
+    test('例词录音缺失：那一拍之后回退 TTS 读例词（不带 IPA、不带注脚）', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio(missingWord: {'/iː/'});
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+      );
+
+      await controller.playCell(_phoneticCell);
+
+      expect(audio.played, ['/iː/']);
+      expect(audio.playedWords, isEmpty);
       // 只有例词本身：不带 IPA、不带音标注脚、不拼成句子
       expect(tts.spoken, ['see']);
     });
@@ -171,9 +222,10 @@ void main() {
       expect(ReferenceController.defaultPhonemeWordGap, const Duration(seconds: 1));
 
       final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
       final controller = ReferenceController(
         ttsEngineFuture: Future.value(tts),
-        phonemeAudio: _FakePhonemeAudio(),
+        phonemeAudio: audio,
         phonemeWordGap: const Duration(milliseconds: 120),
       );
 
@@ -182,15 +234,16 @@ void main() {
       sw.stop();
 
       expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(100),
-          reason: '例词应在录音后停顿一拍再开口');
-      expect(tts.spoken, ['see']);
+          reason: '例词应在音标录音后停顿一拍再开口');
+      expect(audio.playedWords, ['/iː/']);
     });
 
-    test('录音没放成就不白等：立刻读例词', () async {
+    test('音标录音没放成就不白等：立刻读例词（例词录音照放）', () async {
       final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio(missing: {'/iː/'});
       final controller = ReferenceController(
         ttsEngineFuture: Future.value(tts),
-        phonemeAudio: _FakePhonemeAudio(missing: {'/iː/'}),
+        phonemeAudio: audio,
         // 默认 1s；若实现无条件等待，这个用例会明显变慢（下面的耗时断言兜底）
         phonemeWordGap: const Duration(seconds: 1),
       );
@@ -199,8 +252,184 @@ void main() {
       await controller.playCell(_phoneticCell);
       sw.stop();
 
-      expect(tts.spoken, ['see']);
+      expect(audio.played, isEmpty);
+      expect(audio.playedWords, ['/iː/'], reason: '音标缺录音不影响例词录音');
+      expect(tts.spoken, isEmpty);
       expect(sw.elapsedMilliseconds, lessThan(500), reason: '没有录音就不该等那一拍');
+    });
+
+    test('两段录音都没有：直接 TTS 读例词', () async {
+      final tts = _RecordingTts();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: _FakePhonemeAudio(missing: {'/iː/'}, missingWord: {'/iː/'}),
+        phonemeWordGap: const Duration(seconds: 1),
+      );
+
+      final sw = Stopwatch()..start();
+      await controller.playCell(_phoneticCell);
+      sw.stop();
+
+      expect(tts.spoken, ['see']);
+      expect(sw.elapsedMilliseconds, lessThan(500));
+    });
+
+    test('例词点击：音标格放例词录音，录音缺失才回退 TTS', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+      );
+
+      await controller.playExample(_phoneticCell);
+      expect(audio.playedWords, ['/iː/']);
+      expect(audio.played, isEmpty, reason: '点例词只读例词，不读音标');
+      expect(tts.spoken, isEmpty);
+
+      final fallbackTts = _RecordingTts();
+      final fallback = ReferenceController(
+        ttsEngineFuture: Future.value(fallbackTts),
+        phonemeAudio: _FakePhonemeAudio(missingWord: {'/iː/'}),
+      );
+      await fallback.playExample(_phoneticCell);
+      expect(fallbackTts.spoken, ['see']);
+    });
+
+    test('连播：按顺序把每个音标的两段读完，并逐格回调', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+      );
+
+      final focused = <String>[];
+      await controller.playSequence(
+        const [
+          [_phoneticCell, _bookCell],
+        ],
+        onCell: (cell) => focused.add(cell.char),
+      );
+
+      expect(focused, ['/iː/', '/ʊ/'], reason: '每格开播前回调，顺序即表格顺序');
+      expect(audio.played, ['/iː/', '/ʊ/']);
+      expect(audio.playedWords, ['/iː/', '/ʊ/']);
+      expect(tts.spoken, isEmpty, reason: '两段都有录音，连播不经过 TTS');
+    });
+
+    test('连播：每格之间同样留一拍', () async {
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(_RecordingTts()),
+        phonemeAudio: _FakePhonemeAudio(),
+        phonemeWordGap: const Duration(milliseconds: 100),
+      );
+
+      final sw = Stopwatch()..start();
+      await controller.playSequence(const [
+        [_phoneticCell, _bookCell],
+      ]);
+      sw.stop();
+
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(200),
+          reason: '两格各停一拍 = 至少 200ms');
+    });
+
+    test('连播：组与组之间再停一拍（组内不停）', () async {
+      expect(ReferenceController.defaultGroupGap, const Duration(seconds: 1));
+
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(_RecordingTts()),
+        phonemeAudio: _FakePhonemeAudio(),
+        phonemeWordGap: Duration.zero,
+        groupGap: const Duration(milliseconds: 150),
+      );
+
+      // 两组：第一组一格、第二组两格——组界只跨一次，组内那两格之间不该多停
+      final sw = Stopwatch()..start();
+      await controller.playSequence(const [
+        [_phoneticCell],
+        [_bookCell, _aboutCell],
+      ]);
+      sw.stop();
+
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(150),
+          reason: '跨了一次组界 = 至少停一拍');
+      expect(sw.elapsedMilliseconds, lessThan(300), reason: '只该停一次');
+    });
+
+    test('连播：只播一组（「播这组」）没有组边界，不等组间那一拍', () async {
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(_RecordingTts()),
+        phonemeAudio: _FakePhonemeAudio(),
+        phonemeWordGap: Duration.zero,
+        groupGap: const Duration(seconds: 1),
+      );
+
+      final sw = Stopwatch()..start();
+      await controller.playSequence(const [
+        [_phoneticCell, _bookCell],
+      ]);
+      sw.stop();
+
+      expect(sw.elapsedMilliseconds, lessThan(500),
+          reason: '同组不该等组间那 1s');
+    });
+
+    test('连播：空表直接结束（不回调、不发声）', () async {
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(_RecordingTts()),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+      );
+
+      await controller.playSequence(const [], onCell: (_) => fail('不该回调'));
+
+      expect(audio.played, isEmpty);
+      expect(audio.playedWords, isEmpty);
+    });
+
+    test('连播中停止：掐掉声音，且当前格不再往下读', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+      );
+
+      final playing = controller.playSequence(
+        const [
+          [_phoneticCell, _bookCell, _aboutCell],
+        ],
+        onCell: (cell) {
+          // 第一格开播后立刻按「停止」（模拟用户在播放途中点停止）
+          if (cell.char == '/iː/') unawaited(controller.stopSequence());
+        },
+      );
+      await playing;
+
+      expect(audio.stopCount, greaterThan(0), reason: '停止要立刻掐声');
+      expect(audio.played, ['/iː/'], reason: '停在第一格，不再读后面的音标');
+      expect(audio.playedWords, isEmpty, reason: '停下后当前格的例词也不该冒出来');
+      expect(tts.spoken, isEmpty);
+    });
+
+    test('连播：一次点播不受停止影响（playCell 不是连播）', () async {
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(_RecordingTts()),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+      );
+
+      await controller.playCell(_phoneticCell);
+
+      expect(audio.played, ['/iː/']);
+      expect(audio.playedWords, ['/iː/']);
+      expect(audio.stopCount, 0);
     });
 
     test('字母格不受影响：仍是字母名 + 例词一段 TTS，不放录音', () async {
@@ -215,9 +444,14 @@ void main() {
       expect(tts.spoken, ['A']);
       expect(audio.played, isEmpty);
 
+      await controller.playExample(_alphabetCell);
+      expect(tts.spoken, ['A', 'Apple']);
+      expect(audio.playedWords, isEmpty);
+
       await controller.playCell(_alphabetCell);
-      expect(tts.spoken, ['A', 'A. Apple']);
+      expect(tts.spoken, ['A', 'Apple', 'A. Apple']);
       expect(audio.played, isEmpty);
+      expect(audio.playedWords, isEmpty);
     });
   });
 }

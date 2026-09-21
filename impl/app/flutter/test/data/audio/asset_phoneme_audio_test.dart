@@ -42,8 +42,9 @@ class _FakeClipPlayer implements ClipPlayer {
 AssetPhonemeAudio _audio(_FakeClipPlayer player) {
   final manifest = jsonEncode({
     'phonemes': [
-      {'symbol': 'i:', 'normalized': 'iː', 'file': 'v01.mp3'},
-      {'symbol': 'ʊ', 'normalized': 'ʊ', 'file': 'v09.mp3'},
+      {'symbol': 'iː', 'normalized': 'iː', 'file': 's01.mp3', 'wordFile': 'w01.mp3'},
+      // 没有 wordFile：例词那段回退 TTS
+      {'symbol': 'ʊ', 'normalized': 'ʊ', 'file': 's09.mp3'},
     ],
   });
   return AssetPhonemeAudio(
@@ -72,14 +73,28 @@ void main() {
     final player = _FakeClipPlayer();
     final audio = _audio(player);
     expect(await audio.play('/ʊ/'), isTrue);
-    expect(player.played, ['phonetics/v09.mp3']);
+    expect(player.played, ['phonetics/s09.mp3']);
     expect(player.stopCount, 1);
+  });
+
+  test('例词录音：放的是 wordFile 那一段（与音标那段是两个文件）', () async {
+    final player = _FakeClipPlayer();
+    final audio = _audio(player);
+    expect(await audio.playWord('/iː/'), isTrue);
+    expect(player.played, ['phonetics/w01.mp3']);
+  });
+
+  test('清单里没有 wordFile：例词返回 false（调用方回退 TTS）', () async {
+    final player = _FakeClipPlayer();
+    expect(await _audio(player).playWord('/ʊ/'), isFalse);
+    expect(player.played, isEmpty);
   });
 
   test('符号不在库里：不播放、返回 false（调用方走例词兜底）', () async {
     final player = _FakeClipPlayer();
     final audio = _audio(player);
     expect(await audio.play('/zzz/'), isFalse);
+    expect(await audio.playWord('/zzz/'), isFalse);
     expect(player.played, isEmpty);
   });
 
@@ -93,7 +108,7 @@ void main() {
     final audio = _audio(player);
     // 超时前必须已经返回——这里用 fake_async 会跳到 5s，直接断言结果即可
     expect(await audio.play('/ʊ/').timeout(const Duration(seconds: 10)), isTrue);
-    expect(player.played, ['phonetics/v09.mp3']);
+    expect(player.played, ['phonetics/s09.mp3']);
   }, timeout: const Timeout(Duration(seconds: 15)));
 
   test('符号归一化：ɡ 与 g、斜杠差异都能命中', () async {
@@ -110,6 +125,7 @@ void main() {
       player: player,
     );
     expect(await audio.play('/ʊ/'), isFalse);
+    expect(await audio.playWord('/ʊ/'), isFalse);
     expect(player.played, isEmpty);
   });
 }
