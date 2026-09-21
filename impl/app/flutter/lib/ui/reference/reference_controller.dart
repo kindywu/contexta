@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../di/providers.dart';
@@ -23,19 +25,26 @@ class ReferenceController {
     this._voice = TtsVoice.bella,
     this._phonemeWordGap = defaultPhonemeWordGap,
     this._groupGap = defaultGroupGap,
+    this._speakTimeout = defaultSpeakTimeout,
   });
 
   /// 录音播完到例词开口之间的停顿。不留这口气，两段会黏成一句。
+  /// 字母连播里也用它：字母名读完 → 停一拍 → 第一个读音；每条读音的例词读完
+  /// → 停一拍 → 下一条读音。
   static const Duration defaultPhonemeWordGap = Duration(seconds: 1);
 
   /// 连播时组与组之间的额外停顿（组内格子紧挨着读，换组才歇一口气）。
   static const Duration defaultGroupGap = Duration(seconds: 1);
+
+  /// 等 TTS「读完」的上限：引擎报结束就提前返回，不报就等这么久放行。
+  static const Duration defaultSpeakTimeout = Duration(seconds: 2);
 
   final Future<TtsEngine> _ttsEngineFuture;
   final PhonemeAudio _phonemeAudio;
   final TtsVoice _voice;
   final Duration _phonemeWordGap;
   final Duration _groupGap;
+  final Duration _speakTimeout;
 
   /// 连播轮次令牌：`playSequence` / `stopSequence` 各推进一步，
   /// 循环与格内各段靠它判断本轮是否已被打断（旧轮次的回声一律丢弃）。
@@ -132,16 +141,17 @@ class ReferenceController {
     await playLetterExample(row);
   }
 
-  /// 字母连播 [groups]：每个字母 = **TTS 读字母名 → 停一拍 → 逐行
-  /// 「读音录音 → 停一拍 → 例词录音」**，字母与字母之间再停一拍（`_groupGap`）。
+  /// 字母连播 [groups]：每个字母 = **TTS 读字母名 → 读完停一拍 → 逐行
+  /// 「读音录音 → 停一拍 → 例词录音 → 读完停一拍」**，
+  /// 字母与字母之间再停一拍（`_groupGap`）。
   ///
   /// 传 `allLetterPlayGroups` 就是整张字母表；传 `[letterPlayGroupOf('A')]`
   /// 就是弹层里「连播这 N 种读音」（只有一组，自然不额外停）。
-  /// [onGroup] 在每个字母开读前回调（UI 用来高亮那个字母格），
+  /// [onGroup] 在每个字母开读前回调（UI 用来高亮那个字母格与弹层里的字母），
   /// [onRow] 在每条读音开播前回调（弹层里高亮当前行）。
   ///
-  /// 字母名走 TTS、没有播完回调，靠这一拍把「字母名」与「第一个读音」错开；
-  /// 字母名比一拍还长时（W 这种多音节字母名）两段会轻微叠上——可接受。
+  /// 「读完」是真的等：字母名走 [_speakAndWait]（引擎报结束即返回，不报就按
+  /// `_speakTimeout` 放行），读音与例词本来就是等录音播完才返回。
   Future<void> playLetterSequence(
     List<LetterPlayGroup> groups, {
     void Function(LetterPlayGroup group)? onGroup,
@@ -157,14 +167,40 @@ class ReferenceController {
       onGroup?.call(group);
       // 回调里可能刚按了「停止」——那就连字母名都不读
       if (token != _sequenceToken) return;
-      await speak(group.letterName);
+      await _speakAndWait(group.letterName);
+      if (token != _sequenceToken) return;
       await Future<void>.delayed(_phonemeWordGap);
-      for (final row in group.rows) {
+      for (final (rowIndex, row) in group.rows.indexed) {
         if (token != _sequenceToken) return;
+        // 上一条读音的例词读完 → 歇一拍再进下一条（第一条前面是字母名那一拍）
+        if (rowIndex > 0) {
+          await Future<void>.delayed(_phonemeWordGap);
+          if (token != _sequenceToken) return;
+        }
         onRow?.call(row);
         await _playLetterRow(row, () => token != _sequenceToken);
       }
     }
+  }
+
+  /// 读一段文本并**等它读完**再返回。
+  ///
+  /// 引擎没就绪 / 拒绝这次朗读：直接返回（不打断页面，也不白等）。
+  /// 引擎接受了但不上报结束：最多等 `_speakTimeout`，不让整轮卡死。
+  Future<void> _speakAndWait(String text) async {
+    final TtsEngine engine;
+    try {
+      engine = await _ttsEngineFuture;
+    } catch (_) {
+      return; // 引擎初始化失败
+    }
+    final done = Completer<void>();
+    engine.setOnSpeakingFinished((_) {
+      if (!done.isCompleted) done.complete();
+    });
+    final id = engine.speak(text, voice: _voice);
+    if (id == null) return; // 引擎没接这次朗读
+    await done.future.timeout(_speakTimeout, onTimeout: () {});
   }
 
   /// 连播 [groups]：组内逐个走一遍「音标录音 → 停一拍 → 例词录音」，

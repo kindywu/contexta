@@ -16,6 +16,14 @@ class _RecordingTts implements TtsEngine {
   final List<String> spoken = [];
   final List<TtsVoice?> voices = [];
   int stopCount = 0;
+
+  /// 是否在 speak 时立刻上报「读完」（false = 模拟引擎不上报，只有超时能放行）。
+  bool reportFinished = true;
+  void Function(String?)? _onFinished;
+
+  /// 引擎注册的「读完」回调（测试里手动触发，模拟迟到的完成事件）。
+  void Function(String?)? get speakCallback => _onFinished;
+
   TtsVoice? get lastVoice => voices.isEmpty ? null : voices.last;
 
   @override
@@ -28,6 +36,7 @@ class _RecordingTts implements TtsEngine {
   String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
     spoken.add(text);
     voices.add(voice);
+    if (reportFinished) _onFinished?.call('ctx-1');
     return 'ctx-1';
   }
 
@@ -35,7 +44,8 @@ class _RecordingTts implements TtsEngine {
   void stop() => stopCount++;
 
   @override
-  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
+  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) =>
+      _onFinished = callback;
 
   @override
   void setOnSentenceStarted(
@@ -616,6 +626,72 @@ void main() {
           reason: '字母名那一拍照停');
       expect(sw.elapsedMilliseconds, lessThan(1600),
           reason: '读音没录音就不再等第二拍');
+    });
+
+    test('字母名等它读完才往下走（不是发出去就数拍子）', () async {
+      final tts = _RecordingTts()..reportFinished = false;
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+        speakTimeout: const Duration(milliseconds: 300),
+      );
+
+      final playing = controller.playLetterSequence([letterPlayGroupOf('B')]);
+      await pumpEventQueue();
+      expect(tts.spoken, ['B']);
+      expect(audio.played, isEmpty, reason: '字母名还没读完，不往下读');
+
+      // 引擎补报「读完」→ 立刻继续（不必等超时）
+      final sw = Stopwatch()..start();
+      tts.reportFinished = true;
+      tts.speakCallback?.call('ctx-1');
+      await playing;
+      sw.stop();
+
+      expect(audio.played, ['/b/']);
+      expect(sw.elapsedMilliseconds, lessThan(250), reason: '报完成就该放行，不靠超时');
+    });
+
+    test('引擎不上报完成：最多等 speakTimeout 就放行（不卡死整轮）', () async {
+      final tts = _RecordingTts()..reportFinished = false;
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+        speakTimeout: const Duration(milliseconds: 150),
+      );
+
+      final sw = Stopwatch()..start();
+      await controller.playLetterSequence([letterPlayGroupOf('B')]);
+      sw.stop();
+
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(140), reason: '等了超时那一段');
+      expect(audio.played, ['/b/'], reason: '放行后照常往下读');
+    });
+
+    test('例词读完到下一条读音之间停一拍', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: const Duration(milliseconds: 100),
+      );
+      // 取 A 的前两条读音：/eɪ/ 与 /æ/
+      final rows = soundRowsOf('A').take(2).toList();
+
+      final sw = Stopwatch()..start();
+      await controller.playLetterSequence([LetterPlayGroup('A a', rows)]);
+      sw.stop();
+
+      expect(audio.played, ['/eɪ/', '/æ/']);
+      // 字母名后一拍 + 每行「读音→例词」各一拍 + 两行之间一拍 = 4 拍
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(380),
+          reason: '两行之间那一拍要算进去（少了它只有 3 拍）');
+      expect(sw.elapsedMilliseconds, lessThan(800));
     });
 
     test('字母名读完之后停一拍再进第一个读音', () async {

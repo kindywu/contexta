@@ -50,6 +50,7 @@ class _AudioStub implements PhonemeAudio {
 class _TtsStub implements TtsEngine {
   final List<String> spoken = [];
   int stopCount = 0;
+  void Function(String?)? _onFinished;
 
   @override
   bool isAvailable() => true;
@@ -60,6 +61,7 @@ class _TtsStub implements TtsEngine {
   @override
   String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
     spoken.add(text);
+    _onFinished?.call('ctx-1'); // 立刻上报「读完」，连播才不用等超时
     return 'ctx-1';
   }
 
@@ -67,7 +69,8 @@ class _TtsStub implements TtsEngine {
   void stop() => stopCount++;
 
   @override
-  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
+  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) =>
+      _onFinished = callback;
 
   @override
   void setOnSentenceStarted(
@@ -117,21 +120,22 @@ void main() {
   });
 
   group('字母格弹层', () {
-    testWidgets('点字母格 → 只有「常见读音」，字母名 / 例词 / 发音按钮都不在', (tester) async {
+    testWidgets('点字母格 → 字母 + 常见读音；字母表的例词与发音按钮不在', (tester) async {
       await pumpScreen(tester);
 
       await tester.tap(find.text('A a'));
       await tester.pumpAndSettle();
 
       expect(find.text('常见读音 (5)'), findsOneWidget);
-      expect(find.text('/eɪ/'), findsNWidgets(2), reason: '格子上的字母名音标 + 弹层第一条读音');
+      expect(find.text('A a'), findsNWidgets(2), reason: '格子 + 弹层顶部那个字母');
+      expect(find.text('/eɪ/'), findsNWidgets(3),
+          reason: '格子上的字母名音标 + 弹层字母名音标 + 弹层第一条读音');
       expect(find.text('day'), findsOneWidget);
 
       expect(find.text('Apple'), findsNothing, reason: '字母表的例词已从弹层去掉');
       expect(find.text('/ˈæpəl/'), findsNothing);
       expect(find.text('苹果'), findsNothing);
       expect(find.text('发音'), findsNothing, reason: '发音按钮已去掉');
-      expect(find.text('A a'), findsOneWidget, reason: '弹层里不再重复字母名');
       expect(tts.spoken, isEmpty, reason: '打开弹层本身不出声');
     });
 
@@ -368,8 +372,8 @@ void main() {
       expect(find.text('day'), findsOneWidget); // 例词取自音标库（/eɪ/ → day）
       expect(find.text('/deɪ/'), findsOneWidget);
       expect(find.text('弱读'), findsOneWidget, reason: '非「常见音」才挂徽章');
-      // /eɪ/ 两处：网格格子上的字母名音标 + 弹层第一条读音
-      expect(find.text('/eɪ/'), findsNWidgets(2));
+      // /eɪ/ 三处：网格格子 + 弹层字母名注脚 + 弹层第一条读音
+      expect(find.text('/eɪ/'), findsNWidgets(3));
     });
 
     testWidgets('点读音 → 只放读音录音；点例词 → 只放例词录音（都不走 TTS）', (tester) async {
@@ -426,15 +430,26 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tts.spoken, ['A'], reason: '先读字母名');
-      expect(highlighted(), findsOneWidget, reason: '当前读音行高亮');
+      expect(
+        find.descendant(of: highlighted(), matching: find.text('A a')),
+        findsNWidgets(2),
+        reason: '读字母名时高亮：弹层里的字母 + 背后的字母格',
+      );
+
+      // 字母名读完 → 停一拍 → 第一条读音（高亮从字母转到那一行）
+      await tester.pump(ReferenceController.defaultPhonemeWordGap);
+      expect(audio.played, ['/eɪ/']);
+      expect(
+        find.descendant(of: highlighted(), matching: find.text('A a')),
+        findsNothing,
+        reason: '读到读音时字母不再高亮',
+      );
       expect(
         find.descendant(of: highlighted(), matching: find.text('/eɪ/')),
         findsOneWidget,
       );
 
-      // 字母名之后一拍 → 第一条读音；再一拍 → 它的例词
-      await tester.pump(ReferenceController.defaultPhonemeWordGap);
-      expect(audio.played, ['/eɪ/']);
+      // 再一拍 → 它的例词
       await tester.pump(ReferenceController.defaultPhonemeWordGap);
       expect(audio.playedWords, ['/eɪ/']);
 

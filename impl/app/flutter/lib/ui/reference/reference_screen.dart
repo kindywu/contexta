@@ -169,10 +169,13 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
     }
   }
 
-  /// 高亮弹层里正在读的那行读音。
+  /// 高亮弹层里正在读的那行读音（字母名那一拍已过去，格子高亮随之让位）。
   void _focusSound(int token, String phoneme) {
     if (!mounted || token != _playToken) return;
-    setState(() => _activeSound = phoneme);
+    setState(() {
+      _activeSound = phoneme;
+      _activeCell = null;
+    });
   }
 
   GlobalKey _cellKey(String phone) =>
@@ -224,6 +227,7 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
             _ReferenceCellModal(
               cell: _selectedCell!,
               activeSound: _activeSound,
+              letterHighlighted: _activeCell == _selectedCell!.char,
               soundsPlaying:
                   _playingKey == _letterSeqKey(_selectedCell!.letterName),
               onPlaySound: _playSound,
@@ -751,6 +755,7 @@ class _ReferenceCellModal extends ConsumerWidget {
   const _ReferenceCellModal({
     required this.cell,
     required this.activeSound,
+    required this.letterHighlighted,
     required this.soundsPlaying,
     required this.onPlaySound,
     required this.onPlayExample,
@@ -762,6 +767,9 @@ class _ReferenceCellModal extends ConsumerWidget {
 
   /// 正在读的那行读音（音标符号），null = 没在读。
   final String? activeSound;
+
+  /// 正在读这个字母的**字母名**（连播开头那一下），高亮弹层里的字母。
+  final bool letterHighlighted;
 
   /// 这个字母的「连播这 N 种读音」是否在跑。
   final bool soundsPlaying;
@@ -804,8 +812,8 @@ class _ReferenceCellModal extends ConsumerWidget {
       );
     }
 
-    // 字母格：弹层只有「常见读音」——字母名 / 例词 / 发音按钮都不在这儿，
-    // 点读音行进来看的就是这个字母能发哪些音（列数最多 6 条，整块可滚）。
+    // 字母格：弹层 = 字母（读到时高亮）+「常见读音」列表——字母表的例词与
+    // 「发音」按钮不在这儿，点读音行进来看的就是这个字母能发哪些音（最多 6 条）。
     final rows = soundRowsOf(cell.letterName);
     return AppModal(
       visible: true,
@@ -820,6 +828,8 @@ class _ReferenceCellModal extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  _LetterHeading(cell: cell, highlighted: letterHighlighted),
+                  const SizedBox(height: AppSpacing.xs),
                   _SectionHeader(
                     title: '常见读音 (${rows.length})',
                     trailing: AppIconButton(
@@ -918,6 +928,58 @@ class _ReferenceCellModal extends ConsumerWidget {
           ),
         ],
       ];
+}
+
+/// 弹层顶部的字母：`A a` + 字母名音标。不可点（听字母名走连播），
+/// 连播读到这个字母时套一圈珊瑚描边。
+class _LetterHeading extends StatelessWidget {
+  const _LetterHeading({required this.cell, required this.highlighted});
+
+  final ReferenceCellData cell;
+  final bool highlighted;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(AppRadius.sm);
+    return Container(
+      // 描边常驻（未高亮时透明）：高亮不该让行高跳一下
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(
+          color: highlighted ? AppColors.primary : Colors.transparent,
+          width: 2,
+        ),
+      ),
+      child: Material(
+        color: AppColors.surfaceCard,
+        borderRadius: radius,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: AppSpacing.xs,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                cell.char,
+                textAlign: TextAlign.center,
+                style: AppType.textTheme.displayMedium
+                    ?.copyWith(color: AppColors.ink),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Text(
+                cell.reading,
+                style: AppType.phonetic.copyWith(fontSize: 15),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 弹层里的一行读音：音标 + 类别徽章（「常见音」不挂）+ 例词 + 例词音标。
