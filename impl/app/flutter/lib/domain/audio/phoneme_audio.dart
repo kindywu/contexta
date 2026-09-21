@@ -22,6 +22,13 @@ abstract class PhonemeAudio {
   /// `false` = 没有这个音标的例词录音（调用方回退 TTS 读例词）。
   Future<bool> playWord(String phone);
 
+  /// 播放**字母读音行**那条例词的录音（manifest 的 `letterWords`，TTS 预生成），
+  /// `false` = 没有这条（调用方回退 TTS 读例词）。
+  ///
+  /// 与 [playWord] 分开是因为同一个符号可以有两套例词：X 的 `/z/` 在音标库里
+  /// 是 `zoo`，字母读音行里是 `xylophone`。
+  Future<bool> playLetterWord(String phone);
+
   /// 立刻掐掉当前播放（连播被「停止」时用）。没在播就什么也不做。
   Future<void> stop();
 }
@@ -45,6 +52,17 @@ class PhonemeClip {
 String normalizePhone(String phone) =>
     phone.trim().replaceAll('/', '').replaceAll('\u0261', 'g').trim();
 
+/// 字母读音行的一条例词录音（`letterWords` 那批，由 TTS 预生成）。
+class LetterWordClip {
+  const LetterWordClip({required this.file, required this.word});
+
+  /// 录音文件名（`l01.mp3` 这类纯 ASCII 序号）。
+  final String file;
+
+  /// 这条录音读的是哪个词——与表格里的例词对不上就是串了。
+  final String word;
+}
+
 /// 从 manifest.json 解析「符号 → 录音」映射，键为归一化符号（`iː`）。
 ///
 /// 只认带 file 的条目（wordFile 可缺）；JSON 结构异常时返回空表（调用方回退例词 TTS，
@@ -66,6 +84,30 @@ Map<String, PhonemeClip> phonemeClipsFromManifest(String manifestJson) {
           file: file,
           wordFile: wordFile is String && wordFile.isNotEmpty ? wordFile : null,
         );
+      }
+    }
+  } catch (_) {
+    return out;
+  }
+  return out;
+}
+
+/// 从 manifest.json 的 `letterWords` 段解析「符号 → 字母读音行例词录音」，
+/// 键同样是归一化符号。结构异常/整段缺失时返回空表（调用方回退 TTS）。
+Map<String, LetterWordClip> letterWordClipsFromManifest(String manifestJson) {
+  final out = <String, LetterWordClip>{};
+  try {
+    final decoded = jsonDecode(manifestJson);
+    if (decoded is! Map) return out;
+    final list = decoded['letterWords'];
+    if (list is! List) return out;
+    for (final entry in list) {
+      if (entry is! Map) continue;
+      final phoneme = entry['phoneme'];
+      final word = entry['word'];
+      final file = entry['file'];
+      if (phoneme is String && word is String && file is String && phoneme.isNotEmpty) {
+        out[normalizePhone(phoneme)] = LetterWordClip(file: file, word: word);
       }
     }
   } catch (_) {

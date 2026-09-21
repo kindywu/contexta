@@ -10,7 +10,7 @@
 
 **音色选择**：KittenTTS 内置 8 个英语音色（Bella/Jasper/Luna/Bruno/Rosie/Hugo/Kiki/Leo）。设置页音色选择器的**默认项是「随机」**：文章朗读时，每篇文章在进入时随机分配一个音色（8 个等概率，男女不限）并写入 `article.tts_voice_id`，此后这篇一直用它——同一篇文章反复朗读听感一致，不同文章各有各的声音。用户也可在设置页显式选一个具体音色，此时**全站固定**用该音色、不再随机（阅读页忽略文章已分配的音色）。选择持久化到 `user_settings.tts_voice_id`（`'RANDOM'` 或具体音色名）。非文章入口里的**词汇页单词**在「随机」模式下也随机取一个（按会话稳定，见下）；**参考页固定 `bella`**，不跟随该设置（见下条）。系统 TTS 回退时音色不生效（系统引擎没有音色概念），但功能不受影响。
 
-**参考页发音（非文章入口）**：字母格走 TTS——点符号大字读字母名，点例词大字读例词，弹窗「发音」按钮由 `speakTextFor` 拼成 `'<字母名>. <例词>'` 一段读完（句号 = 两段独立发声、中间有停顿），如 `A. Apple`。**音标格不走 TTS**：TTS 读不出 IPA 符号，音标本身与例词都是随包分发的真人录音（例词录音缺失才回退 TTS），音标 tab 还支持整表 / 按分组连播——见 [phoneme-audio.md](phoneme-audio.md)。
+**参考页发音（非文章入口）**：字母表中走运行时 TTS 的**只剩一处**——连播时每个字母开头报一次字母名（`A`）；字母表弹层里那些读音行与例词都放随包录音，没有 TTS 入口（2026-09-22 去掉弹层里的字母名 / 例词 / 「发音」按钮）。**音标格与字母读音行不走 TTS**：TTS 读不出 IPA 符号，音标本身与例词都是随包录音（录音缺失才回退 TTS 读例词）。连播里字母名走 `_speakAndWait`：等 `setOnSpeakingFinished` 回调（引擎不上报时 2s 超时兜底）再停一拍才进第一个读音——见 [phoneme-audio.md](phoneme-audio.md) 与 [reference-alphabet.md](reference-alphabet.md)。
 
 **参考页音色固定 `bella`**：`referenceControllerProvider` 不读 `user_settings.tts_voice_id`，构造时写死（`ReferenceController._voice` 默认值）。理由：参考页是「对着表一个个听」的场景，字母表与音标前后切换时音色必须一致，跟着全局设置走会导致每换一格换一个嗓子。设置页换音色对参考页无影响，阅读页/词汇页照旧。
 
@@ -173,6 +173,7 @@ flowchart TD
 - `test/data/local/daos/article_daos_test.dart`：`setTtsVoice` 写库 / 只影响目标文章 / 服务端同步不覆盖
 - `test/ui/settings/settings_controller_test.dart` / `settings_screen_test.dart`：音色选择持久化 + 试听/停播 + provider invalidate
 - 阅读页/参考页/词汇页测试：voice 透传到 engine（fake 断言 lastVoice）
-- `test/ui/reference/reference_data_test.dart`：字母格 speak 文本两段式（字母名 + 例词）、例词完整音标齐全（26 字母 + 48 音标）；音标录音部分见 [phoneme-audio.md](phoneme-audio.md)
-- `test/ui/reference/reference_screen_test.dart`：弹窗排版（例词 40sp 珊瑚主角、符号位 28sp ink）、拼写行渲染、发音按钮（字母格读 `A. Apple`；音标格走录音，见 [phoneme-audio.md](phoneme-audio.md)）
+- `test/ui/reference/reference_data_test.dart`：字母名取首字符、例词完整音标齐全（26 字母 + 48 音标）；音标录音部分见 [phoneme-audio.md](phoneme-audio.md)，字母读音部分见 [reference-alphabet.md](reference-alphabet.md)
+- `test/ui/reference/reference_controller_test.dart`：字母格三个入口按「字母名 → 停一拍 → 例词」两段 TTS（`['A', 'Apple']`，不是 `'A. Apple'`）；连播里字母名先出声、**等引擎报读完才往下走**（报完成立刻继续 / 不上报按 `speakTimeout` 放行）、停止时 TTS 也掐
+- `test/ui/reference/reference_screen_test.dart`：音标弹窗排版（例词 40sp 珊瑚主角、符号位 28sp ink）、拼写行渲染、发音按钮（音标格走录音，见 [phoneme-audio.md](phoneme-audio.md)）；字母弹层只有读音行、打开时不出声（`tts.spoken` 为空，见 [reference-alphabet.md](reference-alphabet.md)）
 - 真机验证：2026-08-10 修复后 init 0.7s、词典拷入后音质恢复；2026-08-09 init 挂起修复时验证 7 段全文朗读正常

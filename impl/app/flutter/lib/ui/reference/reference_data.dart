@@ -4,6 +4,8 @@
 /// 音标映射 / speak 文本规则与 Kotlin 完全一致，纯函数供单元测试覆盖。
 library;
 
+import '../../domain/audio/phoneme_audio.dart';
+
 /// 弹窗展示数据：字母或音标格子点击后弹出（对照 Kotlin ReferenceCellData）。
 class ReferenceCellData {
   const ReferenceCellData({
@@ -21,6 +23,9 @@ class ReferenceCellData {
   final String exampleIpa; // 例词完整音标（弹窗「拼写」行）
   final String exampleCn; // 例词中文
   final bool isPhonetic; // false=字母格子, true=音标格子
+
+  /// 字母格的首字符（'A a' → 'A'）——TTS 读的字母名、读音表查表键。
+  String get letterName => char.substring(0, 1);
 }
 
 /// 语法条目。
@@ -281,7 +286,23 @@ class AlphabetItem {
   final String example;
   final String full; // 例词完整音标（弹窗「拼写」行；英式，与 phonicsGroups 同一体系）
   final String cn;
+
+  /// 这个字母的读音行数（格子上的「N 种读音」）。
+  int get soundCount => soundRowsOf(letter).length;
+
+  /// 字母名（'A a' → 'A'）——读音表、连播分组都按它查。
+  String get letter => char.substring(0, 1);
 }
+
+/// 字母格 → 弹窗 / 连播用的格子数据（网格与连播共用一份构造，别各拼一套）。
+ReferenceCellData alphabetCellOf(AlphabetItem item) => ReferenceCellData(
+      char: item.char,
+      reading: item.phone,
+      example: item.example,
+      exampleIpa: item.full,
+      exampleCn: item.cn,
+      isPhonetic: false,
+    );
 
 const List<AlphabetItem> alphabetData = [
   AlphabetItem(char: 'A a', phone: '/eɪ/', example: 'Apple', full: '/ˈæpəl/', cn: '苹果'),
@@ -420,12 +441,271 @@ final List<List<ReferenceCellData>> allPhoneticGroups = [
 List<ReferenceCellData> phoneticCellsOf(PhonicsGroup group) =>
     [for (final item in group.items) phoneticCellOf(group, item)];
 
-/// 字母格的整段发音文本：先读字母名再读例词（句号分隔 = 两段独立发声、中间有停顿）。
+
+/// 字母读音的类别（对照 english-ipa 站点的字母读音分类；「常见音」不显示徽章）。
+enum LetterSoundKind {
+  common('常见音', '最常见或最基础的读法'),
+  hard('硬音', '硬音：C/G 后接 a、o、u 或辅音时，常读 /k/ /ɡ/，如 cat、go'),
+  soft('软音', '软音：C/G 后接 e、i、y 时，常读 /s/ /dʒ/，如 city、giant'),
+  reduced('弱读', '弱读：非重读时声音变轻，常变成 /ə/，如 about'),
+  cluster('组合音', '组合音：两个音连读，没有单独录音，如 box 里的 /ks/'),
+  minor('少数词', '少数词：只出现在少量常见词里的读法，如 xylophone 的 /z/');
+
+  const LetterSoundKind(this.label, this.description);
+
+  final String label;
+
+  /// 徽章长按/悬停提示用的一句话解释。
+  final String description;
+}
+
+/// 静态表里的一条读音（例词能从音标库解析出来的就不在这儿重复写）。
+class LetterSound {
+  const LetterSound(
+    this.phoneme,
+    this.kind, {
+    this.example,
+    this.exampleIpa,
+    this.note,
+  });
+
+  final String phoneme; // 与 phonicsGroups 同一写法（含斜杠），如 '/eɪ/'
+  final LetterSoundKind kind;
+
+  /// 音标库里没有这个读音时才自带例词（X 的组合音）。
+  final String? example;
+  final String? exampleIpa;
+
+  /// 备注（无录音的组合音注明「无单独录音」）。
+  final String? note;
+}
+
+/// 一个字母的读音表。
+class LetterSounds {
+  const LetterSounds(this.letter, this.sounds);
+
+  final String letter; // 'A'
+  final List<LetterSound> sounds;
+}
+
+/// 字母 → 读音（对照 english-ipa 站点的 letterPronunciations，符号按 App 体系写）。
 ///
-/// 音标格不走 TTS（TTS 读不出 IPA，早先用「拟音英文拼写」糊弄的路子已废弃）：
-/// 音标本身的发音是随包录音，见 `lib/domain/audio/phoneme_audio.dart` 与
-/// `ReferenceController.playCell`。音标格传进来只返回例词。
-String speakTextFor(ReferenceCellData cell) {
-  if (cell.isPhonetic) return cell.example;
-  return '${cell.char.substring(0, 1)}. ${cell.example}';
+/// 例词不在这儿写：除 X 的组合音外，例词与例词音标一律按符号从 [phonicsGroups]
+/// 解析（见 [soundRowsOf]）——同一体系、且与随包的例词录音一一对应。
+const List<LetterSounds> letterSounds = [
+  LetterSounds('A', [
+    LetterSound('/eɪ/', LetterSoundKind.common),
+    LetterSound('/æ/', LetterSoundKind.common),
+    LetterSound('/ɑː/', LetterSoundKind.common),
+    LetterSound('/ɔː/', LetterSoundKind.common),
+    LetterSound('/ə/', LetterSoundKind.reduced),
+  ]),
+  LetterSounds('B', [
+    LetterSound('/b/', LetterSoundKind.common),
+  ]),
+  LetterSounds('C', [
+    LetterSound('/k/', LetterSoundKind.hard),
+    LetterSound('/s/', LetterSoundKind.soft),
+    LetterSound('/tʃ/', LetterSoundKind.common),
+  ]),
+  LetterSounds('D', [
+    LetterSound('/d/', LetterSoundKind.common),
+    LetterSound('/dʒ/', LetterSoundKind.common),
+  ]),
+  LetterSounds('E', [
+    LetterSound('/e/', LetterSoundKind.common),
+    LetterSound('/iː/', LetterSoundKind.common),
+    LetterSound('/ə/', LetterSoundKind.reduced),
+    LetterSound('/ɜː/', LetterSoundKind.common),
+    LetterSound('/ɪə/', LetterSoundKind.common),
+  ]),
+  LetterSounds('F', [
+    LetterSound('/f/', LetterSoundKind.common),
+  ]),
+  LetterSounds('G', [
+    LetterSound('/ɡ/', LetterSoundKind.hard),
+    LetterSound('/dʒ/', LetterSoundKind.soft),
+  ]),
+  LetterSounds('H', [
+    LetterSound('/h/', LetterSoundKind.common),
+  ]),
+  LetterSounds('I', [
+    LetterSound('/aɪ/', LetterSoundKind.common),
+    LetterSound('/ɪ/', LetterSoundKind.common),
+    LetterSound('/ɜː/', LetterSoundKind.common),
+    LetterSound('/ə/', LetterSoundKind.reduced),
+    LetterSound('/iː/', LetterSoundKind.common),
+  ]),
+  LetterSounds('J', [
+    LetterSound('/dʒ/', LetterSoundKind.common),
+  ]),
+  LetterSounds('K', [
+    LetterSound('/k/', LetterSoundKind.common),
+  ]),
+  LetterSounds('L', [
+    LetterSound('/l/', LetterSoundKind.common),
+  ]),
+  LetterSounds('M', [
+    LetterSound('/m/', LetterSoundKind.common),
+  ]),
+  LetterSounds('N', [
+    LetterSound('/n/', LetterSoundKind.common),
+    LetterSound('/ŋ/', LetterSoundKind.common),
+  ]),
+  LetterSounds('O', [
+    LetterSound('/əʊ/', LetterSoundKind.common),
+    LetterSound('/ɒ/', LetterSoundKind.common),
+    LetterSound('/ʌ/', LetterSoundKind.common),
+    LetterSound('/uː/', LetterSoundKind.common),
+    LetterSound('/ɔː/', LetterSoundKind.common),
+    LetterSound('/ə/', LetterSoundKind.reduced),
+  ]),
+  LetterSounds('P', [
+    LetterSound('/p/', LetterSoundKind.common),
+  ]),
+  LetterSounds('Q', [
+    LetterSound('/k/', LetterSoundKind.common),
+  ]),
+  LetterSounds('R', [
+    LetterSound('/r/', LetterSoundKind.common),
+  ]),
+  LetterSounds('S', [
+    LetterSound('/s/', LetterSoundKind.common),
+    LetterSound('/z/', LetterSoundKind.common),
+    LetterSound('/ʃ/', LetterSoundKind.common),
+    LetterSound('/ʒ/', LetterSoundKind.common),
+  ]),
+  LetterSounds('T', [
+    LetterSound('/t/', LetterSoundKind.common),
+    LetterSound('/ʃ/', LetterSoundKind.common),
+    LetterSound('/tʃ/', LetterSoundKind.common),
+  ]),
+  LetterSounds('U', [
+    LetterSound('/ʌ/', LetterSoundKind.common),
+    LetterSound('/uː/', LetterSoundKind.common),
+    LetterSound('/ʊ/', LetterSoundKind.common),
+    LetterSound('/ɜː/', LetterSoundKind.common),
+    LetterSound('/ə/', LetterSoundKind.reduced),
+    LetterSound('/ʊə/', LetterSoundKind.common),
+  ]),
+  LetterSounds('V', [
+    LetterSound('/v/', LetterSoundKind.common),
+  ]),
+  LetterSounds('W', [
+    LetterSound('/w/', LetterSoundKind.common),
+  ]),
+  LetterSounds('X', [
+    // X 的三条读音例词都取自站点（「字母 X 发什么音」，得用含 x 的词）：
+    // 音标库那套例词在这儿基本对不上（/z/ 是 zoo），所以三条都自带例词、例词走 TTS。
+    // /ks/ /gz/ 是组合音，连读音本身也没有录音。
+    LetterSound('/ks/', LetterSoundKind.cluster,
+        example: 'box', exampleIpa: '/bɒks/', note: '无单独录音'),
+    LetterSound('/gz/', LetterSoundKind.cluster,
+        example: 'exam', exampleIpa: '/ɪɡˈzæm/', note: '无单独录音'),
+    LetterSound('/z/', LetterSoundKind.minor,
+        example: 'xylophone', exampleIpa: '/ˈzaɪləfəʊn/'),
+  ]),
+  LetterSounds('Y', [
+    LetterSound('/aɪ/', LetterSoundKind.common),
+    LetterSound('/ɪ/', LetterSoundKind.common),
+    LetterSound('/iː/', LetterSoundKind.common),
+    LetterSound('/j/', LetterSoundKind.common),
+  ]),
+  LetterSounds('Z', [
+    LetterSound('/z/', LetterSoundKind.common),
+  ]),
+];
+
+/// 弹层与连播共用的一行读音：例词、例词音标、有没有录音都已解析好。
+class LetterSoundRow {
+  const LetterSoundRow({
+    required this.phoneme,
+    required this.kind,
+    required this.example,
+    required this.exampleIpa,
+    required this.hasAudio,
+    required this.isOwnExample,
+    this.note,
+  });
+
+  final String phoneme;
+  final LetterSoundKind kind;
+  final String example;
+  final String exampleIpa;
+
+  /// 读音本身有没有随包录音（组合音没有）。
+  final bool hasAudio;
+
+  /// 例词是不是**自带**的（站点例词）——这些行的例词录音在 manifest 的
+  /// `letterWords` 段（TTS 预生成），要按符号走 [PhonemeAudio.playLetterWord]；
+  /// 其余行走音标库那套（`w*.mp3`）。
+  final bool isOwnExample;
+
+  final String? note;
+}
+
+/// 一个字母的读音行：例词与例词音标从 [phonicsGroups] 按符号解析
+/// （同一符号同一个词，才能配上 `w*.mp3` 例词录音）；
+/// **静态表自带例词的读音行**（X 的三条）用自带的词、例词走 TTS。
+///
+/// 字母不在表里直接抛 [StateError]——数据错了要当场炸，不静默给空表。
+List<LetterSoundRow> soundRowsOf(String letter) =>
+    _letterSoundRows[letter] ?? (throw StateError('字母表里没有 $letter'));
+
+/// 26 个字母的读音行（惰性建一次，网格格子上的「N 种读音」也用它）。
+final Map<String, List<LetterSoundRow>> _letterSoundRows = {
+  for (final group in letterSounds)
+    group.letter: [for (final sound in group.sounds) _rowOf(sound)],
+};
+
+LetterSoundRow _rowOf(LetterSound sound) {
+  final item = _phonicsItemOf(sound.phoneme);
+  // 自带例词 = 音标库那套例词对这个字母不成立（X 的 box/exam/xylophone），
+  // 例词录音改由 manifest 的 letterWords 段给（TTS 预生成）。
+  final own = sound.example != null;
+  return LetterSoundRow(
+    phoneme: sound.phoneme,
+    kind: sound.kind,
+    example: own ? sound.example! : (item?.example ?? ''),
+    exampleIpa: own ? (sound.exampleIpa ?? '') : (item?.full ?? ''),
+    hasAudio: item != null,
+    isOwnExample: own,
+    note: sound.note,
+  );
+}
+
+PhonicsItem? _phonicsItemOf(String phone) {
+  final key = normalizePhone(phone);
+  for (final item in phonicsGroups.expand((g) => g.items)) {
+    if (normalizePhone(item.phone) == key) return item;
+  }
+  return null;
+}
+
+/// 连播的一个字母：网格格子的标识 + 该字母的读音行。
+class LetterPlayGroup {
+  const LetterPlayGroup(this.cellKey, this.rows);
+
+  /// 字母格子的标识（'A a'），连播高亮/滚动按它找格子。
+  final String cellKey;
+
+  final List<LetterSoundRow> rows;
+
+  /// TTS 读的字母名：'A a' → 'A'。
+  String get letterName => cellKey.substring(0, 1);
+}
+
+/// 全部 26 个字母的连播分组（字母表顺序）——「连播全部」用。
+final List<LetterPlayGroup> allLetterPlayGroups = [
+  for (final item in alphabetData)
+    LetterPlayGroup(item.char, soundRowsOf(item.letter)),
+];
+
+/// 单个字母的连播分组——弹层里「连播这 N 种读音」用。
+LetterPlayGroup letterPlayGroupOf(String letter) {
+  final item = alphabetData.firstWhere(
+    (i) => i.letter == letter,
+    orElse: () => throw StateError('字母表里没有 $letter'),
+  );
+  return LetterPlayGroup(item.char, soundRowsOf(letter));
 }

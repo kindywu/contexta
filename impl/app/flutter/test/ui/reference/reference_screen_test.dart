@@ -1,3 +1,4 @@
+import 'package:contexta/core/components/app_modal.dart';
 import 'package:contexta/core/theme/app_colors.dart';
 import 'package:contexta/di/providers.dart';
 import 'package:contexta/domain/audio/phoneme_audio.dart';
@@ -21,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 class _AudioStub implements PhonemeAudio {
   final List<String> played = [];
   final List<String> playedWords = [];
+  final List<String> playedLetterWords = [];
   int stopCount = 0;
 
   @override
@@ -37,10 +39,18 @@ class _AudioStub implements PhonemeAudio {
     playedWords.add(phone);
     return true;
   }
+
+  @override
+  Future<bool> playLetterWord(String phone) async {
+    playedLetterWords.add(phone);
+    return true;
+  }
 }
 
 class _TtsStub implements TtsEngine {
   final List<String> spoken = [];
+  int stopCount = 0;
+  void Function(String?)? _onFinished;
 
   @override
   bool isAvailable() => true;
@@ -51,14 +61,16 @@ class _TtsStub implements TtsEngine {
   @override
   String? speak(String text, {double speed = 1.0, TtsVoice? voice}) {
     spoken.add(text);
+    _onFinished?.call('ctx-1'); // 立刻上报「读完」，连播才不用等超时
     return 'ctx-1';
   }
 
   @override
-  void stop() {}
+  void stop() => stopCount++;
 
   @override
-  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
+  void setOnSpeakingFinished(void Function(String? utteranceId)? callback) =>
+      _onFinished = callback;
 
   @override
   void setOnSentenceStarted(
@@ -107,67 +119,53 @@ void main() {
     });
   });
 
-  group('字母格弹窗', () {
-    testWidgets('点击字母格 → 弹窗展示字母/音标/例词/拼写/发音按钮', (tester) async {
+  group('字母格弹层', () {
+    testWidgets('点字母格 → 字母 + 常见读音；字母表的例词与发音按钮不在', (tester) async {
       await pumpScreen(tester);
 
       await tester.tap(find.text('A a'));
       await tester.pumpAndSettle();
 
-      expect(find.text('A a'), findsNWidgets(2)); // 格子 + 弹窗符号位
-      expect(find.text('/eɪ/'), findsNWidgets(2)); // 格子 + 弹窗注脚
-      expect(find.text('Apple'), findsOneWidget);
-      expect(find.text('/ˈæpəl/'), findsOneWidget); // 拼写行（例词完整音标）
-      expect(find.text('苹果'), findsOneWidget);
-      expect(find.text('发音'), findsOneWidget);
+      expect(find.text('常见读音 (5)'), findsOneWidget);
+      expect(find.text('A a'), findsNWidgets(2), reason: '格子 + 弹层顶部那个字母');
+      expect(find.text('/eɪ/'), findsNWidgets(3),
+          reason: '格子上的字母名音标 + 弹层字母名音标 + 弹层第一条读音');
+      expect(find.text('day'), findsOneWidget);
 
-      // 发音按钮：字母名 + 例词
-      await tester.tap(find.text('发音'));
-      await tester.pumpAndSettle();
-      expect(tts.spoken, ['A. Apple']);
+      expect(find.text('Apple'), findsNothing, reason: '字母表的例词已从弹层去掉');
+      expect(find.text('/ˈæpəl/'), findsNothing);
+      expect(find.text('苹果'), findsNothing);
+      expect(find.text('发音'), findsNothing, reason: '发音按钮已去掉');
+      expect(tts.spoken, isEmpty, reason: '打开弹层本身不出声');
     });
 
-    testWidgets('弹窗排版：例词 40sp 珊瑚主角、符号位 28sp', (tester) async {
+    testWidgets('音标格弹窗排版不变：例词 40sp 珊瑚主角、符号位 28sp', (tester) async {
       await pumpScreen(tester);
 
-      await tester.tap(find.text('A a'));
+      await tester.tap(find.text('音标'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('/iː/').first);
       await tester.pumpAndSettle();
 
-      final word = tester.widget<Text>(find.text('Apple'));
+      final word = tester.widget<Text>(find.text('see').last);
       expect(word.style?.fontSize, 40);
       expect(word.style?.color, AppColors.primary);
 
-      final symbol = tester.widget<Text>(find.text('A a').last);
+      final symbol = tester.widget<Text>(find.text('/iː/').last);
       expect(symbol.style?.fontSize, 28);
       expect(symbol.style?.color, AppColors.ink);
     });
 
-    testWidgets('弹窗大字点击 → 读字母名', (tester) async {
+    testWidgets('关闭按钮关闭弹层', (tester) async {
       await pumpScreen(tester);
 
       await tester.tap(find.text('A a'));
       await tester.pumpAndSettle();
-
-      await tester.tap(find.text('A a').last); // 弹窗中的大字
-      await tester.pumpAndSettle();
-      expect(tts.spoken, ['A']);
-
-      // 例词点击 → 读例词
-      await tester.tap(find.text('Apple'));
-      await tester.pumpAndSettle();
-      expect(tts.spoken, ['A', 'Apple']);
-    });
-
-    testWidgets('关闭按钮关闭弹窗', (tester) async {
-      await pumpScreen(tester);
-
-      await tester.tap(find.text('A a'));
-      await tester.pumpAndSettle();
-      expect(find.text('发音'), findsOneWidget);
+      expect(find.text('常见读音 (5)'), findsOneWidget);
 
       await tester.tap(find.byIcon(Icons.close));
       await tester.pumpAndSettle();
-      expect(find.text('发音'), findsNothing);
+      expect(find.text('常见读音 (5)'), findsNothing);
     });
   });
 
@@ -328,6 +326,186 @@ void main() {
       await tester.tap(find.text('see').last); // 弹窗里的例词大字
       await tester.pumpAndSettle();
       expect(audio.playedWords, ['/iː/'], reason: '手动点例词照常出声');
+    });
+  });
+
+  group('字母读音（底部弹层 + 连播）', () {
+    /// 高亮中的格子 / 读音行（珊瑚描边）——私有 widget，按 decoration 找。
+    Finder highlighted() => find.byWidgetPredicate((w) {
+          if (w is! Container) return false;
+          final decoration = w.decoration;
+          if (decoration is! BoxDecoration) return false;
+          final border = decoration.border;
+          return border is Border && border.top.color == AppColors.primary;
+        });
+
+    Future<void> openLetter(WidgetTester tester, String cell) async {
+      await tester.ensureVisible(find.text(cell));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(cell));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('字母格上标了「N 种读音」', (tester) async {
+      await pumpScreen(tester);
+
+      /// 某个字母格里的「N 种读音」（卡片内的 InkWell 认这个格子）。
+      Finder soundCountOf(String cell) => find.descendant(
+            of: find.ancestor(of: find.text(cell), matching: find.byType(InkWell)),
+            matching: find.textContaining('种读音'),
+          );
+
+      expect(tester.widget<Text>(soundCountOf('A a')).data, '5 种读音');
+      expect(tester.widget<Text>(soundCountOf('O o')).data, '6 种读音');
+      expect(tester.widget<Text>(soundCountOf('X x')).data, '3 种读音');
+      expect(tester.widget<Text>(soundCountOf('B b')).data, '1 种读音');
+    });
+
+    testWidgets('点字母格 → 底部弹层：读音行带音标 / 徽章 / 例词 / 例词音标', (tester) async {
+      await pumpScreen(tester);
+      await openLetter(tester, 'A a');
+
+      final modal = tester.widget<AppModal>(find.byType(AppModal));
+      expect(modal.alignment, AppModalAlignment.bottom, reason: '字母详情是底部弹层');
+
+      expect(find.text('常见读音 (5)'), findsOneWidget);
+      expect(find.text('day'), findsOneWidget); // 例词取自音标库（/eɪ/ → day）
+      expect(find.text('/deɪ/'), findsOneWidget);
+      expect(find.text('弱读'), findsOneWidget, reason: '非「常见音」才挂徽章');
+      // /eɪ/ 三处：网格格子 + 弹层字母名注脚 + 弹层第一条读音
+      expect(find.text('/eɪ/'), findsNWidgets(3));
+    });
+
+    testWidgets('点读音 → 只放读音录音；点例词 → 只放例词录音（都不走 TTS）', (tester) async {
+      await pumpScreen(tester);
+      await openLetter(tester, 'A a');
+
+      await tester.tap(find.text('/eɪ/').last); // 读音行左边的音标
+      await tester.pumpAndSettle();
+      expect(audio.played, ['/eɪ/']);
+      expect(audio.playedWords, isEmpty, reason: '点读音不读例词');
+      expect(tts.spoken, isEmpty);
+
+      await tester.tap(find.text('day')); // 读音行右边的例词
+      await tester.pumpAndSettle();
+      expect(audio.playedWords, ['/eɪ/']);
+      expect(audio.played, ['/eɪ/'], reason: '点例词不再读音标');
+      expect(tts.spoken, isEmpty);
+    });
+
+    testWidgets('组合音行（X 的 /ks/）：点读音兜底读例词、点例词放预生成录音', (tester) async {
+      await pumpScreen(tester);
+      await openLetter(tester, 'X x');
+
+      expect(find.text('常见读音 (3)'), findsOneWidget);
+      expect(find.text('组合音'), findsNWidgets(2));
+      expect(find.text('无单独录音'), findsNWidgets(2));
+      // 三条例词都取自站点（音标库那套在 X 上对不上：/z/ 是 zoo）
+      expect(find.text('box'), findsOneWidget);
+      expect(find.text('/bɒks/'), findsOneWidget);
+      expect(find.text('exam'), findsOneWidget);
+      expect(find.text('xylophone'), findsOneWidget);
+      expect(find.text('/ˈzaɪləfəʊn/'), findsOneWidget);
+      expect(find.text('少数词'), findsOneWidget);
+
+      // 点读音（左边）：/ks/ 没有读音录音 → 兜底 TTS 读例词（不读 IPA）
+      await tester.tap(find.text('/ks/'));
+      await tester.pumpAndSettle();
+      expect(audio.played, isEmpty);
+      expect(tts.spoken, ['box']);
+
+      // 点例词（右边）：放 TTS 预生成的那条录音
+      await tester.tap(find.text('box'));
+      await tester.pumpAndSettle();
+      expect(audio.playedLetterWords, ['/ks/']);
+      expect(tts.spoken, ['box'], reason: '有录音就不再走 TTS');
+    });
+
+    testWidgets('弹层「连播这 5 种读音」：字母名 → 逐条读音，停止后复位', (tester) async {
+      await pumpScreen(tester);
+      await openLetter(tester, 'A a');
+
+      expect(find.byTooltip('连播这 5 种读音'), findsOneWidget);
+      await tester.tap(find.byTooltip('连播这 5 种读音'));
+      await tester.pumpAndSettle();
+
+      expect(tts.spoken, ['A'], reason: '先读字母名');
+      expect(
+        find.descendant(of: highlighted(), matching: find.text('A a')),
+        findsNWidgets(2),
+        reason: '读字母名时高亮：弹层里的字母 + 背后的字母格',
+      );
+
+      // 字母名读完 → 停一拍 → 第一条读音（高亮从字母转到那一行）
+      await tester.pump(ReferenceController.defaultPhonemeWordGap);
+      expect(audio.played, ['/eɪ/']);
+      expect(
+        find.descendant(of: highlighted(), matching: find.text('A a')),
+        findsNothing,
+        reason: '读到读音时字母不再高亮',
+      );
+      expect(
+        find.descendant(of: highlighted(), matching: find.text('/eɪ/')),
+        findsOneWidget,
+      );
+
+      // 再一拍 → 它的例词
+      await tester.pump(ReferenceController.defaultPhonemeWordGap);
+      expect(audio.playedWords, ['/eɪ/']);
+
+      final playedAtStop = [...audio.played];
+      await tester.tap(find.byTooltip('停止'));
+      await tester.pumpAndSettle();
+
+      expect(highlighted(), findsNothing, reason: '停止后高亮清除');
+      expect(find.byTooltip('连播这 5 种读音'), findsOneWidget, reason: '按钮复位');
+
+      await tester.pump(const Duration(seconds: 5));
+      expect(audio.played, playedAtStop, reason: '停止后不再往下读');
+    });
+
+    testWidgets('弹层里关闭弹窗 → 该字母的连播停止', (tester) async {
+      await pumpScreen(tester);
+      await openLetter(tester, 'A a');
+
+      await tester.tap(find.byTooltip('连播这 5 种读音'));
+      await tester.pumpAndSettle();
+      expect(tts.spoken, ['A']);
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pumpAndSettle();
+
+      await tester.pump(const Duration(seconds: 5));
+      expect(audio.played, isEmpty, reason: '关闭弹层后不再出声');
+      expect(tts.stopCount, greaterThan(0), reason: '字母名也要掐掉');
+    });
+
+    testWidgets('顶部「连播全部 26 个字母」：开播高亮 A 格，停止后清除', (tester) async {
+      await pumpScreen(tester);
+
+      expect(find.text('连播全部 26 个字母'), findsOneWidget);
+      await tester.tap(find.text('连播全部 26 个字母'));
+      await tester.pumpAndSettle();
+
+      expect(tts.spoken, ['A']);
+      expect(
+        find.descendant(of: highlighted(), matching: find.text('A a')),
+        findsOneWidget,
+        reason: '高亮当前字母格',
+      );
+      expect(find.text('停止'), findsOneWidget, reason: '播放中按钮变「停止」');
+
+      await tester.pump(ReferenceController.defaultPhonemeWordGap);
+      expect(audio.played, ['/eɪ/']);
+
+      await tester.tap(find.text('停止'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('连播全部 26 个字母'), findsOneWidget);
+      expect(highlighted(), findsNothing);
+
+      await tester.pump(const Duration(seconds: 5));
+      expect(audio.played, ['/eɪ/'], reason: '停止后不再冒下一格的声音');
     });
   });
 

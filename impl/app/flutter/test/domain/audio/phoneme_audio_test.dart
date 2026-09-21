@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:contexta/domain/audio/phoneme_audio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -55,6 +57,48 @@ void main() {
       final clips = phonemeClipsFromManifest(json);
       expect(clips.keys, ['y']);
       expect(clips['y']?.wordFile, isNull);
+    });
+  });
+
+  group('letterWords（字母读音行的例词录音）', () {
+    test('解析符号 → 录音文件 + 词', () {
+      final words = letterWordClipsFromManifest(jsonEncode({
+        'letterWords': [
+          {'phoneme': 'ks', 'word': 'box', 'file': 'l01.mp3'},
+          {'phoneme': 'z', 'word': 'xylophone', 'file': 'l03.mp3'},
+        ],
+      }));
+
+      expect(words.keys.toList()..sort(), ['ks', 'z']);
+      expect(words['ks']?.file, 'l01.mp3');
+      expect(words['ks']?.word, 'box');
+      expect(words['z']?.word, 'xylophone');
+    });
+
+    test('符号同样过归一化（斜杠 / ɡ↔g）', () {
+      final words = letterWordClipsFromManifest(jsonEncode({
+        'letterWords': [
+          {'phoneme': '/ɡ/', 'word': 'go', 'file': 'l09.mp3'},
+        ],
+      }));
+
+      expect(words.keys, ['g'], reason: 'ɡ(U+0261) 归一到 g');
+      expect(words['g']?.file, 'l09.mp3');
+    });
+
+    test('整段缺失（旧 manifest）：空表，不抛', () {
+      expect(letterWordClipsFromManifest(jsonEncode({'phonemes': []})), isEmpty);
+    });
+
+    test('坏 JSON / 缺字段的条目：空表 / 跳过该条', () {
+      expect(letterWordClipsFromManifest('{oops'), isEmpty);
+      final words = letterWordClipsFromManifest(jsonEncode({
+        'letterWords': [
+          {'phoneme': 'ks'}, // 缺 word/file → 跳过
+          {'phoneme': 'gz', 'word': 'exam', 'file': 'l02.mp3'},
+        ],
+      }));
+      expect(words.keys, ['gz']);
     });
   });
 }
