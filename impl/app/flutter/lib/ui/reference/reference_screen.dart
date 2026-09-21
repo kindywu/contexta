@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -22,9 +24,106 @@ class ReferenceScreen extends ConsumerStatefulWidget {
   ConsumerState<ReferenceScreen> createState() => _ReferenceScreenState();
 }
 
+/// 「连播全部」的范围标识（分组连播用组名做标识）。
+const String _allPhonicsKey = '__all__';
+
 class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
   int _selectedTab = 0;
   ReferenceCellData? _selectedCell;
+
+  /// 正在连播的范围（`_allPhonicsKey` 或分组名），null = 没在播。
+  String? _playingKey;
+
+  /// 当前正在读的音标（高亮用），null = 没在播。
+  String? _activePhone;
+
+  /// 连播轮次令牌：停止 / 改播别的范围 / 离开页面都会 +1，
+  /// 迟到的异步回调靠它丢弃（否则停止后还会把高亮滚回去）。
+  int _playToken = 0;
+
+  /// 音标格的 GlobalKey（连播时滚动到当前格用），按符号懒建。
+  final Map<String, GlobalKey> _cellKeys = {};
+
+  /// 控制器在 initState 里取一次：`dispose` 里不能再碰 `ref`
+  /// （riverpod 会抛「Cannot use "ref" after the widget was disposed」）。
+  late final ReferenceController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ref.read(referenceControllerProvider);
+  }
+
+  @override
+  void dispose() {
+    // 离开页面即停：否则切走/返回后整张表还在后台读下去
+    unawaited(_controller.stopSequence());
+    super.dispose();
+  }
+
+  void _openCell(ReferenceCellData cell) {
+    if (_playingKey != null) _stopSequence(); // 弹窗与连播的声音不叠着响
+    setState(() => _selectedCell = cell);
+  }
+
+  void _selectTab(int index) {
+    if (_playingKey != null) _stopSequence();
+    setState(() => _selectedTab = index);
+  }
+
+  void _toggleSequence(String key, List<List<ReferenceCellData>> groups) {
+    if (_playingKey == key) {
+      _stopSequence();
+      return;
+    }
+    _startSequence(key, groups);
+  }
+
+  Future<void> _startSequence(
+    String key,
+    List<List<ReferenceCellData>> groups,
+  ) async {
+    final token = ++_playToken;
+    setState(() {
+      _playingKey = key;
+      _activePhone = null;
+    });
+    await _controller.playSequence(
+      groups,
+      onCell: (cell) => _focusCell(token, cell),
+    );
+    if (!mounted || token != _playToken) return; // 已被停止 / 换了一轮
+    setState(() {
+      _playingKey = null;
+      _activePhone = null;
+    });
+  }
+
+  void _stopSequence() {
+    _playToken++;
+    unawaited(_controller.stopSequence());
+    setState(() {
+      _playingKey = null;
+      _activePhone = null;
+    });
+  }
+
+  /// 高亮当前格并滚到可见（垂直方向留一点上文，别把格子顶到屏幕边上）。
+  void _focusCell(int token, ReferenceCellData cell) {
+    if (!mounted || token != _playToken) return;
+    setState(() => _activePhone = cell.char);
+    final cellContext = _cellKeys[cell.char]?.currentContext;
+    if (cellContext != null) {
+      Scrollable.ensureVisible(
+        cellContext,
+        alignment: 0.3,
+        duration: const Duration(milliseconds: 250),
+      );
+    }
+  }
+
+  GlobalKey _cellKey(String phone) =>
+      _cellKeys.putIfAbsent(phone, () => GlobalKey());
 
   @override
   Widget build(BuildContext context) {
@@ -34,10 +133,7 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
         children: [
           Column(
             children: [
-              _ReferenceTabs(
-                selected: _selectedTab,
-                onSelect: (index) => setState(() => _selectedTab = index),
-              ),
+              _ReferenceTabs(selected: _selectedTab, onSelect: _selectTab),
               const SizedBox(height: AppSpacing.xs),
               Expanded(
                 child: SingleChildScrollView(
@@ -45,11 +141,18 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
                     horizontal: AppSpacing.md,
                   ),
                   child: switch (_selectedTab) {
-                    0 => _AlphabetContent(
-                        onCellClick: (cell) => setState(() => _selectedCell = cell),
-                      ),
+                    0 => _AlphabetContent(onCellClick: _openCell),
                     1 => _PhonicsContent(
-                        onCellClick: (cell) => setState(() => _selectedCell = cell),
+                        onCellClick: _openCell,
+                        activePhone: _activePhone,
+                        playingKey: _playingKey,
+                        cellKey: _cellKey,
+                        onToggleAll: () =>
+                            _toggleSequence(_allPhonicsKey, allPhoneticGroups),
+                        onToggleGroup: (group) => _toggleSequence(
+                          group.name,
+                          [phoneticCellsOf(group)],
+                        ),
                       ),
                     _ => const _GrammarContent(),
                   },
@@ -171,20 +274,67 @@ class _AlphabetContent extends StatelessWidget {
   }
 }
 
-/// 音标内容：分组 SectionHeader + 3 列网格（对照 Kotlin PhonicsContent）。
+/// 音标内容：连播工具栏 + 分组 SectionHeader + 3 列网格（对照 Kotlin PhonicsContent）。
 class _PhonicsContent extends StatelessWidget {
-  const _PhonicsContent({required this.onCellClick});
+  const _PhonicsContent({
+    required this.onCellClick,
+    required this.activePhone,
+    required this.playingKey,
+    required this.cellKey,
+    required this.onToggleAll,
+    required this.onToggleGroup,
+  });
 
   final ValueChanged<ReferenceCellData> onCellClick;
 
+  /// 正在读的音标（高亮）与正在播的范围（决定按钮显示「连播」还是「停止」）。
+  final String? activePhone;
+  final String? playingKey;
+
+  final GlobalKey Function(String phone) cellKey;
+  final VoidCallback onToggleAll;
+  final void Function(PhonicsGroup group) onToggleGroup;
+
   @override
   Widget build(BuildContext context) {
+    final playingAll = playingKey == _allPhonicsKey;
     return Column(
       children: [
+        // 连播工具栏：整表 48 个一次读完（逐格点「发音」仍是单格方式）
+        Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '连播：依次读「音标 → 例词」',
+                  style: AppType.textTheme.labelSmall
+                      ?.copyWith(color: AppColors.muted),
+                ),
+              ),
+              AppButton(
+                text: playingAll ? '停止' : '连播全部 48 个',
+                variant: AppButtonVariant.secondary,
+                onClick: onToggleAll,
+              ),
+            ],
+          ),
+        ),
         for (final group in phonicsGroups) ...[
           // 分组标题带本组条目数；弹窗注脚只显示组名（见下 `reading: group.name`）——
           // 「这组有几个」放在标题上才读得通，挂在单个音标旁边会被当成这个音标的属性
-          _SectionHeader(title: '${group.name} (${group.items.length})'),
+          _SectionHeader(
+            title: '${group.name} (${group.items.length})',
+            trailing: AppIconButton(
+              icon: playingKey == group.name ? Icons.stop : Icons.play_arrow,
+              tooltip: playingKey == group.name ? '停止' : '连播「${group.name}」',
+              onClick: () => onToggleGroup(group),
+              size: 32,
+              tint: playingKey == group.name
+                  ? AppColors.primary
+                  : AppColors.mutedSoft,
+            ),
+          ),
           for (final row in _chunked(group.items, 3)) ...[
             Row(
               children: [
@@ -193,6 +343,8 @@ class _PhonicsContent extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                       child: _GridCard(
+                        key: cellKey(item.phone),
+                        highlighted: activePhone == item.phone,
                         child: Column(
                           children: [
                             Text(
@@ -213,14 +365,8 @@ class _PhonicsContent extends StatelessWidget {
                             ),
                           ],
                         ),
-                        onClick: () => onCellClick(ReferenceCellData(
-                          char: item.phone,
-                          reading: group.name,
-                          example: item.example,
-                          exampleIpa: item.full,
-                          exampleCn: '',
-                          isPhonetic: true,
-                        )),
+                        onClick: () =>
+                            onCellClick(phoneticCellOf(group, item)),
                       ),
                     ),
                   ),
@@ -237,10 +383,12 @@ class _PhonicsContent extends StatelessWidget {
 }
 
 /// 分组标题：Primary 3dp 竖条 + 标题 + 计数（对照 Kotlin SectionHeader）。
+/// [trailing] 放行尾操作（音标分组用「连播这组」）。
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
+  const _SectionHeader({required this.title, this.trailing});
 
   final String title;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -264,6 +412,8 @@ class _SectionHeader extends StatelessWidget {
               color: AppColors.primary,
             ),
           ),
+          const Spacer(),
+          ?trailing,
         ],
       ),
     );
@@ -271,27 +421,44 @@ class _SectionHeader extends StatelessWidget {
 }
 
 /// 网格卡片：SurfaceCard 底 + 8dp 圆角（对照 Kotlin AlphabetGridCard /
-/// PhonicsGridCard）。
+/// PhonicsGridCard）。[highlighted] = 连播正读到这一格，套一圈珊瑚描边。
 class _GridCard extends StatelessWidget {
-  const _GridCard({required this.child, required this.onClick});
+  const _GridCard({
+    super.key,
+    required this.child,
+    required this.onClick,
+    this.highlighted = false,
+  });
 
   final Widget child;
   final VoidCallback onClick;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surfaceCard,
-      borderRadius: BorderRadius.circular(AppRadius.sm),
-      child: InkWell(
-        onTap: onClick,
-        borderRadius: BorderRadius.circular(AppRadius.sm),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: 10,
+    final radius = BorderRadius.circular(AppRadius.sm);
+    return Container(
+      // 描边常驻（未高亮时透明）：高亮不该让卡片尺寸跳一下
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(
+          color: highlighted ? AppColors.primary : Colors.transparent,
+          width: 2,
+        ),
+      ),
+      child: Material(
+        color: AppColors.surfaceCard,
+        borderRadius: radius,
+        child: InkWell(
+          onTap: onClick,
+          borderRadius: radius,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: 10,
+            ),
+            child: child,
           ),
-          child: child,
         ),
       ),
     );
@@ -533,8 +700,9 @@ class _ReferenceCellModal extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           // ② 例词：主角大字（serif 400 珊瑚，display 级不加粗）+ 可点击发音
+          //    （音标格放例词录音，字母格走 TTS）
           InkWell(
-            onTap: () => controller.speak(cell.example),
+            onTap: () => controller.playExample(cell),
             borderRadius: BorderRadius.circular(AppRadius.sm),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -567,7 +735,8 @@ class _ReferenceCellModal extends ConsumerWidget {
             ),
           ],
           const SizedBox(height: AppPage.minTouchTarget ~/ 2 - 2),
-          // ⑤ 发音：符号 + 例词两段（音标格 = 先录音后例词；字母格 = 一段 TTS）
+          // ⑤ 发音：符号 + 例词两段（音标格 = 先音标录音、停一拍、再例词录音；
+          //    字母格 = 一段 TTS）
           AppButton(
             text: '发音',
             onClick: () => controller.playCell(cell),

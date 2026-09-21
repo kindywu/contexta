@@ -17,13 +17,24 @@ import 'package:flutter_test/flutter_test.dart';
 /// - 语法折叠展开（默认展开第一组，可折叠 / 展开）
 /// - 路由接线（app_router_test 覆盖）
 
-/// 假录音库：记录播放过哪些音标（widget 测试里不碰真实 audioplayers）。
+/// 假录音库：记录播放过哪些音标 / 例词（widget 测试里不碰真实 audioplayers）。
 class _AudioStub implements PhonemeAudio {
   final List<String> played = [];
+  final List<String> playedWords = [];
+  int stopCount = 0;
+
+  @override
+  Future<void> stop() async => stopCount++;
 
   @override
   Future<bool> play(String phone) async {
     played.add(phone);
+    return true;
+  }
+
+  @override
+  Future<bool> playWord(String phone) async {
+    playedWords.add(phone);
     return true;
   }
 }
@@ -161,7 +172,8 @@ void main() {
   });
 
   group('音标格弹窗', () {
-    testWidgets('点击音标格 → 分类名 + 例词 + 拼写 + 发音「录音 + 例词」', (tester) async {
+    testWidgets('点击音标格 → 分类名 + 例词 + 拼写 + 发音「音标录音 → 例词录音」',
+        (tester) async {
       await pumpScreen(tester);
 
       await tester.tap(find.text('音标'));
@@ -180,11 +192,13 @@ void main() {
 
       await tester.tap(find.text('发音'));
       await tester.pumpAndSettle();
-      expect(audio.played, ['/iː/']); // 音标本身：录音
+      expect(audio.played, ['/iː/']); // 先读音标本身（录音）
+      expect(audio.playedWords, isEmpty, reason: '例词要等那一拍之后');
 
-      // 录音与例词之间停一拍（默认 1s）——测试里把时钟推过去
+      // 音标录音与例词之间停一拍（默认 1s）——测试里把时钟推过去
       await tester.pump(ReferenceController.defaultPhonemeWordGap);
-      expect(tts.spoken, ['see']); // 例词：TTS（音标不经过 TTS）
+      expect(audio.playedWords, ['/iː/']); // 再读例词（也是录音）
+      expect(tts.spoken, isEmpty, reason: '两段都有录音，不走 TTS');
     });
 
     testWidgets('音标大字点击 → 放录音（不走 TTS）', (tester) async {
@@ -199,7 +213,121 @@ void main() {
       await tester.tap(find.text('/iː/').last); // 弹窗大字
       await tester.pumpAndSettle();
       expect(audio.played, ['/iː/']);
+      expect(audio.playedWords, isEmpty);
       expect(tts.spoken, isEmpty);
+    });
+
+    testWidgets('音标格例词点击 → 放例词录音（不走 TTS）', (tester) async {
+      await pumpScreen(tester);
+
+      await tester.tap(find.text('音标'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('/iː/').first);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('see').last); // 弹窗中的例词大字
+      await tester.pumpAndSettle();
+      expect(audio.playedWords, ['/iː/']);
+      expect(audio.played, isEmpty, reason: '点例词不读音标');
+      expect(tts.spoken, isEmpty);
+    });
+  });
+
+  group('音标连播', () {
+    /// 高亮中的格子（珊瑚描边）——`_GridCard` 是私有类，按 decoration 找。
+    Finder highlightedCards() => find.byWidgetPredicate((w) {
+          if (w is! Container) return false;
+          final decoration = w.decoration;
+          if (decoration is! BoxDecoration) return false;
+          final border = decoration.border;
+          return border is Border && border.top.color == AppColors.primary;
+        });
+
+    Future<void> openPhonicsTab(WidgetTester tester) async {
+      await tester.tap(find.text('音标'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('顶部「连播全部」：开播即高亮第一格，停止后高亮清除', (tester) async {
+      await pumpScreen(tester);
+      await openPhonicsTab(tester);
+
+      expect(find.text('连播全部 48 个'), findsOneWidget);
+      expect(highlightedCards(), findsNothing);
+
+      await tester.tap(find.text('连播全部 48 个'));
+      await tester.pumpAndSettle();
+
+      expect(audio.played, ['/iː/'], reason: '从第一格开始读');
+      expect(highlightedCards(), findsOneWidget);
+      expect(
+        find.descendant(of: highlightedCards(), matching: find.text('/iː/')),
+        findsOneWidget,
+        reason: '高亮的应该是当前正在读的那一格',
+      );
+      expect(find.text('停止'), findsWidgets, reason: '播放中按钮变「停止」');
+
+      await tester.tap(find.text('停止').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('连播全部 48 个'), findsOneWidget);
+      expect(highlightedCards(), findsNothing);
+
+      // 停止后即便时间过去，也不该再冒下一格的声音
+      await tester.pump(const Duration(seconds: 5));
+      expect(audio.played, ['/iː/']);
+      expect(audio.playedWords, isEmpty);
+    });
+
+    testWidgets('分组按钮：只连播该组，读完自动复位', (tester) async {
+      await pumpScreen(tester);
+      await openPhonicsTab(tester);
+
+      // 舌侧音只有 /l/ 一个：读完即止，方便断言
+      await tester.ensureVisible(find.byTooltip('连播「舌侧音」'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('连播「舌侧音」'));
+      await tester.pumpAndSettle();
+
+      expect(audio.played, ['/l/'], reason: '只读这一组');
+      expect(
+        find.descendant(of: highlightedCards(), matching: find.text('/l/')),
+        findsOneWidget,
+      );
+
+      // 一格 = 音标录音 → 1s → 例词录音；推过那一拍后就该收尾
+      await tester.pump(ReferenceController.defaultPhonemeWordGap);
+      await tester.pumpAndSettle();
+
+      expect(audio.playedWords, ['/l/']);
+      expect(highlightedCards(), findsNothing, reason: '读完整组后高亮清除');
+      expect(find.byTooltip('连播「舌侧音」'), findsOneWidget);
+    });
+
+    testWidgets('播放中打开弹窗 → 连播停止（声音不叠）', (tester) async {
+      await pumpScreen(tester);
+      await openPhonicsTab(tester);
+
+      await tester.tap(find.text('连播全部 48 个'));
+      await tester.pumpAndSettle();
+      expect(audio.played, ['/iː/']);
+
+      // 打开弹窗（点正在读的那一格）→ 连播应立刻停
+      await tester.tap(find.text('/iː/').first);
+      await tester.pumpAndSettle();
+
+      expect(highlightedCards(), findsNothing, reason: '连播已停，高亮清除');
+      expect(find.text('连播全部 48 个'), findsOneWidget, reason: '按钮复位');
+
+      await tester.pump(const Duration(seconds: 5));
+      expect(audio.played, ['/iː/'], reason: '停止后不该再往下读');
+      expect(audio.playedWords, isEmpty, reason: '被打断的那一格也不补读例词');
+
+      await tester.tap(find.text('see').last); // 弹窗里的例词大字
+      await tester.pumpAndSettle();
+      expect(audio.playedWords, ['/iː/'], reason: '手动点例词照常出声');
     });
   });
 

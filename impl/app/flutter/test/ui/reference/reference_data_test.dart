@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:contexta/domain/audio/phoneme_audio.dart';
@@ -76,29 +77,57 @@ void main() {
   });
 
   group('音标录音（assets/phonetics/）', () {
-    // 这组是「网格里每个音标都出得了声」的守门人：抓取脚本换人声/改文件名后，
+    // 这组是「网格里每个音标都出得了声」的守门人：换录音包/改文件名后，
     // 一旦与 phonicsGroups 的 48 个符号对不上，这里直接红。
     final manifestFile = File('assets/phonetics/manifest.json');
 
-    test('manifest.json 存在且覆盖全部 48 个音标', () {
+    test('manifest.json 存在且覆盖全部 48 个音标（音标 + 例词两段录音）', () {
       expect(manifestFile.existsSync(), isTrue,
-          reason: '缺 assets/phonetics/manifest.json——跑 tool/fetch-phonetics-yyb.ts 生成');
+          reason: '缺 assets/phonetics/manifest.json——跑 tool/import-phonetics-audio.ts 生成');
 
-      final files = phonemeFilesFromManifest(manifestFile.readAsStringSync());
+      final clips = phonemeClipsFromManifest(manifestFile.readAsStringSync());
       final phones = phonicsGroups.expand((g) => g.items).map((i) => i.phone);
       for (final phone in phones) {
-        expect(files[normalizePhone(phone)], isNotNull, reason: '音标 $phone 没有对应录音');
+        final clip = clips[normalizePhone(phone)];
+        expect(clip, isNotNull, reason: '音标 $phone 没有对应录音');
+        expect(clip!.wordFile, isNotNull, reason: '音标 $phone 没有例词录音');
+      }
+    });
+
+    test('录音里的例词与表格里的例词一致（换包没换表就是错读）', () {
+      final manifest = jsonDecode(manifestFile.readAsStringSync()) as Map;
+      final keywordBySymbol = {
+        for (final entry in (manifest['phonemes'] as List).cast<Map>())
+          normalizePhone(entry['normalized'] as String): entry['keyword'] as String,
+      };
+      for (final item in phonicsGroups.expand((g) => g.items)) {
+        expect(keywordBySymbol[normalizePhone(item.phone)], item.example,
+            reason: '${item.phone} 的例词：录音里是 '
+                '${keywordBySymbol[normalizePhone(item.phone)]}，表格里是 ${item.example}');
       }
     });
 
     test('manifest 里每个文件都真实存在（非空）', () {
-      final files = phonemeFilesFromManifest(manifestFile.readAsStringSync());
-      expect(files, isNotEmpty);
-      for (final entry in files.entries) {
-        final f = File('assets/phonetics/${entry.value}');
-        expect(f.existsSync(), isTrue, reason: '${entry.key} → ${entry.value} 不在盘上');
-        expect(f.lengthSync(), greaterThan(512), reason: '${entry.value} 内容可疑');
+      final clips = phonemeClipsFromManifest(manifestFile.readAsStringSync());
+      expect(clips, isNotEmpty);
+      for (final entry in clips.entries) {
+        final names = [entry.value.file, if (entry.value.wordFile != null) entry.value.wordFile!];
+        for (final name in names) {
+          final f = File('assets/phonetics/$name');
+          expect(f.existsSync(), isTrue, reason: '${entry.key} → $name 不在盘上');
+          expect(f.lengthSync(), greaterThan(512), reason: '$name 内容可疑');
+        }
       }
+    });
+
+    test('录音库不再有旧素材的残留文件', () {
+      // 旧素材 v01..v20 / c01..c28（音标网 + Cambridge 那套）已整套换掉，
+      // 残留只会在打包时白白增大体积
+      final leftovers = Directory('assets/phonetics')
+          .listSync()
+          .map((e) => e.path.split('/').last)
+          .where((n) => RegExp(r'^[vc]\d+\.mp3$').hasMatch(n));
+      expect(leftovers, isEmpty, reason: '旧录音还在：${leftovers.join(' ')}');
     });
   });
 

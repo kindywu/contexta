@@ -1,491 +1,345 @@
 {
-  "source": [
-    "https://yingyuyinbiao.com/英语元音/",
-    "https://yingyuyinbiao.com/英语辅音/"
-  ],
-  "fillSource": null,
-  "fetchedAt": "2026-09-20T14:04:55.159Z",
+  "source": {
+    "pack": "ipa_audio.zip",
+    "note": "真人录音：音标 48 + 例词 48（16kHz 单声道 mp3）"
+  },
   "count": 48,
   "phonemes": [
     {
-      "symbol": "i:",
+      "symbol": "iː",
       "normalized": "iː",
-      "keyword": "see/she",
-      "table": "单元音>长元音",
-      "file": "v01.mp3",
-      "source": "yyb",
-      "src": "I-long.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
-    },
-    {
-      "symbol": "ɜ:",
-      "normalized": "ɜː",
-      "keyword": "her",
-      "table": "单元音>长元音",
-      "file": "v02.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_bird_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
-    },
-    {
-      "symbol": "ɔ:",
-      "normalized": "ɔː",
-      "keyword": "tall",
-      "table": "单元音>长元音",
-      "file": "v03.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_horse_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
-    },
-    {
-      "symbol": "u:",
-      "normalized": "uː",
-      "keyword": "school",
-      "table": "单元音>长元音",
-      "file": "v04.mp3",
-      "source": "yyb",
-      "src": "u-long.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
-    },
-    {
-      "symbol": "a:",
-      "normalized": "ɑː",
-      "keyword": "car",
-      "table": "单元音>长元音",
-      "file": "v05.mp3",
-      "source": "yyb",
-      "src": "a-long.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "keyword": "see",
+      "file": "s01.mp3",
+      "wordFile": "w01.mp3"
     },
     {
       "symbol": "ɪ",
       "normalized": "ɪ",
-      "keyword": "big/little/it",
-      "table": "单元音>短元音",
-      "file": "v06.mp3",
-      "source": "yyb",
-      "src": "I.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "keyword": "sit",
+      "file": "s02.mp3",
+      "wordFile": "w02.mp3"
+    },
+    {
+      "symbol": "e",
+      "normalized": "e",
+      "keyword": "bed",
+      "file": "s03.mp3",
+      "wordFile": "w03.mp3"
+    },
+    {
+      "symbol": "æ",
+      "normalized": "æ",
+      "keyword": "cat",
+      "file": "s04.mp3",
+      "wordFile": "w04.mp3"
+    },
+    {
+      "symbol": "ʌ",
+      "normalized": "ʌ",
+      "keyword": "cup",
+      "file": "s05.mp3",
+      "wordFile": "w05.mp3"
+    },
+    {
+      "symbol": "ɜː",
+      "normalized": "ɜː",
+      "keyword": "bird",
+      "file": "s06.mp3",
+      "wordFile": "w06.mp3"
     },
     {
       "symbol": "ə",
       "normalized": "ə",
-      "keyword": "sister",
-      "table": "单元音>短元音",
-      "file": "v07.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_above_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "keyword": "about",
+      "file": "s07.mp3",
+      "wordFile": "w07.mp3"
     },
     {
-      "symbol": "ɒ",
-      "normalized": "ɒ",
-      "keyword": "not",
-      "table": "单元音>短元音",
-      "file": "v08.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_sock_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "symbol": "uː",
+      "normalized": "uː",
+      "keyword": "blue",
+      "file": "s08.mp3",
+      "wordFile": "w08.mp3"
     },
     {
       "symbol": "ʊ",
       "normalized": "ʊ",
       "keyword": "book",
-      "table": "单元音>短元音",
-      "file": "v09.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_foot_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "file": "s09.mp3",
+      "wordFile": "w09.mp3"
     },
     {
-      "symbol": "ʌ",
-      "normalized": "ʌ",
-      "keyword": "monday",
-      "table": "单元音>短元音",
-      "file": "v10.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_cup_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "symbol": "ɔː",
+      "normalized": "ɔː",
+      "keyword": "door",
+      "file": "s10.mp3",
+      "wordFile": "w10.mp3"
     },
     {
-      "symbol": "e",
-      "normalized": "e",
-      "keyword": "pen",
-      "table": "单元音>短元音",
-      "file": "v11.mp3",
-      "source": "yyb",
-      "src": "e.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "symbol": "ɒ",
+      "normalized": "ɒ",
+      "keyword": "hot",
+      "file": "s11.mp3",
+      "wordFile": "w11.mp3"
     },
     {
-      "symbol": "æ",
-      "normalized": "æ",
-      "keyword": "bag",
-      "table": "单元音>短元音",
-      "file": "v12.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_hat_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "symbol": "ɑː",
+      "normalized": "ɑː",
+      "keyword": "car",
+      "file": "s12.mp3",
+      "wordFile": "w12.mp3"
     },
     {
       "symbol": "eɪ",
       "normalized": "eɪ",
-      "keyword": "they",
-      "table": "双元音",
-      "file": "v13.mp3",
-      "source": "yyb",
-      "src": "e%C9%AA.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "keyword": "day",
+      "file": "s13.mp3",
+      "wordFile": "w13.mp3"
     },
     {
       "symbol": "aɪ",
       "normalized": "aɪ",
-      "keyword": "why",
-      "table": "双元音",
-      "file": "v14.mp3",
-      "source": "yyb",
-      "src": "ai.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "keyword": "my",
+      "file": "s14.mp3",
+      "wordFile": "w14.mp3"
     },
     {
       "symbol": "ɔɪ",
       "normalized": "ɔɪ",
       "keyword": "boy",
-      "table": "双元音",
-      "file": "v15.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_boy_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
-    },
-    {
-      "symbol": "aʊ",
-      "normalized": "aʊ",
-      "keyword": "mouth",
-      "table": "双元音",
-      "file": "v16.mp3",
-      "source": "yyb",
-      "src": "a%CA%8A.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "file": "s15.mp3",
+      "wordFile": "w15.mp3"
     },
     {
       "symbol": "əʊ",
       "normalized": "əʊ",
-      "keyword": "home",
-      "table": "双元音",
-      "file": "v17.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_nose_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "keyword": "go",
+      "file": "s16.mp3",
+      "wordFile": "w16.mp3"
+    },
+    {
+      "symbol": "aʊ",
+      "normalized": "aʊ",
+      "keyword": "now",
+      "file": "s17.mp3",
+      "wordFile": "w17.mp3"
     },
     {
       "symbol": "ɪə",
       "normalized": "ɪə",
-      "keyword": "year",
-      "table": "双元音",
-      "file": "v18.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_ear_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "keyword": "near",
+      "file": "s18.mp3",
+      "wordFile": "w18.mp3"
     },
     {
       "symbol": "eə",
       "normalized": "eə",
-      "keyword": "there",
-      "table": "双元音",
-      "file": "v19.mp3",
-      "source": "yyb",
-      "src": "e%C9%99.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "keyword": "hair",
+      "file": "s19.mp3",
+      "wordFile": "w19.mp3"
     },
     {
       "symbol": "ʊə",
       "normalized": "ʊə",
       "keyword": "tour",
-      "table": "双元音",
-      "file": "v20.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_pure_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语元音/"
+      "file": "s20.mp3",
+      "wordFile": "w20.mp3"
     },
     {
       "symbol": "p",
       "normalized": "p",
-      "keyword": "play",
-      "table": "上下行清浊相对：",
-      "file": "c01.mp3",
-      "source": "yyb",
-      "src": "p_sound.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
-    },
-    {
-      "symbol": "t",
-      "normalized": "t",
-      "keyword": "two",
-      "table": "上下行清浊相对：",
-      "file": "c02.mp3",
-      "source": "yyb",
-      "src": "t_sound.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
-    },
-    {
-      "symbol": "k",
-      "normalized": "k",
-      "keyword": "keep",
-      "table": "上下行清浊相对：",
-      "file": "c03.mp3",
-      "source": "yyb",
-      "src": "k_sound.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
-    },
-    {
-      "symbol": "f",
-      "normalized": "f",
-      "keyword": "for",
-      "table": "上下行清浊相对：",
-      "file": "c04.mp3",
-      "source": "yyb",
-      "src": "f_sound.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "pen",
+      "file": "s21.mp3",
+      "wordFile": "w21.mp3"
     },
     {
       "symbol": "b",
       "normalized": "b",
-      "keyword": "big",
-      "table": "上下行清浊相对：",
-      "file": "c05.mp3",
-      "source": "yyb",
-      "src": "b_sound.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "bag",
+      "file": "s22.mp3",
+      "wordFile": "w22.mp3"
+    },
+    {
+      "symbol": "t",
+      "normalized": "t",
+      "keyword": "tea",
+      "file": "s23.mp3",
+      "wordFile": "w23.mp3"
     },
     {
       "symbol": "d",
       "normalized": "d",
-      "keyword": "did",
-      "table": "上下行清浊相对：",
-      "file": "c06.mp3",
-      "source": "yyb",
-      "src": "d_sound.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "dog",
+      "file": "s24.mp3",
+      "wordFile": "w24.mp3"
+    },
+    {
+      "symbol": "k",
+      "normalized": "k",
+      "keyword": "key",
+      "file": "s25.mp3",
+      "wordFile": "w25.mp3"
     },
     {
       "symbol": "g",
       "normalized": "g",
       "keyword": "go",
-      "table": "上下行清浊相对：",
-      "file": "c07.mp3",
-      "source": "yyb",
-      "src": "g_sound.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "file": "s26.mp3",
+      "wordFile": "w26.mp3"
+    },
+    {
+      "symbol": "f",
+      "normalized": "f",
+      "keyword": "fish",
+      "file": "s27.mp3",
+      "wordFile": "w27.mp3"
     },
     {
       "symbol": "v",
       "normalized": "v",
-      "keyword": "very",
-      "table": "上下行清浊相对：",
-      "file": "c08.mp3",
-      "source": "yyb",
-      "src": "v_sound.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
-    },
-    {
-      "symbol": "θ",
-      "normalized": "θ",
-      "keyword": "three",
-      "table": "上下行清浊相对：",
-      "file": "c09.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_think_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "van",
+      "file": "s28.mp3",
+      "wordFile": "w28.mp3"
     },
     {
       "symbol": "s",
       "normalized": "s",
-      "keyword": "small",
-      "table": "上下行清浊相对：",
-      "file": "c10.mp3",
-      "source": "yyb",
-      "src": "s_sound.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
-    },
-    {
-      "symbol": "ts",
-      "normalized": "ts",
-      "keyword": "that’s",
-      "table": "上下行清浊相对：",
-      "file": "c11.mp3",
-      "source": "yyb",
-      "src": "ts.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
-    },
-    {
-      "symbol": "tr",
-      "normalized": "tr",
-      "keyword": "tree",
-      "table": "上下行清浊相对：",
-      "file": "c12.mp3",
-      "source": "yyb",
-      "src": "tr.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
-    },
-    {
-      "symbol": "ð",
-      "normalized": "ð",
-      "keyword": "that",
-      "table": "上下行清浊相对：",
-      "file": "c13.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_this_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "sun",
+      "file": "s29.mp3",
+      "wordFile": "w29.mp3"
     },
     {
       "symbol": "z",
       "normalized": "z",
       "keyword": "zoo",
-      "table": "上下行清浊相对：",
-      "file": "c14.mp3",
-      "source": "yyb",
-      "src": "z_sound.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
-    },
-    {
-      "symbol": "dz",
-      "normalized": "dz",
-      "keyword": "goods",
-      "table": "上下行清浊相对：",
-      "file": "c15.mp3",
-      "source": "yyb",
-      "src": "dz.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
-    },
-    {
-      "symbol": "dr",
-      "normalized": "dr",
-      "keyword": "dress",
-      "table": "上下行清浊相对：",
-      "file": "c16.mp3",
-      "source": "yyb",
-      "src": "dr.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "file": "s30.mp3",
+      "wordFile": "w30.mp3"
     },
     {
       "symbol": "ʃ",
       "normalized": "ʃ",
-      "keyword": "fish",
-      "table": "上下行清浊相对：",
-      "file": "c17.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_she_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
-    },
-    {
-      "symbol": "tʃ",
-      "normalized": "tʃ",
-      "keyword": "cheap",
-      "table": "上下行清浊相对：",
-      "file": "c18.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_cheese_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "shoe",
+      "file": "s31.mp3",
+      "wordFile": "w31.mp3"
     },
     {
       "symbol": "ʒ",
       "normalized": "ʒ",
-      "keyword": "usual",
-      "table": "上下行清浊相对：",
-      "file": "c19.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_vision_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "vision",
+      "file": "s32.mp3",
+      "wordFile": "w32.mp3"
+    },
+    {
+      "symbol": "θ",
+      "normalized": "θ",
+      "keyword": "think",
+      "file": "s33.mp3",
+      "wordFile": "w33.mp3"
+    },
+    {
+      "symbol": "ð",
+      "normalized": "ð",
+      "keyword": "this",
+      "file": "s34.mp3",
+      "wordFile": "w34.mp3"
+    },
+    {
+      "symbol": "h",
+      "normalized": "h",
+      "keyword": "hat",
+      "file": "s35.mp3",
+      "wordFile": "w35.mp3"
+    },
+    {
+      "symbol": "tʃ",
+      "normalized": "tʃ",
+      "keyword": "chair",
+      "file": "s36.mp3",
+      "wordFile": "w36.mp3"
     },
     {
       "symbol": "dʒ",
       "normalized": "dʒ",
       "keyword": "jump",
-      "table": "上下行清浊相对：",
-      "file": "c20.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_jump_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "file": "s37.mp3",
+      "wordFile": "w37.mp3"
     },
     {
-      "symbol": "h",
-      "normalized": "h",
-      "keyword": "help",
-      "table": "其它辅音：",
-      "file": "c21.mp3",
-      "source": "yyb",
-      "src": "h.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "symbol": "tr",
+      "normalized": "tr",
+      "keyword": "tree",
+      "file": "s38.mp3",
+      "wordFile": "w38.mp3"
+    },
+    {
+      "symbol": "dr",
+      "normalized": "dr",
+      "keyword": "dress",
+      "file": "s39.mp3",
+      "wordFile": "w39.mp3"
+    },
+    {
+      "symbol": "ts",
+      "normalized": "ts",
+      "keyword": "cats",
+      "file": "s40.mp3",
+      "wordFile": "w40.mp3"
+    },
+    {
+      "symbol": "dz",
+      "normalized": "dz",
+      "keyword": "beds",
+      "file": "s41.mp3",
+      "wordFile": "w41.mp3"
     },
     {
       "symbol": "m",
       "normalized": "m",
-      "keyword": "me",
-      "table": "其它辅音：",
-      "file": "c22.mp3",
-      "source": "yyb",
-      "src": "m.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "man",
+      "file": "s42.mp3",
+      "wordFile": "w42.mp3"
     },
     {
       "symbol": "n",
       "normalized": "n",
-      "keyword": "nice,none",
-      "table": "其它辅音：",
-      "file": "c23.mp3",
-      "source": "yyb",
-      "src": "n.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "nose",
+      "file": "s43.mp3",
+      "wordFile": "w43.mp3"
     },
     {
       "symbol": "ŋ",
       "normalized": "ŋ",
-      "keyword": "thank /θæŋk/",
-      "table": "其它辅音：",
-      "file": "c24.mp3",
-      "source": "cambridge",
-      "src": "uk_phonetics_sound_sing_2023feb.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "sing",
+      "file": "s44.mp3",
+      "wordFile": "w44.mp3"
     },
     {
       "symbol": "l",
       "normalized": "l",
-      "keyword": "little",
-      "table": "其它辅音：",
-      "file": "c25.mp3",
-      "source": "yyb",
-      "src": "l.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "leg",
+      "file": "s45.mp3",
+      "wordFile": "w45.mp3"
     },
     {
       "symbol": "r",
       "normalized": "r",
-      "keyword": "run",
-      "table": "其它辅音：",
-      "file": "c26.mp3",
-      "source": "yyb",
-      "src": "r.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
-    },
-    {
-      "symbol": "j",
-      "normalized": "j",
-      "keyword": "yet/use /jet/ /juːz/",
-      "table": "其它辅音：",
-      "file": "c27.mp3",
-      "source": "yyb",
-      "src": "j-yet-use.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "red",
+      "file": "s46.mp3",
+      "wordFile": "w46.mp3"
     },
     {
       "symbol": "w",
       "normalized": "w",
-      "keyword": "wet/vet(对比/w/发音)",
-      "table": "其它辅音：",
-      "file": "c28.mp3",
-      "source": "yyb",
-      "src": "w-wet-vet.mp3",
-      "page": "https://yingyuyinbiao.com/英语辅音/"
+      "keyword": "water",
+      "file": "s47.mp3",
+      "wordFile": "w47.mp3"
+    },
+    {
+      "symbol": "j",
+      "normalized": "j",
+      "keyword": "yes",
+      "file": "s48.mp3",
+      "wordFile": "w48.mp3"
     }
   ]
 }
