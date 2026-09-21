@@ -71,10 +71,10 @@ class ReferenceController {
     if (!await _phonemeAudio.playWord(cell.char)) await speak(cell.example);
   }
 
-  /// 「发音」按钮：字母格一段读完「字母名 + 例词」；音标格按顺序读
-  /// **音标录音 → 停一拍（`_phonemeWordGap`）→ 例词录音**。
+  /// 「发音」按钮：字母格读 **字母名 → 停一拍（`_phonemeWordGap`）→ 例词**
+  /// （两段 TTS）；音标格读 **音标录音 → 停一拍 → 例词录音**。两边同款节奏。
   ///
-  /// 送进 TTS 的**只有例词本身**——不带音标符号、不带前缀后缀、不拼成句子。
+  /// 送进 TTS 的**只有字母名与例词本身**——不带音标符号、不带前缀后缀、不拼成句子。
   Future<void> playCell(ReferenceCellData cell) => _playCell(cell, null);
 
   Future<void> _playCell(
@@ -82,7 +82,11 @@ class ReferenceController {
     bool Function()? aborted,
   ) async {
     if (!cell.isPhonetic) {
-      await speak(speakTextFor(cell));
+      await speak(cell.letterName);
+      if (aborted?.call() ?? false) return;
+      await Future<void>.delayed(_phonemeWordGap);
+      if (aborted?.call() ?? false) return;
+      await speak(cell.example);
       return;
     }
     final played = await _phonemeAudio.play(cell.char);
@@ -91,6 +95,65 @@ class ReferenceController {
     if (played) await Future<void>.delayed(_phonemeWordGap);
     if (aborted?.call() ?? false) return;
     await playExample(cell);
+  }
+
+  /// 字母读音行点播：**读音录音 → 停一拍（`_phonemeWordGap`）→ 例词录音**，
+  /// 与音标格「发音」同款节奏（字母读音复用的就是那 48 个音标录音）。
+  ///
+  /// 读音本身没有录音的行（X 的组合音 `/ks/` `/gz/`）不试录音、
+  /// 也不白等那一拍，直接 TTS 读例词。
+  Future<void> playLetterSound(LetterSoundRow row) => _playLetterSound(row, null);
+
+  Future<void> _playLetterSound(
+    LetterSoundRow row,
+    bool Function()? aborted,
+  ) async {
+    if (aborted?.call() ?? false) return;
+    if (row.hasAudio) {
+      final played = await _phonemeAudio.play(row.phoneme);
+      if (aborted?.call() ?? false) return;
+      // 录音没放成（符号不在库里/播放失败）就别白等一秒
+      if (played) await Future<void>.delayed(_phonemeWordGap);
+      if (aborted?.call() ?? false) return;
+    }
+    // 读音不在录音库的行连例词录音也没有，直接 TTS 读例词（IPA 不进 TTS）
+    final wordPlayed = row.hasAudio && await _phonemeAudio.playWord(row.phoneme);
+    if (!wordPlayed) await speak(row.example);
+  }
+
+  /// 字母连播 [groups]：每个字母 = **TTS 读字母名 → 停一拍 → 逐行
+  /// 「读音录音 → 停一拍 → 例词录音」**，字母与字母之间再停一拍（`_groupGap`）。
+  ///
+  /// 传 `allLetterPlayGroups` 就是整张字母表；传 `[letterPlayGroupOf('A')]`
+  /// 就是弹层里「连播这 N 种读音」（只有一组，自然不额外停）。
+  /// [onGroup] 在每个字母开读前回调（UI 用来高亮那个字母格），
+  /// [onRow] 在每条读音开播前回调（弹层里高亮当前行）。
+  ///
+  /// 字母名走 TTS、没有播完回调，靠这一拍把「字母名」与「第一个读音」错开；
+  /// 字母名比一拍还长时（W 这种多音节字母名）两段会轻微叠上——可接受。
+  Future<void> playLetterSequence(
+    List<LetterPlayGroup> groups, {
+    void Function(LetterPlayGroup group)? onGroup,
+    void Function(LetterSoundRow row)? onRow,
+  }) async {
+    final token = ++_sequenceToken;
+    for (final (index, group) in groups.indexed) {
+      if (token != _sequenceToken) return;
+      if (index > 0) {
+        await Future<void>.delayed(_groupGap);
+        if (token != _sequenceToken) return;
+      }
+      onGroup?.call(group);
+      // 回调里可能刚按了「停止」——那就连字母名都不读
+      if (token != _sequenceToken) return;
+      await speak(group.letterName);
+      await Future<void>.delayed(_phonemeWordGap);
+      for (final row in group.rows) {
+        if (token != _sequenceToken) return;
+        onRow?.call(row);
+        await _playLetterSound(row, () => token != _sequenceToken);
+      }
+    }
   }
 
   /// 连播 [groups]：组内逐个走一遍「音标录音 → 停一拍 → 例词录音」，
@@ -122,10 +185,22 @@ class ReferenceController {
     }
   }
 
-  /// 停止连播：掐掉当前声音，本轮循环随即退出。单格点播不受影响。
+  /// 停止连播：掐掉当前声音（录音 + 字母名的 TTS），本轮循环随即退出。
+  /// 单格点播不受影响。
   Future<void> stopSequence() async {
     _sequenceToken++;
     await _phonemeAudio.stop();
+    await _stopSpeaking();
+  }
+
+  /// 掐掉正在读的 TTS（引擎未就绪 / 初始化失败时静默跳过）。
+  Future<void> _stopSpeaking() async {
+    try {
+      final engine = await _ttsEngineFuture;
+      engine.stop();
+    } catch (_) {
+      // 引擎初始化失败：没什么可掐的
+    }
   }
 }
 

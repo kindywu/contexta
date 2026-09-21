@@ -76,6 +76,108 @@ void main() {
     });
   });
 
+  group('字母读音（复用音标录音）', () {
+    // 这组是「字母表读音行」的守门人：读音行的例词/音标一律从 phonicsGroups 解析，
+    // 音标库里没有的只有组合音白名单（自带例词、无录音）。
+    const clusterWhitelist = {'/ks/', '/gz/'};
+
+    test('26 个字母都有读音表，顺序与字母表一致', () {
+      expect(letterSounds.map((g) => g.letter), alphabetData.map((i) => i.char.substring(0, 1)));
+    });
+
+    test('每条读音要么在音标库里（有录音），要么是组合音白名单（自带例词）', () {
+      final phones = phonicsGroups
+          .expand((g) => g.items)
+          .map((i) => normalizePhone(i.phone))
+          .toSet();
+      for (final group in letterSounds) {
+        expect(group.sounds, isNotEmpty, reason: '${group.letter} 一条读音都没有');
+        for (final sound in group.sounds) {
+          final inLibrary = phones.contains(normalizePhone(sound.phoneme));
+          if (!inLibrary) {
+            expect(clusterWhitelist, contains(sound.phoneme),
+                reason: '${group.letter} 的 ${sound.phoneme} 不在音标库里，也不在组合音白名单');
+            expect(sound.example, isNotNull, reason: '${group.letter} ${sound.phoneme} 缺例词');
+          }
+        }
+      }
+    });
+
+    test('读音行：例词与音标取自音标库（同符号同一个词，才能配上例词录音）', () {
+      final byPhone = {
+        for (final item in phonicsGroups.expand((g) => g.items))
+          normalizePhone(item.phone): item,
+      };
+      for (final group in letterSounds) {
+        for (final row in soundRowsOf(group.letter)) {
+          expect(row.example, isNotEmpty, reason: '${group.letter} ${row.phoneme} 缺例词');
+          expect(row.exampleIpa, startsWith('/'), reason: row.example);
+          expect(row.exampleIpa, endsWith('/'), reason: row.example);
+          final item = byPhone[normalizePhone(row.phoneme)];
+          if (item != null) {
+            expect(row.hasAudio, isTrue, reason: '${row.phoneme} 在音标库里就该有录音');
+            expect(row.example, item.example);
+            expect(row.exampleIpa, item.full);
+          } else {
+            expect(row.hasAudio, isFalse, reason: '${row.phoneme} 没有录音');
+            expect(row.note, isNotNull, reason: '没录音的读音行要注明原因');
+          }
+        }
+      }
+    });
+
+    test('组合音：/ks/ /gz/ 无录音但带例词，X 三条读音齐全', () {
+      final rows = soundRowsOf('X');
+      expect(rows.map((r) => r.phoneme), ['/ks/', '/gz/', '/z/']);
+      expect(rows.map((r) => r.hasAudio), [false, false, true]);
+      expect(rows[0].example, isNotEmpty);
+      expect(rows[1].example, isNotEmpty);
+      expect(rows[2].kind, LetterSoundKind.minor);
+    });
+
+    test('读音行顺序与类别：A 五种、C 硬软音、O 六种', () {
+      expect(soundRowsOf('A').map((r) => r.phoneme),
+          ['/eɪ/', '/æ/', '/ɑː/', '/ɔː/', '/ə/']);
+      expect(soundRowsOf('A').map((r) => r.kind), [
+        LetterSoundKind.common,
+        LetterSoundKind.common,
+        LetterSoundKind.common,
+        LetterSoundKind.common,
+        LetterSoundKind.reduced,
+      ]);
+      expect(soundRowsOf('C').map((r) => r.kind),
+          [LetterSoundKind.hard, LetterSoundKind.soft, LetterSoundKind.common]);
+      expect(soundRowsOf('O').length, 6);
+    });
+
+    test('未收录的字母：抛错而不是给一张空表（数据错了要立刻看得见）', () {
+      expect(() => soundRowsOf('Ä'), throwsStateError);
+    });
+
+    test('连播分组：26 组、按字母表顺序、字母名取首字符', () {
+      expect(allLetterPlayGroups.length, 26);
+      expect(allLetterPlayGroups.map((g) => g.cellKey), alphabetData.map((i) => i.char));
+      expect(allLetterPlayGroups.map((g) => g.letterName),
+          alphabetData.map((i) => i.char.substring(0, 1)));
+      for (final group in allLetterPlayGroups) {
+        expect(
+          group.rows.map((r) =>
+              [r.phoneme, r.kind, r.example, r.exampleIpa, r.hasAudio, r.note]),
+          soundRowsOf(group.letterName).map((r) =>
+              [r.phoneme, r.kind, r.example, r.exampleIpa, r.hasAudio, r.note]),
+        );
+      }
+    });
+
+    test('单字母连播分组：只有该字母那组', () {
+      final group = letterPlayGroupOf('X');
+      expect(group.cellKey, 'X x');
+      expect(group.letterName, 'X');
+      expect(group.rows.map((r) => r.phoneme), ['/ks/', '/gz/', '/z/']);
+    });
+
+  });
+
   group('音标录音（assets/phonetics/）', () {
     // 这组是「网格里每个音标都出得了声」的守门人：换录音包/改文件名后，
     // 一旦与 phonicsGroups 的 48 个符号对不上，这里直接红。
@@ -131,31 +233,10 @@ void main() {
     });
   });
 
-  group('speak 文本规则', () {
-    const alphabetCell = ReferenceCellData(
-      char: 'A a',
-      reading: '/eɪ/',
-      example: 'Apple',
-      exampleIpa: '/ˈæpəl/',
-      exampleCn: '苹果',
-      isPhonetic: false,
-    );
-
-    test('字母格：先读字母名再读例词（句号停顿）', () {
-      expect(speakTextFor(alphabetCell), 'A. Apple');
-    });
-
-    test('多字符字母取首字符大写', () {
-      const w = ReferenceCellData(
-        char: 'W w',
-        reading: '/ˈdʌbljuː/',
-        example: 'Water',
-        exampleIpa: '/ˈwɔːtə/',
-        exampleCn: '水',
-        isPhonetic: false,
-      );
-      expect(speakTextFor(w), 'W. Water');
-
+  group('字母名取值', () {
+    // 字母格的 TTS 文本由控制器按「字母名 → 例词」两段朗读（见
+    // reference_controller_test），这里只守数据侧的取首字符规则。
+    test('字母格取字符首字母（多字符字母也只有一个字母名）', () {
       const x = ReferenceCellData(
         char: 'X x',
         reading: '/eks/',
@@ -164,31 +245,7 @@ void main() {
         exampleCn: 'X光',
         isPhonetic: false,
       );
-      expect(speakTextFor(x), 'X. X-ray');
-    });
-
-    test('音标格：TTS 只念例词，音标本身交给录音（不把 IPA 送进 TTS）', () {
-      const cell = ReferenceCellData(
-        char: '/iː/',
-        reading: '单元音 (12)',
-        example: 'see',
-        exampleIpa: '/siː/',
-        exampleCn: '',
-        isPhonetic: true,
-      );
-      expect(speakTextFor(cell), 'see');
-    });
-
-    test('未知音标同样只念例词（不因缺录音把 IPA 送进 TTS）', () {
-      const unknown = ReferenceCellData(
-        char: '/??/',
-        reading: 'x',
-        example: 'see',
-        exampleIpa: '/siː/',
-        exampleCn: '',
-        isPhonetic: true,
-      );
-      expect(speakTextFor(unknown), 'see');
+      expect(x.letterName, 'X');
     });
   });
 }

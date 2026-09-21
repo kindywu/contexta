@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 class _RecordingTts implements TtsEngine {
   final List<String> spoken = [];
   final List<TtsVoice?> voices = [];
+  int stopCount = 0;
   TtsVoice? get lastVoice => voices.isEmpty ? null : voices.last;
 
   @override
@@ -31,7 +32,7 @@ class _RecordingTts implements TtsEngine {
   }
 
   @override
-  void stop() {}
+  void stop() => stopCount++;
 
   @override
   void setOnSpeakingFinished(void Function(String? utteranceId)? callback) {}
@@ -432,7 +433,7 @@ void main() {
       expect(audio.stopCount, 0);
     });
 
-    test('字母格不受影响：仍是字母名 + 例词一段 TTS，不放录音', () async {
+    test('字母格：符号点击读字母名、例词点击读例词，都不放录音', () async {
       final tts = _RecordingTts();
       final audio = _FakePhonemeAudio();
       final controller = ReferenceController(
@@ -447,11 +448,252 @@ void main() {
       await controller.playExample(_alphabetCell);
       expect(tts.spoken, ['A', 'Apple']);
       expect(audio.playedWords, isEmpty);
+    });
 
+    test('字母格「发音」：字母名 → 停一拍 → 例词（两段 TTS，与音标格同节奏）', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: const Duration(milliseconds: 120),
+      );
+
+      final sw = Stopwatch()..start();
       await controller.playCell(_alphabetCell);
-      expect(tts.spoken, ['A', 'Apple', 'A. Apple']);
+      sw.stop();
+
+      expect(tts.spoken, ['A', 'Apple'], reason: '两段独立朗读，不是一句「A. Apple」');
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(100),
+          reason: '字母名与例词之间要停一拍');
       expect(audio.played, isEmpty);
       expect(audio.playedWords, isEmpty);
+    });
+  });
+
+  group('字母读音行（复用音标录音）', () {
+    ReferenceController controllerWith(_RecordingTts tts, _FakePhonemeAudio audio) =>
+        ReferenceController(
+          ttsEngineFuture: Future.value(tts),
+          phonemeAudio: audio,
+          phonemeWordGap: Duration.zero,
+        );
+
+    test('读音行点播：读音录音 → 停一拍 → 例词录音（两段都是录音，TTS 不发声）', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+
+      await controllerWith(tts, audio).playLetterSound(soundRowsOf('B').single);
+
+      expect(audio.played, ['/b/']);
+      expect(audio.playedWords, ['/b/'], reason: '例词用的是音标库里那个词，有录音');
+      expect(tts.spoken, isEmpty);
+    });
+
+    test('组合音行（/ks/ 没有录音）：不碰录音库，直接 TTS 读例词（不读 IPA）', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final row = soundRowsOf('X').first;
+      expect(row.phoneme, '/ks/');
+
+      await controllerWith(tts, audio).playLetterSound(row);
+
+      expect(audio.played, isEmpty);
+      expect(audio.playedWords, isEmpty, reason: '组合音没有例词录音');
+      expect(tts.spoken, ['box'], reason: '只有例词本身，IPA 不进 TTS');
+    });
+
+    test('例词录音缺失：回退 TTS 读例词', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio(missingWord: {'/b/'});
+
+      await controllerWith(tts, audio).playLetterSound(soundRowsOf('B').single);
+
+      expect(audio.played, ['/b/']);
+      expect(tts.spoken, ['bag']);
+    });
+
+    test('读音录音没放成就不白等：立刻读例词', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio(missing: {'/b/'});
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: const Duration(seconds: 1),
+      );
+
+      final sw = Stopwatch()..start();
+      await controller.playLetterSound(soundRowsOf('B').single);
+      sw.stop();
+
+      expect(audio.played, isEmpty);
+      expect(audio.playedWords, ['/b/']);
+      expect(sw.elapsedMilliseconds, lessThan(500), reason: '没有录音就不该等那一拍');
+    });
+
+    test('单行点播不受「停止」影响（不是连播）', () async {
+      final audio = _FakePhonemeAudio();
+      final controller = controllerWith(_RecordingTts(), audio);
+
+      await controller.playLetterSound(soundRowsOf('B').single);
+
+      expect(audio.played, ['/b/']);
+      expect(audio.stopCount, 0);
+    });
+  });
+
+  group('字母连播', () {
+    test('字母内连播：先 TTS 读字母名，再逐行「读音 → 例词」，逐行回调', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+      );
+
+      final rows = <String>[];
+      await controller.playLetterSequence(
+        [letterPlayGroupOf('B')],
+        onRow: (row) => rows.add(row.phoneme),
+      );
+
+      expect(tts.spoken, ['B'], reason: '开头读字母名');
+      expect(audio.played, ['/b/']);
+      expect(audio.playedWords, ['/b/']);
+      expect(rows, ['/b/']);
+    });
+
+    test('字母名读完之后停一拍再进第一个读音', () async {
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(_RecordingTts()),
+        phonemeAudio: _FakePhonemeAudio(),
+        phonemeWordGap: const Duration(milliseconds: 150),
+      );
+
+      final sw = Stopwatch()..start();
+      await controller.playLetterSequence([letterPlayGroupOf('B')]);
+      sw.stop();
+
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(300),
+          reason: '字母名后一拍 + 读音后一拍 = 至少 300ms');
+    });
+
+    test('全部连播：字母与字母之间再停一拍，并逐字母回调', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+        groupGap: const Duration(milliseconds: 150),
+      );
+
+      final letters = <String>[];
+      final sw = Stopwatch()..start();
+      await controller.playLetterSequence(
+        [letterPlayGroupOf('B'), letterPlayGroupOf('H')],
+        onGroup: (group) => letters.add(group.letterName),
+      );
+      sw.stop();
+
+      expect(letters, ['B', 'H'], reason: '每格开播前回调，顺序即字母表顺序');
+      expect(tts.spoken, ['B', 'H']);
+      expect(audio.played, ['/b/', '/h/']);
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(150),
+          reason: '跨了一次字母界 = 至少停一拍');
+      expect(sw.elapsedMilliseconds, lessThan(400), reason: '只该停一次');
+    });
+
+    test('空表直接结束（不回调、不发声）', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+      );
+
+      await controller.playLetterSequence(const [], onGroup: (_) => fail('不该回调'));
+
+      expect(tts.spoken, isEmpty);
+      expect(audio.played, isEmpty);
+    });
+
+    test('中途停止：掐掉录音与字母名 TTS，当前行不补读、后面的行不读', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+      );
+
+      // A 的第二个读音开播时按「停止」（模拟用户在播放途中点停止）
+      final playing = controller.playLetterSequence(
+        [letterPlayGroupOf('A')],
+        onRow: (row) {
+          if (row.phoneme == '/æ/') unawaited(controller.stopSequence());
+        },
+      );
+      await playing;
+      await pumpEventQueue(); // 「停止」是回调里发起的，等它把掐声做完
+
+      expect(audio.stopCount, greaterThan(0), reason: '停止要立刻掐声');
+      expect(tts.stopCount, greaterThan(0), reason: '字母名的 TTS 也要掐');
+      expect(audio.played, ['/eɪ/'], reason: '停在第二行，第一行已读完');
+      expect(audio.playedWords, ['/eɪ/'], reason: '当前行不补读例词');
+      expect(tts.spoken, ['A']);
+    });
+
+    test('停止发生在读完字母名之前：这一格连字母名都不读', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+      );
+
+      final playing = controller.playLetterSequence(
+        [letterPlayGroupOf('B'), letterPlayGroupOf('H')],
+        onGroup: (group) {
+          if (group.letterName == 'B') unawaited(controller.stopSequence());
+        },
+      );
+      await playing;
+      await pumpEventQueue();
+
+      expect(tts.spoken, isEmpty);
+      expect(audio.played, isEmpty);
+      expect(tts.stopCount, greaterThan(0));
+    });
+
+    test('全部 26 个字母的连播分组：63 条读音，按字母顺序', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        phonemeWordGap: Duration.zero,
+        groupGap: Duration.zero,
+      );
+
+      final letters = <String>[];
+      await controller.playLetterSequence(
+        allLetterPlayGroups,
+        onGroup: (group) => letters.add(group.letterName),
+      );
+
+      final rows = allLetterPlayGroups.expand((g) => g.rows).toList();
+      final withAudio = rows.where((r) => r.hasAudio).length;
+      expect(letters.length, 26);
+      expect(audio.played.length, withAudio, reason: '有录音的读音都读一遍');
+      expect(audio.playedWords.length, withAudio);
+      expect(tts.spoken.length, 26 + (rows.length - withAudio),
+          reason: '26 个字母名 + 没有录音的组合音例词');
+      expect(audio.played.first, '/eɪ/');
+      expect(audio.played.last, '/z/');
     });
   });
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/components/app_badge.dart';
 import '../../core/components/app_button.dart';
 import '../../core/components/app_modal.dart';
 import '../../core/theme/app_colors.dart';
@@ -27,15 +28,25 @@ class ReferenceScreen extends ConsumerStatefulWidget {
 /// 「连播全部」的范围标识（分组连播用组名做标识）。
 const String _allPhonicsKey = '__all__';
 
+/// 字母表「连播全部 26 个字母」的范围标识。
+const String _allLettersKey = '__all_letters__';
+
+/// 弹层里「连播这 N 种读音」的范围标识（按字母各一个）。
+String _letterSeqKey(String letter) => 'letter:$letter';
+
 class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
   int _selectedTab = 0;
   ReferenceCellData? _selectedCell;
 
-  /// 正在连播的范围（`_allPhonicsKey` 或分组名），null = 没在播。
+  /// 正在连播的范围（`_allPhonicsKey` / 音标分组名 / `_allLettersKey` /
+  /// `_letterSeqKey`），null = 没在播。
   String? _playingKey;
 
-  /// 当前正在读的音标（高亮用），null = 没在播。
-  String? _activePhone;
+  /// 当前正在读的格子（高亮用）：音标格 = 符号，字母格 = 'A a'。
+  String? _activeCell;
+
+  /// 弹层里当前正在读的那行读音（音标符号），null = 没在读。
+  String? _activeSound;
 
   /// 连播轮次令牌：停止 / 改播别的范围 / 离开页面都会 +1，
   /// 迟到的异步回调靠它丢弃（否则停止后还会把高亮滚回去）。
@@ -66,6 +77,12 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
     setState(() => _selectedCell = cell);
   }
 
+  /// 关弹层：顺手掐掉弹层里可能正在跑的「连播这 N 种读音」。
+  void _closeCell() {
+    if (_playingKey != null) _stopSequence();
+    setState(() => _selectedCell = null);
+  }
+
   void _selectTab(int index) {
     if (_playingKey != null) _stopSequence();
     setState(() => _selectedTab = index);
@@ -76,26 +93,49 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
       _stopSequence();
       return;
     }
-    _startSequence(key, groups);
+    unawaited(_startSequence(key, (token) => _controller.playSequence(
+          groups,
+          onCell: (cell) => _focusCell(token, cell.char),
+        )));
   }
 
+  /// 字母连播：`allLetterPlayGroups` = 整张字母表，`[letterPlayGroupOf('A')]` = 一个字母。
+  void _toggleLetterSequence(String key, List<LetterPlayGroup> groups) {
+    if (_playingKey == key) {
+      _stopSequence();
+      return;
+    }
+    unawaited(_startSequence(key, (token) => _controller.playLetterSequence(
+          groups,
+          onGroup: (group) => _focusCell(token, group.cellKey),
+          onRow: (row) => _focusSound(token, row.phoneme),
+        )));
+  }
+
+  /// 单行读音点播（弹层里点一行）：与连播的声音不叠着响。
+  void _playSound(LetterSoundRow row) {
+    if (_playingKey != null) _stopSequence();
+    unawaited(_controller.playLetterSound(row));
+  }
+
+  /// 连播的通用骨架：置状态 → 播放（回调里按 [token] 聚焦当前格/行）→ 收尾复位。
+  /// 令牌一变（停止 / 换一轮 / 离开页面），迟到的回调全部作废。
   Future<void> _startSequence(
     String key,
-    List<List<ReferenceCellData>> groups,
+    Future<void> Function(int token) play,
   ) async {
     final token = ++_playToken;
     setState(() {
       _playingKey = key;
-      _activePhone = null;
+      _activeCell = null;
+      _activeSound = null;
     });
-    await _controller.playSequence(
-      groups,
-      onCell: (cell) => _focusCell(token, cell),
-    );
+    await play(token);
     if (!mounted || token != _playToken) return; // 已被停止 / 换了一轮
     setState(() {
       _playingKey = null;
-      _activePhone = null;
+      _activeCell = null;
+      _activeSound = null;
     });
   }
 
@@ -104,15 +144,16 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
     unawaited(_controller.stopSequence());
     setState(() {
       _playingKey = null;
-      _activePhone = null;
+      _activeCell = null;
+      _activeSound = null;
     });
   }
 
   /// 高亮当前格并滚到可见（垂直方向留一点上文，别把格子顶到屏幕边上）。
-  void _focusCell(int token, ReferenceCellData cell) {
+  void _focusCell(int token, String cellKey) {
     if (!mounted || token != _playToken) return;
-    setState(() => _activePhone = cell.char);
-    final cellContext = _cellKeys[cell.char]?.currentContext;
+    setState(() => _activeCell = cellKey);
+    final cellContext = _cellKeys[cellKey]?.currentContext;
     if (cellContext != null) {
       Scrollable.ensureVisible(
         cellContext,
@@ -120,6 +161,12 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
         duration: const Duration(milliseconds: 250),
       );
     }
+  }
+
+  /// 高亮弹层里正在读的那行读音。
+  void _focusSound(int token, String phoneme) {
+    if (!mounted || token != _playToken) return;
+    setState(() => _activeSound = phoneme);
   }
 
   GlobalKey _cellKey(String phone) =>
@@ -141,10 +188,17 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
                     horizontal: AppSpacing.md,
                   ),
                   child: switch (_selectedTab) {
-                    0 => _AlphabetContent(onCellClick: _openCell),
+                    0 => _AlphabetContent(
+                        onCellClick: _openCell,
+                        activeCell: _activeCell,
+                        playingKey: _playingKey,
+                        cellKey: _cellKey,
+                        onToggleAll: () =>
+                            _toggleLetterSequence(_allLettersKey, allLetterPlayGroups),
+                      ),
                     1 => _PhonicsContent(
                         onCellClick: _openCell,
-                        activePhone: _activePhone,
+                        activeCell: _activeCell,
                         playingKey: _playingKey,
                         cellKey: _cellKey,
                         onToggleAll: () =>
@@ -163,7 +217,15 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
           if (_selectedCell != null)
             _ReferenceCellModal(
               cell: _selectedCell!,
-              onDismiss: () => setState(() => _selectedCell = null),
+              activeSound: _activeSound,
+              soundsPlaying:
+                  _playingKey == _letterSeqKey(_selectedCell!.letterName),
+              onPlaySound: _playSound,
+              onToggleSounds: () => _toggleLetterSequence(
+                _letterSeqKey(_selectedCell!.letterName),
+                [letterPlayGroupOf(_selectedCell!.letterName)],
+              ),
+              onDismiss: _closeCell,
             ),
         ],
       ),
@@ -220,16 +282,49 @@ class _ReferenceTabs extends StatelessWidget {
   }
 }
 
-/// 字母表内容：26 字母 4 列网格（对照 Kotlin AlphabetContent）。
+/// 字母表内容：连播工具栏 + 26 字母 4 列网格（对照 Kotlin AlphabetContent）。
 class _AlphabetContent extends StatelessWidget {
-  const _AlphabetContent({required this.onCellClick});
+  const _AlphabetContent({
+    required this.onCellClick,
+    required this.activeCell,
+    required this.playingKey,
+    required this.cellKey,
+    required this.onToggleAll,
+  });
 
   final ValueChanged<ReferenceCellData> onCellClick;
+
+  /// 正在读的字母格（高亮）与正在播的范围（决定按钮显示「连播」还是「停止」）。
+  final String? activeCell;
+  final String? playingKey;
+
+  final GlobalKey Function(String cellKey) cellKey;
+  final VoidCallback onToggleAll;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
+        // 连播工具栏：26 个字母一次读完（逐格点开仍可单听读音行）
+        Padding(
+          padding: const EdgeInsets.only(top: AppSpacing.xs),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '连播：依次读「字母名 → 读音 → 例词」',
+                  style: AppType.textTheme.labelSmall
+                      ?.copyWith(color: AppColors.muted),
+                ),
+              ),
+              AppButton(
+                text: playingKey == _allLettersKey ? '停止' : '连播全部 26 个字母',
+                variant: AppButtonVariant.secondary,
+                onClick: onToggleAll,
+              ),
+            ],
+          ),
+        ),
         for (final row in _chunked(alphabetData, 4)) ...[
           Row(
             children: [
@@ -238,6 +333,8 @@ class _AlphabetContent extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                     child: _GridCard(
+                      key: cellKey(item.char),
+                      highlighted: activeCell == item.char,
                       child: Column(
                         children: [
                           Text(
@@ -250,16 +347,15 @@ class _AlphabetContent extends StatelessWidget {
                             item.phone,
                             style: AppType.phonetic.copyWith(fontSize: 13),
                           ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${item.soundCount} 种读音',
+                            style: AppType.textTheme.labelSmall
+                                ?.copyWith(color: AppColors.mutedSoft),
+                          ),
                         ],
                       ),
-                      onClick: () => onCellClick(ReferenceCellData(
-                        char: item.char,
-                        reading: item.phone,
-                        example: item.example,
-                        exampleIpa: item.full,
-                        exampleCn: item.cn,
-                        isPhonetic: false,
-                      )),
+                      onClick: () => onCellClick(alphabetCellOf(item)),
                     ),
                   ),
                 ),
@@ -278,7 +374,7 @@ class _AlphabetContent extends StatelessWidget {
 class _PhonicsContent extends StatelessWidget {
   const _PhonicsContent({
     required this.onCellClick,
-    required this.activePhone,
+    required this.activeCell,
     required this.playingKey,
     required this.cellKey,
     required this.onToggleAll,
@@ -288,7 +384,7 @@ class _PhonicsContent extends StatelessWidget {
   final ValueChanged<ReferenceCellData> onCellClick;
 
   /// 正在读的音标（高亮）与正在播的范围（决定按钮显示「连播」还是「停止」）。
-  final String? activePhone;
+  final String? activeCell;
   final String? playingKey;
 
   final GlobalKey Function(String phone) cellKey;
@@ -344,7 +440,7 @@ class _PhonicsContent extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: AppSpacing.xs),
                       child: _GridCard(
                         key: cellKey(item.phone),
-                        highlighted: activePhone == item.phone,
+                        highlighted: activeCell == item.phone,
                         child: Column(
                           children: [
                             Text(
@@ -639,110 +735,269 @@ class _GrammarCard extends StatelessWidget {
   }
 }
 
-/// 格子弹窗（字母格 / 音标格统一同一套 5 槽）：
+/// 格子弹窗（字母格 = 底部弹层，音标格 = 居中卡片）：
 /// ① 顶部行 28sp 符号 + 小号注脚（字母 → 音标；音标 → 分类名）
 /// ② 例词 40sp 主角（珊瑚，点击读词）③ 例词完整音标（拼写行）
-/// ④ 例词中文（仅字母格有）⑤ 发音按钮（读「符号 + 例词」两段）。
+/// ④ 例词中文（仅字母格有）⑤ 发音按钮（读「符号 + 例词」两段）
+/// ⑥ 字母格另有「常见读音」列表（读音行点一下放音标录音 + 例词录音），见 [LetterSoundRow]。
 class _ReferenceCellModal extends ConsumerWidget {
-  const _ReferenceCellModal({required this.cell, required this.onDismiss});
+  const _ReferenceCellModal({
+    required this.cell,
+    required this.activeSound,
+    required this.soundsPlaying,
+    required this.onPlaySound,
+    required this.onToggleSounds,
+    required this.onDismiss,
+  });
 
   final ReferenceCellData cell;
+
+  /// 正在读的那行读音（音标符号），null = 没在读。
+  final String? activeSound;
+
+  /// 这个字母的「连播这 N 种读音」是否在跑。
+  final bool soundsPlaying;
+
+  final ValueChanged<LetterSoundRow> onPlaySound;
+  final VoidCallback onToggleSounds;
   final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.read(referenceControllerProvider);
+    final header = _header(controller);
+    final closeRow = Align(
+      alignment: Alignment.centerRight,
+      child: AppIconButton(
+        icon: Icons.close,
+        tooltip: '关闭',
+        onClick: onDismiss,
+        size: 32,
+        tint: AppColors.mutedSoft,
+      ),
+    );
+
+    // 音标格：内容短，仍是居中卡片
+    if (cell.isPhonetic) {
+      return AppModal(
+        visible: true,
+        onDismiss: onDismiss,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            closeRow,
+            ...header,
+            const SizedBox(height: AppPage.minTouchTarget ~/ 2 - 2),
+            AppButton(text: '发音', onClick: () => controller.playCell(cell)),
+            const SizedBox(height: 4),
+          ],
+        ),
+      );
+    }
+
+    // 字母格：读音列表可能很长（O 有 6 条），走底部弹层 + 内部滚动
+    final rows = soundRowsOf(cell.letterName);
     return AppModal(
       visible: true,
       onDismiss: onDismiss,
+      alignment: AppModalAlignment.bottom,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: AppIconButton(
-              icon: Icons.close,
-              tooltip: '关闭',
-              onClick: onDismiss,
-              size: 32,
-              tint: AppColors.mutedSoft,
-            ),
-          ),
-          // ① 顶部行：符号（点击发音——字母读字母名，音标放随包录音）
-          //    + 小号注脚（字母格 = 音标 15sp 珊瑚；音标格 = 分类名 12sp Muted）
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              InkWell(
-                onTap: () => controller.playSymbol(cell),
-                borderRadius: BorderRadius.circular(AppRadius.sm),
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Text(
-                    cell.char,
-                    textAlign: TextAlign.center,
-                    style: AppType.textTheme.displayMedium
-                        ?.copyWith(color: AppColors.ink),
+          closeRow,
+          Flexible(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ...header,
+                  const SizedBox(height: AppSpacing.xs),
+                  _SectionHeader(
+                    title: '常见读音 (${rows.length})',
+                    trailing: AppIconButton(
+                      icon: soundsPlaying ? Icons.stop : Icons.play_arrow,
+                      tooltip: soundsPlaying ? '停止' : '连播这 ${rows.length} 种读音',
+                      onClick: onToggleSounds,
+                      size: 32,
+                      tint: soundsPlaying
+                          ? AppColors.primary
+                          : AppColors.mutedSoft,
+                    ),
                   ),
-                ),
+                  for (final row in rows)
+                    _LetterSoundTile(
+                      row: row,
+                      highlighted: activeSound == row.phoneme,
+                      onClick: () => onPlaySound(row),
+                    ),
+                ],
               ),
-              const SizedBox(width: AppSpacing.xs),
-              Text(
-                cell.reading,
-                style: cell.isPhonetic
-                    ? AppType.textTheme.labelSmall
-                        ?.copyWith(color: AppColors.mutedSoft)
-                    : AppType.phonetic.copyWith(fontSize: 15),
-              ),
-            ],
+            ),
           ),
+          // 主操作钉在弹层底部（不跟着读音列表滚走）
           const SizedBox(height: AppSpacing.sm),
-          // ② 例词：主角大字（serif 400 珊瑚，display 级不加粗）+ 可点击发音
-          //    （音标格放例词录音，字母格走 TTS）
-          InkWell(
-            onTap: () => controller.playExample(cell),
-            borderRadius: BorderRadius.circular(AppRadius.sm),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-              child: Text(
-                cell.example,
-                textAlign: TextAlign.center,
-                style: AppType.textTheme.displayLarge?.copyWith(
-                  fontSize: 40,
-                  height: 44 / 40,
-                  color: AppColors.primary,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 2),
-          // ③ 拼写行：例词完整音标（英式，与分组数据同一体系）
-          if (cell.exampleIpa.isNotEmpty)
-            Text(
-              cell.exampleIpa,
-              textAlign: TextAlign.center,
-              style: AppType.phonetic.copyWith(fontSize: 15),
-            ),
-          // ④ 例词中文（音标格无此数据）
-          if (cell.exampleCn.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Text(
-              cell.exampleCn,
-              textAlign: TextAlign.center,
-              style: AppType.textTheme.labelSmall?.copyWith(color: AppColors.muted),
-            ),
-          ],
-          const SizedBox(height: AppPage.minTouchTarget ~/ 2 - 2),
-          // ⑤ 发音：符号 + 例词两段（音标格 = 先音标录音、停一拍、再例词录音；
-          //    字母格 = 一段 TTS）
-          AppButton(
-            text: '发音',
-            onClick: () => controller.playCell(cell),
-          ),
+          AppButton(text: '发音', onClick: () => controller.playCell(cell)),
           const SizedBox(height: 4),
         ],
+      ),
+    );
+  }
+
+  /// 符号行 + 例词 + 拼写行 + 中文（字母格与音标格共用）。
+  List<Widget> _header(ReferenceController controller) => [
+        // ① 顶部行：符号（点击发音——字母读字母名，音标放随包录音）
+        //    + 小号注脚（字母格 = 音标 15sp 珊瑚；音标格 = 分类名 12sp Muted）
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            InkWell(
+              onTap: () => controller.playSymbol(cell),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Text(
+                  cell.char,
+                  textAlign: TextAlign.center,
+                  style: AppType.textTheme.displayMedium
+                      ?.copyWith(color: AppColors.ink),
+                ),
+              ),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              cell.reading,
+              style: cell.isPhonetic
+                  ? AppType.textTheme.labelSmall
+                      ?.copyWith(color: AppColors.mutedSoft)
+                  : AppType.phonetic.copyWith(fontSize: 15),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        // ② 例词：主角大字（serif 400 珊瑚，display 级不加粗）+ 可点击发音
+        //    （音标格放例词录音，字母格走 TTS）
+        InkWell(
+          onTap: () => controller.playExample(cell),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Text(
+              cell.example,
+              textAlign: TextAlign.center,
+              style: AppType.textTheme.displayLarge?.copyWith(
+                fontSize: 40,
+                height: 44 / 40,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 2),
+        // ③ 拼写行：例词完整音标（英式，与分组数据同一体系）
+        if (cell.exampleIpa.isNotEmpty)
+          Text(
+            cell.exampleIpa,
+            textAlign: TextAlign.center,
+            style: AppType.phonetic.copyWith(fontSize: 15),
+          ),
+        // ④ 例词中文（音标格无此数据）
+        if (cell.exampleCn.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(
+            cell.exampleCn,
+            textAlign: TextAlign.center,
+            style: AppType.textTheme.labelSmall?.copyWith(color: AppColors.muted),
+          ),
+        ],
+      ];
+}
+
+/// 弹层里的一行读音：音标 + 类别徽章（「常见音」不挂）+ 例词 + 例词音标。
+/// 点整行放「读音录音 → 停一拍 → 例词录音」；没有录音的组合音只读例词（TTS）。
+class _LetterSoundTile extends StatelessWidget {
+  const _LetterSoundTile({
+    required this.row,
+    required this.highlighted,
+    required this.onClick,
+  });
+
+  final LetterSoundRow row;
+  final bool highlighted;
+  final VoidCallback onClick;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(AppRadius.sm);
+    return Container(
+      margin: const EdgeInsets.only(bottom: AppSpacing.xs),
+      // 描边常驻（未高亮时透明）：高亮不该让行高跳一下
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: Border.all(
+          color: highlighted ? AppColors.primary : Colors.transparent,
+          width: 2,
+        ),
+      ),
+      child: Material(
+        color: AppColors.surfaceCard,
+        borderRadius: radius,
+        child: InkWell(
+          onTap: onClick,
+          borderRadius: radius,
+          child: ConstrainedBox(
+            constraints:
+                const BoxConstraints(minHeight: AppPage.minTouchTarget),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.xs,
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    row.phoneme,
+                    style: AppType.phonetic.copyWith(
+                      fontSize: 15,
+                      color: highlighted ? AppColors.primary : AppColors.ink,
+                    ),
+                  ),
+                  if (row.kind != LetterSoundKind.common) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    Tooltip(
+                      message: row.kind.description,
+                      child: AppBadge(row.kind.label),
+                    ),
+                  ],
+                  const Spacer(),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        row.example,
+                        style: AppType.textTheme.bodyMedium
+                            ?.copyWith(color: AppColors.bodyText),
+                      ),
+                      Text(
+                        row.exampleIpa,
+                        style: AppType.textTheme.labelSmall
+                            ?.copyWith(color: AppColors.muted),
+                      ),
+                      if (row.note != null)
+                        Text(
+                          row.note!,
+                          style: AppType.textTheme.labelSmall
+                              ?.copyWith(color: AppColors.mutedSoft),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

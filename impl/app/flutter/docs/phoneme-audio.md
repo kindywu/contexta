@@ -4,7 +4,7 @@
 
 参考页 48 个国际音标**本身**及其**例词**的发音——随安装包分发的真人录音，不经过 TTS。本主题覆盖素材来源与产出、符号到文件的映射、播放链路（单格点播与连播）、与 TTS 的分工、失效兜底五条线。
 
-字母格的发音仍全部走 TTS，那部分见 [tts-engine.md](tts-engine.md)。
+字母表「常见读音」那些行**复用的就是本主题这 48 个录音**（按符号查同一份 manifest）——字母表那块功能见 [reference-alphabet.md](reference-alphabet.md)；字母名与组合音例词走 TTS，见 [tts-engine.md](tts-engine.md)。
 
 ## 业务功能线
 
@@ -14,7 +14,7 @@
 |------|--------|--------|
 | ① 点符号大字 | TTS 读字母名（"A"） | **放录音**（该音标本身） |
 | ② 点例词大字 | TTS 读例词（Apple） | **放录音**（该例词，see） |
-| ③ 点「发音」按钮 | TTS 一段读完「A. Apple」 | **音标录音 → 停 1s → 例词录音** |
+| ③ 点「发音」按钮 | TTS 两段：字母名 → 停 1s → 例词 | **音标录音 → 停 1s → 例词录音** |
 
 音标格的三个入口两段素材都取自同一套随包录音；录音缺了才回退 TTS 读例词（IPA 原文绝不进 TTS）。
 
@@ -184,7 +184,7 @@ sequenceDiagram
     Note over C,T: 例词录音缺失时才走 TtsEngine.speak('see')
 ```
 
-字母格走另一条分支：`playCell` → `speakTextFor(cell)` = `'A. Apple'` 一段 TTS，不碰录音库；三个入口的对照见「业务功能线」的表格。
+字母格走另一条分支：`playCell` 读两段 TTS（字母名 → 停一拍 → 例词），不碰录音库；字母表的读音行另走 `playLetterSound` / `playLetterSequence`（复用的正是本主题的录音），见 [reference-alphabet.md](reference-alphabet.md)。三个入口的对照见「业务功能线」的表格。
 
 两条约束（2026-09-20 明确、2026-09-21 扩展到例词录音）：
 
@@ -247,7 +247,7 @@ stateDiagram-v2
 | 测试 | 覆盖 |
 |------|------|
 | `test/domain/audio/phoneme_audio_test.dart` | `normalizePhone`（斜杠 / 空白 / ɡ↔g）、manifest 解析（音标 + 例词两段、`wordFile` 缺失或空串 → null、坏 JSON → 空表、缺字段条目跳过） |
-| `test/ui/reference/reference_data_test.dart` | manifest 覆盖全部 48 个音标且都有例词录音；录音里的 `keyword` 与 `phonicsGroups` 的 `example` 逐条一致；每个文件真实存在且 > 512B；无旧素材残留；`speakTextFor` 音标格只返回例词 |
-| `test/ui/reference/reference_controller_test.dart` | 音标格发音走录音（TTS 不发声）、音标录音缺失兜底读例词、发音按钮「音标录音 → 停 1s → 例词录音」、例词录音缺失才回退 TTS、音标录音没放成不白等、例词点击放例词录音、音色固定 bella、字母格不受影响；连播：按序读完并逐格回调、每格之间留一拍、**组间再停一拍且只停一次**、单组不等组间那拍、空表直接结束、中途停止「掐声 + 本格不补读」、单格点播不受停止影响 |
-| `test/ui/reference/reference_screen_test.dart` | 接线：音标大字点击放录音、例词点击放例词录音、发音按钮两段录音（`tts.spoken` 为空）；连播：顶部按钮开播即高亮第一格 / 停止后高亮清除且不再出声、分组按钮只播该组并自动复位、播放中开弹窗即停 |
+| `test/ui/reference/reference_data_test.dart` | manifest 覆盖全部 48 个音标且都有例词录音；录音里的 `keyword` 与 `phonicsGroups` 的 `example` 逐条一致；每个文件真实存在且 > 512B；无旧素材残留；字母读音行同符号取到同一例词（见 [reference-alphabet.md](reference-alphabet.md)） |
+| `test/ui/reference/reference_controller_test.dart` | 音标格发音走录音（TTS 不发声）、音标录音缺失兜底读例词、发音按钮「音标录音 → 停 1s → 例词录音」、例词录音缺失才回退 TTS、音标录音没放成不白等、例词点击放例词录音、音色固定 bella、字母格「发音」两段 TTS（字母名 → 停一拍 → 例词）；连播：按序读完并逐格回调、每格之间留一拍、**组间再停一拍且只停一次**、单组不等组间那拍、空表直接结束、中途停止「掐声 + 本格不补读」、单格点播不受停止影响；字母读音行与字母连播见 [reference-alphabet.md](reference-alphabet.md) |
+| `test/ui/reference/reference_screen_test.dart` | 接线：音标大字点击放录音、例词点击放例词录音、发音按钮两段录音（`tts.spoken` 为空）；连播：顶部按钮开播即高亮第一格 / 停止后高亮清除且不再出声、分组按钮只播该组并自动复位、播放中开弹窗即停；字母表相关见 [reference-alphabet.md](reference-alphabet.md) |
 | `test/data/audio/asset_phoneme_audio_test.dart` | 命中 / 未命中、`playWord` 取 `wordFile` 那一段、启动失败、平台不上报播放完成 |
