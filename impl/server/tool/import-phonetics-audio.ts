@@ -13,6 +13,11 @@
  *   cd impl/server
  *   bun run tool/import-phonetics-audio.ts --zip <录音包.zip> [--out <dir>]
  *
+ * 另有 `--phonemes-from` 模式：**只换 48 个音标本身**，例词与清单原样不动。
+ * 用于从外部音标站（`ipa_web`，见下）取更准的音标读音：
+ *
+ *   bun run tool/import-phonetics-audio.ts --phonemes-from <ipa_web 目录> [--out <dir>]
+ *
  * 详见同目录 README.md 与 docs/phoneme-audio.md。
  */
 
@@ -94,6 +99,143 @@ function appSymbols(): string[] {
 /** 归一化：`ɡ`(U+0261) → `g`(U+0067)（与 App 的 normalizePhone 一致）。 */
 const norm = (s: string) => s.replaceAll("\u0261", "g");
 
+// ---------------------------------------------------------------------------
+// `--phonemes-from`：只换 48 个音标本身（例词与清单映射不动）
+// ---------------------------------------------------------------------------
+
+/**
+ * 音标录音的转码目标规格。采样率**不降到 16kHz**（例词那套是 16k）：
+ * /s/ /ʃ/ /f/ /θ/ 这些擦音的能量集中在 4kHz 以上，降到 16k 先把它们磨钝——
+ * 而换这一包图的就是读音准。体积代价可忽略：assets 一共 66MB
+ * （TTS 模型 43MB + 库 23MB），48 个音标 44.1kHz 单声道 96kbps 约 460KB。
+ */
+const PHONEME_RATE = "44100";
+const PHONEME_BITRATE = "96";
+
+interface ManifestEntry {
+  symbol: string;
+  normalized: string;
+  keyword: string;
+  file: string;
+  wordFile: string;
+}
+
+/** 读 `ipa_web` 目录的 meta.json：符号 → 音频绝对路径（外加出处，写进清单用）。 */
+function readSymbolAudioDir(dir: string): { bySymbol: Map<string, string>; origin: string } {
+  const metaPath = join(dir, "meta.json");
+  if (!existsSync(metaPath)) throw new Error(`源目录里没有 meta.json：${metaPath}`);
+  const meta = JSON.parse(readFileSync(metaPath, "utf8")) as {
+    source?: string;
+    symbols?: { symbol?: string; audio?: string }[];
+  };
+  const bySymbol = new Map<string, string>();
+  for (const entry of meta.symbols ?? []) {
+    if (typeof entry?.symbol !== "string" || typeof entry?.audio !== "string") continue;
+    bySymbol.set(norm(entry.symbol), join(dir, entry.audio));
+  }
+  if (!bySymbol.size) throw new Error(`meta.json 里没读到 symbols[].audio：${metaPath}`);
+  return { bySymbol, origin: meta.source ?? dir };
+}
+
+/**
+ * ADTS-AAC → MP3（44.1kHz 单声道，不裁静音、不动响度）。
+ *
+ * 源文件是 **ADTS AAC 却挂着 .mp3 扩展名**（`file` 认作 `MPEG ADTS, AAC, v4 LC`）。
+ * CoreAudio 按扩展名挑解析器，`.mp3` 一律打不开——`afinfo` 与直接喂给 `afconvert`
+ * 都报 "Couldn't open input file"。**必须先复制成 .aac 再解码**，否则整批静默失败。
+ * （同理，这包音频也**不能原样进 App**：App 侧同样打不开。）
+ */
+function transcodePhoneme(src: string, out: string, work: string): void {
+  const aac = join(work, "in.aac");
+  const wav = join(work, "in.wav");
+  cpSync(src, aac);
+  const decode = Bun.spawnSync([
+    "afconvert", "-f", "WAVE", "-d", `LEI16@${PHONEME_RATE}`, "-c", "1", aac, wav,
+  ]);
+  if (decode.exitCode !== 0) {
+    throw new Error(`解码失败 ${basename(src)}：${decode.stderr.toString().trim()}`);
+  }
+  const encode = Bun.spawnSync(["lame", "--quiet", "-b", PHONEME_BITRATE, "-m", "m", wav, out]);
+  if (encode.exitCode !== 0) {
+    throw new Error(`编码失败 ${basename(src)}：${encode.stderr.toString().trim()}`);
+  }
+
+  // **光看退出码不够**：afconvert 遇到挂 .mp3 扩展名的 ADTS 时退出码 0、stderr 空，
+  // 却只写出一段 0.057s 的碎片（0.95s 的源 → 5KB wav）。这种「静默截断」一旦漏进去，
+  // App 里表现成「点了没声」，排查成本极高——所以回读产物验长度。
+  const seconds = mp3Duration(out);
+  if (seconds === null || seconds < 0.2) {
+    throw new Error(
+      `产物可疑：${basename(out)} 时长 ${seconds ?? "读不出"}s ← ${basename(src)}`,
+    );
+  }
+}
+
+/** 读 mp3 时长（秒）；读不出返回 null。 */
+function mp3Duration(path: string): number | null {
+  const p = Bun.spawnSync(["afinfo", path]);
+  const m = p.stdout.toString().match(/estimated duration:\s*([\d.]+)/);
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * 按**符号**把清单里每个音标的 `file` 换掉（`wordFile` 与 phonemes 映射一字不动）。
+ *
+ * 按符号而非按位置：App 的 `phonicsGroups` 顺序（… ɑː ɒ ɔː ʊ uː ʌ ɜː ə …）与清单
+ * 顺序（… ʌ ɜː ə uː ʊ ɔː ɒ ɑː …）**不同**，按位置整体错位，发音会张冠李戴。
+ *
+ * 覆盖先校验后写入：源里缺任何一个符号就整体退出，不留半新半旧的包。
+ */
+function replacePhonemes(dir: string, outDir: string): void {
+  const manifestPath = join(outDir, "manifest.json");
+  if (!existsSync(manifestPath)) {
+    throw new Error(`没有现成清单，先用 --zip 模式导入整套：${manifestPath}`);
+  }
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+    source?: unknown;
+    phonemes?: ManifestEntry[];
+  };
+  const phonemes = manifest.phonemes ?? [];
+  if (!phonemes.length) throw new Error(`清单里没有 phonemes：${manifestPath}`);
+
+  const { bySymbol, origin } = readSymbolAudioDir(dir);
+
+  // ① 先校验覆盖，缺一个就不动手
+  const missing = phonemes
+    .filter((p) => !bySymbol.has(norm(p.normalized ?? p.symbol)))
+    .map((p) => p.symbol);
+  if (missing.length) {
+    throw new Error(`源里缺这 ${missing.length} 个音标，未替换任何文件：${missing.join(" ")}`);
+  }
+  const orphan = [...bySymbol.keys()].filter((s) => !phonemes.some((p) => norm(p.normalized) === s));
+  if (orphan.length) {
+    console.log(`源里多出（App 未用，忽略）：${orphan.join(" ")}`);
+  }
+
+  // ② 转码（临时目录复用，逐个覆盖 in.aac / in.wav）
+  const work = join(tmpdir(), `ipa-replace-${process.pid}`);
+  rmSync(work, { recursive: true, force: true });
+  mkdirSync(work, { recursive: true });
+  for (const p of phonemes) {
+    transcodePhoneme(bySymbol.get(norm(p.normalized))!, join(outDir, p.file), work);
+  }
+  rmSync(work, { recursive: true, force: true });
+
+  // ③ 只更出处：phonemes 映射（符号 → sNN / wNN）保持不变
+  const today = new Date().toISOString().slice(0, 10);
+  manifest.source = {
+    pack: "ipa_audio.zip",
+    note:
+      `音标（s*.mp3）取自 ${origin}，${today} 起用，${PHONEME_RATE}Hz 单声道 ` +
+      `${PHONEME_BITRATE}kbps、未裁静音未归一响度；例词（w*.mp3）沿用人工录音包（16kHz 单声道 mp3）`,
+  };
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  const count = readdirSync(outDir).filter((n) => n.endsWith(".mp3")).length;
+  console.log(`音标 ${phonemes.length} 个已按符号替换 → ${outDir}（mp3 共 ${count} 个，例词未动）`);
+  console.log(`来源：${origin}`);
+}
+
 const argv = Bun.argv.slice(2);
 const arg = (name: string): string | undefined => {
   const i = argv.indexOf(`--${name}`);
@@ -101,11 +243,29 @@ const arg = (name: string): string | undefined => {
 };
 
 const zip = arg("zip");
-if (!zip) {
-  console.error("用法：bun run tool/import-phonetics-audio.ts --zip <录音包.zip> [--out <dir>]");
+const phonemesFrom = arg("phonemes-from");
+const outDir = arg("out") ?? DEFAULT_OUT;
+
+if (!zip && !phonemesFrom) {
+  console.error(
+    "用法：bun run tool/import-phonetics-audio.ts --zip <录音包.zip> [--out <dir>]\n" +
+      "      bun run tool/import-phonetics-audio.ts --phonemes-from <ipa_web 目录> [--out <dir>]",
+  );
   process.exit(1);
 }
-const outDir = arg("out") ?? DEFAULT_OUT;
+
+// 换音标：只动 s*.mp3，例词与清单映射保持原样
+if (phonemesFrom) {
+  try {
+    replacePhonemes(phonemesFrom, outDir);
+  } catch (e) {
+    console.error(String(e instanceof Error ? e.message : e));
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+if (!zip) process.exit(1); // 上面的用法检查已排除；仅为收窄类型
 
 const work = join(tmpdir(), `ipa-import-${process.pid}`);
 rmSync(work, { recursive: true, force: true });
