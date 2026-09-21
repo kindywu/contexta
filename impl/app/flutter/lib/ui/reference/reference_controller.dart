@@ -97,28 +97,39 @@ class ReferenceController {
     await playExample(cell);
   }
 
-  /// 字母读音行点播：**读音录音 → 停一拍（`_phonemeWordGap`）→ 例词录音**，
-  /// 与音标格「发音」同款节奏（字母读音复用的就是那 48 个音标录音）。
-  ///
-  /// 读音本身没有录音的行（X 的组合音 `/ks/` `/gz/`）不试录音、
-  /// 也不白等那一拍，直接 TTS 读例词。
-  Future<void> playLetterSound(LetterSoundRow row) => _playLetterSound(row, null);
+  /// 读音行点**读音**：放这个读音本身的录音；没有录音（X 的 `/ks/` `/gz/`）
+  /// 兜底读例词——IPA 绝不进 TTS。
+  Future<void> playLetterSound(LetterSoundRow row) async {
+    if (!row.hasAudio) {
+      await speak(row.example);
+      return;
+    }
+    if (!await _phonemeAudio.play(row.phoneme)) await speak(row.example);
+  }
 
-  Future<void> _playLetterSound(
+  /// 读音行点**例词**：放这条例词的录音（自带例词的行走 TTS 预生成的
+  /// `letterWords` 那批），录音缺了回退 TTS 读例词。
+  Future<void> playLetterExample(LetterSoundRow row) async {
+    final played = row.isOwnExample
+        ? await _phonemeAudio.playLetterWord(row.phoneme)
+        : await _phonemeAudio.playWord(row.phoneme);
+    if (!played) await speak(row.example);
+  }
+
+  /// 连播里的一行：**读音录音 → 停一拍（`_phonemeWordGap`）→ 例词录音**，
+  /// 与音标格「发音」同款节奏（字母读音复用的就是那 48 个音标录音）。
+  /// 没有录音的那一段就跳过、也不白等那一拍。
+  Future<void> _playLetterRow(
     LetterSoundRow row,
     bool Function()? aborted,
   ) async {
     if (aborted?.call() ?? false) return;
-    if (row.hasAudio) {
-      final played = await _phonemeAudio.play(row.phoneme);
+    if (row.hasAudio && await _phonemeAudio.play(row.phoneme)) {
       if (aborted?.call() ?? false) return;
-      // 录音没放成（符号不在库里/播放失败）就别白等一秒
-      if (played) await Future<void>.delayed(_phonemeWordGap);
+      await Future<void>.delayed(_phonemeWordGap);
       if (aborted?.call() ?? false) return;
     }
-    // 读音不在录音库的行连例词录音也没有，直接 TTS 读例词（IPA 不进 TTS）
-    final wordPlayed = row.hasAudio && await _phonemeAudio.playWord(row.phoneme);
-    if (!wordPlayed) await speak(row.example);
+    await playLetterExample(row);
   }
 
   /// 字母连播 [groups]：每个字母 = **TTS 读字母名 → 停一拍 → 逐行
@@ -151,7 +162,7 @@ class ReferenceController {
       for (final row in group.rows) {
         if (token != _sequenceToken) return;
         onRow?.call(row);
-        await _playLetterSound(row, () => token != _sequenceToken);
+        await _playLetterRow(row, () => token != _sequenceToken);
       }
     }
   }

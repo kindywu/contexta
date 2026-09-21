@@ -10,13 +10,13 @@
 
 参考页「音标」tab 下列 8 组 48 个音标（`phonicsGroups`）。用户点开任一格子出现弹窗，弹窗里三个发音入口：
 
-| 入口 | 字母格 | 音标格 |
+| 入口 | 音标格（音标 tab） | 字母读音行（字母表弹层） |
 |------|--------|--------|
-| ① 点符号大字 | TTS 读字母名（"A"） | **放录音**（该音标本身） |
-| ② 点例词大字 | TTS 读例词（Apple） | **放录音**（该例词，see） |
-| ③ 点「发音」按钮 | TTS 两段：字母名 → 停 1s → 例词 | **音标录音 → 停 1s → 例词录音** |
+| ① 点符号 | **放录音**（该音标本身） | **放录音**（该读音本身）；组合音没录音时读例词 |
+| ② 点例词 | **放录音**（该例词，see） | **放录音**（音标库例词，或字母读音行自己的那批） |
+| ③ 「发音」/ 连播 | **音标录音 → 停 1s → 例词录音** | 连播里同款两段（弹层本身没有「发音」按钮） |
 
-音标格的三个入口两段素材都取自同一套随包录音；录音缺了才回退 TTS 读例词（IPA 原文绝不进 TTS）。
+两边的录音都取自同一套随包资产（字母表那条线见 [reference-alphabet.md](reference-alphabet.md)）；录音缺了才回退 TTS 读例词（IPA 原文绝不进 TTS）。字母表弹层里**不再有**字母名与字母表例词（`Apple`）的入口——字母名只在连播里由 TTS 报一次。
 
 **连播**（对着整张表听）：音标 tab 顶部一个「连播全部 48 个」，每个分组标题右侧一个「播这组」——点一下从该范围第一个音标开始自动往下读：
 
@@ -80,8 +80,9 @@ bun run tool/import-phonetics-audio.ts --phonemes-from <ipa_web 目录>
 |------|------|------|
 | `s*.mp3`（音标） | 44.1kHz 单声道 96kbps | 不降到 16kHz：/s/ /ʃ/ /f/ /θ/ 的能量集中在 4kHz 以上，降到 16k 会先把它们磨钝——而换这一包图的就是读音准。48 个约 590KB |
 | `w*.mp3`（例词） | 16kHz 单声道 40kbps | 沿用人工录音包原样 |
+| `l*.mp3`（字母读音行的站点例词，3 个） | 24kHz 单声道 64kbps | 不走本主题的导入脚本，由 App 自带的 KittenTTS 预生成——见 [reference-alphabet.md](reference-alphabet.md)「素材来源」 |
 
-两套合计约 880KB。相对 `assets/` 总量（66MB：TTS 模型 43MB + 库 23MB）可忽略，所以音标那边选了保真而非省体积。
+三套合计约 920KB。相对 `assets/` 总量（66MB：TTS 模型 43MB + 库 23MB）可忽略，所以音标那边选了保真而非省体积。
 
 **源文件是 ADTS AAC 却挂着 `.mp3` 扩展名**——这是换包路上最深的一个坑，两处会静默出错：
 
@@ -96,12 +97,17 @@ bun run tool/import-phonetics-audio.ts --phonemes-from <ipa_web 目录>
 
 ```mermaid
 flowchart TD
-    A["manifest.json<br/>normalized: iː / file: s01.mp3 / wordFile: w01.mp3"] --> B[phonemeClipsFromManifest 解析]
+    A["manifest.json<br/>phonemes[]: normalized iː / file s01.mp3 / wordFile w01.mp3"] --> B[phonemeClipsFromManifest 解析]
+    A2["manifest.json<br/>letterWords[]: phoneme ks / file l01.mp3"] --> B2[letterWordClipsFromManifest 解析]
     B --> C["Map&lt;String, PhonemeClip&gt;<br/>{'iː': (s01.mp3, w01.mp3)}"]
+    B2 --> C2["Map&lt;String, LetterWordClip&gt;<br/>{'ks': l01.mp3}"]
     C --> D["AssetPhonemeAudio.play / playWord"]
-    E["phonicsGroups 的 /iː/"] --> F[normalizePhone：去斜杠、ɡ→g]
+    C2 --> D2["AssetPhonemeAudio.playLetterWord"]
+    E["phonicsGroups 的 /iː/ / letterSounds 的 /ks/"] --> F[normalizePhone：去斜杠、ɡ→g]
     F --> D
-    D --> G["播放 assets/phonetics/s01.mp3<br/>（或 w01.mp3）"]
+    F --> D2
+    D --> G["播放 assets/phonetics/s01.mp3 / w01.mp3"]
+    D2 --> G2["播放 assets/phonetics/l01.mp3"]
 ```
 
 归一化 `normalizePhone`（`lib/domain/audio/phoneme_audio.dart`，纯函数）两侧都过一遍：
@@ -118,20 +124,28 @@ classDiagram
         <<interface>>
         +play(phone) Future~bool~
         +playWord(phone) Future~bool~
+        +playLetterWord(phone) Future~bool~
         +stop() Future~void~
     }
     class PhonemeClip {
         +String file
         +String? wordFile
     }
+    class LetterWordClip {
+        +String file
+        +String word
+    }
     class AssetPhonemeAudio {
         -AssetBundle _bundle
         -ClipPlayer _player
         -Future~Map~ _clips
+        -Future~Map~ _letterWords
         +play(phone) Future~bool~
         +playWord(phone) Future~bool~
+        +playLetterWord(phone) Future~bool~
         +stop() Future~void~
         -_play(phone, kind, pick) Future~bool~
+        -_playFile(phone, kind, file) Future~bool~
     }
     class ReferenceController {
         -PhonemeAudio _phonemeAudio
@@ -141,25 +155,31 @@ classDiagram
         +playSymbol(cell)
         +playExample(cell)
         +playCell(cell)
+        +playLetterSound(row)
+        +playLetterExample(row)
         +playSequence(cells, onCell) Future~void~
+        +playLetterSequence(groups, onGroup, onRow) Future~void~
         +stopSequence() Future~void~
         -_playCell(cell, aborted) Future~void~
+        -_playLetterRow(row, aborted) Future~void~
     }
     class ReferenceScreen {
         -String _playingKey
-        -String _activePhone
+        -String _activeCell
+        -String _activeSound
         -int _playToken
         -Map _cellKeys
     }
     PhonemeAudio <|.. AssetPhonemeAudio
     PhonemeClip --* AssetPhonemeAudio
+    LetterWordClip --* AssetPhonemeAudio
     ReferenceController --> PhonemeAudio
     ReferenceController --> TtsEngine
     ReferenceScreen --> ReferenceController
 ```
 
 - `PhonemeClip`：一个音标的两段录音（`file` 必有、`wordFile` 可缺）。清单里没有 `wordFile` 就是 null——该例词回退 TTS。
-- `AssetPhonemeAudio`：首次播放时懒加载 manifest（`rootBundle.loadString`）并缓存映射；`play` / `playWord` 共用 `_play`（按符号取 clip → 选段 → 播 → 等播完）。
+- `AssetPhonemeAudio`：首次播放时懒加载 manifest（`rootBundle.loadString`）并缓存两张表；`play` / `playWord` 共用 `_play`（按符号取 clip → 选段 → 播 → 等播完），`playLetterWord` 查 `letterWords` 那张表后走同一个 `_playFile`。
 - 两个方法都**返回播放结束**（非「开始播放」），`ReferenceController` 靠它把后续段落排到前一段之后。
 - asset 路径 = `<assetDir>/<file>`，`assetDir` 缺省 `phonetics`——`AssetSource` 自带 `assets/` 前缀，故对应 `assets/phonetics/s01.mp3`。
 
@@ -184,7 +204,7 @@ sequenceDiagram
     Note over C,T: 例词录音缺失时才走 TtsEngine.speak('see')
 ```
 
-字母格走另一条分支：`playCell` 读两段 TTS（字母名 → 停一拍 → 例词），不碰录音库；字母表的读音行另走 `playLetterSound` / `playLetterSequence`（复用的正是本主题的录音），见 [reference-alphabet.md](reference-alphabet.md)。三个入口的对照见「业务功能线」的表格。
+字母表的读音行另走 `playLetterSound` / `playLetterExample` / `playLetterSequence`（复用的正是本主题的录音），见 [reference-alphabet.md](reference-alphabet.md)；字母名只在连播里由 TTS 报一次（控制器的 `playSymbol` / `playExample` / `playCell` 仍留着字母格分支——按「字母名 → 停一拍 → 例词」两段 TTS 读，但目前参考页的字母表没有入口调它们）。三个入口的对照见「业务功能线」的表格。
 
 两条约束（2026-09-20 明确、2026-09-21 扩展到例词录音）：
 
@@ -234,6 +254,7 @@ stateDiagram-v2
 |------|------|
 | 符号不在录音库 | `play` 返回 false → 兜底 TTS 读**例词**（IPA 原文绝不进 TTS） |
 | 清单里没有 `wordFile`（或为空串） | `playWord` 返回 false → 该例词回退 TTS |
+| 清单里没有 `letterWords` 段 / 该符号不在其中 | `playLetterWord` 返回 false → 该例词回退 TTS（旧版 manifest 不会崩） |
 | manifest.json 缺失 / JSON 损坏 | `phonemeClipsFromManifest` 返回空表 → 全部走例词兜底，参考页不崩 |
 | mp3 播放**启动**失败（平台侧异常） | `play` / `playWord` 捕获后返回 false，同上兜底；不打断页面交互 |
 | `onPlayerComplete` 不上报 | 5s 超时放行——**只影响与后续段落的间隔，不改判定**：已启动的播放不会因此被当成失败。2026-09-20 真机上「音标点了却念出例词」就是违反这条：等播完写错（`.timeout(..., onTimeout: () {})` 类型不合法，`onPlayerComplete` 是 `Stream<AudioEvent>`），运行时每次抛 → 被 catch 成播放失败 → 录音与例词 TTS 叠着响。`test/data/audio/asset_phoneme_audio_test.dart` 的「平台不上报播放完成」用例就是这条的回归测试 |
@@ -248,6 +269,6 @@ stateDiagram-v2
 |------|------|
 | `test/domain/audio/phoneme_audio_test.dart` | `normalizePhone`（斜杠 / 空白 / ɡ↔g）、manifest 解析（音标 + 例词两段、`wordFile` 缺失或空串 → null、坏 JSON → 空表、缺字段条目跳过） |
 | `test/ui/reference/reference_data_test.dart` | manifest 覆盖全部 48 个音标且都有例词录音；录音里的 `keyword` 与 `phonicsGroups` 的 `example` 逐条一致；每个文件真实存在且 > 512B；无旧素材残留；字母读音行同符号取到同一例词（见 [reference-alphabet.md](reference-alphabet.md)） |
-| `test/ui/reference/reference_controller_test.dart` | 音标格发音走录音（TTS 不发声）、音标录音缺失兜底读例词、发音按钮「音标录音 → 停 1s → 例词录音」、例词录音缺失才回退 TTS、音标录音没放成不白等、例词点击放例词录音、音色固定 bella、字母格「发音」两段 TTS（字母名 → 停一拍 → 例词）；连播：按序读完并逐格回调、每格之间留一拍、**组间再停一拍且只停一次**、单组不等组间那拍、空表直接结束、中途停止「掐声 + 本格不补读」、单格点播不受停止影响；字母读音行与字母连播见 [reference-alphabet.md](reference-alphabet.md) |
+| `test/ui/reference/reference_controller_test.dart` | 音标格发音走录音（TTS 不发声）、音标录音缺失兜底读例词、发音按钮「音标录音 → 停 1s → 例词录音」、例词录音缺失才回退 TTS、音标录音没放成不白等、例词点击放例词录音、音色固定 bella、字母格三个入口的两段 TTS（字母名 → 停一拍 → 例词）；连播：按序读完并逐格回调、每格之间留一拍、**组间再停一拍且只停一次**、单组不等组间那拍、空表直接结束、中途停止「掐声 + 本格不补读」、单格点播不受停止影响；字母读音行与字母连播见 [reference-alphabet.md](reference-alphabet.md) |
 | `test/ui/reference/reference_screen_test.dart` | 接线：音标大字点击放录音、例词点击放例词录音、发音按钮两段录音（`tts.spoken` 为空）；连播：顶部按钮开播即高亮第一格 / 停止后高亮清除且不再出声、分组按钮只播该组并自动复位、播放中开弹窗即停；字母表相关见 [reference-alphabet.md](reference-alphabet.md) |
-| `test/data/audio/asset_phoneme_audio_test.dart` | 命中 / 未命中、`playWord` 取 `wordFile` 那一段、启动失败、平台不上报播放完成 |
+| `test/data/audio/asset_phoneme_audio_test.dart` | 命中 / 未命中、`playWord` 取 `wordFile` 那一段、`playLetterWord` 取 `letterWords` 那一段（同一个 `/z/` 两套例词不串）、启动失败、平台不上报播放完成 |

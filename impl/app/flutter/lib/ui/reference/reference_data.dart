@@ -595,12 +595,15 @@ const List<LetterSounds> letterSounds = [
     LetterSound('/w/', LetterSoundKind.common),
   ]),
   LetterSounds('X', [
-    // 组合音在录音库里没有对应文件（例词走 TTS 兜底），例词与音标只能自带
+    // X 的三条读音例词都取自站点（「字母 X 发什么音」，得用含 x 的词）：
+    // 音标库那套例词在这儿基本对不上（/z/ 是 zoo），所以三条都自带例词、例词走 TTS。
+    // /ks/ /gz/ 是组合音，连读音本身也没有录音。
     LetterSound('/ks/', LetterSoundKind.cluster,
         example: 'box', exampleIpa: '/bɒks/', note: '无单独录音'),
     LetterSound('/gz/', LetterSoundKind.cluster,
         example: 'exam', exampleIpa: '/ɪɡˈzæm/', note: '无单独录音'),
-    LetterSound('/z/', LetterSoundKind.minor),
+    LetterSound('/z/', LetterSoundKind.minor,
+        example: 'xylophone', exampleIpa: '/ˈzaɪləfəʊn/'),
   ]),
   LetterSounds('Y', [
     LetterSound('/aɪ/', LetterSoundKind.common),
@@ -621,6 +624,7 @@ class LetterSoundRow {
     required this.example,
     required this.exampleIpa,
     required this.hasAudio,
+    required this.isOwnExample,
     this.note,
   });
 
@@ -629,14 +633,20 @@ class LetterSoundRow {
   final String example;
   final String exampleIpa;
 
-  /// 读音本身有没有随包录音（组合音没有 → 该行例词走 TTS）。
+  /// 读音本身有没有随包录音（组合音没有）。
   final bool hasAudio;
+
+  /// 例词是不是**自带**的（站点例词）——这些行的例词录音在 manifest 的
+  /// `letterWords` 段（TTS 预生成），要按符号走 [PhonemeAudio.playLetterWord]；
+  /// 其余行走音标库那套（`w*.mp3`）。
+  final bool isOwnExample;
+
   final String? note;
 }
 
 /// 一个字母的读音行：例词与例词音标从 [phonicsGroups] 按符号解析
 /// （同一符号同一个词，才能配上 `w*.mp3` 例词录音）；
-/// 音标库里没有的读音（X 的组合音）用静态表里自带的例词。
+/// **静态表自带例词的读音行**（X 的三条）用自带的词、例词走 TTS。
 ///
 /// 字母不在表里直接抛 [StateError]——数据错了要当场炸，不静默给空表。
 List<LetterSoundRow> soundRowsOf(String letter) =>
@@ -650,12 +660,16 @@ final Map<String, List<LetterSoundRow>> _letterSoundRows = {
 
 LetterSoundRow _rowOf(LetterSound sound) {
   final item = _phonicsItemOf(sound.phoneme);
+  // 自带例词 = 音标库那套例词对这个字母不成立（X 的 box/exam/xylophone），
+  // 例词录音改由 manifest 的 letterWords 段给（TTS 预生成）。
+  final own = sound.example != null;
   return LetterSoundRow(
     phoneme: sound.phoneme,
     kind: sound.kind,
-    example: item?.example ?? sound.example ?? '',
-    exampleIpa: item?.full ?? sound.exampleIpa ?? '',
+    example: own ? sound.example! : (item?.example ?? ''),
+    exampleIpa: own ? (sound.exampleIpa ?? '') : (item?.full ?? ''),
     hasAudio: item != null,
+    isOwnExample: own,
     note: sound.note,
   );
 }

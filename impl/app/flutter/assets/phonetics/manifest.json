@@ -1,7 +1,8 @@
 {
   "source": {
     "pack": "ipa_audio.zip",
-    "note": "音标（s*.mp3）取自 https://github.com/resetsix/english-ipa，2026-09-21 起用，44100Hz 单声道 96kbps、未裁静音未归一响度；例词（w*.mp3）沿用人工录音包（16kHz 单声道 mp3）"
+    "note": "音标（s*.mp3）取自 https://github.com/resetsix/english-ipa，2026-09-21 起用，44100Hz 单声道 96kbps、未裁静音未归一响度；例词（w*.mp3）沿用人工录音包（16kHz 单声道 mp3）",
+    "letterWords": "l*.mp3 = 字母读音行里「例词取自站点」的例词，由 App 自带的 KittenTTS（micro + bella）预生成：24kHz 单声道 64kbps，见 integration_test/generate_letter_words_test.dart"
   },
   "count": 48,
   "phonemes": [
@@ -340,6 +341,23 @@
       "keyword": "yes",
       "file": "s48.mp3",
       "wordFile": "w48.mp3"
+    }
+  ],
+  "letterWords": [
+    {
+      "phoneme": "ks",
+      "word": "box",
+      "file": "l01.mp3"
+    },
+    {
+      "phoneme": "gz",
+      "word": "exam",
+      "file": "l02.mp3"
+    },
+    {
+      "phoneme": "z",
+      "word": "xylophone",
+      "file": "l03.mp3"
     }
   ]
 }

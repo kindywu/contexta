@@ -303,6 +303,20 @@ const phonemes = symbols.map((s) => {
   };
 });
 
+// letterWords（字母读音行里「例词取自站点」的那些，TTS 预生成）不在这个包里，
+// 但同一个清单文件里有这一段——重写清单时原样带过来，否则换一次音标包就把它丢了
+// （lib/ui/reference/reference_data_test.dart 会因此变红）。
+const prevLetterWords = ((): unknown => {
+  try {
+    const prev = JSON.parse(readFileSync(join(outDir, "manifest.json"), "utf8")) as {
+      letterWords?: unknown;
+    };
+    return prev.letterWords;
+  } catch {
+    return undefined;
+  }
+})();
+
 writeFileSync(
   join(outDir, "manifest.json"),
   `${JSON.stringify(
@@ -310,6 +324,7 @@ writeFileSync(
       source: { pack: basename(zip), note: "真人录音：音标 48 + 例词 48（16kHz 单声道 mp3）" },
       count: phonemes.length,
       phonemes,
+      ...(prevLetterWords ? { letterWords: prevLetterWords } : {}),
     },
     null,
     2,

@@ -112,10 +112,16 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
         )));
   }
 
-  /// 单行读音点播（弹层里点一行）：与连播的声音不叠着响。
+  /// 点读音行的**读音**（左边）：与连播的声音不叠着响。
   void _playSound(LetterSoundRow row) {
     if (_playingKey != null) _stopSequence();
     unawaited(_controller.playLetterSound(row));
+  }
+
+  /// 点读音行的**例词**（右边）。
+  void _playExample(LetterSoundRow row) {
+    if (_playingKey != null) _stopSequence();
+    unawaited(_controller.playLetterExample(row));
   }
 
   /// 连播的通用骨架：置状态 → 播放（回调里按 [token] 聚焦当前格/行）→ 收尾复位。
@@ -221,6 +227,7 @@ class _ReferenceScreenState extends ConsumerState<ReferenceScreen> {
               soundsPlaying:
                   _playingKey == _letterSeqKey(_selectedCell!.letterName),
               onPlaySound: _playSound,
+              onPlayExample: _playExample,
               onToggleSounds: () => _toggleLetterSequence(
                 _letterSeqKey(_selectedCell!.letterName),
                 [letterPlayGroupOf(_selectedCell!.letterName)],
@@ -746,6 +753,7 @@ class _ReferenceCellModal extends ConsumerWidget {
     required this.activeSound,
     required this.soundsPlaying,
     required this.onPlaySound,
+    required this.onPlayExample,
     required this.onToggleSounds,
     required this.onDismiss,
   });
@@ -759,6 +767,7 @@ class _ReferenceCellModal extends ConsumerWidget {
   final bool soundsPlaying;
 
   final ValueChanged<LetterSoundRow> onPlaySound;
+  final ValueChanged<LetterSoundRow> onPlayExample;
   final VoidCallback onToggleSounds;
   final VoidCallback onDismiss;
 
@@ -795,7 +804,8 @@ class _ReferenceCellModal extends ConsumerWidget {
       );
     }
 
-    // 字母格：读音列表可能很长（O 有 6 条），走底部弹层 + 内部滚动
+    // 字母格：弹层只有「常见读音」——字母名 / 例词 / 发音按钮都不在这儿，
+    // 点读音行进来看的就是这个字母能发哪些音（列数最多 6 条，整块可滚）。
     final rows = soundRowsOf(cell.letterName);
     return AppModal(
       visible: true,
@@ -810,8 +820,6 @@ class _ReferenceCellModal extends ConsumerWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  ...header,
-                  const SizedBox(height: AppSpacing.xs),
                   _SectionHeader(
                     title: '常见读音 (${rows.length})',
                     trailing: AppIconButton(
@@ -828,16 +836,14 @@ class _ReferenceCellModal extends ConsumerWidget {
                     _LetterSoundTile(
                       row: row,
                       highlighted: activeSound == row.phoneme,
-                      onClick: () => onPlaySound(row),
+                      onPlaySound: () => onPlaySound(row),
+                      onPlayExample: () => onPlayExample(row),
                     ),
+                  const SizedBox(height: 4),
                 ],
               ),
             ),
           ),
-          // 主操作钉在弹层底部（不跟着读音列表滚走）
-          const SizedBox(height: AppSpacing.sm),
-          AppButton(text: '发音', onClick: () => controller.playCell(cell)),
-          const SizedBox(height: 4),
         ],
       ),
     );
@@ -915,17 +921,21 @@ class _ReferenceCellModal extends ConsumerWidget {
 }
 
 /// 弹层里的一行读音：音标 + 类别徽章（「常见音」不挂）+ 例词 + 例词音标。
-/// 点整行放「读音录音 → 停一拍 → 例词录音」；没有录音的组合音只读例词（TTS）。
+///
+/// **两个点击区**（与音标格弹窗同款分工）：点左边的音标放**读音本身**，
+/// 点右边的例词放**例词**；想连着听「读音 → 例词」用弹层上的「连播」。
 class _LetterSoundTile extends StatelessWidget {
   const _LetterSoundTile({
     required this.row,
     required this.highlighted,
-    required this.onClick,
+    required this.onPlaySound,
+    required this.onPlayExample,
   });
 
   final LetterSoundRow row;
   final bool highlighted;
-  final VoidCallback onClick;
+  final VoidCallback onPlaySound;
+  final VoidCallback onPlayExample;
 
   @override
   Widget build(BuildContext context) {
@@ -943,58 +953,78 @@ class _LetterSoundTile extends StatelessWidget {
       child: Material(
         color: AppColors.surfaceCard,
         borderRadius: radius,
-        child: InkWell(
-          onTap: onClick,
-          borderRadius: radius,
-          child: ConstrainedBox(
-            constraints:
-                const BoxConstraints(minHeight: AppPage.minTouchTarget),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: AppSpacing.xs,
-              ),
-              child: Row(
-                children: [
-                  Text(
-                    row.phoneme,
-                    style: AppType.phonetic.copyWith(
-                      fontSize: 15,
-                      color: highlighted ? AppColors.primary : AppColors.ink,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: AppPage.minTouchTarget),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.xs,
+            ),
+            child: Row(
+              children: [
+                InkWell(
+                  onTap: onPlaySound,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 6,
                     ),
-                  ),
-                  if (row.kind != LetterSoundKind.common) ...[
-                    const SizedBox(width: AppSpacing.xs),
-                    Tooltip(
-                      message: row.kind.description,
-                      child: AppBadge(row.kind.label),
-                    ),
-                  ],
-                  const Spacer(),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        row.example,
-                        style: AppType.textTheme.bodyMedium
-                            ?.copyWith(color: AppColors.bodyText),
-                      ),
-                      Text(
-                        row.exampleIpa,
-                        style: AppType.textTheme.labelSmall
-                            ?.copyWith(color: AppColors.muted),
-                      ),
-                      if (row.note != null)
+                    child: Row(
+                      children: [
                         Text(
-                          row.note!,
-                          style: AppType.textTheme.labelSmall
-                              ?.copyWith(color: AppColors.mutedSoft),
+                          row.phoneme,
+                          style: AppType.phonetic.copyWith(
+                            fontSize: 15,
+                            color:
+                                highlighted ? AppColors.primary : AppColors.ink,
+                          ),
                         ),
-                    ],
+                        if (row.kind != LetterSoundKind.common) ...[
+                          const SizedBox(width: AppSpacing.xs),
+                          Tooltip(
+                            message: row.kind.description,
+                            child: AppBadge(row.kind.label),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                ],
-              ),
+                ),
+                const Spacer(),
+                InkWell(
+                  onTap: onPlayExample,
+                  borderRadius: BorderRadius.circular(AppRadius.sm),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 4,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          row.example,
+                          style: AppType.textTheme.bodyMedium
+                              ?.copyWith(color: AppColors.bodyText),
+                        ),
+                        Text(
+                          row.exampleIpa,
+                          style: AppType.textTheme.labelSmall
+                              ?.copyWith(color: AppColors.muted),
+                        ),
+                        if (row.note != null)
+                          Text(
+                            row.note!,
+                            style: AppType.textTheme.labelSmall
+                                ?.copyWith(color: AppColors.mutedSoft),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

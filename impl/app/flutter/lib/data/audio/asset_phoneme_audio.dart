@@ -60,12 +60,24 @@ class AssetPhonemeAudio implements PhonemeAudio {
   final String assetDir;
 
   Future<Map<String, PhonemeClip>>? _clips;
+  Future<Map<String, LetterWordClip>>? _letterWords;
 
   @override
   Future<bool> play(String phone) => _play(phone, '音标', (c) => c.file);
 
   @override
   Future<bool> playWord(String phone) => _play(phone, '例词', (c) => c.wordFile);
+
+  @override
+  Future<bool> playLetterWord(String phone) async {
+    final words = await (_letterWords ??= _loadLetterWords());
+    final clip = words[normalizePhone(phone)];
+    if (clip == null) {
+      debugPrint('[PhonemeAudio] $phone 没有字母读音行例词录音（库内 ${words.length} 条）→ 回退 TTS');
+      return false;
+    }
+    return _playFile(phone, '字母读音行例词', clip.file);
+  }
 
   @override
   Future<void> stop() => _player.stop();
@@ -83,7 +95,11 @@ class AssetPhonemeAudio implements PhonemeAudio {
       debugPrint('[PhonemeAudio] $phone 没有$kind录音（库内 ${clips.length} 条）→ 回退例词 TTS');
       return false;
     }
+    return _playFile(phone, kind, file);
+  }
 
+  /// 播一个已解析出来的文件名，等播完（供「先读音后例词」的连读排序）。
+  Future<bool> _playFile(String phone, String kind, String file) async {
     try {
       await _player.stop();
       await _player.play('$assetDir/$file');
@@ -114,6 +130,18 @@ class AssetPhonemeAudio implements PhonemeAudio {
     } catch (e) {
       debugPrint('[PhonemeAudio] 录音库载入失败（$manifestPath）: $e');
       return const {}; // manifest 缺失/损坏：全部符号按「无录音」处理
+    }
+  }
+
+  Future<Map<String, LetterWordClip>> _loadLetterWords() async {
+    try {
+      final loaded =
+          letterWordClipsFromManifest(await _bundle.loadString(manifestPath));
+      debugPrint('[PhonemeAudio] 字母读音行例词录音载入 ${loaded.length} 条');
+      return loaded;
+    } catch (e) {
+      debugPrint('[PhonemeAudio] 字母读音行例词录音载入失败（$manifestPath）: $e');
+      return const {};
     }
   }
 }

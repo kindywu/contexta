@@ -44,15 +44,21 @@ class _RecordingTts implements TtsEngine {
           callback) {}
 }
 
-/// 假录音库：记下播过哪些音标 / 例词；`missing` / `missingWord` 里的符号按
-/// 「无该段录音」返回 false。
+/// 假录音库：记下播过哪些音标 / 例词 / 字母读音行例词；
+/// `missing` / `missingWord` / `missingLetterWord` 里的符号按「无该段录音」返回 false。
 class _FakePhonemeAudio implements PhonemeAudio {
-  _FakePhonemeAudio({this.missing = const {}, this.missingWord = const {}});
+  _FakePhonemeAudio({
+    this.missing = const {},
+    this.missingWord = const {},
+    this.missingLetterWord = const {},
+  });
 
   final Set<String> missing;
   final Set<String> missingWord;
+  final Set<String> missingLetterWord;
   final List<String> played = [];
   final List<String> playedWords = [];
+  final List<String> playedLetterWords = [];
   int stopCount = 0;
 
   @override
@@ -69,6 +75,13 @@ class _FakePhonemeAudio implements PhonemeAudio {
   Future<bool> playWord(String phone) async {
     if (missingWord.contains(phone)) return false;
     playedWords.add(phone);
+    return true;
+  }
+
+  @override
+  Future<bool> playLetterWord(String phone) async {
+    if (missingLetterWord.contains(phone)) return false;
+    playedLetterWords.add(phone);
     return true;
   }
 }
@@ -479,18 +492,29 @@ void main() {
           phonemeWordGap: Duration.zero,
         );
 
-    test('读音行点播：读音录音 → 停一拍 → 例词录音（两段都是录音，TTS 不发声）', () async {
+    test('点读音：只放读音本身的录音（TTS 不发声）', () async {
       final tts = _RecordingTts();
       final audio = _FakePhonemeAudio();
 
       await controllerWith(tts, audio).playLetterSound(soundRowsOf('B').single);
 
       expect(audio.played, ['/b/']);
-      expect(audio.playedWords, ['/b/'], reason: '例词用的是音标库里那个词，有录音');
+      expect(audio.playedWords, isEmpty, reason: '点读音不读例词');
       expect(tts.spoken, isEmpty);
     });
 
-    test('组合音行（/ks/ 没有录音）：不碰录音库，直接 TTS 读例词（不读 IPA）', () async {
+    test('点例词：只放例词录音（音标库那套）', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+
+      await controllerWith(tts, audio).playLetterExample(soundRowsOf('B').single);
+
+      expect(audio.playedWords, ['/b/']);
+      expect(audio.played, isEmpty, reason: '点例词不读音标');
+      expect(tts.spoken, isEmpty);
+    });
+
+    test('组合音行（/ks/ 没有读音录音）：点读音兜底 TTS 读例词（不读 IPA）', () async {
       final tts = _RecordingTts();
       final audio = _FakePhonemeAudio();
       final row = soundRowsOf('X').first;
@@ -499,36 +523,40 @@ void main() {
       await controllerWith(tts, audio).playLetterSound(row);
 
       expect(audio.played, isEmpty);
-      expect(audio.playedWords, isEmpty, reason: '组合音没有例词录音');
       expect(tts.spoken, ['box'], reason: '只有例词本身，IPA 不进 TTS');
     });
 
-    test('例词录音缺失：回退 TTS 读例词', () async {
+    test('自带例词的行走 letterWords 那批：X 的 /z/ 例词放的是 xylophone', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final row = soundRowsOf('X').last;
+      expect(row.phoneme, '/z/');
+      expect(row.hasAudio, isTrue);
+      expect(row.isOwnExample, isTrue);
+
+      await controllerWith(tts, audio).playLetterExample(row);
+
+      expect(audio.playedLetterWords, ['/z/'], reason: '走 TTS 预生成的那批（xylophone）');
+      expect(audio.playedWords, isEmpty, reason: '不碰音标库的 zoo');
+      expect(tts.spoken, isEmpty);
+    });
+
+    test('自带例词的录音缺失：回退 TTS 读例词', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio(missingLetterWord: {'/z/'});
+
+      await controllerWith(tts, audio).playLetterExample(soundRowsOf('X').last);
+
+      expect(tts.spoken, ['xylophone']);
+    });
+
+    test('音标库那套的例词录音缺失：回退 TTS 读例词', () async {
       final tts = _RecordingTts();
       final audio = _FakePhonemeAudio(missingWord: {'/b/'});
 
-      await controllerWith(tts, audio).playLetterSound(soundRowsOf('B').single);
+      await controllerWith(tts, audio).playLetterExample(soundRowsOf('B').single);
 
-      expect(audio.played, ['/b/']);
       expect(tts.spoken, ['bag']);
-    });
-
-    test('读音录音没放成就不白等：立刻读例词', () async {
-      final tts = _RecordingTts();
-      final audio = _FakePhonemeAudio(missing: {'/b/'});
-      final controller = ReferenceController(
-        ttsEngineFuture: Future.value(tts),
-        phonemeAudio: audio,
-        phonemeWordGap: const Duration(seconds: 1),
-      );
-
-      final sw = Stopwatch()..start();
-      await controller.playLetterSound(soundRowsOf('B').single);
-      sw.stop();
-
-      expect(audio.played, isEmpty);
-      expect(audio.playedWords, ['/b/']);
-      expect(sw.elapsedMilliseconds, lessThan(500), reason: '没有录音就不该等那一拍');
     });
 
     test('单行点播不受「停止」影响（不是连播）', () async {
@@ -562,6 +590,32 @@ void main() {
       expect(audio.played, ['/b/']);
       expect(audio.playedWords, ['/b/']);
       expect(rows, ['/b/']);
+    });
+
+    test('连播：读音没录音的行不白等那一拍（直接读例词）', () async {
+      final tts = _RecordingTts();
+      final audio = _FakePhonemeAudio();
+      final controller = ReferenceController(
+        ttsEngineFuture: Future.value(tts),
+        phonemeAudio: audio,
+        // 默认 1s；若实现无条件等待，这个用例会明显变慢（下面的耗时断言兜底）
+        phonemeWordGap: const Duration(seconds: 1),
+      );
+      final cluster = soundRowsOf('X').first; // /ks/：没有读音录音
+
+      final sw = Stopwatch()..start();
+      await controller.playLetterSequence([
+        LetterPlayGroup('X x', [cluster]),
+      ]);
+      sw.stop();
+
+      expect(audio.played, isEmpty, reason: '组合音没有读音录音');
+      expect(audio.playedLetterWords, ['/ks/'], reason: '跳过读音段，直接读例词');
+      expect(tts.spoken, ['X'], reason: '只有字母名走 TTS');
+      expect(sw.elapsedMilliseconds, greaterThanOrEqualTo(900),
+          reason: '字母名那一拍照停');
+      expect(sw.elapsedMilliseconds, lessThan(1600),
+          reason: '读音没录音就不再等第二拍');
     });
 
     test('字母名读完之后停一拍再进第一个读音', () async {
@@ -687,11 +741,13 @@ void main() {
 
       final rows = allLetterPlayGroups.expand((g) => g.rows).toList();
       final withAudio = rows.where((r) => r.hasAudio).length;
+      final libraryWords = rows.where((r) => !r.isOwnExample).length;
       expect(letters.length, 26);
-      expect(audio.played.length, withAudio, reason: '有录音的读音都读一遍');
-      expect(audio.playedWords.length, withAudio);
-      expect(tts.spoken.length, 26 + (rows.length - withAudio),
-          reason: '26 个字母名 + 没有录音的组合音例词');
+      expect(audio.played.length, withAudio, reason: '有读音录音的都读一遍');
+      expect(audio.playedWords.length, libraryWords, reason: '音标库那套例词');
+      expect(audio.playedLetterWords.length, rows.length - libraryWords,
+          reason: '自带例词的行走 TTS 预生成那批（X 三条）');
+      expect(tts.spoken.length, 26, reason: '只有 26 个字母名走 TTS');
       expect(audio.played.first, '/eɪ/');
       expect(audio.played.last, '/z/');
     });

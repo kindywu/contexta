@@ -114,24 +114,29 @@ void main() {
           expect(row.exampleIpa, startsWith('/'), reason: row.example);
           expect(row.exampleIpa, endsWith('/'), reason: row.example);
           final item = byPhone[normalizePhone(row.phoneme)];
-          if (item != null) {
-            expect(row.hasAudio, isTrue, reason: '${row.phoneme} 在音标库里就该有录音');
-            expect(row.example, item.example);
+          expect(row.hasAudio, item != null,
+              reason: '${row.phoneme} 有没有录音看它在不在音标库里');
+          if (!row.isOwnExample) {
+            // 例词取自音标库 = 用录音里那个词，两段都有声
+            expect(item, isNotNull);
+            expect(row.example, item!.example);
             expect(row.exampleIpa, item.full);
-          } else {
-            expect(row.hasAudio, isFalse, reason: '${row.phoneme} 没有录音');
-            expect(row.note, isNotNull, reason: '没录音的读音行要注明原因');
           }
         }
       }
     });
 
-    test('组合音：/ks/ /gz/ 无录音但带例词，X 三条读音齐全', () {
+    test('X 三条读音：例词取自站点（box / exam / xylophone），只有读音本身还留着录音', () {
       final rows = soundRowsOf('X');
       expect(rows.map((r) => r.phoneme), ['/ks/', '/gz/', '/z/']);
-      expect(rows.map((r) => r.hasAudio), [false, false, true]);
-      expect(rows[0].example, isNotEmpty);
-      expect(rows[1].example, isNotEmpty);
+      expect(rows.map((r) => r.example), ['box', 'exam', 'xylophone']);
+      expect(rows.map((r) => r.exampleIpa), ['/bɒks/', '/ɪɡˈzæm/', '/ˈzaɪləfəʊn/']);
+      expect(rows.map((r) => r.hasAudio), [false, false, true],
+          reason: '/z/ 本身在音标库里，有录音');
+      expect(rows.map((r) => r.isOwnExample), [true, true, true],
+          reason: '三条例词都是站点的，例词录音走 letterWords 那批');
+      expect(rows[0].note, isNotNull);
+      expect(rows[1].note, isNotNull);
       expect(rows[2].kind, LetterSoundKind.minor);
     });
 
@@ -219,6 +224,28 @@ void main() {
           expect(f.existsSync(), isTrue, reason: '${entry.key} → $name 不在盘上');
           expect(f.lengthSync(), greaterThan(512), reason: '$name 内容可疑');
         }
+      }
+    });
+
+    test('自带例词（站点例词）在 manifest 里有 TTS 预生成录音，词与表格对得上', () {
+      final letterWords = letterWordClipsFromManifest(manifestFile.readAsStringSync());
+      final own = [
+        for (final group in letterSounds)
+          for (final row in soundRowsOf(group.letter))
+            if (row.isOwnExample) row,
+      ];
+      expect(own, isNotEmpty, reason: '一条自带例词都没有？数据变了吧');
+      expect(own.map((r) => normalizePhone(r.phoneme)).toSet().length, own.length,
+          reason: 'letterWords 按符号索引，自带例词的读音不能重符号');
+      for (final row in own) {
+        final clip = letterWords[normalizePhone(row.phoneme)];
+        expect(clip, isNotNull,
+            reason: '${row.phoneme} 缺 letterWords 条目——跑 integration_test 的生成用例');
+        expect(clip!.word, row.example,
+            reason: '录音读的是 ${clip.word}，表格里写的是 ${row.example}');
+        final f = File('assets/phonetics/${clip.file}');
+        expect(f.existsSync(), isTrue, reason: '${clip.file} 不在盘上');
+        expect(f.lengthSync(), greaterThan(512), reason: '${clip.file} 内容可疑');
       }
     });
 
