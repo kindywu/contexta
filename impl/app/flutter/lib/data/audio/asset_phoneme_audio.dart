@@ -69,11 +69,11 @@ class AssetPhonemeAudio implements PhonemeAudio {
   Future<bool> playWord(String phone) => _play(phone, '例词', (c) => c.wordFile);
 
   @override
-  Future<bool> playLetterWord(String phone) async {
+  Future<bool> playLetterWord(String letter, String phone) async {
     final words = await (_letterWords ??= _loadLetterWords());
-    final clip = words[normalizePhone(phone)];
+    final clip = words[letterWordKey(letter, phone)];
     if (clip == null) {
-      debugPrint('[PhonemeAudio] $phone 没有字母读音行例词录音（库内 ${words.length} 条）→ 回退 TTS');
+      debugPrint('[PhonemeAudio] $letter 的 $phone 没有例词录音（库内 ${words.length} 条）→ 回退 TTS');
       return false;
     }
     return _playFile(phone, '字母读音行例词', clip.file);

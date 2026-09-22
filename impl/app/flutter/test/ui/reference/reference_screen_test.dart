@@ -41,7 +41,7 @@ class _AudioStub implements PhonemeAudio {
   }
 
   @override
-  Future<bool> playLetterWord(String phone) async {
+  Future<bool> playLetterWord(String letter, String phone) async {
     playedLetterWords.add(phone);
     return true;
   }

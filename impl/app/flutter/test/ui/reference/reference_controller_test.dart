@@ -89,7 +89,7 @@ class _FakePhonemeAudio implements PhonemeAudio {
   }
 
   @override
-  Future<bool> playLetterWord(String phone) async {
+  Future<bool> playLetterWord(String letter, String phone) async {
     if (missingLetterWord.contains(phone)) return false;
     playedLetterWords.add(phone);
     return true;

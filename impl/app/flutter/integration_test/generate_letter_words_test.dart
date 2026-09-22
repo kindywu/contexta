@@ -64,7 +64,7 @@ void main() {
     final targets = [
       for (final group in letterSounds)
         for (final row in soundRowsOf(group.letter))
-          if (row.isOwnExample) row,
+          if (row.isOwnExample) (letter: group.letter, row: row),
     ];
     expect(targets, isNotEmpty, reason: '没有自带例词的读音行？数据变了吧');
 
@@ -74,17 +74,20 @@ void main() {
     await outDir.create(recursive: true);
 
     final fragment = <Map<String, String>>[];
-    for (final (index, row) in targets.indexed) {
+    for (final (index, target) in targets.indexed) {
       final base = 'l${(index + 1).toString().padLeft(2, '0')}';
-      final result = await engine.generate(row.example);
+      final result = await engine.generate(target.row.example);
       await File('${outDir.path}/$base.wav').writeAsBytes(result.wavData());
-      // manifest 的键与音标库那套一致：归一化符号（去斜杠、ɡ→g）
+      // 清单按「字母 + 归一化符号」索引（例词跟着字母走：dʒ 在 D 是 educate、
+      // 在 G 是 giant）
       fragment.add({
-        'phoneme': row.phoneme.replaceAll('/', ''),
-        'word': row.example,
+        'letter': target.letter,
+        'phoneme': target.row.phoneme.replaceAll('/', ''),
+        'word': target.row.example,
         'file': '$base.mp3',
       });
-      debugPrint('[gen] ${row.phoneme} → $base.wav（${row.example}）');
+      debugPrint('[gen] ${target.letter} ${target.row.phoneme} → '
+          '$base.wav（${target.row.example}）');
     }
     await File('${outDir.path}/manifest-fragment.json').writeAsString(
       const JsonEncoder.withIndent('  ').convert(fragment),

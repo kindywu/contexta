@@ -2,7 +2,7 @@
   "source": {
     "pack": "ipa_audio.zip",
     "note": "音标（s*.mp3）取自 https://github.com/resetsix/english-ipa，2026-09-21 起用，44100Hz 单声道 96kbps、未裁静音未归一响度；例词（w*.mp3）沿用人工录音包（16kHz 单声道 mp3）",
-    "letterWords": "l*.mp3 = 字母读音行里「例词取自站点」的例词，由 App 自带的 KittenTTS（micro + bella）预生成：24kHz 单声道 64kbps，见 integration_test/generate_letter_words_test.dart"
+    "letterWords": "l*.mp3 = 字母读音行里「例词不含该字母」的那些行改用站点例词，由 App 自带的 KittenTTS（micro + bella）预生成：24kHz 单声道 64kbps，按「字母 + 音标」索引，见 integration_test/generate_letter_words_test.dart"
   },
   "count": 48,
   "phonemes": [
@@ -345,19 +345,142 @@
   ],
   "letterWords": [
     {
-      "phoneme": "ks",
-      "word": "box",
+      "letter": "A",
+      "phoneme": "ɔː",
+      "word": "all",
       "file": "l01.mp3"
     },
     {
-      "phoneme": "gz",
-      "word": "exam",
+      "letter": "C",
+      "phoneme": "k",
+      "word": "cat",
       "file": "l02.mp3"
     },
     {
+      "letter": "C",
+      "phoneme": "s",
+      "word": "city",
+      "file": "l03.mp3"
+    },
+    {
+      "letter": "D",
+      "phoneme": "dʒ",
+      "word": "educate",
+      "file": "l04.mp3"
+    },
+    {
+      "letter": "E",
+      "phoneme": "ə",
+      "word": "open",
+      "file": "l05.mp3"
+    },
+    {
+      "letter": "E",
+      "phoneme": "ɜː",
+      "word": "her",
+      "file": "l06.mp3"
+    },
+    {
+      "letter": "G",
+      "phoneme": "dʒ",
+      "word": "giant",
+      "file": "l07.mp3"
+    },
+    {
+      "letter": "I",
+      "phoneme": "aɪ",
+      "word": "time",
+      "file": "l08.mp3"
+    },
+    {
+      "letter": "I",
+      "phoneme": "ə",
+      "word": "pencil",
+      "file": "l09.mp3"
+    },
+    {
+      "letter": "I",
+      "phoneme": "iː",
+      "word": "machine",
+      "file": "l10.mp3"
+    },
+    {
+      "letter": "O",
+      "phoneme": "ʌ",
+      "word": "son",
+      "file": "l11.mp3"
+    },
+    {
+      "letter": "O",
+      "phoneme": "uː",
+      "word": "do",
+      "file": "l12.mp3"
+    },
+    {
+      "letter": "Q",
+      "phoneme": "k",
+      "word": "quit",
+      "file": "l13.mp3"
+    },
+    {
+      "letter": "S",
+      "phoneme": "z",
+      "word": "is",
+      "file": "l14.mp3"
+    },
+    {
+      "letter": "T",
+      "phoneme": "ʃ",
+      "word": "nation",
+      "file": "l15.mp3"
+    },
+    {
+      "letter": "T",
+      "phoneme": "tʃ",
+      "word": "nature",
+      "file": "l16.mp3"
+    },
+    {
+      "letter": "U",
+      "phoneme": "ʊ",
+      "word": "put",
+      "file": "l17.mp3"
+    },
+    {
+      "letter": "U",
+      "phoneme": "ɜː",
+      "word": "turn",
+      "file": "l18.mp3"
+    },
+    {
+      "letter": "X",
+      "phoneme": "ks",
+      "word": "box",
+      "file": "l19.mp3"
+    },
+    {
+      "letter": "X",
+      "phoneme": "gz",
+      "word": "exam",
+      "file": "l20.mp3"
+    },
+    {
+      "letter": "X",
       "phoneme": "z",
       "word": "xylophone",
-      "file": "l03.mp3"
+      "file": "l21.mp3"
+    },
+    {
+      "letter": "Y",
+      "phoneme": "ɪ",
+      "word": "gym",
+      "file": "l22.mp3"
+    },
+    {
+      "letter": "Y",
+      "phoneme": "iː",
+      "word": "happy",
+      "file": "l23.mp3"
     }
   ]
 }
