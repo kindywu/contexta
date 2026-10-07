@@ -69,6 +69,22 @@ void main() {
     expect(result.map((a) => a.id).toList(), [1]);
   });
 
+  /// 2026-10-07 回归：服务端分类是小写 snake_case，旧映射只认大写 →
+  /// 全部被判成 MEDIUM，`userDifficulty=LOW` 时匹配集为空、退回「全部」，
+  /// 难度过滤失效（LOW 批次里混进 MEDIUM/HIGH 文章也照样显示）。
+  test('服务端小写分类同样参与难度匹配（LOW 只留 LOW 篇）', () {
+    final articles = [
+      _article(1, category: 'daily_conversation'),
+      _article(2, category: 'news'),
+      _article(3, category: 'simple_story'),
+      _article(4, category: 'academic_abstract'),
+    ];
+
+    final result = useCase(articles, 'LOW', 5);
+
+    expect(result.map((a) => a.id).toList(), [1, 3]);
+  });
+
   test('回退列表同样受 displayLimit 限制且排除 PENDING', () {
     final articles = [
       _article(1, category: 'NEWS'),

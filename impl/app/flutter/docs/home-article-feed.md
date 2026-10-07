@@ -167,6 +167,25 @@ sequenceDiagram
 
 `displayLimit` 来自 `daily_learning.daily_count_snapshot`（分配当时抓拍的设置），不是当前 `user_settings.daily_article_count`——改篇数设置不影响已有阅读记录。
 
+**难度从哪来：`contentCategory` 映射，不是存字段。** `article` 表没有难度列，难度一律由 `categoryToDifficulty(contentCategory)`（`lib/domain/generation/article_prompts.dart`）现算——卡片徽标 `_difficultyLabel`（LOW→CET4 / MEDIUM→CET6 / HIGH→专八）与上面第 2 步的过滤用的是同一个纯函数，两处必须同源。
+
+词表**以服务端为准**（`impl/server/src/engine/schema.ts` 的 Category 枚举，分类↔难度 1:1）：
+
+| 难度 | 分类 |
+|------|------|
+| LOW | `daily_conversation`、`scene_description`、`simple_story` |
+| MEDIUM | `news`、`expository`、`argumentative`、`personal_essay` |
+| HIGH | `academic_abstract`、`debate_speech`、`legal_document`、`art_criticism` |
+
+两条来源的**大小写不同**，函数内先 `trim().toUpperCase()` 归一化再匹配，两条都要认：
+
+- 服务端同步落库 = **小写 snake_case**（`daily_conversation`）；
+- 本地生成管道时代（≤2026-08-13）的存量行 / asset 种子库 = **UPPERCASE**（`DAILY_CONVERSATION`），且带两名已停产分类 `academic_excerpt`、`classic_novel_excerpt`（都记 HIGH，服务端现在只产出 `academic_abstract`）。
+
+未知分类兜底 `MEDIUM`：宁可徽标显示 CET6，也不把文章判进别的难度——过滤不匹配时会退回「全部文章」，不会因此丢内容。
+
+> 2026-10-07 修「首页卡片难度徽标恒为 CET6」：旧实现直接拿原串比 UPPERCASE，服务端来的小写分类全部落 `_` 默认分支 → 恒判 MEDIUM（LOW 文章显 CET6），同时第 2 步过滤的匹配集恒为空、退化成「全部显示」。回归测试：`test/domain/generation/article_prompts_test.dart` 的「服务端小写分类」、`test/domain/usecase/get_home_articles_usecase_test.dart` 的「服务端小写分类同样参与难度匹配」、`test/ui/home/home_test.dart` 的「服务端小写分类：徽标按真实难度显示」。
+
 分组标签由 `_dateLabelFor` 生成：今天 / 昨天 / `2026年8月1日`。
 
 ### 列表构建

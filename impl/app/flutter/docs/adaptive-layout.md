@@ -196,7 +196,7 @@ flowchart TD
 
 **网格为什么不用 `Wrap`**：`Wrap` 的子项各按自身内容取高，同一行里标题两行的卡片会比标题一行的高出一截，**封面色块高度参差不齐**——而封面块正是这个网格的扫视锚点，错位会毁掉"按色块定位"的效果。改用显式分行 + `IntrinsicHeight` 把整行拉到最高卡片的高度。
 
-**封面块不是装饰**：它的颜色编码难度（CET4 青 / CET6 珊瑚 / 专八 琥珀），与卡内难度徽标同色（同一个纯函数 `difficultyAccent`），两处互相印证；已读文章的封面降到 6% 不透明度，网格里一眼分得出读过的。
+**封面块不是装饰**：它的颜色编码难度（CET4 青 / CET6 珊瑚 / 专八 琥珀），与卡内难度徽标同色（同一个纯函数 `difficultyAccent`），两处互相印证；已读文章的封面降到 6% 不透明度，网格里一眼分得出读过的。**难度标签与手机同源**：平板复用 `homeControllerProvider` 的 `ArticleItemUi.difficultyLabel`（`categoryToDifficulty(contentCategory)` 现算），平板不另做一套映射——手机侧映射错，平板一起错（见 [home-article-feed.md](home-article-feed.md) 的「难度从哪来」）。
 
 ### 尺寸令牌
 

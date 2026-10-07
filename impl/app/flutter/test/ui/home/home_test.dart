@@ -101,12 +101,15 @@ class _FakeArticleRepo implements ArticleRepository {
 }
 
 class _FakeSettingsRepo implements SettingsRepository {
-  const _FakeSettingsRepo();
+  const _FakeSettingsRepo({this.difficulty = 'MEDIUM'});
+
+  /// 用户难度设置（首页按它过滤文章、决定徽标是否命中匹配集）。
+  final String difficulty;
 
   @override
-  Future<UserSettings?> getSettings() async => const UserSettings(
+  Future<UserSettings?> getSettings() async => UserSettings(
     isOnboarded: true,
-    difficultyLevel: 'MEDIUM',
+    difficultyLevel: difficulty,
     dailyArticleCount: 3,
   );
 
@@ -308,11 +311,16 @@ void main() {
     articleClickId = null;
   });
 
-  ProviderContainer makeContainer({StartupOrchestrationUseCase? orch}) {
+  ProviderContainer makeContainer({
+    StartupOrchestrationUseCase? orch,
+    String difficulty = 'MEDIUM',
+  }) {
     return ProviderContainer(
       overrides: [
         articleRepositoryProvider.overrideWithValue(articleRepo),
-        settingsRepositoryProvider.overrideWithValue(_FakeSettingsRepo()),
+        settingsRepositoryProvider.overrideWithValue(
+          _FakeSettingsRepo(difficulty: difficulty),
+        ),
         statsRepositoryProvider.overrideWithValue(statsRepo),
         startupOrchestrationUseCaseProvider.overrideWithValue(
           orch ?? _StubStartupOrch(startupResult),
@@ -355,6 +363,33 @@ void main() {
       expect(group.articles[0].description, 'NEWS');
       // difficultyLabel = CET4/CET6/专八 展示徽标（LOW/MEDIUM/HIGH 映射）
       expect(group.articles[0].difficultyLabel, 'CET6');
+    });
+
+    /// 2026-10-07 回归：同步落地的小写分类此前全部落 `MEDIUM` 默认分支 →
+    /// 首页徽标恒显 CET6（生产实况：LOW 的 scene_description 卡片显示 CET6），
+    /// 且 userDifficulty 匹配集恒为空、"按难度过滤"退化成"全部显示"。
+    test('服务端小写分类：徽标按真实难度显示，难度过滤同时生效', () async {
+      articleRepo = _FakeArticleRepo(
+        infos: [makeInfo(0, 3)],
+        observe: (_) => Stream.value([
+          makeArticle(41, category: 'scene_description', title: '霜晨公园'),
+          makeArticle(42, category: 'simple_story', title: '小故事'),
+          makeArticle(43, category: 'news', title: '新闻'),
+        ]),
+      );
+      final container = makeContainer(difficulty: 'LOW');
+      final controller = container.read(homeControllerProvider.notifier);
+      await controller.load();
+      await Future<void>.delayed(Duration.zero);
+
+      final group = container.read(homeControllerProvider).articleGroups.single;
+      // LOW 批次：news（MEDIUM）被滤掉，两篇 LOW 保留
+      expect(group.articles.map((a) => a.id).toSet(), {41, 42});
+      expect(
+        group.articles.map((a) => a.difficultyLabel).toSet(),
+        {'CET4'},
+      );
+      expect(group.articles.first.categoryLabel, 'scene description');
     });
 
     test('NeedsLogin：本地文章照常加载（横幅由 home_screen 按登录态显示）', () async {
