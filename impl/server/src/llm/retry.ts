@@ -94,7 +94,8 @@ const DEFAULT_TIMEOUT_MS = 90_000;
 /**
  * OpenAI 兼容 `POST {base}/chat/completions` 驱动（供 llmService 闭包包装为无参 chat）。
  * 错误分类（对齐 Dart LlmErrorClassifier / Rust DeepSeekClient）：
- * 400/401/403 → fatal；429 → recoverable(retryAfterSecs)；5xx/其余 → recoverable；
+ * 400/401/402/403 → fatal（402=余额不足，重试无用）；429 → recoverable(retryAfterSecs)；
+ * 5xx/其余 → recoverable；
  * send 失败（网络/超时，一切）→ timeout；成功：choices[0].message.content + usage（usage 缺省 0）。
  */
 export async function driverChat(
@@ -145,7 +146,9 @@ export async function driverChat(
   if (!resp.ok) {
     const retryAfterSecs = parseRetryAfter(resp.headers.get("retry-after"));
     const msg = `${resp.status}: ${await resp.text().catch(() => "")}`;
-    if (resp.status === 400 || resp.status === 401 || resp.status === 403) {
+    // 402 Payment Required（余额不足）与 400/401/403 同类：钱没充上，重试只是让用户
+    // 多等 4 次退避（实测 14s）再拿到一个"网络不稳定"的误导结论 → 立即 fatal。
+    if (resp.status === 400 || resp.status === 401 || resp.status === 402 || resp.status === 403) {
       throw { kind: "fatal" as const, message: msg };
     }
     throw { kind: "recoverable" as const, message: msg, retryAfterSecs };

@@ -178,6 +178,41 @@ describe("daily_task runFill", () => {
     expect(t2).not.toBe(t1); // R4 唯一 genSeq：第二次不复用同 id
   });
 
+  test("402 余额不足的 error 槽 → 跳过补跑（其余 error 槽照跑），并记进 stepErrors", async () => {
+    // 402 = 钱没充上：再跑一遍整条管道必然又是 402（还含浏览器抓正文），纯浪费；
+    // 跳过但必须可见（报告卡 stepErrors），充值后由管理端「异常槽位」手动重跑。
+    const f = recorders();
+    const { db, ctx } = makeCtx({ ...f });
+    const slots = seedSlots(db, 3);
+    writeSlotResult(db, {
+      slotId: slots[0]!.id,
+      threadId: slots[0]!.threadId,
+      status: "error",
+      errorMessage: "生成结果不符合结构要求: 402 Insufficient Balance (request_id: f0a788af)",
+    });
+    writeSlotResult(db, {
+      slotId: slots[1]!.id,
+      threadId: slots[1]!.threadId,
+      status: "error",
+      errorMessage: "站点抓取超时",
+    });
+    writeSlotResult(db, {
+      slotId: slots[2]!.id,
+      threadId: slots[2]!.threadId,
+      status: "error",
+      errorMessage: "LLM 账户余额不足（402），请充值后重跑: 402 Insufficient Balance",
+    });
+
+    const outcome = await new DailyTask(ctx).runFill(RUN_DATE);
+
+    expect(f.reRuns).toHaveLength(1); // 只有非 402 槽被补跑
+    expect(f.reRuns[0]!.slot.slotIndex).toBe(1);
+    const skipNote = outcome.stepErrors.find((t) => t.includes("余额不足"));
+    expect(skipNote).toBeDefined();
+    expect(skipNote).toContain("slot 0,2"); // 跳过哪些槽可追溯
+    expect(outcome.stepErrors.some((t) => t.includes("补跑失败"))).toBe(false);
+  });
+
   test("genDaily 抛错 → 不中断：retryFailed/ensure 仍被调，runFill 不抛", async () => {
     const f = recorders();
     const genDaily = async () => {

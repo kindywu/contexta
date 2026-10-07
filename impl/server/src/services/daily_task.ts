@@ -4,7 +4,8 @@
 //   进入窗口 → 三态判定当天批次：已收口（status != running）→ 跳过；无批次/执行中 → runFill
 //   （引擎幂等：无批次→建 15 槽全跑；running→只补 pending 后收口）
 // - runFill：引擎生成 → retryFailedSlots（pending 恢复：resume/sync）→ error 槽位每槽一次
-//   retrySlot（图三态承诺：补跑仍失败留 error，err 不抛）→ ensureReviewRows 补齐审核行
+//   retrySlot（图三态承诺：补跑仍失败留 error，err 不抛；402 余额不足的槽跳过——重试无用，
+//   见 engine/llm.ts 的 isInsufficientBalance）→ ensureReviewRows 补齐审核行
 // - runFill in-flight 去重（模块级，按日期）：并发调用返回同一 Promise（不双跑），
 //   失败兜底也已去重
 // - 单步失败仅记日志（走引擎 log() → logs/daily-<date>.log，服务进程内不输出到 web stdout；
@@ -21,6 +22,7 @@ import type { AppConfig } from "../engine/config";
 import { isDailyBatchFinished, listSlots, type SlotRow } from "../engine/db";
 import { generateDailyArticles, retryFailedSlots } from "../engine/graph/daily";
 import { cleanupOldLogs, log } from "../engine/graph/log";
+import { isInsufficientBalance } from "../engine/llm";
 import { localDate } from "../engine/utils/time";
 import { todayStartMillis } from "../time";
 import { ensureReviewRows, retrySlot, type GenFn } from "./review_service";
@@ -174,8 +176,17 @@ export class DailyTask {
       log(`[daily-task] ${date} pending 恢复失败（继续后续步骤）: ${text}`);
     }
     try {
+      // 402 余额不足的 error 槽不补跑：钱没充上，再跑一遍整条管道（含浏览器抓正文）
+      // 必然又是 402——纯烧时间和网络。跳过但记账（报告卡 stepErrors 可见），
+      // 充值后用管理端「异常槽位」重跑（/admin/slots/:id/retry）恢复。
+      const skipped: number[] = [];
       for (const slot of listSlots(this.ctx.db, date)) {
         if (slot.status !== "error") continue;
+        if (isInsufficientBalance(slot.errorMessage)) {
+          skipped.push(slot.slotIndex);
+          log(`[daily-task] ${date} slot ${slot.id}[${slot.slotIndex}] 余额不足（402），跳过补跑`);
+          continue;
+        }
         try {
           await this.reRun(this.ctx, slot);
         } catch (err) {
@@ -183,6 +194,13 @@ export class DailyTask {
           stepErrors.push(`槽位 ${slot.slotIndex} 补跑失败: ${text}`);
           log(`[daily-task] ${date} slot ${slot.id}[${slot.slotIndex}] 补跑失败（留 error）: ${text}`);
         }
+      }
+      if (skipped.length > 0) {
+        const text =
+          `余额不足（402）：跳过 ${skipped.length} 个 error 槽补跑（slot ${skipped.join(",")}），` +
+          `充值后请用管理端"异常槽位"重跑`;
+        stepErrors.push(text);
+        log(`[daily-task] ${date} ${text}`);
       }
     } catch (err) {
       const text = errText(err);

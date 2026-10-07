@@ -46,6 +46,21 @@ describe("callWithRetry", () => {
     ).rejects.toMatchObject({ errorCode: "LLM_TIMEOUT" });
     expect(n).toBeLessThanOrEqual(4);
   });
+  test("402 余额不足 → fatal：只发 1 次请求（不实等退避），最终 LLM_FATAL", async () => {
+    // 402 重试不解决计费问题：pre-fix 落在 "5xx/其余 → recoverable" 桶里，
+    // 白白重试 4 次 + 退避实等（实测 14s），最终给用户一个 502「网络不稳定」的误导结论。
+    let hits = 0;
+    const chat = () => driverChat(opts(async () => {
+      hits++;
+      return new Response("pay", { status: 402 });
+    }), "s", "u");
+
+    await expect(callWithRetry(chat, 60_000)).rejects.toMatchObject({
+      errorCode: "LLM_FATAL",
+      message: "402: pay",
+    });
+    expect(hits).toBe(1);
+  });
   test("Retry-After 建议等待超预算 → LLM_TIMEOUT 立即放弃（不实等）", async () => {
     let n = 0;
     await expect(
@@ -55,7 +70,7 @@ describe("callWithRetry", () => {
   });
 });
 
-/** driverChat 错误分类（Interfaces：400/401/403→fatal、429→recoverable(retryAfter)、
+/** driverChat 错误分类（Interfaces：400/401/402/403→fatal、429→recoverable(retryAfter)、
  *  5xx/网络/解析失败→recoverable、超时→timeout；usage 缺省 0；R3：/chat/completions 404 回退 /v1）。 */
 function opts(fetchFn: (url: string) => Promise<Response>): LlmDriverOptions {
   return { baseUrl: "https://llm.example.com/", apiKey: "k", model: "m", fetchFn };
@@ -79,8 +94,8 @@ describe("driverChat", () => {
     const r = await driverChat(opts(async () => chatResp("hi")), "s", "u");
     expect(r).toEqual({ content: "hi", promptTokens: 0, completionTokens: 0 });
   });
-  test("400/401/403 → fatal", async () => {
-    for (const status of [400, 401, 403]) {
+  test("400/401/402/403 → fatal（402=余额不足，重试无用）", async () => {
+    for (const status of [400, 401, 402, 403]) {
       await expect(driverChat(opts(async () => new Response("bad", { status })), "s", "u"))
         .rejects.toMatchObject({ kind: "fatal", message: `${status}: bad` });
     }

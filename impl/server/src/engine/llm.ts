@@ -100,6 +100,22 @@ function logPrompt(label: string, system: string, user: string): void {
 }
 
 /**
+ * 错误文本是否表示"上游余额不足"（HTTP 402）——把"重试无用"的失败与瞬时故障区分开。
+ * 需要认的三种形态（都来自同一条上游错误，只是经过不同层）：
+ * - SDK（@langchain/openai → openai）抛出：`402 Insufficient Balance (request_id: …)`；
+ * - 本仓库 driverChat 抛出：`402: {"error":{"message":"Insufficient Balance"…}}`；
+ * - 引擎包装后：`生成结果不符合结构要求: 402 Insufficient Balance…`（子串匹配即可）。
+ * 判据 = 上游措辞（insufficient balance / 余额不足）或"独立的状态码 token 402"：
+ * 402 必须与分隔符相邻，裸数字（如 request_id 里的 …402…）不算。
+ * 误判代价 = 跳过一次本可成功的重跑；漏判代价 = 多跑一次注定失败的重跑——故宁可两边都不激进。
+ */
+export function isInsufficientBalance(text: string | null | undefined): boolean {
+  if (!text) return false;
+  if (/insufficient\s+balance/i.test(text) || text.includes("余额不足")) return true;
+  return /(?:^|[\s:：])402(?=[\s:：]|$)/.test(text);
+}
+
+/**
  * LLM 响应留痕（生成结束即触发——即使后续 jsonMode 解析失败，原始响应也已落盘）。
  * info 记摘要（finish_reason/用量/长度），debug 记原文与思考内容。
  * 背景：deepseek-flash 为思考模型，失败现场全在响应里（如 content 只剩空白、

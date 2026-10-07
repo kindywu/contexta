@@ -64,6 +64,15 @@ export function sourceRetryDecision(
 }
 
 /**
+ * 节点级瞬时故障兜底策略（网络抖动/5xx），`buildArticleGraph` 未注入 retryPolicy 时生效。
+ * 注意它承担的一件不显眼的事：`{maxAttempts: 3}` 走 LangGraph 默认 retryOn——上游错误带
+ * `status` 且落在 no-retry 列表（400/401/402/403/404…）时只跑 1 次，**402（余额不足）正是
+ * 靠这条不重试**；错误被包装成不带 status 的普通 Error 时会退化成重试 3 次
+ * （契约由 tests/engine/graph-retry.test.ts 锁住）。
+ */
+export const DEFAULT_NODE_RETRY_POLICY: RetryPolicy & { maxAttempts: number } = { maxAttempts: 3 };
+
+/**
  * 组装文章生成图（设计见 docs/ 目录下的设计记录）：
  *
  *   START → pickCategory -(类别)→ A: fetchLinks → chooseArticle → extractFacts → generateA → validateA → END
@@ -75,8 +84,9 @@ export function sourceRetryDecision(
  * - generate 拒答（模型判主题/来源不可写，genFailure=refused）→ A 回 chooseArticle 换篇
  *   （sourceAttempts 封顶 → 短路 rejected）；B 无源可换 → 短路 rejected；
  * - validate 违规 → 回 generate 带违规反馈重写，封顶 → rejected。
- * 其余失败（生成空白/结构畸形、技术错误）统一 error 终态，不走回边（用户拍板：不自动重试）。
- * 瞬时故障由 setNodeDefaults retryPolicy 兜底；手动重试入口见 src/replay.ts。
+ * 其余失败（生成空白/结构畸形、技术错误；402 余额不足单列文案）统一 error 终态，不走回边
+ * （用户拍板：不自动重试）。瞬时故障由 setNodeDefaults retryPolicy（DEFAULT_NODE_RETRY_POLICY）
+ * 兜底；手动重试入口见 src/replay.ts。
  * 节点工厂按路径参数化，A/B 各注册一份实例（generateA/generateB/validateA/validateB），
  * 实现共用 generateNode/validateNode，避免两份硬代码。
  */
@@ -85,7 +95,7 @@ export function buildArticleGraph(options: BuildGraphOptions) {
   const maxGenRounds = options.maxGenRounds ?? 3;
   const maxSourcePicks = options.maxSourcePicks ?? 3;
   const graph = new StateGraph(ArticleGenState)
-    .setNodeDefaults({ retryPolicy: retryPolicy ?? { maxAttempts: 3 } })
+    .setNodeDefaults({ retryPolicy: retryPolicy ?? DEFAULT_NODE_RETRY_POLICY })
     .addNode("pickCategory", (s) => pickCategoryNode(s, deps))
     .addNode("pickTopic", (s) => pickTopicNode(s, deps))
     .addNode("fetchLinks", (s) => fetchLinksNode(s, deps))

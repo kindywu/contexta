@@ -208,7 +208,7 @@ touch /opt/contexta/server/data/contexta.db /opt/contexta/server/data/langgraph.
 3. 健康检查：`curl http://localhost:8080/api/health`；管理页 `https://api.example.com/admin`（`admin` + 初始密码）
 4. 当天缺文可手动补生成：`POST /api/admin/articles/generate {"date":"2026-08-13"}`（admin JWT）
 5. 管理员在管理页**审核**（槽位视图：通过/拒绝/重跑/编辑）——仅已过审对用户可见
-6. 此后每日 `DAILY_GENERATE_WINDOW`（默认 `08:00-08:15`，配置时区）内自动生成**当天** 15 篇（三态判定：当天批次已收口 → 跳过；没执行过 → 执行；执行中 → 继续）；错过窗口即跳过，error 槽位由当轮 runFill 自动补跑一次，仍失败留 error 待人工 `POST /api/admin/slots/:id/retry` 或 `bun run retry` 重试
+6. 此后每日 `DAILY_GENERATE_WINDOW`（默认 `08:00-08:15`，配置时区）内自动生成**当天** 15 篇（三态判定：当天批次已收口 → 跳过；没执行过 → 执行；执行中 → 继续）；错过窗口即跳过，error 槽位由当轮 runFill 自动补跑一次（**402 余额不足的槽跳过——充值前重跑必然再失败**），仍失败留 error 待人工 `POST /api/admin/slots/:id/retry` 重试
 
 ## 5. 运维
 
@@ -265,7 +265,7 @@ docker compose exec contexta-server bun run delete-daily -- --date 2026-08-29 --
 - **备选方案（必要时按 spike 结果选一）**：
   - 站点不支持时降级：`sites.config.ts` 去掉 chinadaily/tencent 配置行 → `news`/`expository` 变 pathB（模型知识生成，**失去事实锚定，有幻觉风险**——仅作临时降级，须人工审核把关）；
   - 改造抓取层为 HTTP 抓取（属代码改动，另行决策）。
-- 若部署后 LLM 欠费/站点全挂：槽位 error 不阻塞服务，恢复后每日任务自动补跑 + 人工 retry/手动补生成即可自愈。
+- 若部署后 LLM 欠费/站点全挂：槽位 error 不阻塞服务。站点恢复后每日任务自动补跑即可自愈；**欠费（402）不同——自动补跑被跳过**（充值前重跑必然再失败），充值后需在管理端「异常槽位」逐槽重跑（`POST /api/admin/slots/:id/retry`）。
 
 ## 7. 部署约束快速索引（实现已裁决，改部署/客户端前必读）
 

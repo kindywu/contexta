@@ -178,10 +178,10 @@ flowchart TD
 - **A 链**：`fetchLinks`（随机洗牌本站点抓列表：Bun.WebView 打开首页 → 等待 JS 懒加载列表 → 锚点快照 → 站点规则抽取 `ArticleLink[]`——**视图受 `BROWSER_CONCURRENCY` 信号量限流、每次调用带硬超时**，见 config-and-deploy.md §6；新鲜度过滤 = 近 5 天已用 URL + 本轮共享 `usedUrls` 去重；标题含受限人名直接出局）→ `chooseArticle`（随机选篇 → 抓正文 HTML → 清洗 → turndown 转 Markdown（截断 12000 字符）→ 正文含受限人名则跳过换篇；命中即从候选列表移出）→ `extractFacts`（LLM 结构化抽取 FactSheet：who/what/when/where/why/how/keyNumbers/keyNames；全空 = 源不适配 → 回 chooseArticle 换篇，封顶 3 次 → rejected）→ `generateA`。
 - **B 链**：`pickTopic` → `generateB`（模型知识生成，prompt 含"基于可靠常识、正文不得出现元提示/免责声明、禁用受限人名"；虚构故事不要求在文中标注虚构）。
 - **pickTopic（仅 pathB，LLM）**：先定"写什么"再写作，防同批选题雷同——见下方 §4.1.1。
-- **generate（A/B 共用实现）**：结构化输出 `GenerateResult` 判别联合——`{"type":"article", titleEn, titleZh, paragraphs:[{en,zh}]}` 或 `{"type":"cannot_write"}`（模型判主题违规/缺依据 → 业务拒答，A 回边换源、B 短路）。其余失败（空白/结构畸形/技术错误）→ error 终态，不做自动重试（手动重试见 replay）。prompt 注入：素材（pathA 的来源标题/URL/正文/事实卡）+ 本槽选题（`topic`，pathB 且有选题时）+ 上轮违规反馈（lastViolations）+ 近 5 天成功文章标题。
+- **generate（A/B 共用实现）**：结构化输出 `GenerateResult` 判别联合——`{"type":"article", titleEn, titleZh, paragraphs:[{en,zh}]}` 或 `{"type":"cannot_write"}`（模型判主题违规/缺依据 → 业务拒答，A 回边换源、B 短路）。其余失败（空白/结构畸形/技术错误）→ error 终态，不做自动重试（手动重试见 replay）。**402 余额不足单列一类**（`classifyGenerateFailure` → `billing`，判据 `error.status === 402` 或 `isInsufficientBalance(错误文本)`）：它根本没走到内容解析（HTTP 层即被拒），既不叫"结构要求"也不该被自动补跑，对外 reason = `LLM 账户余额不足（402），请充值后重跑: <上游原文>`（`BILLING_REASON_PREFIX`）。prompt 注入：素材（pathA 的来源标题/URL/正文/事实卡）+ 本槽选题（`topic`，pathB 且有选题时）+ 上轮违规反馈（lastViolations）+ 近 5 天成功文章标题。
 - **leadersCheck**（无 LLM，A/B 共用）：文章标题/段落中英全文子串匹配 `const/coreLeaders.ts` 受限人名名单，命中即整篇 rejected（设计：名单为硬限制，不回边重试）。
 - **validate（A/B 共用实现）**：pathA = 红线判官（带来源全文 + 事实卡 + 当前日期做归因）+ 事实一致性判官（文章事实不得超出来源范围，含"未使用来源"检测）；pathB = 从严红线判官（无来源可核对，凭据类内容从严）。违规 → 记录 violations 并回 generate 带反馈重写，封顶 3 轮（含首试）→ rejected。
-- **瞬时故障**：节点级 retryPolicy maxAttempts=3 兜底（网络抖动/5xx）；持续失败由 `generateArticle` 统一收为 outcome=error，不抛出。
+- **瞬时故障**：节点级 retryPolicy maxAttempts=3 兜底（网络抖动/5xx）——策略常量 `DEFAULT_NODE_RETRY_POLICY`（`graph.ts`）。**402 余额不足只跑 1 次**：LangGraph 默认 retryOn 对带 `status` 且落在 no-retry 列表（400/401/402/403/404…）的错误不重试，抛错型节点（extractFacts/validate）同样适用；该"不重试"依赖错误对象携带 `status`（`@langchain/openai` 抛出的 `APIError` 有），错误被包装成普通 Error 时会退化成重试 3 次——契约由 `tests/engine/graph-retry.test.ts` 锁住。持续失败由 `generateArticle` 统一收为 outcome=error，不抛出。
 - **断点续跑**：`generateArticle` 接受 `threadId`——同 threadId 重复调用 = 从 langgraph.sqlite 恢复续跑（已完成的节点不重跑，fetch/LLM 调用不浪费）；缺省自动生成 `manual-<date>-<ts>`。
 
 #### 4.1.1 选题规划（pickTopic / TopicRegistry，防同批雷同）
@@ -322,7 +322,7 @@ flowchart TD
 
 - **缓存**：跨用户共享（同词同结果）；TTL `CACHE_TTL_DAYS`（默认 30 天）、容量 `CACHE_MAX_ROWS`（默认 5000，超限删最旧 1 条）；命中不调 LLM、不扣配额。缓存 JSON 需形状校验（`spelling: string` + `senses: array`，对齐 Rust serde 严格反序列化）——损坏/形状不符的缓存删行自愈、继续走 LLM，不会把畸形对象返回给 App。
 - **配额**：`users.quota_word_daily`（可空 → 全局默认 `WORD_QUOTA_DAILY=200`）；计数 = `usage_log` 中 `endpoint='word_lookup'` 且 `created_at >= 今日零点` 的行数（与用量报表同一口径）。只计真实 LLM 调用。
-- **LLM 调用**（`callWithRetry` + `driverChat`，`src/llm/retry.ts`）：OpenAI 兼容 `POST {base}/chat/completions`，404 回退 `/v1/chat/completions`；`LLM_TIMEOUT_SECS`（默认 90s）为硬预算——共 4 次尝试，每次尝试以剩余预算截断（Promise.race 超时），退避等待也计入预算。错误分类：400/401/403 → fatal；429 → recoverable（Retry-After clamp 0..30s）；5xx/其余 → recoverable（指数退避 2s×2^(n-1) 封顶 10s）；发送层失败（网络/超时/DNS/TLS）→ timeout。第 4 次仍失败：timeout → 504 LLM_TIMEOUT，recoverable → 502 LLM_RECOVERABLE_EXHAUSTED，fatal → 500 LLM_FATAL。可选出站代理 `PROXY_URL`（Bun fetch proxy 选项）。
+- **LLM 调用**（`callWithRetry` + `driverChat`，`src/llm/retry.ts`）：OpenAI 兼容 `POST {base}/chat/completions`，404 回退 `/v1/chat/completions`；`LLM_TIMEOUT_SECS`（默认 90s）为硬预算——共 4 次尝试，每次尝试以剩余预算截断（Promise.race 超时），退避等待也计入预算。错误分类：400/401/402/403 → fatal（**402=余额不足**：钱没充上，重试只是让用户多等 4 次退避（实测 ~14s）再拿到一个"网络不稳定"的误导结论，故立即失败）；429 → recoverable（Retry-After clamp 0..30s）；5xx/其余 → recoverable（指数退避 2s×2^(n-1) 封顶 10s）；发送层失败（网络/超时/DNS/TLS）→ timeout。第 4 次仍失败：timeout → 504 LLM_TIMEOUT，recoverable → 502 LLM_RECOVERABLE_EXHAUSTED，fatal → 500 LLM_FATAL。可选出站代理 `PROXY_URL`（Bun fetch proxy 选项）。
 - **记账**：LLM 调用成功即记（无论解析/写缓存结果如何）——堵住"易触发解析失败的词无限烧钱"的绕过口；记账失败仅降级告警（磁盘满/写繁忙时不得把成功查词变 500）。
 - **写缓存守卫**：仅当 `parsed.spelling.toLowerCase() === key` 才写——LLM 输出变体/屈折时不入缓存，否则请求词 key 会向全用户共享缓存写入错误词条。
 - **解析**：`parseWordLookup`（`src/llm/lookup_parser.ts`，XML 容错解析）：`<spelling>`/`<phonetic>`/`<sense>`/`<example>`（en/zh），无 `<spelling>` 时用首个成对根标签兜底（仅接受单词/词组形态）；**1-3 个 sense、每 sense 0-2 个 example 是 prompt 指令**（`src/llm/prompt.ts` 的 system 提示），parser 不强制封顶——按实际出现次数全量解析；字段映射为 App JSON 契约（`senses[].part_of_speech/chinese_meaning/english_definition/examples[].sentence_en/sentence_zh/is_primary`，order_index 1 起）。prompt 内嵌（`src/llm/prompt.ts`，对齐 001-init.sql 种子原文；TS 无 prompt 表——管理端不可编辑）。
@@ -384,7 +384,7 @@ sequenceDiagram
 | 401 | 401 | `EVICTED` | 会话被挤掉/登出（`iat != issued_at`） | 提示已在其他设备登录；**可选 `detail{reason, ended_at, by{device_id, device_name, issued_at}}`**——被挤（`evicted`）/同设备重登（`relogin`）时记录可得则下发（`ended_at >= token.iat` 的最近一条，含同刻）；主动登出/老数据查不到 → 无 detail |
 | 403 | 403 | `BANNED` | 账号被封禁（先封禁后会话；login 同） | 提示账号被封禁 |
 | 404 | 404 | `NOT_FOUND` | 资源不存在 / 不可过审行（守卫不满足/重复审核）/ 不可编辑文章 / 槽位不存在 | |
-| 500 | 500 | `LLM_FATAL` | LLM 不可恢复错误（400/401/403） | |
+| 500 | 500 | `LLM_FATAL` | LLM 不可恢复错误（400/401/402/403；402=余额不足） | |
 | 500 | 500 | `PIPELINE_BLOCKING` | 管道阻塞：查词响应不可解析（XML 解析失败） | |
 | 500 | 500 | `INTERNAL` | 未预期内部错误（记 error 日志） | |
 | 502 | 502 | `LLM_RECOVERABLE_EXHAUSTED` | 可恢复错误重试 4 次仍失败 | |
@@ -406,7 +406,7 @@ sequenceDiagram
 
   1. `generateDailyArticles({runDate})` —— 引擎幂等生成（新批次 / 只补 running 批次的 pending / 已收口直接返回）；
   2. `retryFailedSlots({runDate})` —— pending 槽位经 checkpointer 分派：无终态 → **resume**（同 thread_id 续跑）；有终态（崩溃间隙：图跑完但没落库）→ **sync**（终态同步回 DB，不重跑）；error/rejected 不处理；
-  3. **error 槽位每槽一次补跑**：`retrySlot`（thread = `daily-<date>-<slot>-r<Date.now()>`，唯一 genSeq 避免命中"同 threadId 终态 checkpoint 复用"契约；与审核重生成共用槽位级进程锁）；补跑仍失败留 error，err 不抛；
+  3. **error 槽位每槽一次补跑**：`retrySlot`（thread = `daily-<date>-<slot>-r<Date.now()>`，唯一 genSeq 避免命中"同 threadId 终态 checkpoint 复用"契约；与审核重生成共用槽位级进程锁）；补跑仍失败留 error，err 不抛。**402 余额不足的槽跳过补跑**（`isInsufficientBalance(slot.errorMessage)`）：钱没充上，再跑一遍整条管道（含浏览器抓正文）必然又是 402——跳过但记进 `stepErrors`（`余额不足（402）：跳过 N 个 error 槽补跑（slot …）`，报告卡可见），充值后用管理端「异常槽位」手动重跑；
   4. `ensureReviewRows` —— 补齐 success 槽位的待审行。
 
 - **并发安全**：槽位级进程锁（`review_service` `slotLocks`）保证同槽 error 补跑与审核重生成串行；引擎侧 `usedUrls` / `TopicRegistry` 在单轮 run 内共享，前者拦截并行槽位重复抓取同一来源（URL 去重），后者串行取号保证并行槽位选题不重复（见 §4.1.1）。
@@ -418,6 +418,7 @@ sequenceDiagram
   - **纪律**：通知/余额查询/复核调度的任何失败**仅记日志绝不抛**（`safeNotify` 兜底——通知故障不得变成生成故障）；`FEISHU_WEBHOOK_URL` / `FEISHU_WEBHOOK_SECRET` 任缺 → 静默跳过；按 **`${runDate}:${phase}`** 进程内**去重**（start / end / alert / recheck 各记一条，发送成功才记账——同日手动补跑不再刷屏）；
   - **签名**：自定义机器人算法 `base64(HMAC-SHA256(key = \`${timestamp}\n${secret}\`))`，payload `timestamp`（秒级字符串）与签名一致；5s 超时。
 - **余额与成本（`services/llm_balance.ts`）**：`GET <LLM_BASE_URL>/user/balance`（复用 `LLM_API_KEY`，5s 超时）；`total_balance` 是字符串 → 转 number；多币种优先取 CNY。**任何失败一律返回 null**（网络 / 非 200 / 非 JSON / 字段缺失），渲染为"未知"——余额查询绝不阻断生成（每次整日运行 2 次调用）。
+  - **402 文本判定**（`engine/llm.ts` 的 `isInsufficientBalance(text)`，与本文档同层的 `isLowBalance` 区分：后者判余额快照、前者判错误文本）：认上游措辞（`insufficient balance` / `余额不足`）或独立状态码 token `402`（须与分隔符相邻，裸数字不算）。消费方：`classifyGenerateFailure` → billing 分类、每日任务跳过 402 槽补跑。
   - **成本口径 = 运行前后余额差**：下降 → `本次成本 ≈ ¥0.42（3.65 → 3.23）`；**未变 → 标"计费约 5 分钟延迟尚未结算"**（DeepSeek 计费存在延迟，不假装本次免费）；上升 → 标"多为充值"；余额未知 → "未知"。
   - **低余额提醒**：低于 `LOW_BALANCE_THRESHOLD`（1 元）→ **两条卡都**附"余额不足 ¥1，请立即充值（当前 ¥0.83）"；余额未知**不误报**。
 - **成本延迟复核（`services/cost_recheck.ts`）**：结束卡"本次成本 ≈ 0"（`isZeroCost`：两侧余额都查到且相等；**任一未知不算 0**）→ 10 分钟后（`RECHECK_DELAY_MS`）重查一次余额并补发"💴 余额复核"卡（`notifyDailyCostRecheck`，阶段 `recheck`）——因 DeepSeek 计费约 5 分钟延迟，结束卡时可能尚未结算。复核卡以**运行前余额**为基准折算真实成本：下降 → `本次成本 ≈ ¥0.42（运行前 3.65 → 复核 3.23）`；仍未变 → "确实未产生消耗，或结算延迟更久"（**不递归再排**）；增加 → "多为充值"；查询失败 → "可稍后手动核对"；复核余额低同样带充值提醒。

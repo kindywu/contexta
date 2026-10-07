@@ -11,7 +11,7 @@ import {
 import type { ArticleLink, SiteEntry } from "../sites";
 import { memberList } from "../const/coreLeaders";
 import { dedupe, stripQuery } from "../sites/common";
-import { callLLMStructured, type LLM } from "../llm";
+import { callLLMStructured, isInsufficientBalance, type LLM } from "../llm";
 import {
   buildConsistencyJudgeSystem,
   buildConsistencyJudgeUser,
@@ -343,8 +343,18 @@ export type GenParams = { path: "A" | "B" };
  * 与模型约定：拒答话术（REJECTION_MESSAGE）与 can't_write 结构化信号等价，
  * 都代表"模型判定本主题/来源不可写" → 应换源（generateA 回边）；其余错误
  * （空白/结构/技术）与主题无关 → 保持 error 终态。
+ * billing（402 余额不足）单列：它根本没走到内容解析（HTTP 层就被拒），既不是拒答
+ * 也不是结构问题，归到 technical 会把"该充值"误报成"模型输出不合规"。
  */
-export function classifyGenerateFailure(e: unknown): "refused" | "whitespace" | "struct" | "technical" {
+export function classifyGenerateFailure(
+  e: unknown,
+): "refused" | "whitespace" | "struct" | "technical" | "billing" {
+  // 结构判据优先：上游 402 由 SDK 抛出（status=402，无 llmOutput）；文本判据兜住
+  // 被包装过一层的错误（消息里仍带 "402 Insufficient Balance"）
+  const status = (e as { status?: unknown } | null)?.status;
+  if (status === 402 || isInsufficientBalance(e instanceof Error ? e.message : String(e))) {
+    return "billing";
+  }
   const raw = (e as { llmOutput?: unknown } | null)?.llmOutput;
   if (typeof raw !== "string") return "technical";
   const t = raw.trim();
@@ -352,6 +362,9 @@ export function classifyGenerateFailure(e: unknown): "refused" | "whitespace" | 
   if (t === REJECTION_MESSAGE || t.startsWith(REJECTION_MESSAGE)) return "refused";
   return "struct";
 }
+
+/** 余额不足（402）失败对外文案前缀：管理端「异常槽位」/每日报告直接展示 reason。 */
+export const BILLING_REASON_PREFIX = "LLM 账户余额不足（402），请充值后重跑";
 
 /**
  * 节点4：生成双语文章。
@@ -361,6 +374,8 @@ export function classifyGenerateFailure(e: unknown): "refused" | "whitespace" | 
  * - 拒答话术散文（旧形态，模型未按新 schema 拒答时）同样归 refused（兼容识别）。
  * - 其余失败（空白/结构不合规/技术错误）归为 outcome=error（终态），不做自动重试——
  *   重试由用户手动发起（重跑/断点续跑/replay），见 src/replay.ts。
+ * - 例外单列：402 余额不足（billing）同样 error 终态，但文案指出"充值后重跑"——
+ *   它不是模型输出问题，且每日任务的自动补跑会跳过它（见 services/daily_task.ts）。
  * - 从 checkpointer 恢复（已有 draft）时跳过重生成；唯一例外是校验违规后的重试轮
  *   （outcome=rejected 且已有旧 draft）——旧 draft 作废重写，lastViolations 由
  *   buildGenerateUserContent 注入为上轮违规反馈。
@@ -412,7 +427,8 @@ export async function generateNode(
     );
     return { draft, genAttempts: round };
   } catch (e) {
-    if (classifyGenerateFailure(e) === "refused") {
+    const kind = classifyGenerateFailure(e);
+    if (kind === "refused") {
       // 旧形态兼容：模型未按新 schema 拒答，而是整句输出拒答话术（jsonMode 下解析失败）
       log(`generate${params.path}: 模型拒答（散文话术）-> rejected`);
       return {
@@ -421,6 +437,13 @@ export async function generateNode(
         rejectDetail: refusalDetail(state, "拒答话术"),
         genFailure: "refused",
       };
+    }
+    if (kind === "billing") {
+      // 402 余额不足：与模型输出无关（HTTP 层就拒了，压根没解析内容），单独文案——
+      // 充值后由管理端「异常槽位」重跑（/admin/slots/:id/retry）恢复；
+      // 每日任务的自动补跑会跳过它（见 services/daily_task.ts）
+      log(`generate${params.path}: 上游余额不足（402）-> error`);
+      return { outcome: "error", reason: `${BILLING_REASON_PREFIX}: ${(e as Error).message}` };
     }
     // 输出不符合 schema（空白弃答/结构不合规/技术错误）→ 终态 error，需手动重试
     log(`generate${params.path}: 结构校验失败 -> error`);
